@@ -118,11 +118,24 @@ end
 Events.OnGameBoot.Add(initBinds)
 
 local function onKeyPressed(key)
-    if key == getCore():getKey("MinidoracatMiniMap_Toggle") then
-        if ISMiniMap and ISMiniMap.ToggleMiniMap then
-            ISMiniMap.ToggleMiniMap(0)
+    if key ~= getCore():getKey("MinidoracatMiniMap_Toggle") then return end
+    if not (ISMiniMap and ISMiniMap.ToggleMiniMap) then return end
+    if not getSpecificPlayer(0) then return end -- 主選單等無玩家情境
+    -- 不受沙盒 AllowMiniMap 限制：原版沒建小地圖時（getPlayerMiniMap 為 nil）
+    -- 照 ISMiniMap.Recreate 的做法自己建（經過我們 hook 的 InitPlayer 會套 pyramid）。
+    if not getPlayerMiniMap(0) then
+        local ok, err = pcall(function()
+            getPlayerData(0).miniMap = ISMiniMap.InitPlayer(0)
+        end)
+        if not ok then
+            log("小地圖建立失敗: " .. tostring(err))
+            return
         end
+        -- InitPlayer 在 MiniMap.StartVisible=true 時已直接顯示，此時再 toggle 會關掉
+        local mm = getPlayerMiniMap(0)
+        if mm and mm:isReallyVisible() then return end
     end
+    ISMiniMap.ToggleMiniMap(0)
 end
 Events.OnKeyPressed.Add(onKeyPressed)
 

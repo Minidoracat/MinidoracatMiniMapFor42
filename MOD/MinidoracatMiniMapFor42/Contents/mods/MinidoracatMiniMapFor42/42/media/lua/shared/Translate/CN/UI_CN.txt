@@ -1,4 +1,0 @@
-UI_CN = {
-    UI_optionscreen_binding_MinidoracatMiniMap = "Minidoracat 小地图",
-    UI_optionscreen_binding_MinidoracatMiniMap_Toggle = "小地图开关",
-}
