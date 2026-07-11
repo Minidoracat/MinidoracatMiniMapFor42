@@ -1,0 +1,25 @@
+# Claude Code / 工具本機設定
+.claude/
+.mcp.json
+CLAUDE.md
+.omc/
+.omx/
+.codex/
+.code-review-graph/
+.gitnexus/
+
+# 系統檔案
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 渲染產物不進版控（用 scripts/build_pyramids.ps1 重新產生）
+*.pyramid.zip
+
+temp/
