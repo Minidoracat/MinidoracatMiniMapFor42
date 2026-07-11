@@ -91,4 +91,21 @@ function ISWorldMap:initDataAndStyle()
     end
 end
 
-log("已載入（hook ISWorldMap:initDataAndStyle）")
+-- 角落小地圖：ISMiniMap.InitPlayer 於玩家生成時建立（initDefaultStyleV1 後預設
+-- ImagePyramid=false，applyMiniMapPyramids 會蓋回 true）。注意小地圖本身受沙盒
+-- 選項 SandboxVars.Map.AllowMiniMap 控制（ISMiniMap.IsAllowed），沒開就不存在。
+if ISMiniMap and ISMiniMap.InitPlayer then
+    local originalInitPlayer = ISMiniMap.InitPlayer
+    function ISMiniMap.InitPlayer(playerNum)
+        local minimap = originalInitPlayer(playerNum)
+        if minimap and minimap.inner and minimap.inner.mapAPI then
+            local ok, err = pcall(applyMiniMapPyramids, minimap.inner)
+            if not ok then
+                log("小地圖初始化失敗: " .. tostring(err))
+            end
+        end
+        return minimap
+    end
+end
+
+log("已載入（hook ISWorldMap:initDataAndStyle + ISMiniMap.InitPlayer）")
