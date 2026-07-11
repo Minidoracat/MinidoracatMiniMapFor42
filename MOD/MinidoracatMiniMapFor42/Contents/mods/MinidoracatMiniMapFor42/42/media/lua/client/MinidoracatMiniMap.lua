@@ -108,4 +108,22 @@ if ISMiniMap and ISMiniMap.InitPlayer then
     end
 end
 
-log("已載入（hook ISWorldMap:initDataAndStyle + ISMiniMap.InitPlayer）")
+-- 快捷鍵：小地圖開關（選項 → 按鍵綁定 → [MinidoracatMiniMap] 可改鍵）。
+-- 預設 HOME（原版 keyBinding.lua 無此鍵衝突；N 撞 StartVehicleEngine 故不用）。
+-- ToggleMiniMap 自帶防呆：沙盒未開 AllowMiniMap 時 getPlayerMiniMap 為 nil、直接略過。
+local function initBinds()
+    table.insert(keyBinding, { value = "[MinidoracatMiniMap]" })
+    table.insert(keyBinding, { value = "MinidoracatMiniMap_Toggle", key = Keyboard.KEY_HOME })
+end
+Events.OnGameBoot.Add(initBinds)
+
+local function onKeyPressed(key)
+    if key == getCore():getKey("MinidoracatMiniMap_Toggle") then
+        if ISMiniMap and ISMiniMap.ToggleMiniMap then
+            ISMiniMap.ToggleMiniMap(0)
+        end
+    end
+end
+Events.OnKeyPressed.Add(onKeyPressed)
+
+log("已載入（hook ISWorldMap:initDataAndStyle + ISMiniMap.InitPlayer + 快捷鍵）")
