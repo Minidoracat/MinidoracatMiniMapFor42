@@ -139,4 +139,15 @@ local function onKeyPressed(key)
 end
 Events.OnKeyPressed.Add(onKeyPressed)
 
+-- 原版 bug 防呆：存檔缺 mods.txt（如測試時強關遊戲的頭幾秒）時
+-- saveInfo.activeMods 為 nil，MainScreen.getMissingMods 沒 nil 防呆會讓
+-- 「繼續遊戲」直接報錯（呼叫端 continueLatestSaveAux 1188 行本就預期 nil）。
+if MainScreen and MainScreen.getMissingMods then
+    local originalGetMissingMods = MainScreen.getMissingMods
+    function MainScreen.getMissingMods(activeMods)
+        if not activeMods then return {} end
+        return originalGetMissingMods(activeMods)
+    end
+end
+
 log("已載入（hook ISWorldMap:initDataAndStyle + ISMiniMap.InitPlayer + 快捷鍵）")
