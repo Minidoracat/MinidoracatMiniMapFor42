@@ -1,4 +1,18 @@
 {
     "UI_optionscreen_binding_MinidoracatMiniMap": "Minidoracat MiniMap",
-    "UI_optionscreen_binding_MinidoracatMiniMap_Toggle": "Toggle mini-map"
+    "UI_optionscreen_binding_MinidoracatMiniMap_Toggle": "Toggle mini-map",
+    "UI_MinidoracatMiniMap_Options": "Minidoracat MiniMap",
+    "UI_MinidoracatMiniMap_Size": "Mini-map size",
+    "UI_MinidoracatMiniMap_Size_Small": "Small (vanilla)",
+    "UI_MinidoracatMiniMap_Size_Medium": "Medium (1.5x)",
+    "UI_MinidoracatMiniMap_Size_Large": "Large (2x)",
+    "UI_MinidoracatMiniMap_Size_Huge": "Extra Large (2.5x)",
+    "UI_MinidoracatMiniMap_Players": "Show my player marker",
+    "UI_MinidoracatMiniMap_Players_tooltip": "Show your own position marker on the mini-map.",
+    "UI_MinidoracatMiniMap_RemotePlayers": "Show teammate markers",
+    "UI_MinidoracatMiniMap_RemotePlayers_tooltip": "Show other players and their names on the mini-map. Multiplayer only.",
+    "UI_MinidoracatMiniMap_ZombieIntensity": "Show zombie heatmap",
+    "UI_MinidoracatMiniMap_ZombieIntensity_tooltip": "Overlay the zombie population heatmap on the mini-map. This shows population density, not live zombie positions; in multiplayer the client may not have this data.",
+    "UI_MinidoracatMiniMap_PlaceNames": "Show place names",
+    "UI_MinidoracatMiniMap_PlaceNames_tooltip": "Show town and area names on the mini-map. Also requires \"Symbols\" enabled in the mini-map gear panel."
 }

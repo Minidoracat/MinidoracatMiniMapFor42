@@ -72,6 +72,85 @@ local function applyMiniMapPyramids(mapUI)
     log("圖層就緒（" .. #paths .. " 個 pyramid zip）")
 end
 
+--------------------------------------------------------------------------------
+-- MOD 選項（PZAPI.ModOptions，B42 官方 API）
+-- 主選單「選項 → 模組」頁；值由引擎存讀 ModOptions.ini
+-- （MainOptions.lua:2823 load、3793 save，皆引擎自動，本 MOD 不碰檔案）。
+--------------------------------------------------------------------------------
+
+-- 尺寸倍率表：索引對應下拉選單項目順序（小=原版、中 1.5x、大 2x、特大 2.5x）
+local SIZE_SCALES = { 1.0, 1.5, 2.0, 2.5 }
+local DEFAULT_SIZE_INDEX = 2 -- 預設「中」
+
+local modOptions -- PZAPI Options 實例；PZAPI 不存在（版本過舊）時為 nil，一切走原版行為
+
+-- 讀目前尺寸索引（防呆：選項不存在或存檔值超界時回預設）
+local function getSizeIndex()
+    if not modOptions then return DEFAULT_SIZE_INDEX end
+    local opt = modOptions:getOption("MapSize")
+    local idx = opt and opt:getValue()
+    return SIZE_SCALES[idx] and idx or DEFAULT_SIZE_INDEX
+end
+
+local function getBoolOption(id, default)
+    if not modOptions then return default end
+    local opt = modOptions:getOption(id)
+    if opt == nil then return default end
+    return opt:getValue()
+end
+
+-- 把圖層開關套到指定小地圖 mapAPI（引擎選項名出自 WorldMapRenderer.java）
+local function applyToggleOptions(mapAPI)
+    mapAPI:setBoolean("Players", getBoolOption("Players", true))
+    if isClient() then
+        -- 隊友圖標與名字一起控（僅多人有效；單機照原版不動這兩個選項）
+        local showRemote = getBoolOption("RemotePlayers", true)
+        mapAPI:setBoolean("RemotePlayers", showRemote)
+        mapAPI:setBoolean("PlayerNames", showRemote)
+    end
+    mapAPI:setBoolean("ZombieIntensity", getBoolOption("ZombieIntensity", false))
+    -- 預設 true 跟隨引擎預設（WorldMapRenderer.java:122）——預設關會讓已開「符號」
+    -- 的玩家裝 MOD 後地名消失。實際顯示還需齒輪面板的「符號(Symbols)」開啟
+    -- （符號繪製整體被 Symbols 閘住，WorldMapRenderer.java:2151）。
+    mapAPI:setBoolean("PlaceNames", getBoolOption("PlaceNames", true))
+end
+
+if PZAPI and PZAPI.ModOptions then
+    modOptions = PZAPI.ModOptions:create("MinidoracatMiniMap", "UI_MinidoracatMiniMap_Options")
+
+    -- 注意：combobox 的 tooltip 在 MainOptions.lua（2942-2965）沒有被顯示，故不設
+    local sizeCombo = modOptions:addComboBox("MapSize", "UI_MinidoracatMiniMap_Size")
+    sizeCombo:addItem("UI_MinidoracatMiniMap_Size_Small", false)
+    sizeCombo:addItem("UI_MinidoracatMiniMap_Size_Medium", true) -- 預設「中」
+    sizeCombo:addItem("UI_MinidoracatMiniMap_Size_Large", false)
+    sizeCombo:addItem("UI_MinidoracatMiniMap_Size_Huge", false)
+
+    modOptions:addTickBox("Players", "UI_MinidoracatMiniMap_Players", true,
+        "UI_MinidoracatMiniMap_Players_tooltip")
+    modOptions:addTickBox("RemotePlayers", "UI_MinidoracatMiniMap_RemotePlayers", true,
+        "UI_MinidoracatMiniMap_RemotePlayers_tooltip")
+    modOptions:addTickBox("ZombieIntensity", "UI_MinidoracatMiniMap_ZombieIntensity", false,
+        "UI_MinidoracatMiniMap_ZombieIntensity_tooltip")
+    modOptions:addTickBox("PlaceNames", "UI_MinidoracatMiniMap_PlaceNames", true,
+        "UI_MinidoracatMiniMap_PlaceNames_tooltip")
+
+    -- 按「接受/套用」時由 MainOptions:apply 呼叫（3789）。該函式先跑 gameOptions:apply()
+    -- （3787）把 UI 值寫回 option，所以此處 getValue() 已是新值。
+    -- 無小地圖（主選單、沙盒未開 AllowMiniMap、尚未開圖）時只存值不動作。
+    function modOptions:apply()
+        if not getSpecificPlayer(0) then return end
+        local mm = getPlayerMiniMap(0)
+        if not mm then return end
+        -- ponytail: 只處理 player 0，分割畫面其餘玩家沿用原版（原版 saveSettings 也只存 player 0）
+        if mm._minidoracatSizeIndex ~= getSizeIndex() then
+            -- 尺寸變更：整個重建；我們 hook 的 InitPlayer 會重套尺寸、pyramid 與開關
+            ISMiniMap.Recreate(0)
+        elseif mm.inner and mm.inner.mapAPI then
+            applyToggleOptions(mm.inner.mapAPI) -- 純開關直接寫 mapAPI，即時生效
+        end
+    end
+end
+
 if not (ISWorldMap and ISWorldMap.initDataAndStyle) then
     log("找不到 ISWorldMap.initDataAndStyle，MOD 未啟用（遊戲版本不符？）")
     return
@@ -97,14 +176,69 @@ end
 if ISMiniMap and ISMiniMap.InitPlayer then
     local originalInitPlayer = ISMiniMap.InitPlayer
     function ISMiniMap.InitPlayer(playerNum)
-        local minimap = originalInitPlayer(playerNum)
-        if minimap and minimap.inner and minimap.inner.mapAPI then
-            local ok, err = pcall(applyMiniMapPyramids, minimap.inner)
-            if not ok then
-                log("小地圖初始化失敗: " .. tostring(err))
+        -- 尺寸覆寫選型：InitPlayer 內部用區域變數算好 width/height 直接傳進
+        -- ISMiniMapOuter:new，之後 createChildren/instantiate 都以 self.width 排版
+        -- （inner、titleBar、bottomPanel、按鈕置中）。建好後再 setWidth 追不回這些
+        -- 子元件版面，還得手動同步 javaObject，故採「呼叫期間暫時覆寫
+        -- ISMiniMapOuter.new 放大寬高」——原版自己用新尺寸排版，零版面補丁。
+        local sizeIndex = getSizeIndex()
+        local scale = SIZE_SCALES[sizeIndex]
+        local minimap
+        if scale ~= 1.0 and ISMiniMapOuter then
+            local originalNew = ISMiniMapOuter.new
+            ISMiniMapOuter.new = function(self, x, y, width, height, pn)
+                local w = math.floor(width * scale + 0.5)
+                local h = math.floor(height * scale + 0.5)
+                -- InitPlayer 以螢幕右下角定位（x = 右緣 - 10 - width），放大後
+                -- 平移 x/y 保持右下角錨點不變（prerender 的 setPosition 也會再校正）
+                return originalNew(self, x + width - w, y + height - h, w, h, pn)
+            end
+            local ok, result = pcall(originalInitPlayer, playerNum)
+            ISMiniMapOuter.new = originalNew -- 無論成敗都還原，不留全域污染
+            if not ok then error(result, 0) end
+            minimap = result
+        else
+            minimap = originalInitPlayer(playerNum)
+        end
+        if minimap then
+            minimap._minidoracatSizeIndex = sizeIndex -- 給 modOptions:apply() 判斷是否需重建
+            if minimap.inner and minimap.inner.mapAPI then
+                local ok, err = pcall(applyMiniMapPyramids, minimap.inner)
+                if not ok then
+                    log("小地圖初始化失敗: " .. tostring(err))
+                end
+                pcall(applyToggleOptions, minimap.inner.mapAPI)
             end
         end
         return minimap
+    end
+end
+
+-- 齒輪面板（小地圖右下設定鈕）：在原版可見選項（Isometric/Symbols/RemoteSymbols）
+-- 之後追加圖層開關。勾選文字沿用原版 IGUI_MapOption_<Name> 翻譯鍵
+-- （原版缺 ZombieIntensity 三語與 PlaceNames 中文，由本 MOD 的 IG_UI.json 補）。
+if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.getVisibleOptions then
+    local originalGetVisibleOptions = ISMiniMapOptionsPanel.getVisibleOptions
+    function ISMiniMapOptionsPanel:getVisibleOptions()
+        local result = originalGetVisibleOptions(self)
+        if self.showAllOptions then return result end -- debug/admin 模式已列全量，不重複加
+        local names = { "Players" }
+        if isClient() then -- 隊友圖標與名字僅多人顯示
+            table.insert(names, "RemotePlayers")
+            table.insert(names, "PlayerNames")
+        end
+        table.insert(names, "ZombieIntensity")
+        table.insert(names, "PlaceNames")
+        for _, name in ipairs(names) do
+            for i = 1, self.map.mapAPI:getOptionCount() do
+                local option = self.map.mapAPI:getOptionByIndex(i - 1)
+                if option:getName() == name then
+                    table.insert(result, option)
+                    break
+                end
+            end
+        end
+        return result
     end
 end
 
@@ -150,4 +284,4 @@ if MainScreen and MainScreen.getMissingMods then
     end
 end
 
-log("已載入（hook ISWorldMap:initDataAndStyle + ISMiniMap.InitPlayer + 快捷鍵）")
+log("已載入（hook ISWorldMap:initDataAndStyle + ISMiniMap.InitPlayer + 齒輪面板 + 快捷鍵 + MOD 選項）")

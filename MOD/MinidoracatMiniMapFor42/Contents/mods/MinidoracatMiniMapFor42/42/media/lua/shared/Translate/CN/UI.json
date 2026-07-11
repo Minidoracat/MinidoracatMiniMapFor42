@@ -1,4 +1,18 @@
 {
     "UI_optionscreen_binding_MinidoracatMiniMap": "Minidoracat 小地图",
-    "UI_optionscreen_binding_MinidoracatMiniMap_Toggle": "小地图开关"
+    "UI_optionscreen_binding_MinidoracatMiniMap_Toggle": "小地图开关",
+    "UI_MinidoracatMiniMap_Options": "Minidoracat 小地图",
+    "UI_MinidoracatMiniMap_Size": "小地图尺寸",
+    "UI_MinidoracatMiniMap_Size_Small": "小（原版）",
+    "UI_MinidoracatMiniMap_Size_Medium": "中（1.5 倍）",
+    "UI_MinidoracatMiniMap_Size_Large": "大（2 倍）",
+    "UI_MinidoracatMiniMap_Size_Huge": "特大（2.5 倍）",
+    "UI_MinidoracatMiniMap_Players": "显示自己图标",
+    "UI_MinidoracatMiniMap_Players_tooltip": "在小地图上显示自己的位置图标。",
+    "UI_MinidoracatMiniMap_RemotePlayers": "显示队友图标",
+    "UI_MinidoracatMiniMap_RemotePlayers_tooltip": "在小地图上显示其他玩家与其名字。仅多人游戏有效。",
+    "UI_MinidoracatMiniMap_ZombieIntensity": "显示丧尸热度",
+    "UI_MinidoracatMiniMap_ZombieIntensity_tooltip": "在小地图上叠加丧尸族群热度图。显示的是族群密度分布，不是丧尸实时位置；多人游戏下客户端可能无此数据。",
+    "UI_MinidoracatMiniMap_PlaceNames": "显示地名",
+    "UI_MinidoracatMiniMap_PlaceNames_tooltip": "在小地图上显示城镇与区域名称。需同时在小地图齿轮面板开启「符号」才会显示。"
 }

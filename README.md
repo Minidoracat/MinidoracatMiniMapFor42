@@ -8,6 +8,29 @@ Project Zomboid Build 42 遊戲內世界地圖圖片化基底 MOD。
 
 設計決策詳見 [MinidoracatMapRendering/docs/minimap-mod-design.md](../MinidoracatMapRendering/docs/minimap-mod-design.md)。
 
+## 功能
+
+- **世界地圖 / 角落小地圖圖片化**：ImagePyramid 疊加層，自動掛載基底與 addon 地圖 zip
+- **小地圖快捷鍵**：預設 `HOME` 開關小地圖（選項 → 按鍵綁定可改），
+  沙盒未開 AllowMiniMap 也能自建
+- **小地圖尺寸設定**：小（原版）/ 中（1.5 倍，預設）/ 大（2 倍）/ 特大（2.5 倍）
+- **圖層開關**：自己圖標、隊友圖標（僅多人）、殭屍熱度圖、地名
+- **齒輪面板擴充**：小地圖右下設定鈕的選項清單追加上述圖層開關（該處改動僅當場生效）
+
+## 設定
+
+主選單或遊戲內 **選項 → 模組 → Minidoracat 小地圖**：
+
+| 選項 | 預設 | 說明 |
+|------|------|------|
+| 小地圖尺寸 | 中（1.5 倍） | 變更後按「接受」即重建小地圖套用 |
+| 顯示自己圖標 | 開 | 小地圖上自己的位置圖標 |
+| 顯示隊友圖標 | 開 | 其他玩家圖標＋名字，**僅多人有效** |
+| 顯示殭屍熱度 | 關 | 殭屍**族群熱度圖**（密度分布，非即時點位） |
+| 顯示地名 | 關 | 城鎮與區域名稱 |
+
+開關類設定按「接受」後即時生效；設定存於 `%UserProfile%\Zomboid\Lua\ModOptions.ini`（引擎管理）。
+
 ## 架構：基底 + addon 同檔名匹配
 
 所有 zip 使用同一個約定檔名 `minidoracat_minimap.pyramid.zip`，

@@ -1,4 +1,18 @@
 {
     "UI_optionscreen_binding_MinidoracatMiniMap": "Minidoracat 小地圖",
-    "UI_optionscreen_binding_MinidoracatMiniMap_Toggle": "小地圖開關"
+    "UI_optionscreen_binding_MinidoracatMiniMap_Toggle": "小地圖開關",
+    "UI_MinidoracatMiniMap_Options": "Minidoracat 小地圖",
+    "UI_MinidoracatMiniMap_Size": "小地圖尺寸",
+    "UI_MinidoracatMiniMap_Size_Small": "小（原版）",
+    "UI_MinidoracatMiniMap_Size_Medium": "中（1.5 倍）",
+    "UI_MinidoracatMiniMap_Size_Large": "大（2 倍）",
+    "UI_MinidoracatMiniMap_Size_Huge": "特大（2.5 倍）",
+    "UI_MinidoracatMiniMap_Players": "顯示自己圖標",
+    "UI_MinidoracatMiniMap_Players_tooltip": "在小地圖上顯示自己的位置圖標。",
+    "UI_MinidoracatMiniMap_RemotePlayers": "顯示隊友圖標",
+    "UI_MinidoracatMiniMap_RemotePlayers_tooltip": "在小地圖上顯示其他玩家與其名字。僅多人遊戲有效。",
+    "UI_MinidoracatMiniMap_ZombieIntensity": "顯示殭屍熱度",
+    "UI_MinidoracatMiniMap_ZombieIntensity_tooltip": "在小地圖上疊加殭屍族群熱度圖。顯示的是族群密度分布，不是殭屍即時位置；多人遊戲下客戶端可能無此資料。",
+    "UI_MinidoracatMiniMap_PlaceNames": "顯示地名",
+    "UI_MinidoracatMiniMap_PlaceNames_tooltip": "在小地圖上顯示城鎮與區域名稱。需同時在小地圖齒輪面板開啟「符號」才會顯示。"
 }
