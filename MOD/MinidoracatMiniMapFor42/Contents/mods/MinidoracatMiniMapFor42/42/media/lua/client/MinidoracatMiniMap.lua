@@ -115,6 +115,46 @@ local function applyToggleOptions(mapAPI)
     mapAPI:setBoolean("PlaceNames", getBoolOption("PlaceNames", true))
 end
 
+--------------------------------------------------------------------------------
+-- 邊緣拖曳縮放：常數與自訂尺寸解析（滑鼠互動 hook 在檔案下方「邊緣拖曳縮放」一節；
+-- 這裡先定義是因為 modOptions:apply() 與 InitPlayer hook 都要用）
+--------------------------------------------------------------------------------
+
+local RESIZE_EDGE = 8        -- 邊緣熱區厚度（px）
+local RESIZE_MIN = 180       -- 基準尺寸下限（px）
+local RESIZE_MAX_RATIO = 0.7 -- 尺寸上限 = 玩家螢幕短邊 70%
+
+-- 前置宣告（定義在下方「邊緣拖曳縮放」節）：InitPlayer hook 要對 bottomPanel
+-- 實例補掛縮放事件——它是裸 ISPanel（ISMiniMap.lua:419），hook class 會波及
+-- 全遊戲的 ISPanel，只能每次重建時掛實例。
+local installResizeHooks
+local cancelResize
+
+-- 尺寸上限（getPlayerScreenWidth/Height 用例 ISMiniMap.lua:701-702）
+local function resizeMax(playerNum)
+    return math.floor(math.min(getPlayerScreenWidth(playerNum), getPlayerScreenHeight(playerNum)) * RESIZE_MAX_RATIO)
+end
+
+-- 讀自訂尺寸欄位原始字串（apply()/InitPlayer 判斷欄位是否變動用）
+local function getCustomSizeRaw()
+    if not modOptions then return "" end
+    local opt = modOptions:getOption("CustomSize")
+    return opt and tostring(opt:getValue() or "") or ""
+end
+
+-- 解析自訂尺寸「寬x高」（邊緣拖曳縮放自動寫入；清空欄位＝回到下拉尺寸）。
+-- 回傳夾限後的 w, h；沒設或格式不對回 nil。
+-- Kahlua 有 string.match（用例 ISChat.lua:563）。
+local function getCustomSize(playerNum)
+    local v = getCustomSizeRaw()
+    local w, h = string.match(v, "^%s*(%d+)%s*[xX]%s*(%d+)%s*$")
+    if not w then return nil end
+    local maxWH = resizeMax(playerNum)
+    w = math.max(RESIZE_MIN, math.min(maxWH, tonumber(w)))
+    h = math.max(RESIZE_MIN, math.min(maxWH, tonumber(h)))
+    return w, h
+end
+
 if PZAPI and PZAPI.ModOptions then
     modOptions = PZAPI.ModOptions:create("MinidoracatMiniMap", "UI_MinidoracatMiniMap_Options")
 
@@ -133,6 +173,15 @@ if PZAPI and PZAPI.ModOptions then
         "UI_MinidoracatMiniMap_ZombieIntensity_tooltip")
     modOptions:addTickBox("PlaceNames", "UI_MinidoracatMiniMap_PlaceNames", true,
         "UI_MinidoracatMiniMap_PlaceNames_tooltip")
+    -- 精準殭屍點位（預設關）；齒輪面板刻意不加（它只列引擎選項，這是純 Lua 自繪）
+    modOptions:addTickBox("ZombieDots", "UI_MinidoracatMiniMap_ZombieDots", false,
+        "UI_MinidoracatMiniMap_ZombieDots_tooltip")
+    -- 自訂尺寸（textentry，PZAPI/ModOptions.lua:40）：拖曳小地圖邊緣縮放時自動寫入。
+    -- 不存 WorldMapSettings：它非泛用 key-value——setDouble 只認建構時註冊的
+    -- ConfigOption，未知鍵靜默 no-op（WorldMapSettings.java:73-77、32-42），
+    -- 故改用 ModOptions；做成可見欄位讓玩家能手動清空還原。
+    modOptions:addTextEntry("CustomSize", "UI_MinidoracatMiniMap_CustomSize", "",
+        "UI_MinidoracatMiniMap_CustomSize_tooltip")
 
     -- 按「接受/套用」時由 MainOptions:apply 呼叫（3789）。該函式先跑 gameOptions:apply()
     -- （3787）把 UI 值寫回 option，所以此處 getValue() 已是新值。
@@ -143,11 +192,19 @@ if PZAPI and PZAPI.ModOptions then
         if not mm then return end
         -- ponytail: 只處理 player 0，分割畫面其餘玩家沿用原版（原版 saveSettings 也只存 player 0）
         if mm._minidoracatSizeIndex ~= getSizeIndex() then
-            -- 尺寸變更：整個重建；我們 hook 的 InitPlayer 會重套尺寸、pyramid 與開關
+            -- 下拉改動＝快速重置：清掉自訂尺寸，以下拉倍率重建
+            -- （之後引擎照常存 ModOptions.ini，MainOptions.lua:3793）
+            local customOpt = self:getOption("CustomSize")
+            if customOpt and tostring(customOpt:getValue() or "") ~= "" then
+                customOpt:setValue("")
+            end
             ISMiniMap.Recreate(0)
+        elseif (mm._minidoracatCustomSize or "") ~= getCustomSizeRaw() then
+            ISMiniMap.Recreate(0) -- 自訂尺寸欄位改動（含手動清空還原）：重建套用
         elseif mm.inner and mm.inner.mapAPI then
             applyToggleOptions(mm.inner.mapAPI) -- 純開關直接寫 mapAPI，即時生效
         end
+        -- ZombieDots 免處理：繪製端每幀讀選項值，存檔即生效
     end
 end
 
@@ -183,12 +240,14 @@ if ISMiniMap and ISMiniMap.InitPlayer then
         -- ISMiniMapOuter.new 放大寬高」——原版自己用新尺寸排版，零版面補丁。
         local sizeIndex = getSizeIndex()
         local scale = SIZE_SCALES[sizeIndex]
+        -- 自訂尺寸（邊緣拖曳縮放寫入）存在時優先於下拉倍率
+        local customW, customH = getCustomSize(playerNum)
         local minimap
-        if scale ~= 1.0 and ISMiniMapOuter then
+        if (customW ~= nil or scale ~= 1.0) and ISMiniMapOuter then
             local originalNew = ISMiniMapOuter.new
             ISMiniMapOuter.new = function(self, x, y, width, height, pn)
-                local w = math.floor(width * scale + 0.5)
-                local h = math.floor(height * scale + 0.5)
+                local w = customW or math.floor(width * scale + 0.5)
+                local h = customH or math.floor(height * scale + 0.5)
                 -- InitPlayer 以螢幕右下角定位（x = 右緣 - 10 - width），放大後
                 -- 平移 x/y 保持右下角錨點不變（prerender 的 setPosition 也會再校正）
                 return originalNew(self, x + width - w, y + height - h, w, h, pn)
@@ -202,6 +261,13 @@ if ISMiniMap and ISMiniMap.InitPlayer then
         end
         if minimap then
             minimap._minidoracatSizeIndex = sizeIndex -- 給 modOptions:apply() 判斷是否需重建
+            minimap._minidoracatCustomSize = getCustomSizeRaw() -- 同上：自訂尺寸欄位變動判斷
+            -- 底邊熱區：bottomPanel 會消化 mouse down（ISPanel onMouseDown 回
+            -- isWantMouseEvents()，ISUIElement 預設 true），事件不會落回 outer——
+            -- 對實例補掛同套縮放處理，底邊/下角的拖曳才有效。
+            if installResizeHooks and minimap.bottomPanel then
+                installResizeHooks(minimap.bottomPanel, function(el) return el.parent end)
+            end
             if minimap.inner and minimap.inner.mapAPI then
                 local ok, err = pcall(applyMiniMapPyramids, minimap.inner)
                 if not ok then
@@ -239,6 +305,335 @@ if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.getVisibleOptions then
             end
         end
         return result
+    end
+end
+
+--------------------------------------------------------------------------------
+-- 精準殭屍圖標（ZombieDots，預設關）
+-- 資料源：getCell():getZombieList()——getCell＝LuaManager.java:5666、
+-- IsoCell.getZombieList＝IsoCell.java:2658（已載入殭屍的 ArrayList）、
+-- IsoCell/IsoZombie 已 exposed 給 Lua＝LuaManager.java:2147/1807。
+-- 效能設計（B41 同類功能卡頓根因＝無節流自繪，本功能靈魂在此）：
+--   取樣每 ZDOTS_INTERVAL_MS 一次（getTimestampMs＝LuaManager.java:9317，
+--   用例 ISChat.lua:469）、上限 ZDOTS_MAX 隻、只抄 (x,y) 進重用的 table 池，
+--   不持有殭屍物件引用；開關關閉時不取樣不繪製（零成本）。
+-- 繪製掛 ISMiniMapInner:prerender：UIWorldMap.java:152 render 先畫地圖本體、
+-- 行 317 才 super.render() → UIElement.java:1594 呼叫 Lua prerender，
+-- 故點位畫在地圖之上、齒輪面板（inner 子元件，1604 子元件迴圈較晚畫）之下。
+-- 世界地圖（M 鍵）刻意不畫：範圍太大、點位沒意義，只做角落小地圖。
+--------------------------------------------------------------------------------
+
+local ZDOTS_INTERVAL_MS = 300 -- 取樣間隔（毫秒）
+local ZDOTS_MAX = 200         -- 單次取樣殭屍數上限
+local ZDOTS_SIZE = 3          -- 紅點邊長（px）
+local ZDOTS_R, ZDOTS_G, ZDOTS_B, ZDOTS_A = 0.85, 0.1, 0.1, 0.85 -- 點色（rgba 可調常數）
+
+local zdots = {}      -- (x,y) 快照池；槽位重用，不產生每幀垃圾
+local zdotsCount = 0
+local zdotsNextMs = 0
+
+local function sampleZombieDots()
+    local now = getTimestampMs()
+    if now < zdotsNextMs then return end
+    zdotsNextMs = now + ZDOTS_INTERVAL_MS
+    zdotsCount = 0
+    local cell = getCell()
+    local list = cell and cell:getZombieList()
+    if not list then return end
+    -- pcall 防競態：getZombieList 是模擬端會增刪的活 ArrayList，size 與 get
+    -- 之間殭屍被移除會丟 IndexOutOfBounds——失敗就放棄本輪取樣（300ms 後重試）
+    local ok = pcall(function()
+        local n = list:size()
+        if n > ZDOTS_MAX then n = ZDOTS_MAX end
+        for i = 1, n do
+            local z = list:get(i - 1)
+            local d = zdots[i]
+            if not d then d = {}; zdots[i] = d end
+            d.x = z:getX()
+            d.y = z:getY()
+            zdotsCount = i
+        end
+    end)
+    if not ok then zdotsCount = 0 end
+end
+
+if ISMiniMapInner and ISMiniMapInner.prerender then
+    local originalInnerPrerender = ISMiniMapInner.prerender
+    function ISMiniMapInner:prerender()
+        originalInnerPrerender(self)
+        if not getBoolOption("ZombieDots", false) then return end -- 關閉＝零成本
+        sampleZombieDots()
+        local mapAPI = self.mapAPI
+        for i = 1, zdotsCount do
+            local d = zdots[i]
+            -- 世界→UI 座標：worldToUIX/Y＝UIWorldMapV1.java:298/311
+            -- （mapAPI 是 getAPIv3，V3→V2→V1 繼承鏈 UIWorldMapV3.java:10、V2.java:8）；
+            -- 原版用例 ISMultiplayerZoneEditor.lua:83 + MultiplayerZoneEditorMode_NonPVP.lua:58
+            local ux = mapAPI:worldToUIX(d.x, d.y)
+            local uy = mapAPI:worldToUIY(d.x, d.y)
+            -- 手動裁到視窗內（Lua drawRect 不吃元件裁切）；點起繪於 ux-1、寬 3px，
+            -- 邊界收 1/2px 免溢出 inner 疊到外框
+            if ux >= 1 and uy >= 1 and ux <= self.width - 2 and uy <= self.height - 2 then
+                -- drawRect＝ISUIElement.lua:1191（引數 x,y,w,h,a,r,g,b）
+                self:drawRect(ux - 1, uy - 1, ZDOTS_SIZE, ZDOTS_SIZE, ZDOTS_A, ZDOTS_R, ZDOTS_G, ZDOTS_B)
+            end
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- 邊緣拖曳縮放 + HUD 視覺微調
+-- 事件路由（UIElement.java:1015 onMouseDown：1047-1057 先讓子元件消化、
+-- 沒人消化才輪到自己的 Lua handler 1096）：8px 熱區大多落在 outer 的子元件上——
+--   左右緣＝inner 地圖（onMouseDown 回 true 消化，ISMiniMap.lua:226-237）、
+--   上緣＝titleBar（消化並做移動，ISMiniMap.lua:363-369）、
+--   下緣＝bottomPanel（ISPanel.lua:49 非 moveWithMouse 不消化→事件落回 outer）、
+--   2px 外框環＝outer 自己。
+-- 故共用一套熱區判定（outer 區域座標），hook ISMiniMapOuter / ISMiniMapInner /
+-- ISMiniMapTitleBar 三個 class 的滑鼠事件（wrap 保留原行為；拖曳用 setCapture
+-- 續收 Outside 事件，同 titleBar 做法 ISMiniMap.lua:367）。
+-- 拖曳中只畫預覽外框，放開才以最終尺寸重建（走 InitPlayer wrapper 的
+-- 自訂尺寸路徑），避免每幀重排版。
+--------------------------------------------------------------------------------
+
+local BRACKET_LEN = 14          -- 角落括號長度（px）
+local BRACKET_THICK = 2         -- 角落括號粗細（px）
+local HANDLE_ALPHA_IDLE = 0.35  -- 把手平時透明度（半透明白）
+local HANDLE_ALPHA_HOVER = 0.9  -- 把手 hover／拖曳中透明度（PZ 改不了系統游標，靠這個給回饋）
+
+local resizeState -- 進行中的拖曳（同時只會有一筆）：{ outer, edges, startMX, startMY, rect0, adornExtra, adorned, preview }
+
+-- 以 outer 區域座標判定邊緣熱區；回傳 {l,r,t,b} 布林表（角落＝兩者皆真），不在熱區回 nil
+local function hitResizeEdge(outer, ox, oy)
+    if ox < 0 or oy < 0 or ox > outer.width or oy > outer.height then return nil end
+    local e = {
+        l = ox <= RESIZE_EDGE,
+        r = ox >= outer.width - RESIZE_EDGE,
+        t = oy <= RESIZE_EDGE,
+        b = oy >= outer.height - RESIZE_EDGE,
+    }
+    if e.l or e.r or e.t or e.b then return e end
+    return nil
+end
+
+local function startResize(outer, edges, el)
+    -- 幾何全用拖曳起點快照＋全域滑鼠座標（getMouseX/getMouseY 全域，
+    -- ISUIElement:getMouseX 內部同源 ISUIElement.lua:339-343），
+    -- 不受拖曳中 adornments（titleBar/bottomPanel）掀開收合影響
+    local adorned = outer.titleBar ~= nil and outer.titleBar:isVisible()
+    resizeState = {
+        outer = outer,
+        edges = edges,
+        el = el, -- 起始捕捉的元件（cancelResize 清 capture/旗標用）
+        startMX = getMouseX(),
+        startMY = getMouseY(),
+        rect0 = { x = outer:getAbsoluteX(), y = outer:getAbsoluteY(), w = outer.width, h = outer.height },
+        -- 展開狀態的外框比基準尺寸高 titleBar + 1px + bottomPanel
+        -- （setAdornmentsVisible 幾何，ISMiniMap.lua:479-497）
+        adornExtra = adorned and (outer.titleBar.height + 1 + outer.bottomPanel.height) or 0,
+        adorned = adorned,
+        preview = { x = 0, y = 0, w = 0, h = 0 },
+    }
+    local p, r = resizeState.preview, resizeState.rect0
+    p.x, p.y, p.w, p.h = r.x, r.y, r.w, r.h
+end
+
+local function updateResize()
+    local st = resizeState
+    if not st then return end
+    local dx = getMouseX() - st.startMX
+    local dy = getMouseY() - st.startMY
+    local r0, e = st.rect0, st.edges
+    local maxWH = resizeMax(st.outer.playerNum)
+    local x, y, w, h = r0.x, r0.y, r0.w, r0.h
+    -- 自由縮放（非等比）；拖哪邊動哪邊
+    if e.l then w = w - dx elseif e.r then w = w + dx end
+    if e.t then h = h - dy elseif e.b then h = h + dy end
+    -- 夾限作用在「基準尺寸」（高度先扣 adornments 增量）
+    w = math.max(RESIZE_MIN, math.min(maxWH, w))
+    h = math.max(RESIZE_MIN + st.adornExtra, math.min(maxWH + st.adornExtra, h))
+    if e.l then x = r0.x + r0.w - w end -- 拖左緣：右緣錨定不動
+    if e.t then y = r0.y + r0.h - h end -- 拖上緣：下緣錨定不動
+    local p = st.preview
+    p.x, p.y, p.w, p.h = x, y, w, h
+end
+
+local function endResize()
+    local st = resizeState
+    resizeState = nil
+    if not st or not modOptions then return end
+    local outer = st.outer
+    local p = st.preview
+    -- 取整：座標運算可能帶小數，寫入「寬x高」欄位須為整數（解析端只認 %d+）
+    local baseW = math.floor(p.w + 0.5)
+    local baseH = math.floor(p.h - st.adornExtra + 0.5)
+    if baseW == st.rect0.w and baseH == st.rect0.h - st.adornExtra then return end -- 尺寸沒變，不重建
+    if not getPlayerMiniMap(outer.playerNum) then return end -- Recreate 無 nil 防呆（AGENTS.md），先查
+    local opt = modOptions:getOption("CustomSize")
+    if not opt then return end
+    -- 寫入自訂尺寸並立即落地 ModOptions.ini（PZAPI.ModOptions:save()＝ModOptions.lua:259）
+    opt:setValue(baseW .. "x" .. baseH)
+    PZAPI.ModOptions:save()
+    -- 重建會重錨右下（AGENTS.md 已知行為）。若位置是使用者拖過的
+    -- （userPosition 旗標，版面存讀同用 ISMiniMap.lua:660-670），重建後
+    -- 還原成預覽框位置；收合狀態的 y 要加回 titleBar 高（展開時
+    -- setY(y - titleBar.height)，ISMiniMap.lua:487）。沒拖過就讓原版重錨右下，
+    -- 視覺上與拖曳前一致（右下錨點本就不動）。
+    local wasUserPosition = outer.userPosition
+    local baseX = p.x
+    local baseY = st.adorned and (p.y + outer.titleBar.height) or p.y
+    ISMiniMap.Recreate(outer.playerNum) -- 走上方 hook 的 InitPlayer 自訂尺寸路徑
+    local mm = getPlayerMiniMap(outer.playerNum)
+    if mm and wasUserPosition then
+        mm.userPosition = true
+        mm:setX(baseX)
+        mm:setY(baseY)
+    end
+end
+
+-- 取消進行中的拖曳並清理捕捉旗標（小地圖在拖曳中被移除——HOME 鍵/輪盤選單
+-- Toggle——時 mouse up 永遠不會送達，不清會殘留「沒按鍵也跟著滑鼠縮放」的幽靈狀態）
+function cancelResize()
+    local st = resizeState
+    resizeState = nil
+    if st and st.el then
+        st.el._minidoracatResizing = nil
+        pcall(function() st.el:setCapture(false) end)
+    end
+end
+
+-- 在指定 class（或實例——bottomPanel 是裸 ISPanel 只能掛實例）上包 resize
+-- 滑鼠處理；toOuter 從該元件取得 outer。非熱區／非拖曳時一律走原 handler。
+function installResizeHooks(class, toOuter)
+    local origDown = class.onMouseDown
+    function class:onMouseDown(x, y)
+        if modOptions and not resizeState then -- 無 PZAPI（無法持久化）就不啟用縮放
+            local outer = toOuter(self)
+            if outer then
+                -- 換算成 outer 區域座標（getAbsoluteX 用例 ISMiniMap.lua:287）
+                local ox = x + self:getAbsoluteX() - outer:getAbsoluteX()
+                local oy = y + self:getAbsoluteY() - outer:getAbsoluteY()
+                local edges = hitResizeEdge(outer, ox, oy)
+                if edges then
+                    startResize(outer, edges, self)
+                    self._minidoracatResizing = true
+                    self:setCapture(true) -- 拖出元件外仍收 Move/Up（setCapture＝ISUIElement.lua:588）
+                    return true -- 消化事件：不進原版（inner 地圖拖曳／titleBar 移動）
+                end
+            end
+        end
+        if origDown then return origDown(self, x, y) end
+    end
+
+    local origMove = class.onMouseMove
+    function class:onMouseMove(dx, dy)
+        if self._minidoracatResizing then
+            updateResize()
+            return true
+        end
+        if origMove then return origMove(self, dx, dy) end
+    end
+
+    local origMoveOutside = class.onMouseMoveOutside
+    function class:onMouseMoveOutside(dx, dy)
+        if self._minidoracatResizing then
+            updateResize()
+            return true
+        end
+        if origMoveOutside then return origMoveOutside(self, dx, dy) end
+    end
+
+    local function finishResize(el)
+        el._minidoracatResizing = nil
+        el:setCapture(false)
+        endResize() -- 內含 Recreate，舊元件（含 el）之後被丟棄
+        return true
+    end
+
+    local origUp = class.onMouseUp
+    function class:onMouseUp(x, y)
+        if self._minidoracatResizing then return finishResize(self) end
+        if origUp then return origUp(self, x, y) end
+    end
+
+    local origUpOutside = class.onMouseUpOutside
+    function class:onMouseUpOutside(x, y)
+        if self._minidoracatResizing then return finishResize(self) end
+        if origUpOutside then return origUpOutside(self, x, y) end
+    end
+end
+
+if ISMiniMapOuter and ISMiniMapInner and ISMiniMapTitleBar then
+    installResizeHooks(ISMiniMapOuter, function(el) return el end)
+    installResizeHooks(ISMiniMapInner, function(el) return el.parent end)
+    installResizeHooks(ISMiniMapTitleBar, function(el) return el.miniMap end)
+    -- bottomPanel 是裸 ISPanel 實例，在 InitPlayer hook 內逐實例補掛（見上方）
+
+    -- 拖曳中小地圖被 Toggle 移除（HOME 鍵/世界地圖輪盤）→ mouse up 收不到，
+    -- 先取消拖曳再走原版，避免幽靈縮放狀態
+    if ISMiniMap and ISMiniMap.ToggleMiniMap then
+        local originalToggleMiniMap = ISMiniMap.ToggleMiniMap
+        function ISMiniMap.ToggleMiniMap(playerNum)
+            if resizeState then cancelResize() end
+            return originalToggleMiniMap(playerNum)
+        end
+    end
+end
+
+if ISMiniMapOuter and ISMiniMapOuter.prerender and ISMiniMapOuter.render then
+    -- HUD 微調：整體 hover 時外框亮度 0.4→0.55（原版邊框色＝ISMiniMap.lua:676；
+    -- prerender 以 borderColor 畫框＝ISMiniMap.lua:463）。不動背景、不加特效，
+    -- 維持原版 OLED 深色高對比風格。
+    local originalOuterPrerender = ISMiniMapOuter.prerender
+    function ISMiniMapOuter:prerender()
+        local hover = self:isMouseOver() or (resizeState ~= nil and resizeState.outer == self)
+        local v = hover and 0.55 or 0.4
+        self.borderColor.r, self.borderColor.g, self.borderColor.b = v, v, v
+        originalOuterPrerender(self)
+    end
+
+    -- 角落括號＋邊緣亮條＋拖曳預覽框。掛 render：UIElement.java:1609 的 Lua render
+    -- 在子元件（1604）之後呼叫，畫在整個小地圖最上層。
+    local originalOuterRender = ISMiniMapOuter.render
+    function ISMiniMapOuter:render()
+        originalOuterRender(self)
+        if not modOptions then return end -- 縮放未啟用就不畫把手
+        local st = (resizeState ~= nil and resizeState.outer == self) and resizeState or nil
+        local hoverEdges = nil
+        if st then
+            hoverEdges = st.edges
+        elseif self:isMouseOver() then
+            hoverEdges = hitResizeEdge(self, self:getMouseX(), self:getMouseY())
+        end
+        -- 把手只在 adornments 展開（滑鼠在小地圖上）或拖曳中顯示，平常零干擾
+        if st or (self.titleBar and self.titleBar:isVisible()) then
+            local w, h = self.width, self.height
+            local L, T = BRACKET_LEN, BRACKET_THICK
+            local aTL = (hoverEdges and (hoverEdges.l or hoverEdges.t)) and HANDLE_ALPHA_HOVER or HANDLE_ALPHA_IDLE
+            local aTR = (hoverEdges and (hoverEdges.r or hoverEdges.t)) and HANDLE_ALPHA_HOVER or HANDLE_ALPHA_IDLE
+            local aBL = (hoverEdges and (hoverEdges.l or hoverEdges.b)) and HANDLE_ALPHA_HOVER or HANDLE_ALPHA_IDLE
+            local aBR = (hoverEdges and (hoverEdges.r or hoverEdges.b)) and HANDLE_ALPHA_HOVER or HANDLE_ALPHA_IDLE
+            self:drawRect(0, 0, L, T, aTL, 1, 1, 1)         -- 左上括號
+            self:drawRect(0, 0, T, L, aTL, 1, 1, 1)
+            self:drawRect(w - L, 0, L, T, aTR, 1, 1, 1)     -- 右上括號
+            self:drawRect(w - T, 0, T, L, aTR, 1, 1, 1)
+            self:drawRect(0, h - T, L, T, aBL, 1, 1, 1)     -- 左下括號
+            self:drawRect(0, h - L, T, L, aBL, 1, 1, 1)
+            self:drawRect(w - L, h - T, L, T, aBR, 1, 1, 1) -- 右下括號
+            self:drawRect(w - T, h - L, T, L, aBR, 1, 1, 1)
+            if hoverEdges then -- hover 的邊畫亮條
+                if hoverEdges.l then self:drawRect(0, 0, 2, h, HANDLE_ALPHA_HOVER, 1, 1, 1) end
+                if hoverEdges.r then self:drawRect(w - 2, 0, 2, h, HANDLE_ALPHA_HOVER, 1, 1, 1) end
+                if hoverEdges.t then self:drawRect(0, 0, w, 2, HANDLE_ALPHA_HOVER, 1, 1, 1) end
+                if hoverEdges.b then self:drawRect(0, h - 2, w, 2, HANDLE_ALPHA_HOVER, 1, 1, 1) end
+            end
+        end
+        if st then -- 拖曳中只畫預覽外框（drawRectBorder 用例 ISMiniMap.lua:474）
+            local px = st.preview.x - self:getAbsoluteX()
+            local py = st.preview.y - self:getAbsoluteY()
+            self:drawRectBorder(px, py, st.preview.w, st.preview.h, HANDLE_ALPHA_HOVER, 1, 1, 1)
+            self:drawRectBorder(px + 1, py + 1, st.preview.w - 2, st.preview.h - 2, 0.4, 1, 1, 1)
+        end
     end
 end
 
@@ -284,4 +679,4 @@ if MainScreen and MainScreen.getMissingMods then
     end
 end
 
-log("已載入（hook ISWorldMap:initDataAndStyle + ISMiniMap.InitPlayer + 齒輪面板 + 快捷鍵 + MOD 選項）")
+log("已載入（hook ISWorldMap:initDataAndStyle + ISMiniMap.InitPlayer + 齒輪面板 + 快捷鍵 + MOD 選項 + 殭屍點位 + 邊緣縮放）")

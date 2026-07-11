@@ -14,5 +14,9 @@
     "UI_MinidoracatMiniMap_ZombieIntensity": "顯示殭屍熱度",
     "UI_MinidoracatMiniMap_ZombieIntensity_tooltip": "在小地圖上疊加殭屍族群熱度圖。顯示的是族群密度分布，不是殭屍即時位置；多人遊戲下客戶端可能無此資料。",
     "UI_MinidoracatMiniMap_PlaceNames": "顯示地名",
-    "UI_MinidoracatMiniMap_PlaceNames_tooltip": "在小地圖上顯示城鎮與區域名稱。需同時在小地圖齒輪面板開啟「符號」才會顯示。"
+    "UI_MinidoracatMiniMap_PlaceNames_tooltip": "在小地圖上顯示城鎮與區域名稱。需同時在小地圖齒輪面板開啟「符號」才會顯示。",
+    "UI_MinidoracatMiniMap_ZombieDots": "顯示即時殭屍點位",
+    "UI_MinidoracatMiniMap_ZombieDots_tooltip": "在小地圖上以紅點顯示殭屍即時位置。僅涵蓋玩家周圍已載入的區域（上限 200 隻，每 0.3 秒取樣一次），有輕微效能成本。",
+    "UI_MinidoracatMiniMap_CustomSize": "自訂尺寸（寬x高）",
+    "UI_MinidoracatMiniMap_CustomSize_tooltip": "拖曳小地圖邊緣縮放時自動寫入（例：300x240），優先於上方的尺寸下拉。清空此欄或改動尺寸下拉即可重置。"
 }

@@ -14,5 +14,9 @@
     "UI_MinidoracatMiniMap_ZombieIntensity": "Show zombie heatmap",
     "UI_MinidoracatMiniMap_ZombieIntensity_tooltip": "Overlay the zombie population heatmap on the mini-map. This shows population density, not live zombie positions; in multiplayer the client may not have this data.",
     "UI_MinidoracatMiniMap_PlaceNames": "Show place names",
-    "UI_MinidoracatMiniMap_PlaceNames_tooltip": "Show town and area names on the mini-map. Also requires \"Symbols\" enabled in the mini-map gear panel."
+    "UI_MinidoracatMiniMap_PlaceNames_tooltip": "Show town and area names on the mini-map. Also requires \"Symbols\" enabled in the mini-map gear panel.",
+    "UI_MinidoracatMiniMap_ZombieDots": "Show live zombie dots",
+    "UI_MinidoracatMiniMap_ZombieDots_tooltip": "Draw red dots on the mini-map for real-time zombie positions. Only covers areas currently loaded around players (up to 200 zombies, sampled every 0.3s). Slight performance cost.",
+    "UI_MinidoracatMiniMap_CustomSize": "Custom size (WxH)",
+    "UI_MinidoracatMiniMap_CustomSize_tooltip": "Written automatically when you drag the mini-map edges to resize (e.g. 300x240). Takes priority over the size preset above. Clear this field, or change the size preset, to reset."
 }
