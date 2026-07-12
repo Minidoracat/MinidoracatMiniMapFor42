@@ -1,3 +1,4 @@
 {
-    "IGUI_MapOption_ZombieIntensity": "Zombie Heatmap"
+    "IGUI_MapOption_ZombieIntensity": "Zombie Heatmap",
+    "IGUI_MapOption_ZombieDots": "Live Zombie Dots"
 }

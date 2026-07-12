@@ -99,6 +99,16 @@ local function getBoolOption(id, default)
     return opt:getValue()
 end
 
+-- 按鈕列（titleBar＋bottomPanel adornments）是否「永遠顯示」（combobox 索引 1=滑鼠
+-- 懸停時（原版）、2=永遠顯示）。預設永遠顯示；無 PZAPI（選項不存在）時維持原版行為。
+local function isAdornAlways()
+    if not modOptions then return false end
+    local opt = modOptions:getOption("AdornMode")
+    local v = opt and opt:getValue()
+    if v ~= 1 and v ~= 2 then return true end -- 存檔值超界：回預設「永遠顯示」
+    return v == 2
+end
+
 -- 把圖層開關套到指定小地圖 mapAPI（引擎選項名出自 WorldMapRenderer.java）
 local function applyToggleOptions(mapAPI)
     mapAPI:setBoolean("Players", getBoolOption("Players", true))
@@ -120,9 +130,9 @@ end
 -- 這裡先定義是因為 modOptions:apply() 與 InitPlayer hook 都要用）
 --------------------------------------------------------------------------------
 
-local RESIZE_EDGE = 8        -- 邊緣熱區厚度（px）
-local RESIZE_MIN = 180       -- 基準尺寸下限（px）
-local RESIZE_MAX_RATIO = 0.7 -- 尺寸上限 = 玩家螢幕短邊 70%
+local RESIZE_EDGE = 8         -- 邊緣熱區厚度（px）
+local RESIZE_MIN = 180        -- 基準尺寸下限（px）
+local RESIZE_MAX_RATIO = 0.85 -- 尺寸上限 = 玩家螢幕短邊 85%（實測 70% 太緊）
 
 -- 前置宣告（定義在下方「邊緣拖曳縮放」節）：InitPlayer hook 要對 bottomPanel
 -- 實例補掛縮放事件——它是裸 ISPanel（ISMiniMap.lua:419），hook class 會波及
@@ -165,6 +175,13 @@ if PZAPI and PZAPI.ModOptions then
     sizeCombo:addItem("UI_MinidoracatMiniMap_Size_Large", false)
     sizeCombo:addItem("UI_MinidoracatMiniMap_Size_Huge", false)
 
+    -- 按鈕列顯示模式（問題 A）：原版 hover 展開/收合會改變外框高度、把地圖核心
+    -- 往上推（詳見下方 setAdornmentsVisible wrap 一節）。不做「永遠隱藏」——
+    -- 齒輪與縮放按鈕會不可達。
+    local adornCombo = modOptions:addComboBox("AdornMode", "UI_MinidoracatMiniMap_AdornMode")
+    adornCombo:addItem("UI_MinidoracatMiniMap_AdornMode_Hover", false)
+    adornCombo:addItem("UI_MinidoracatMiniMap_AdornMode_Always", true) -- 預設「永遠顯示」
+
     modOptions:addTickBox("Players", "UI_MinidoracatMiniMap_Players", true,
         "UI_MinidoracatMiniMap_Players_tooltip")
     modOptions:addTickBox("RemotePlayers", "UI_MinidoracatMiniMap_RemotePlayers", true,
@@ -173,7 +190,8 @@ if PZAPI and PZAPI.ModOptions then
         "UI_MinidoracatMiniMap_ZombieIntensity_tooltip")
     modOptions:addTickBox("PlaceNames", "UI_MinidoracatMiniMap_PlaceNames", true,
         "UI_MinidoracatMiniMap_PlaceNames_tooltip")
-    -- 精準殭屍點位（預設關）；齒輪面板刻意不加（它只列引擎選項，這是純 Lua 自繪）
+    -- 精準殭屍點位（預設關）；齒輪面板另以自訂 ISTickBox 注入同步開關
+    -- （它原生只列引擎選項物件，這是純 Lua 自繪——見下方「齒輪面板」一節）
     modOptions:addTickBox("ZombieDots", "UI_MinidoracatMiniMap_ZombieDots", false,
         "UI_MinidoracatMiniMap_ZombieDots_tooltip")
     -- 自訂尺寸（textentry，PZAPI/ModOptions.lua:40）：拖曳小地圖邊緣縮放時自動寫入。
@@ -262,6 +280,11 @@ if ISMiniMap and ISMiniMap.InitPlayer then
         if minimap then
             minimap._minidoracatSizeIndex = sizeIndex -- 給 modOptions:apply() 判斷是否需重建
             minimap._minidoracatCustomSize = getCustomSizeRaw() -- 同上：自訂尺寸欄位變動判斷
+            -- 「永遠顯示」模式：建好即展開按鈕列，之後高度恆定（prerender 的自動
+            -- 收合被下方 setAdornmentsVisible wrap 擋掉），地圖核心永不位移
+            if isAdornAlways() and minimap.setAdornmentsVisible then
+                minimap:setAdornmentsVisible(true)
+            end
             -- 底邊熱區：bottomPanel 會消化 mouse down（ISPanel onMouseDown 回
             -- isWantMouseEvents()，ISUIElement 預設 true），事件不會落回 outer——
             -- 對實例補掛同套縮放處理，底邊/下角的拖曳才有效。
@@ -277,6 +300,21 @@ if ISMiniMap and ISMiniMap.InitPlayer then
             end
         end
         return minimap
+    end
+end
+
+-- 按鈕列顯示模式（問題 A）：原版 prerender 依滑鼠位置每幀自動展開/收合 adornments
+-- （titleBar 上方＋bottomPanel 下方，ISMiniMap.lua:456-460），而 setAdornmentsVisible
+-- 展開時上移 y、加高外框（ISMiniMap.lua:479-497），配合 setPosition 底部錨定
+--（ISMiniMap.lua:557-561）＝滑鼠移上去地圖核心整個往上跳。
+-- 「永遠顯示」（預設）把 visible 強制為 true：首幀展開一次後高度恆定、核心永不
+-- 位移；已展開時傳 true 是 no-op（ISMiniMap.lua:481），無每幀重排成本。
+-- 「滑鼠懸停時」＝原封不動走原版。
+if ISMiniMapOuter and ISMiniMapOuter.setAdornmentsVisible then
+    local originalSetAdornmentsVisible = ISMiniMapOuter.setAdornmentsVisible
+    function ISMiniMapOuter:setAdornmentsVisible(visible)
+        if isAdornAlways() then visible = true end
+        originalSetAdornmentsVisible(self, visible)
     end
 end
 
@@ -305,6 +343,63 @@ if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.getVisibleOptions then
             end
         end
         return result
+    end
+end
+
+-- 齒輪面板追加「殭屍點位」開關（問題 C）：面板原生 createChildren 只列引擎選項
+-- 物件（getVisibleOptions → ISTickBox/ISTextEntryBox，ISMiniMap.lua:45-78），
+-- 殭屍點位是本 MOD 純 Lua 自繪、無對應引擎選項——wrap createChildren 在原清單
+-- 之後注入自訂 ISTickBox（建法對照原版 ISMiniMap.lua:48-57），勾選直接寫回
+-- ModOptions 並立即存檔。無 PZAPI（modOptions 為 nil，值無處持久化）時不注入。
+if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.createChildren
+    and ISMiniMapOptionsPanel.synchUI and ISTickBox then
+
+    -- 勾選變更 handler：ISTickBox 回呼簽名 (target, index, selected, args...)
+    -- （ISTickBox.lua:175-176；原版 handler 同款 ISMiniMap.lua:14）
+    function ISMiniMapOptionsPanel:onMinidoracatZombieDots(index, selected)
+        if not modOptions then return end
+        local opt = modOptions:getOption("ZombieDots")
+        if not opt then return end
+        opt:setValue(selected) -- option.setValue 會同步 MOD 選項頁的 element（ModOptions.lua:68-73）
+        PZAPI.ModOptions:save() -- 立即落地 ModOptions.ini（PZAPI/ModOptions.lua:259）
+        -- 繪製端（ISMiniMapInner:prerender wrap）每幀讀選項值，這裡不用另外通知
+    end
+
+    local originalPanelCreateChildren = ISMiniMapOptionsPanel.createChildren
+    function ISMiniMapOptionsPanel:createChildren()
+        originalPanelCreateChildren(self)
+        if not modOptions then return end
+        -- 原版收尾以「子元件最大 bottom＋resizeWidgetHeight」定面板高
+        -- （ISMiniMap.lua:80-87），故內容底 = self.height - resizeWidgetHeight()；
+        -- 注入點＝內容底再空 6px（同原版行距），面板加高同額
+        local entryHgt = getTextManager():getFontHeight(UIFont.Small) + 6 -- BUTTON_HGT（ISMiniMap.lua:7-9）
+        local xPad = 10 + 1 -- UI_BORDER_SPACING + 1（ISMiniMap.lua:8/29）
+        local y = self.height - self:resizeWidgetHeight() + 6
+        -- ISTickBox:new(x,y,w,h,name,target,method,...)＝ISTickBox.lua:282；用法同 ISMiniMap.lua:48
+        local tickBox = ISTickBox:new(xPad, y, self.width, entryHgt, "", self,
+            self.onMinidoracatZombieDots)
+        tickBox:initialise()
+        -- addOption＝ISTickBox.lua:227；標籤沿用齒輪面板翻譯鍵慣例（ISMiniMap.lua:50）
+        tickBox:addOption(getTextOrNull("IGUI_MapOption_ZombieDots") or "ZombieDots")
+        tickBox:setSelected(1, getBoolOption("ZombieDots", false)) -- setSelected＝ISTickBox.lua:51
+        tickBox:setWidthToFit() -- ISTickBox.lua:266
+        self:addChild(tickBox)
+        self:insertNewLineOfButtons(tickBox) -- 手把導航登記（原版每列都登記，ISMiniMap.lua:57）
+        -- 面板重建路徑（synchUI 全清子元件重跑 createChildren，ISMiniMap.lua:133-142）：
+        -- 舊 tickbox 已被 removeChild，這裡蓋掉引用＝不重複、不殘留
+        self._minidoracatZombieDots = tickBox
+        self:setWidth(math.max(self.width, tickBox:getRight() + xPad))
+        self:setHeight(self.height + entryHgt + 6)
+    end
+
+    local originalPanelSynchUI = ISMiniMapOptionsPanel.synchUI
+    function ISMiniMapOptionsPanel:synchUI()
+        originalPanelSynchUI(self)
+        -- 每次開面板同步勾選狀態（值可能在 MOD 選項頁被改過）
+        local box = self._minidoracatZombieDots
+        if box then
+            box:setSelected(1, getBoolOption("ZombieDots", false))
+        end
     end
 end
 
@@ -446,12 +541,32 @@ local function updateResize()
     local r0, e = st.rect0, st.edges
     local maxWH = resizeMax(st.outer.playerNum)
     local x, y, w, h = r0.x, r0.y, r0.w, r0.h
-    -- 自由縮放（非等比）；拖哪邊動哪邊
-    if e.l then w = w - dx elseif e.r then w = w + dx end
-    if e.t then h = h - dy elseif e.b then h = h + dy end
-    -- 夾限作用在「基準尺寸」（高度先扣 adornments 增量）
-    w = math.max(RESIZE_MIN, math.min(maxWH, w))
-    h = math.max(RESIZE_MIN + st.adornExtra, math.min(maxWH + st.adornExtra, h))
+    if (e.l or e.r) and (e.t or e.b) then
+        -- 角落＝等比縮放（問題 B）：以拖曳起點外框長寬比為基準，取對角位移的
+        -- 主導軸（往外拖為正的增量中 |絕對值| 較大者）算比例，兩軸同乘
+        local dw = e.l and -dx or dx
+        local dh = e.t and -dy or dy
+        local s
+        if math.abs(dw) >= math.abs(dh) then
+            s = (r0.w + dw) / r0.w
+        else
+            s = (r0.h + dh) / r0.h
+        end
+        -- 夾限作用在「比例」而非個別軸，兩軸夾完仍保持等比
+        -- （寬限 [RESIZE_MIN, maxWH]；高含 adornments 增量再夾）
+        local sMin = math.max(RESIZE_MIN / r0.w, (RESIZE_MIN + st.adornExtra) / r0.h)
+        local sMax = math.min(maxWH / r0.w, (maxWH + st.adornExtra) / r0.h)
+        s = math.max(sMin, math.min(sMax, s))
+        w = r0.w * s
+        h = r0.h * s
+    else
+        -- 單邊＝單軸自由縮放；拖哪邊動哪邊
+        if e.l then w = w - dx elseif e.r then w = w + dx end
+        if e.t then h = h - dy elseif e.b then h = h + dy end
+        -- 夾限作用在「基準尺寸」（高度先扣 adornments 增量）
+        w = math.max(RESIZE_MIN, math.min(maxWH, w))
+        h = math.max(RESIZE_MIN + st.adornExtra, math.min(maxWH + st.adornExtra, h))
+    end
     if e.l then x = r0.x + r0.w - w end -- 拖左緣：右緣錨定不動
     if e.t then y = r0.y + r0.h - h end -- 拖上緣：下緣錨定不動
     local p = st.preview
@@ -476,9 +591,9 @@ local function endResize()
     PZAPI.ModOptions:save()
     -- 重建會重錨右下（AGENTS.md 已知行為）。若位置是使用者拖過的
     -- （userPosition 旗標，版面存讀同用 ISMiniMap.lua:660-670），重建後
-    -- 還原成預覽框位置；收合狀態的 y 要加回 titleBar 高（展開時
-    -- setY(y - titleBar.height)，ISMiniMap.lua:487）。沒拖過就讓原版重錨右下，
-    -- 視覺上與拖曳前一致（右下錨點本就不動）。
+    -- 還原成預覽框位置；baseY 是「收合狀態」的 y——收合時要加回 titleBar 高
+    -- （展開時 setY(y - titleBar.height)，ISMiniMap.lua:487）。沒拖過就讓原版
+    -- 重錨右下，視覺上與拖曳前一致（右下錨點本就不動）。
     local wasUserPosition = outer.userPosition
     local baseX = p.x
     local baseY = st.adorned and (p.y + outer.titleBar.height) or p.y
@@ -487,7 +602,12 @@ local function endResize()
     if mm and wasUserPosition then
         mm.userPosition = true
         mm:setX(baseX)
-        mm:setY(baseY)
+        -- 「永遠顯示」模式下重建後即是展開狀態，展開 y = 收合 y - titleBar 高
+        if mm.titleBar and mm.titleBar:isVisible() then
+            mm:setY(baseY - mm.titleBar.height)
+        else
+            mm:setY(baseY)
+        end
     end
 end
 
@@ -679,4 +799,4 @@ if MainScreen and MainScreen.getMissingMods then
     end
 end
 
-log("已載入（hook ISWorldMap:initDataAndStyle + ISMiniMap.InitPlayer + 齒輪面板 + 快捷鍵 + MOD 選項 + 殭屍點位 + 邊緣縮放）")
+log("已載入（hook ISWorldMap:initDataAndStyle + ISMiniMap.InitPlayer + 按鈕列模式 + 齒輪面板 + 快捷鍵 + MOD 選項 + 殭屍點位 + 邊緣縮放）")
