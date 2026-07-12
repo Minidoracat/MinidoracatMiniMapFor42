@@ -2,6 +2,15 @@
 
 ## [未發布]
 
+### 新增
+
+- **MOD 地圖框線＋名稱顯示（MapBounds，預設開）**：對 manifest 裡已啟用的地圖 MOD，
+  在角落小地圖與世界地圖（M）以青色框線標出範圍、中心顯示地圖名稱（走 UI.json
+  翻譯，缺譯退 mod ID）。ESC 選項與齒輪面板皆可開關。
+- **首批地圖 MOD 集合**：Muldraugh 消防局（beek_muldraugh_firedept，基底範圍內
+  overlay）、Estate 39（獨立區域）、唐人街擴張區（Chinatown Expansion B42 version，
+  Muldraugh 北緣、依賴 6 個 tile pack）——`MAPS` manifest 各帶 bounds 與翻譯鍵。
+
 ### 變更
 
 - **pyramid 架構改為 manifest 驅動集合包**：本 MOD `media/minimap/` 集中放各地圖 zip

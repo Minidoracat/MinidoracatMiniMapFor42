@@ -22,10 +22,26 @@ local OWN_MOD_ID = "MinidoracatMiniMapFor42" -- 同 mod.info 的 id
 -- 本 MOD 自帶圖檔 manifest：zip＝media/minimap/ 下檔名；mapMod 省略＝基底、永遠掛載，
 -- 指定時＝該地圖 MOD 的 mod ID，啟用才掛載。支援新地圖：pzmap Studio 渲染出
 -- <地圖名>.pyramid.zip（預設輸出名，免改名）丟進 media/minimap/，在此加一行即可。
+-- bounds＝渲染時 pyramid.txt 的世界 square 座標（右/下為排他邊界，
+-- cell*256 推得，來源 MinidoracatMapRendering/src/pyramid.rs:179-186）；
+-- nameKey＝UI.json 翻譯鍵，缺譯退 mod ID。兩者供 MOD 地圖框線/名稱顯示用。
 local MAPS = {
     { zip = "Muldraugh_KY.pyramid.zip" }, -- 基底全圖（B42 主世界）
-    -- { zip = "RavenCreek.pyramid.zip", mapMod = "RavenCreek" },
+    { zip = "Muldraugh_FireDept.pyramid.zip", mapMod = "beek_muldraugh_firedept",
+        bounds = { 10496, 8960, 11008, 9472 }, nameKey = "UI_MinidoracatMiniMap_Map_MuldraughFireDept" },
+    { zip = "Estate 39.pyramid.zip", mapMod = "Estate 39",
+        bounds = { 8192, 9728, 8704, 10240 }, nameKey = "UI_MinidoracatMiniMap_Map_Estate39" },
+    { zip = "Chinatown Expansion B42 version.pyramid.zip", mapMod = "Chinatown Expansion B42 version",
+        bounds = { 10752, 8192, 11264, 9216 }, nameKey = "UI_MinidoracatMiniMap_Map_Chinatown" },
+    -- 同 Workshop 的互斥變體（mod.info incompatible=本體）：地圖目錄完全相同，
+    -- 以同 zip/bounds 雙條目當 ID alias——掛載（絕對路徑去重）與建層（indexOfLayer）
+    -- 自帶防重，即使兩 ID 同時啟用也安全
+    { zip = "Chinatown Expansion B42 version.pyramid.zip", mapMod = "Chinatown Expansion B42 version (Less Traffic Jam)",
+        bounds = { 10752, 8192, 11264, 9216 }, nameKey = "UI_MinidoracatMiniMap_Map_Chinatown" },
 }
+
+-- MOD 地圖框線繪製資料（collectPyramids 於地圖初始化時重建；drawMapBounds 每幀讀）
+local mapOverlays = {}
 
 -- 第三方 addon 相容約定檔名（零 Lua）：地圖 MOD 自附 minimap 支援時使用
 local LEGACY_CANONICAL = "minidoracat_minimap.pyramid.zip"
@@ -61,6 +77,15 @@ local function collectPyramids()
     local active = {}
     for i = 1, mods:size() do
         active[mods:get(i - 1)] = true
+    end
+
+    -- 重建框線資料（世界地圖/小地圖各 init 一次呼叫本函式，冪等）：
+    -- 有 bounds 且對應地圖 MOD 啟用者才畫框——框線不依賴 zip 是否渲染
+    for i = #mapOverlays, 1, -1 do mapOverlays[i] = nil end
+    for _, entry in ipairs(MAPS) do
+        if entry.bounds and entry.mapMod and active[entry.mapMod] then
+            table.insert(mapOverlays, entry)
+        end
     end
 
     -- (1) 本 MOD manifest：基底 + 已啟用地圖 MOD 的圖檔。缺檔一律有 log——
@@ -316,6 +341,9 @@ if PZAPI and PZAPI.ModOptions then
     -- 安全屋範圍（本 MOD 純 Lua 自繪，見下方 drawSafehouses）：繪製端每幀讀值即時生效
     modOptions:addTickBox("Safehouses", "UI_MinidoracatMiniMap_Safehouses", true,
         "UI_MinidoracatMiniMap_Safehouses_tooltip")
+    -- MOD 地圖框線＋名稱（純 Lua 自繪，見下方 drawMapBounds）：同上即時生效
+    modOptions:addTickBox("MapBounds", "UI_MinidoracatMiniMap_MapBounds", true,
+        "UI_MinidoracatMiniMap_MapBounds_tooltip")
     modOptions:addTickBox("ZombieIntensity", "UI_MinidoracatMiniMap_ZombieIntensity", false,
         "UI_MinidoracatMiniMap_ZombieIntensity_tooltip")
     modOptions:addTickBox("PlaceNames", "UI_MinidoracatMiniMap_PlaceNames", true,
@@ -576,6 +604,7 @@ if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.createChildren
                 end
             end },
         { id = "Safehouses", label = "UI_MinidoracatMiniMap_Safehouses", default = true },
+        { id = "MapBounds", label = "UI_MinidoracatMiniMap_MapBounds", default = true },
         { id = "LockPosition", label = "UI_MinidoracatMiniMap_LockPosition", default = false },
     }
 
@@ -1194,6 +1223,60 @@ local function drawSafehouses(inner)
 end
 
 --------------------------------------------------------------------------------
+-- MOD 地圖範圍框線＋名稱（MapBounds，預設開）：對 manifest 裡「已啟用的地圖 MOD」
+-- 依 bounds 畫青色框線，名稱畫在範圍中心（僅中心落在視窗內時畫——拉遠總覽定位用）。
+-- 畫法同安全屋：四角 worldToUIX/Y 投影＋逐邊裁切畫線（等軸測下矩形成菱形）；
+-- 名稱底墊同導航 label（drawRect 深底＋drawText，ISUIElement.lua:1191/1293）。
+-- 只依賴 inner.mapAPI/.width/.height 與 ISUIElement 繪製方法——
+-- 角落小地圖（ISMiniMapInner）與世界地圖（ISWorldMap，mapAPI 同為 getAPIv3，
+-- ISWorldMap.lua:268）共用本函式。
+--------------------------------------------------------------------------------
+local MAPB_R, MAPB_G, MAPB_B = 0.35, 0.8, 1.0 -- 青藍：與安全屋綠/紅、玩家紅點區分
+
+local function drawMapBounds(inner)
+    if #mapOverlays == 0 then return end
+    if not getBoolOption("MapBounds", true) then return end
+    local mapAPI = inner.mapAPI
+    for i = 1, #mapOverlays do
+        local ov = mapOverlays[i]
+        local x1, y1, x2, y2 = ov.bounds[1], ov.bounds[2], ov.bounds[3], ov.bounds[4]
+        local ux1, uy1 = mapAPI:worldToUIX(x1, y1), mapAPI:worldToUIY(x1, y1)
+        local ux2, uy2 = mapAPI:worldToUIX(x2, y1), mapAPI:worldToUIY(x2, y1)
+        local ux3, uy3 = mapAPI:worldToUIX(x2, y2), mapAPI:worldToUIY(x2, y2)
+        local ux4, uy4 = mapAPI:worldToUIX(x1, y2), mapAPI:worldToUIY(x1, y2)
+        drawClippedEdge(inner, ux1, uy1, ux2, uy2, MAPB_R, MAPB_G, MAPB_B)
+        drawClippedEdge(inner, ux2, uy2, ux3, uy3, MAPB_R, MAPB_G, MAPB_B)
+        drawClippedEdge(inner, ux3, uy3, ux4, uy4, MAPB_R, MAPB_G, MAPB_B)
+        drawClippedEdge(inner, ux4, uy4, ux1, uy1, MAPB_R, MAPB_G, MAPB_B)
+        -- 名稱：缺譯退 mod ID（慣例同齒輪面板 getTextOrNull(label) or id）
+        local name = getTextOrNull(ov.nameKey) or ov.mapMod
+        if name then
+            local tm = getTextManager()
+            local tw = tm:MeasureStringX(UIFont.Small, name) -- 用例 ISFactionUI.lua:238
+            local th = tm:getFontHeight(UIFont.Small) -- 字高隨 UI 字型倍率變動，不可硬編碼
+            local cx = (ux1 + ux3) / 2 - tw / 2 -- 菱形中心＝對角中點
+            local cy = (uy1 + uy3) / 2 - th / 2
+            if cx >= 2 and cy >= 2 and cx + tw <= inner.width - 2 and cy + th <= inner.height - 2 then
+                inner:drawRect(cx - 3, cy - 1, tw + 6, th + 2, 0.6, 0, 0, 0)
+                inner:drawText(name, cx, cy, 1, 1, 1, 0.95, UIFont.Small)
+            end
+        end
+    end
+end
+
+-- 世界地圖（M）同步畫框線：wrap prerender（原版 prerender＝ISWorldMap.lua:363）。
+-- 時序同小地圖側（ISMiniMapInner:prerender）：引擎地圖畫在底、Lua prerender 疊加
+-- 於其上，子元件（按鈕列/圖例/符號面板）之後才畫、蓋在最上——框線不遮 UI 控件
+--（掛 render 會畫在子元件之後、蓋住按鈕列）。
+if ISWorldMap and ISWorldMap.prerender then
+    local originalWorldMapPrerender = ISWorldMap.prerender
+    function ISWorldMap:prerender()
+        originalWorldMapPrerender(self)
+        pcall(drawMapBounds, self)
+    end
+end
+
+--------------------------------------------------------------------------------
 -- 導航目標：右鍵小地圖選單「設定/清除/分享導航目標」。目標在視窗內畫旗標、
 -- 出視窗畫邊緣箭頭＋直線距離（確保方向感）；距目標 NAV_ARRIVE_DIST 格內自動
 -- 抵達清除。自己的目標存 player modData 跨存檔持久；「分享給陣營」走
@@ -1401,6 +1484,7 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
             self.mapAPI:setBoolean("ZombieIntensity", true)
         end
         pcall(drawSafehouses, self) -- pcall 防清單併發增刪（同殭屍取樣的防禦策略）
+        pcall(drawMapBounds, self)
         pcall(drawNavTargets, self)
         if not getBoolOption("ZombieDots", false) then return end -- 關閉＝零成本
         if sandboxGate("AllowZombieDots", true) == false then return end -- 伺服器沙盒禁用

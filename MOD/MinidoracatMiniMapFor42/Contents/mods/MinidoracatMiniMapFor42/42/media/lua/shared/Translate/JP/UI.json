@@ -64,5 +64,10 @@
     "UI_MinidoracatMiniMap_ResetSize": "デフォルトサイズに戻す",
     "UI_MinidoracatMiniMap_ResetSize_tooltip": "端ドラッグのリサイズで書き込まれたカスタム縦横（幅x高さ）をクリアし、上のサイズプリセットの正方形に戻します。",
     "UI_MinidoracatMiniMap_CustomSize": "カスタムサイズ（幅x高さ）",
-    "UI_MinidoracatMiniMap_CustomSize_tooltip": "ミニマップの端をドラッグしてリサイズすると自動的に書き込まれます（例 300x240）。上のサイズプリセットより優先されます。この欄をクリアするかプリセットを変更するとリセット。"
+    "UI_MinidoracatMiniMap_CustomSize_tooltip": "ミニマップの端をドラッグしてリサイズすると自動的に書き込まれます（例 300x240）。上のサイズプリセットより優先されます。この欄をクリアするかプリセットを変更するとリセット。",
+    "UI_MinidoracatMiniMap_MapBounds": "MODマップの枠線を表示",
+    "UI_MinidoracatMiniMap_MapBounds_tooltip": "有効なマップMODの範囲をミニマップとワールドマップに青い枠線と名前で表示します。MODマップの場所を探しやすくなります。",
+    "UI_MinidoracatMiniMap_Map_MuldraughFireDept": "マルドロー消防署",
+    "UI_MinidoracatMiniMap_Map_Estate39": "エステート39",
+    "UI_MinidoracatMiniMap_Map_Chinatown": "チャイナタウン拡張"
 }

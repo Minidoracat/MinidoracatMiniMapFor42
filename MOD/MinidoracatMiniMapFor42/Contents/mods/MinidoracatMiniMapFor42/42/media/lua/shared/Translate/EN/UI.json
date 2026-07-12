@@ -64,5 +64,10 @@
     "UI_MinidoracatMiniMap_ResetSize": "Reset to default size",
     "UI_MinidoracatMiniMap_ResetSize_tooltip": "Clear the custom width/height written by edge-drag resizing and return to the square shape of the size preset above.",
     "UI_MinidoracatMiniMap_CustomSize": "Custom size (WxH)",
-    "UI_MinidoracatMiniMap_CustomSize_tooltip": "Written automatically when you drag the mini-map edges to resize (e.g. 300x240). Takes priority over the size preset above. Clear this field, or change the size preset, to reset."
+    "UI_MinidoracatMiniMap_CustomSize_tooltip": "Written automatically when you drag the mini-map edges to resize (e.g. 300x240). Takes priority over the size preset above. Clear this field, or change the size preset, to reset.",
+    "UI_MinidoracatMiniMap_MapBounds": "Show MOD map outlines",
+    "UI_MinidoracatMiniMap_MapBounds_tooltip": "Outline the area of each enabled map MOD on the mini-map and world map (cyan), with its name at the center. Makes MOD maps easy to locate.",
+    "UI_MinidoracatMiniMap_Map_MuldraughFireDept": "Muldraugh Fire Dept",
+    "UI_MinidoracatMiniMap_Map_Estate39": "Estate 39",
+    "UI_MinidoracatMiniMap_Map_Chinatown": "Chinatown Expansion"
 }

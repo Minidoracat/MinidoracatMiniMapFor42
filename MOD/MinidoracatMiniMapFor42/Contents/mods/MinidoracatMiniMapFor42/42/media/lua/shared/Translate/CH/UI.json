@@ -64,5 +64,10 @@
     "UI_MinidoracatMiniMap_ResetSize": "恢復預設尺寸",
     "UI_MinidoracatMiniMap_ResetSize_tooltip": "清除拖曳縮放寫入的自訂長寬（寬x高），回到上方尺寸預設的正方形比例。",
     "UI_MinidoracatMiniMap_CustomSize": "自訂尺寸（寬x高）",
-    "UI_MinidoracatMiniMap_CustomSize_tooltip": "拖曳小地圖邊緣縮放時自動寫入（例：300x240），優先於上方的尺寸下拉。清空此欄或改動尺寸下拉即可重置。"
+    "UI_MinidoracatMiniMap_CustomSize_tooltip": "拖曳小地圖邊緣縮放時自動寫入（例：300x240），優先於上方的尺寸下拉。清空此欄或改動尺寸下拉即可重置。",
+    "UI_MinidoracatMiniMap_MapBounds": "顯示 MOD 地圖框線",
+    "UI_MinidoracatMiniMap_MapBounds_tooltip": "在小地圖與世界地圖上以青色框線標出已啟用地圖 MOD 的範圍與名稱，方便找到 MOD 地圖的位置。",
+    "UI_MinidoracatMiniMap_Map_MuldraughFireDept": "Muldraugh 消防局",
+    "UI_MinidoracatMiniMap_Map_Estate39": "Estate 39 莊園",
+    "UI_MinidoracatMiniMap_Map_Chinatown": "唐人街擴張區"
 }
