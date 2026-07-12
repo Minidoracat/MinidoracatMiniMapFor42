@@ -70,9 +70,9 @@
     "UI_MinidoracatMiniMap_MapPackLayers": "顯示 MOD 地圖區塊",
     "UI_MinidoracatMiniMap_MapPackLayers_tooltip": "掛載並顯示地圖包提供的 MOD 地圖圖像。關閉後只剩基底地圖圖像（框線不受影響）；改動後小地圖立即重建生效，世界地圖下次進入存檔生效。",
     "UI_MinidoracatMiniMap_MapBoundsColor": "MOD 地圖框線顏色",
-    "UI_MinidoracatMiniMap_MBColor_Cyan": "青（預設）",
+    "UI_MinidoracatMiniMap_MBColor_Cyan": "青",
     "UI_MinidoracatMiniMap_MBColor_Yellow": "黃",
     "UI_MinidoracatMiniMap_MBColor_Purple": "紫",
     "UI_MinidoracatMiniMap_MBColor_White": "白",
-    "UI_MinidoracatMiniMap_MBColor_Green": "綠"
+    "UI_MinidoracatMiniMap_MBColor_Green": "綠（預設）"
 }

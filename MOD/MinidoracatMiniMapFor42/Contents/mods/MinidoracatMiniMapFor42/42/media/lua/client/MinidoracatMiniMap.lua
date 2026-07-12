@@ -920,11 +920,11 @@ Events.OnGameBoot.Add(function()
     modOptions:addTickBox("MapBounds", "UI_MinidoracatMiniMap_MapBounds", true,
         "UI_MinidoracatMiniMap_MapBounds_tooltip")
     local mbColor = modOptions:addComboBox("MapBoundsColor", "UI_MinidoracatMiniMap_MapBoundsColor")
-    mbColor:addItem("UI_MinidoracatMiniMap_MBColor_Cyan", true)
+    mbColor:addItem("UI_MinidoracatMiniMap_MBColor_Green", true) -- 順序須同 MAPB_COLORS
+    mbColor:addItem("UI_MinidoracatMiniMap_MBColor_Cyan", false)
     mbColor:addItem("UI_MinidoracatMiniMap_MBColor_Yellow", false)
     mbColor:addItem("UI_MinidoracatMiniMap_MBColor_Purple", false)
     mbColor:addItem("UI_MinidoracatMiniMap_MBColor_White", false)
-    mbColor:addItem("UI_MinidoracatMiniMap_MBColor_Green", false)
     -- 設定視窗（齒輪按鈕開的詳細視窗）同步加三列
     table.insert(SETTINGS_ROWS, { kind = "tick", id = "MapPackLayers",
         label = "UI_MinidoracatMiniMap_MapPackLayers", default = true })
@@ -932,9 +932,9 @@ Events.OnGameBoot.Add(function()
         label = "UI_MinidoracatMiniMap_MapBounds", default = true })
     table.insert(SETTINGS_ROWS, { kind = "combo", id = "MapBoundsColor",
         label = "UI_MinidoracatMiniMap_MapBoundsColor", default = 1,
-        items = { "UI_MinidoracatMiniMap_MBColor_Cyan", "UI_MinidoracatMiniMap_MBColor_Yellow",
-            "UI_MinidoracatMiniMap_MBColor_Purple", "UI_MinidoracatMiniMap_MBColor_White",
-            "UI_MinidoracatMiniMap_MBColor_Green" } })
+        items = { "UI_MinidoracatMiniMap_MBColor_Green", "UI_MinidoracatMiniMap_MBColor_Cyan",
+            "UI_MinidoracatMiniMap_MBColor_Yellow", "UI_MinidoracatMiniMap_MBColor_Purple",
+            "UI_MinidoracatMiniMap_MBColor_White" } })
 end)
 
 local function settingsApply(entry, value)
@@ -1340,13 +1340,14 @@ end
 -- 角落小地圖（ISMiniMapInner）與世界地圖（ISWorldMap，mapAPI 同為 getAPIv3，
 -- ISWorldMap.lua:268）共用本函式。
 --------------------------------------------------------------------------------
--- 框線顏色表：索引對應 MapBoundsColor 下拉順序（預設青藍，與安全屋綠/紅、玩家紅點區分）
+-- 框線顏色表：索引對應 MapBoundsColor 下拉順序。預設（第 1 位）＝綠——
+-- getComboIndex 的 fallback 是索引 1，選項缺席時畫的也要是預設色
 local MAPB_COLORS = {
-    { 0.35, 0.8, 1.0 },  -- 青（預設）
+    { 0.3, 0.95, 0.4 },  -- 綠（預設）
+    { 0.35, 0.8, 1.0 },  -- 青
     { 1.0, 0.85, 0.25 }, -- 黃
     { 0.8, 0.45, 1.0 },  -- 紫
     { 1.0, 1.0, 1.0 },   -- 白
-    { 0.3, 0.95, 0.4 },  -- 綠
 }
 
 local function drawMapBounds(inner)
