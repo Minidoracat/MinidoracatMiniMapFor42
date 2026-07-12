@@ -200,6 +200,12 @@ pwsh -NoProfile -File scripts/build_pyramids.ps1 -GamePath "D:\SteamLibrary\stea
 
 `link_workshop.bat` → **[2] 卸載**（只移除連結，不刪原始檔案）。
 
+## 授權
+
+程式碼以 [MIT License](LICENSE) 釋出。地圖渲染產物（pyramid.zip）不進版控；
+其內容衍生自 Project Zomboid 遊戲資產與各地圖 MOD，僅於 Steam Workshop 依
+The Indie Stone 政策發佈。
+
 ## 問題回報 & 交流
 
 - [Discord 伺服器](https://discord.gg/Gur2V67)
