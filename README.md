@@ -143,7 +143,7 @@ MinidoracatMiniMapFor42/
 │   ├── build_pyramids.ps1      # 產生基底 pyramid zip（呼叫 pzmap render-minimap）
 │   ├── link_workshop.ps1       # 符號連結管理腳本（PowerShell）
 │   └── PZ_Test.ps1             # 遊戲測試啟動器（PowerShell）
-├── STEAM_DESCRIPTION.md           # Steam 商店頁面描述草稿
+├── STEAM_DESCRIPTION.md           # Steam 商店頁描述（中文）——改動時必同步 _EN / _JP 版
 └── MOD/MinidoracatMiniMapFor42/   # Workshop 上傳根目錄
     └── Contents/mods/MinidoracatMiniMapFor42/42/  ← PZ 模組根目錄
         ├── mod.info

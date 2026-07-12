@@ -39,6 +39,11 @@ if (-not (Test-Path (Join-Path $ModContent "42\mod.info"))) {
     exit 1
 }
 
+# 清理誤入 MOD 內容樹的 .omc 開發狀態目錄（AI 工具 hook 會就地寫入；
+# git 已忽略，但 Workshop 上傳是整包目錄，出貨包內必須不存在）
+Get-ChildItem -Path $ModSource -Recurse -Force -Directory -Filter ".omc" -ErrorAction SilentlyContinue |
+    Remove-Item -Recurse -Force -Confirm:$false
+
 # ============================================
 # 功能函式
 # ============================================
