@@ -66,8 +66,13 @@
     "UI_MinidoracatMiniMap_CustomSize": "自定义尺寸（宽x高）",
     "UI_MinidoracatMiniMap_CustomSize_tooltip": "拖拽小地图边缘缩放时自动写入（例：300x240），优先于上方的尺寸下拉。清空此栏或改动尺寸下拉即可重置。",
     "UI_MinidoracatMiniMap_MapBounds": "显示 MOD 地图框线",
-    "UI_MinidoracatMiniMap_MapBounds_tooltip": "在小地图与世界地图上以青色框线标出已启用地图 MOD 的范围与名称，方便找到 MOD 地图的位置。",
-    "UI_MinidoracatMiniMap_Map_MuldraughFireDept": "Muldraugh 消防局",
-    "UI_MinidoracatMiniMap_Map_Estate39": "Estate 39 庄园",
-    "UI_MinidoracatMiniMap_Map_Chinatown": "唐人街扩展区"
+    "UI_MinidoracatMiniMap_MapBounds_tooltip": "在小地图与世界地图上以所选颜色的框线标出已启用地图 MOD 的范围与名称，方便找到 MOD 地图的位置。",
+    "UI_MinidoracatMiniMap_MapPackLayers": "显示 MOD 地图区块",
+    "UI_MinidoracatMiniMap_MapPackLayers_tooltip": "挂载并显示地图包提供的 MOD 地图图像。关闭后只剩基底地图图像（框线不受影响）；改动后小地图立即重建生效，世界地图下次进入存档生效。",
+    "UI_MinidoracatMiniMap_MapBoundsColor": "MOD 地图框线颜色",
+    "UI_MinidoracatMiniMap_MBColor_Cyan": "青（默认）",
+    "UI_MinidoracatMiniMap_MBColor_Yellow": "黄",
+    "UI_MinidoracatMiniMap_MBColor_Purple": "紫",
+    "UI_MinidoracatMiniMap_MBColor_White": "白",
+    "UI_MinidoracatMiniMap_MBColor_Green": "绿"
 }

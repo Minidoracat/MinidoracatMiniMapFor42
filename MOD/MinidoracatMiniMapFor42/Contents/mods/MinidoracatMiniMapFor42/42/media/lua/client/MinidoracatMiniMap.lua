@@ -22,23 +22,54 @@ local OWN_MOD_ID = "MinidoracatMiniMapFor42" -- 同 mod.info 的 id
 -- 本 MOD 自帶圖檔 manifest：zip＝media/minimap/ 下檔名；mapMod 省略＝基底、永遠掛載，
 -- 指定時＝該地圖 MOD 的 mod ID，啟用才掛載。支援新地圖：pzmap Studio 渲染出
 -- <地圖名>.pyramid.zip（預設輸出名，免改名）丟進 media/minimap/，在此加一行即可。
--- bounds＝渲染時 pyramid.txt 的世界 square 座標（右/下為排他邊界，
--- cell*256 推得，來源 MinidoracatMapRendering/src/pyramid.rs:179-186）；
--- nameKey＝UI.json 翻譯鍵，缺譯退 mod ID。兩者供 MOD 地圖框線/名稱顯示用。
 local MAPS = {
     { zip = "Muldraugh_KY.pyramid.zip" }, -- 基底全圖（B42 主世界）
-    { zip = "Muldraugh_FireDept.pyramid.zip", mapMod = "beek_muldraugh_firedept",
-        bounds = { 10496, 8960, 11008, 9472 }, nameKey = "UI_MinidoracatMiniMap_Map_MuldraughFireDept" },
-    { zip = "Estate 39.pyramid.zip", mapMod = "Estate 39",
-        bounds = { 8192, 9728, 8704, 10240 }, nameKey = "UI_MinidoracatMiniMap_Map_Estate39" },
-    { zip = "Chinatown Expansion B42 version.pyramid.zip", mapMod = "Chinatown Expansion B42 version",
-        bounds = { 10752, 8192, 11264, 9216 }, nameKey = "UI_MinidoracatMiniMap_Map_Chinatown" },
-    -- 同 Workshop 的互斥變體（mod.info incompatible=本體）：地圖目錄完全相同，
-    -- 以同 zip/bounds 雙條目當 ID alias——掛載（絕對路徑去重）與建層（indexOfLayer）
-    -- 自帶防重，即使兩 ID 同時啟用也安全
-    { zip = "Chinatown Expansion B42 version.pyramid.zip", mapMod = "Chinatown Expansion B42 version (Less Traffic Jam)",
-        bounds = { 10752, 8192, 11264, 9216 }, nameKey = "UI_MinidoracatMiniMap_Map_Chinatown" },
 }
+
+-- MOD 地圖包註冊 API（地圖包 addon 專用，如 MinidoracatMiniMapModMapsFor42）：
+-- 地圖包在自己的 client lua 呼叫（mod.info require=本 MOD 保證本檔先載入）：
+--   MinidoracatMiniMapAPI.registerMaps("<地圖包自身 mod ID>", {
+--       { zip = "<地圖名>.pyramid.zip", mapMod = "<該地圖 MOD 的 mod ID>",
+--         bounds = { x1, y1, x2, y2 }, nameKey = "UI_..." }, ...
+--   })
+-- zip 放地圖包自己的 media/minimap/；bounds＝渲染時 pyramid.txt 的世界 square
+-- 座標（右/下排他，cell*256，MinidoracatMapRendering/src/pyramid.rs:179-186）；
+-- nameKey 缺譯退 mapMod。同地圖多 mod ID 變體＝同 zip/bounds 多條目（掛載去重）。
+local registeredPacks = {} -- { { owner = <地圖包 mod ID>, entries = {...} }, ... }
+MinidoracatMiniMapAPI = MinidoracatMiniMapAPI or {}
+function MinidoracatMiniMapAPI.registerMaps(ownerModId, entries)
+    if type(ownerModId) ~= "string" or ownerModId == "" or type(entries) ~= "table" then
+        print("[MinidoracatMiniMap] registerMaps 參數錯誤（需 ownerModId, entries）")
+        return
+    end
+    -- 逐條驗證、壞條目跳過並 log：掛載/繪製端信任這裡的把關，
+    -- 單一壞條目不能拖垮整包（外部地圖包作者的輸入＝信任邊界）
+    local valid = {}
+    for i, e in ipairs(entries) do
+        local ok = type(e) == "table" and type(e.zip) == "string" and e.zip ~= ""
+            and (e.mapMod == nil or type(e.mapMod) == "string")
+            and (e.nameKey == nil or type(e.nameKey) == "string")
+        if ok and e.bounds ~= nil then
+            ok = type(e.bounds) == "table" and #e.bounds == 4
+            if ok then
+                for j = 1, 4 do
+                    if type(e.bounds[j]) ~= "number" then
+                        ok = false
+                        break
+                    end
+                end
+            end
+        end
+        if ok then
+            table.insert(valid, e)
+        else
+            print("[MinidoracatMiniMap] registerMaps: 略過無效條目 #" .. i .. "（來源 " .. ownerModId .. "）")
+        end
+    end
+    if #valid > 0 then -- 空包不註冊：地圖包選項不該因空資料出現
+        table.insert(registeredPacks, { owner = ownerModId, entries = valid })
+    end
+end
 
 -- MOD 地圖框線繪製資料（collectPyramids 於地圖初始化時重建；drawMapBounds 每幀讀）
 local mapOverlays = {}
@@ -49,6 +80,10 @@ local LEGACY_CANONICAL = "minidoracat_minimap.pyramid.zip"
 local function log(msg)
     print("[MinidoracatMiniMap] " .. tostring(msg))
 end
+
+-- 前置宣告（定義在下方 ModOptions 一節）：collectPyramids 的地圖包段要讀
+-- MapPackLayers 選項——Lua 區域名稱僅宣告後可見，不前置宣告會誤綁全域（nil）
+local getBoolOption
 
 -- 回傳 <modRoot>/media/minimap/<zip> 的存在路徑；找不到回 nil。
 -- 必須用平台分隔符組路徑：Pyramid 樣式層以 endsWith(File.separator .. fileName)
@@ -80,11 +115,14 @@ local function collectPyramids()
     end
 
     -- 重建框線資料（世界地圖/小地圖各 init 一次呼叫本函式，冪等）：
-    -- 有 bounds 且對應地圖 MOD 啟用者才畫框——框線不依賴 zip 是否渲染
+    -- 來源＝已註冊地圖包；有 bounds 且對應地圖 MOD 啟用者才畫框——
+    -- 框線不依賴 zip 是否渲染，也不受「顯示 MOD 地圖區塊」開關影響（定位用）
     for i = #mapOverlays, 1, -1 do mapOverlays[i] = nil end
-    for _, entry in ipairs(MAPS) do
-        if entry.bounds and entry.mapMod and active[entry.mapMod] then
-            table.insert(mapOverlays, entry)
+    for _, pack in ipairs(registeredPacks) do
+        for _, entry in ipairs(pack.entries) do
+            if entry.bounds and entry.mapMod and active[entry.mapMod] then
+                table.insert(mapOverlays, entry)
+            end
         end
     end
 
@@ -106,6 +144,29 @@ local function collectPyramids()
         end
     else
         log("getModInfoByID(\"" .. OWN_MOD_ID .. "\") 回 nil——OWN_MOD_ID 與 mod.info 的 id 不符？manifest 圖層全數停用")
+    end
+
+    -- (1b) 已註冊地圖包：zip 在地圖包自己的 media/minimap/。
+    -- 「顯示 MOD 地圖區塊」（MapPackLayers，地圖包裝了才有的選項）關閉時整段跳過
+    -- ——生效時機＝地圖重建（齒輪/選項頁改動會觸發小地圖 Recreate）
+    if getBoolOption("MapPackLayers", true) then
+        for _, pack in ipairs(registeredPacks) do
+            local ownerInfo = getModInfoByID(pack.owner)
+            if ownerInfo then
+                for _, entry in ipairs(pack.entries) do
+                    if not entry.mapMod or active[entry.mapMod] then
+                        local path = findZip(ownerInfo, sep, entry.zip)
+                        if path then
+                            table.insert(list, { path = path, zip = entry.zip })
+                        else
+                            log("地圖包 " .. pack.owner .. " 缺 " .. entry.zip .. "（漏渲染或漏打包？）")
+                        end
+                    end
+                end
+            else
+                log("地圖包 mod ID 無效: " .. tostring(pack.owner) .. "（registerMaps 第一參數需為地圖包自身 mod ID）")
+            end
+        end
     end
 
     -- (2) 相容路徑：掃描其他啟用 MOD 的約定同名 zip（第三方 addon，零 Lua）。
@@ -176,7 +237,7 @@ local function getSizeIndex()
     return SIZE_SCALES[idx] and idx or DEFAULT_SIZE_INDEX
 end
 
-local function getBoolOption(id, default)
+getBoolOption = function(id, default) -- 本體（前置宣告見檔案上方）
     if not modOptions then return default end
     local opt = modOptions:getOption(id)
     if opt == nil then return default end
@@ -341,9 +402,8 @@ if PZAPI and PZAPI.ModOptions then
     -- 安全屋範圍（本 MOD 純 Lua 自繪，見下方 drawSafehouses）：繪製端每幀讀值即時生效
     modOptions:addTickBox("Safehouses", "UI_MinidoracatMiniMap_Safehouses", true,
         "UI_MinidoracatMiniMap_Safehouses_tooltip")
-    -- MOD 地圖框線＋名稱（純 Lua 自繪，見下方 drawMapBounds）：同上即時生效
-    modOptions:addTickBox("MapBounds", "UI_MinidoracatMiniMap_MapBounds", true,
-        "UI_MinidoracatMiniMap_MapBounds_tooltip")
+    -- 地圖包（MapPackLayers/MapBounds/MapBoundsColor）選項為 addon-conditional，
+    -- 於下方 OnGameBoot 區塊「有地圖包註冊」時才追加——沒裝地圖包不出現
     modOptions:addTickBox("ZombieIntensity", "UI_MinidoracatMiniMap_ZombieIntensity", false,
         "UI_MinidoracatMiniMap_ZombieIntensity_tooltip")
     modOptions:addTickBox("PlaceNames", "UI_MinidoracatMiniMap_PlaceNames", true,
@@ -413,7 +473,9 @@ if PZAPI and PZAPI.ModOptions then
         local mm = getPlayerMiniMap(0)
         if not mm then return end
         -- ponytail: 只處理 player 0，分割畫面其餘玩家沿用原版（原版 saveSettings 也只存 player 0）
-        if mm._minidoracatSizeIndex ~= getSizeIndex() then
+        if (mm._minidoracatPackLayers == true) ~= (getBoolOption("MapPackLayers", true) == true) then
+            ISMiniMap.Recreate(0) -- 地圖包圖層開關改動：重建以重新決定掛載/建層
+        elseif mm._minidoracatSizeIndex ~= getSizeIndex() then
             -- 下拉改動＝快速重置：清掉自訂尺寸，以下拉倍率重建
             -- （之後引擎照常存 ModOptions.ini，MainOptions.lua:3793）
             local customOpt = self:getOption("CustomSize")
@@ -485,6 +547,7 @@ if ISMiniMap and ISMiniMap.InitPlayer then
         if minimap then
             minimap._minidoracatSizeIndex = sizeIndex -- 給 modOptions:apply() 判斷是否需重建
             minimap._minidoracatCustomSize = getCustomSizeRaw() -- 同上：自訂尺寸欄位變動判斷
+            minimap._minidoracatPackLayers = getBoolOption("MapPackLayers", true) -- 同上：地圖包圖層開關
             -- 「永遠顯示」模式：建好即展開按鈕列，之後高度恆定（prerender 的自動
             -- 收合被下方 setAdornmentsVisible wrap 擋掉），地圖核心永不位移
             if isAdornAlways() and minimap.setAdornmentsVisible then
@@ -604,9 +667,25 @@ if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.createChildren
                 end
             end },
         { id = "Safehouses", label = "UI_MinidoracatMiniMap_Safehouses", default = true },
-        { id = "MapBounds", label = "UI_MinidoracatMiniMap_MapBounds", default = true },
         { id = "LockPosition", label = "UI_MinidoracatMiniMap_LockPosition", default = false },
     }
+
+    -- 地圖包 addon 專屬齒輪項（有註冊才加；OnGameBoot＝所有 MOD lua 載完，
+    -- 齒輪面板 createChildren 於遊戲內執行、遠晚於此）。
+    -- MapPackLayers 的 apply＝重建小地圖重新掛載（掛載/建層在 init 時決定）；
+    -- Recreate 無 nil 防呆，呼叫前必查 getPlayerMiniMap（AGENTS.md 鐵則）
+    Events.OnGameBoot.Add(function()
+        if #registeredPacks == 0 then return end
+        table.insert(GEAR_TICKS, { id = "MapPackLayers",
+            label = "UI_MinidoracatMiniMap_MapPackLayers", default = true,
+            apply = function(panel, selected)
+                if getSpecificPlayer(0) and getPlayerMiniMap(0) then
+                    ISMiniMap.Recreate(0)
+                end
+            end })
+        table.insert(GEAR_TICKS, { id = "MapBounds",
+            label = "UI_MinidoracatMiniMap_MapBounds", default = true })
+    end)
 
     -- 勾選變更 handler：ISTickBox 回呼簽名 (target, index, selected, args...)
     -- （ISTickBox.lua:175-176；原版同款且同以第 4 參傳資料，ISMiniMap.lua:14/48）
@@ -827,6 +906,36 @@ local SETTINGS_ROWS = {
     { kind = "tick", id = "TextAnnotations", label = "UI_MinidoracatMiniMap_TextAnnotations", default = false },
 }
 local settingsUI -- 單例；獨立頂層視窗，不隨小地圖 Recreate 消失（apply 自行重抓 mm）
+
+-- 地圖包 addon 專屬選項（有註冊才出現）：OnGameBoot＝所有 MOD lua 載入完
+-- （地圖包 require=本 MOD，其註冊呼叫已執行）、且早於 MainOptions 建立——
+-- 實際順序 OnGameBoot → OnMainMenuEnter → MainOptions:create →
+-- addModOptionsPanel 內 PZAPI.ModOptions:load()（MainOptions.lua:409/2822-2823），
+-- 晚追加的選項一樣載得到 ini 存檔值。設定視窗 lazy 建立於遊戲內，同樣晚於此。
+Events.OnGameBoot.Add(function()
+    if #registeredPacks == 0 or not modOptions then return end
+    -- ESC 選項頁
+    modOptions:addTickBox("MapPackLayers", "UI_MinidoracatMiniMap_MapPackLayers", true,
+        "UI_MinidoracatMiniMap_MapPackLayers_tooltip")
+    modOptions:addTickBox("MapBounds", "UI_MinidoracatMiniMap_MapBounds", true,
+        "UI_MinidoracatMiniMap_MapBounds_tooltip")
+    local mbColor = modOptions:addComboBox("MapBoundsColor", "UI_MinidoracatMiniMap_MapBoundsColor")
+    mbColor:addItem("UI_MinidoracatMiniMap_MBColor_Cyan", true)
+    mbColor:addItem("UI_MinidoracatMiniMap_MBColor_Yellow", false)
+    mbColor:addItem("UI_MinidoracatMiniMap_MBColor_Purple", false)
+    mbColor:addItem("UI_MinidoracatMiniMap_MBColor_White", false)
+    mbColor:addItem("UI_MinidoracatMiniMap_MBColor_Green", false)
+    -- 設定視窗（齒輪按鈕開的詳細視窗）同步加三列
+    table.insert(SETTINGS_ROWS, { kind = "tick", id = "MapPackLayers",
+        label = "UI_MinidoracatMiniMap_MapPackLayers", default = true })
+    table.insert(SETTINGS_ROWS, { kind = "tick", id = "MapBounds",
+        label = "UI_MinidoracatMiniMap_MapBounds", default = true })
+    table.insert(SETTINGS_ROWS, { kind = "combo", id = "MapBoundsColor",
+        label = "UI_MinidoracatMiniMap_MapBoundsColor", default = 1,
+        items = { "UI_MinidoracatMiniMap_MBColor_Cyan", "UI_MinidoracatMiniMap_MBColor_Yellow",
+            "UI_MinidoracatMiniMap_MBColor_Purple", "UI_MinidoracatMiniMap_MBColor_White",
+            "UI_MinidoracatMiniMap_MBColor_Green" } })
+end)
 
 local function settingsApply(entry, value)
     if not modOptions then return end
@@ -1231,11 +1340,19 @@ end
 -- 角落小地圖（ISMiniMapInner）與世界地圖（ISWorldMap，mapAPI 同為 getAPIv3，
 -- ISWorldMap.lua:268）共用本函式。
 --------------------------------------------------------------------------------
-local MAPB_R, MAPB_G, MAPB_B = 0.35, 0.8, 1.0 -- 青藍：與安全屋綠/紅、玩家紅點區分
+-- 框線顏色表：索引對應 MapBoundsColor 下拉順序（預設青藍，與安全屋綠/紅、玩家紅點區分）
+local MAPB_COLORS = {
+    { 0.35, 0.8, 1.0 },  -- 青（預設）
+    { 1.0, 0.85, 0.25 }, -- 黃
+    { 0.8, 0.45, 1.0 },  -- 紫
+    { 1.0, 1.0, 1.0 },   -- 白
+    { 0.3, 0.95, 0.4 },  -- 綠
+}
 
 local function drawMapBounds(inner)
     if #mapOverlays == 0 then return end
     if not getBoolOption("MapBounds", true) then return end
+    local c = MAPB_COLORS[getComboIndex("MapBoundsColor", 1)] or MAPB_COLORS[1]
     local mapAPI = inner.mapAPI
     for i = 1, #mapOverlays do
         local ov = mapOverlays[i]
@@ -1244,12 +1361,14 @@ local function drawMapBounds(inner)
         local ux2, uy2 = mapAPI:worldToUIX(x2, y1), mapAPI:worldToUIY(x2, y1)
         local ux3, uy3 = mapAPI:worldToUIX(x2, y2), mapAPI:worldToUIY(x2, y2)
         local ux4, uy4 = mapAPI:worldToUIX(x1, y2), mapAPI:worldToUIY(x1, y2)
-        drawClippedEdge(inner, ux1, uy1, ux2, uy2, MAPB_R, MAPB_G, MAPB_B)
-        drawClippedEdge(inner, ux2, uy2, ux3, uy3, MAPB_R, MAPB_G, MAPB_B)
-        drawClippedEdge(inner, ux3, uy3, ux4, uy4, MAPB_R, MAPB_G, MAPB_B)
-        drawClippedEdge(inner, ux4, uy4, ux1, uy1, MAPB_R, MAPB_G, MAPB_B)
-        -- 名稱：缺譯退 mod ID（慣例同齒輪面板 getTextOrNull(label) or id）
-        local name = getTextOrNull(ov.nameKey) or ov.mapMod
+        drawClippedEdge(inner, ux1, uy1, ux2, uy2, c[1], c[2], c[3])
+        drawClippedEdge(inner, ux2, uy2, ux3, uy3, c[1], c[2], c[3])
+        drawClippedEdge(inner, ux3, uy3, ux4, uy4, c[1], c[2], c[3])
+        drawClippedEdge(inner, ux4, uy4, ux1, uy1, c[1], c[2], c[3])
+        -- 名稱：缺譯退 mod ID（慣例同齒輪面板 getTextOrNull(label) or id）；
+        -- nameKey 為 nil 時不可傳入 getTextOrNull（Java 端 startsWith 會 NPE，
+        -- Translator.java:324）
+        local name = (ov.nameKey and getTextOrNull(ov.nameKey)) or ov.mapMod
         if name then
             local tm = getTextManager()
             local tw = tm:MeasureStringX(UIFont.Small, name) -- 用例 ISFactionUI.lua:238

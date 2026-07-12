@@ -13,8 +13,10 @@
 [/list]
 
 [h2]🧩 地圖 MOD 支援[/h2]
-本 MOD 內建支援地圖清單（基底全圖＋各地圖 MOD 的圖），
-[u]自動偵測[/u]：對應的地圖 MOD 有啟用才顯示它的圖，沒裝不誤畫。
+搭配 [b]Minidoracat MiniMap - MOD Maps[/b] 地圖包 addon：內含多張地圖 MOD 的
+小地圖圖像與範圍框線（含名稱、多語翻譯），[u]自動偵測[/u]——對應的地圖 MOD
+有啟用才顯示，沒裝不誤畫；裝了地圖包還會多出專屬選項（MOD 地圖區塊開關、
+框線開關、框線顏色）。
 地圖 MOD 作者也可自帶支援：把自己地圖渲染成同名
 [b]minidoracat_minimap.pyramid.zip[/b] 放進 [b]media/minimap/[/b]，
 [u]完全不用寫 Lua[/u]，本 MOD 會自動偵測並疊加顯示（自動對位，疊在基底之上）。

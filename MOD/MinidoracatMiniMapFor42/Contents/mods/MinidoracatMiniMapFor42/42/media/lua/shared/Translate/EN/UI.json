@@ -66,8 +66,13 @@
     "UI_MinidoracatMiniMap_CustomSize": "Custom size (WxH)",
     "UI_MinidoracatMiniMap_CustomSize_tooltip": "Written automatically when you drag the mini-map edges to resize (e.g. 300x240). Takes priority over the size preset above. Clear this field, or change the size preset, to reset.",
     "UI_MinidoracatMiniMap_MapBounds": "Show MOD map outlines",
-    "UI_MinidoracatMiniMap_MapBounds_tooltip": "Outline the area of each enabled map MOD on the mini-map and world map (cyan), with its name at the center. Makes MOD maps easy to locate.",
-    "UI_MinidoracatMiniMap_Map_MuldraughFireDept": "Muldraugh Fire Dept",
-    "UI_MinidoracatMiniMap_Map_Estate39": "Estate 39",
-    "UI_MinidoracatMiniMap_Map_Chinatown": "Chinatown Expansion"
+    "UI_MinidoracatMiniMap_MapBounds_tooltip": "Outline the area of each enabled map MOD on the mini-map and world map (in the chosen color), with its name at the center. Makes MOD maps easy to locate.",
+    "UI_MinidoracatMiniMap_MapPackLayers": "Show MOD map tiles",
+    "UI_MinidoracatMiniMap_MapPackLayers_tooltip": "Mount and display the MOD map images provided by a map pack. When off, only the base map image remains (outlines are unaffected). The mini-map rebuilds immediately; the world map applies on next load.",
+    "UI_MinidoracatMiniMap_MapBoundsColor": "MOD map outline color",
+    "UI_MinidoracatMiniMap_MBColor_Cyan": "Cyan (default)",
+    "UI_MinidoracatMiniMap_MBColor_Yellow": "Yellow",
+    "UI_MinidoracatMiniMap_MBColor_Purple": "Purple",
+    "UI_MinidoracatMiniMap_MBColor_White": "White",
+    "UI_MinidoracatMiniMap_MBColor_Green": "Green"
 }

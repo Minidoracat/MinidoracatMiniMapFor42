@@ -66,8 +66,13 @@
     "UI_MinidoracatMiniMap_CustomSize": "カスタムサイズ（幅x高さ）",
     "UI_MinidoracatMiniMap_CustomSize_tooltip": "ミニマップの端をドラッグしてリサイズすると自動的に書き込まれます（例 300x240）。上のサイズプリセットより優先されます。この欄をクリアするかプリセットを変更するとリセット。",
     "UI_MinidoracatMiniMap_MapBounds": "MODマップの枠線を表示",
-    "UI_MinidoracatMiniMap_MapBounds_tooltip": "有効なマップMODの範囲をミニマップとワールドマップに青い枠線と名前で表示します。MODマップの場所を探しやすくなります。",
-    "UI_MinidoracatMiniMap_Map_MuldraughFireDept": "マルドロー消防署",
-    "UI_MinidoracatMiniMap_Map_Estate39": "エステート39",
-    "UI_MinidoracatMiniMap_Map_Chinatown": "チャイナタウン拡張"
+    "UI_MinidoracatMiniMap_MapBounds_tooltip": "有効なマップMODの範囲をミニマップとワールドマップに選択した色の枠線と名前で表示します。MODマップの場所を探しやすくなります。",
+    "UI_MinidoracatMiniMap_MapPackLayers": "MODマップ画像を表示",
+    "UI_MinidoracatMiniMap_MapPackLayers_tooltip": "マップパックのMODマップ画像をマウントして表示します。オフにするとベースマップ画像のみになります（枠線は影響されません）。ミニマップは即時再構築、ワールドマップは次回ロード時に反映。",
+    "UI_MinidoracatMiniMap_MapBoundsColor": "MODマップ枠線の色",
+    "UI_MinidoracatMiniMap_MBColor_Cyan": "シアン（デフォルト）",
+    "UI_MinidoracatMiniMap_MBColor_Yellow": "イエロー",
+    "UI_MinidoracatMiniMap_MBColor_Purple": "パープル",
+    "UI_MinidoracatMiniMap_MBColor_White": "ホワイト",
+    "UI_MinidoracatMiniMap_MBColor_Green": "グリーン"
 }

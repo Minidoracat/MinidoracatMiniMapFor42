@@ -4,12 +4,17 @@
 
 ### 新增
 
-- **MOD 地圖框線＋名稱顯示（MapBounds，預設開）**：對 manifest 裡已啟用的地圖 MOD，
-  在角落小地圖與世界地圖（M）以青色框線標出範圍、中心顯示地圖名稱（走 UI.json
-  翻譯，缺譯退 mod ID）。ESC 選項與齒輪面板皆可開關。
-- **首批地圖 MOD 集合**：Muldraugh 消防局（beek_muldraugh_firedept，基底範圍內
-  overlay）、Estate 39（獨立區域）、唐人街擴張區（Chinatown Expansion B42 version，
-  Muldraugh 北緣、依賴 6 個 tile pack）——`MAPS` manifest 各帶 bounds 與翻譯鍵。
+- **地圖包註冊 API**：`MinidoracatMiniMapAPI.registerMaps(ownerModId, entries)`——
+  地圖包 addon（如 MinidoracatMiniMapModMapsFor42，`require=` 本 MOD）向本 MOD 註冊
+  地圖清單（zip/mapMod/bounds/nameKey），zip 放地圖包自己的 `media/minimap/`，
+  依對應地圖 MOD 啟用狀態自動掛載。首批三張地圖已移往地圖包 addon 專案。
+- **MOD 地圖框線＋名稱顯示（MapBounds）**：對已註冊且啟用的地圖 MOD，在角落
+  小地圖與世界地圖（M）以框線標出範圍、中心顯示地圖名稱（走 UI.json 翻譯，
+  缺譯退 mod ID）。
+- **地圖包專屬選項（裝了地圖包才出現，OnGameBoot 依註冊狀態動態追加）**：
+  「顯示 MOD 地圖區塊」（掛不掛地圖包圖像，改動即重建小地圖）、「顯示 MOD 地圖
+  框線」、「MOD 地圖框線顏色」（青/黃/紫/白/綠）——ESC 選項頁、齒輪面板、
+  設定視窗三處同步。
 
 ### 變更
 
