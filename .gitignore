@@ -1,7 +1,9 @@
-# Claude Code / 工具本機設定
+# Claude Code / AI 工具本機設定（不進版控）
 .claude/
 .mcp.json
 CLAUDE.md
+AGENTS.md
+.agents/
 .omc/
 .omx/
 .codex/
