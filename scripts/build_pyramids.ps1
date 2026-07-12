@@ -2,12 +2,12 @@
 #
 # 呼叫 MinidoracatMapRendering 的 pzmap.exe render-minimap，
 # 把基底地圖渲染成 ImagePyramid zip，輸出到：
-#   MOD/.../42/media/minimap/minidoracat_minimap.pyramid.zip
+#   MOD/.../42/media/minimap/Muldraugh_KY.pyramid.zip
 #
-# 地圖 addon MOD 的 zip 同理：用 pzmap Studio（GUI）選該地圖 MOD →
-# 「遊戲內小地圖」模式，輸出「同名」minidoracat_minimap.pyramid.zip
-# 放進該 MOD 的 media/minimap/ 即可，零 Lua，本 MOD 會自動掃描掛載
-# （檔名尾綴匹配，每顆 zip 自帶 bounds 自動對位）。
+# 支援地圖 MOD：用 pzmap Studio（GUI）選該地圖 →「遊戲內小地圖」模式輸出
+# <地圖名>.pyramid.zip（預設輸出名，免改名），放進本 MOD 的 media/minimap/
+# 並在 MinidoracatMiniMap.lua 的 MAPS manifest 加一行對應該地圖 mod ID。
+# 第三方 MOD 自帶支援則沿用同名約定 minidoracat_minimap.pyramid.zip（零 Lua）。
 #
 # 用法：
 #   pwsh -NoProfile -File scripts/build_pyramids.ps1
@@ -25,7 +25,10 @@ param(
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$OutFile = Join-Path $ProjectRoot "MOD\MinidoracatMiniMapFor42\Contents\mods\MinidoracatMiniMapFor42\42\media\minimap\minidoracat_minimap.pyramid.zip"
+# 輸出檔名從地圖名衍生（同 pzmap Studio safeName 規則："Muldraugh, KY" → Muldraugh_KY），
+# 避免 -MapName 指定其他地圖時內容冒充基底檔名；非基底地圖記得在 MAPS manifest 登記
+$SafeName = ($MapName -replace '[^A-Za-z0-9]+', '_').Trim('_')
+$OutFile = Join-Path $ProjectRoot "MOD\MinidoracatMiniMapFor42\Contents\mods\MinidoracatMiniMapFor42\42\media\minimap\$SafeName.pyramid.zip"
 
 # ============================================
 # 驗證 pzmap.exe 與 render-minimap 子命令
@@ -81,5 +84,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
-Write-Host "[完成] 基底 pyramid zip 已產生：" -ForegroundColor Green
+Write-Host "[完成] pyramid zip 已產生：" -ForegroundColor Green
 Write-Host "  $OutFile" -ForegroundColor Green
+if ($SafeName -ne "Muldraugh_KY") {
+    Write-Host "[提醒] 非基底地圖：記得在 MinidoracatMiniMap.lua 的 MAPS manifest 加一行對應該地圖 mod ID" -ForegroundColor Yellow
+}

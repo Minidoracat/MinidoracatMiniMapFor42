@@ -1,5 +1,15 @@
 # Changelog
 
+## [未發布]
+
+### 變更
+
+- **pyramid 架構改為 manifest 驅動集合包**：本 MOD `media/minimap/` 集中放各地圖 zip
+  （檔名＝地圖原名，pzmap Studio 預設輸出名免改名），`MAPS` manifest 宣告對應的地圖
+  mod ID——基底圖（`Muldraugh_KY.pyramid.zip`）永遠掛載，地圖 MOD 的圖僅該 MOD 啟用
+  才掛載；每個檔名動態建一個 Pyramid 樣式層。第三方 addon 的
+  `minidoracat_minimap.pyramid.zip` 同名約定保留為相容路徑（零 Lua 不變）。
+
 ## [42.19.0-0.1.0] - 2026-07-11
 
 ### 新增

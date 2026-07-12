@@ -70,11 +70,16 @@ function Show-Status {
     }
 
     # 基底 pyramid zip 狀態
-    $zip = Join-Path $ModContent "42\media\minimap\minidoracat_minimap.pyramid.zip"
+    $zip = Join-Path $ModContent "42\media\minimap\Muldraugh_KY.pyramid.zip"
     if (Test-Path $zip) {
         Write-Host "  [OK] 基底 pyramid zip" -ForegroundColor Green
     } else {
         Write-Host "  [缺少] 基底 pyramid zip（先跑 scripts/build_pyramids.ps1）" -ForegroundColor Yellow
+    }
+    # 舊約定檔名殘留檢查（基底已改名 Muldraugh_KY.pyramid.zip，Lua 端也已排除自己）
+    $legacyZip = Join-Path $ModContent "42\media\minimap\minidoracat_minimap.pyramid.zip"
+    if (Test-Path $legacyZip) {
+        Write-Host "  [警告] 殘留舊基底 minidoracat_minimap.pyramid.zip（已改名，建議刪除）" -ForegroundColor Yellow
     }
 
     Write-Host ""

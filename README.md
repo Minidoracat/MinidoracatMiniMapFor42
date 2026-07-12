@@ -2,11 +2,13 @@
 
 **By Minidoracat**
 
-Project Zomboid Build 42 遊戲內世界地圖圖片化基底 MOD。
-使用 B42 引擎原生的 **ImagePyramid**（pyramid.zip）在世界地圖上疊加預渲染地圖圖片，
-並自動掃描啟用中的地圖 addon MOD——addon 零 Lua 即可被載入。
+Project Zomboid Build 42 遊戲內世界地圖圖片化 MOD。
+使用 B42 引擎原生的 **ImagePyramid**（pyramid.zip）在世界地圖上疊加預渲染地圖圖片；
+內建各地圖的圖檔集合（依啟用的地圖 MOD 自動掛載），
+並保留第三方 addon 同名約定——addon 零 Lua 即可被載入。
 
-設計決策詳見 [MinidoracatMapRendering/docs/minimap-mod-design.md](../MinidoracatMapRendering/docs/minimap-mod-design.md)。
+設計決策詳見 [MinidoracatMapRendering/docs/minimap-mod-design.md](../MinidoracatMapRendering/docs/minimap-mod-design.md)
+（該文件描述初版「同名檔案」架構，現為第三方相容路徑；現行 manifest 集合包見下方架構節）。
 
 ## 功能
 
@@ -78,37 +80,44 @@ Project Zomboid Build 42 遊戲內世界地圖圖片化基底 MOD。
 
 單機或未設定時全部視為允許，行為不變。
 
-## 架構：基底 + addon 同檔名匹配
+## 架構：manifest 驅動集合包 + 第三方 addon 相容
 
-所有 zip 使用同一個約定檔名 `minidoracat_minimap.pyramid.zip`，
-放在各自 MOD 的 `media/minimap/` 下：
+本 MOD 的 `media/minimap/` 集中放各地圖的 pyramid zip（**檔名＝地圖原名**，
+即 pzmap Studio 預設輸出名，渲染完免改名）；`MinidoracatMiniMap.lua` 開頭的
+`MAPS` manifest 宣告「哪顆 zip 對應哪個地圖 MOD」——基底圖永遠掛載，
+地圖 MOD 的圖僅該 MOD 啟用時掛載（沒裝該地圖，畫它的圖＝錯）：
 
 ```
-基底 MOD（本專案）                          地圖 addon MOD（第三方，零 Lua）
+本 MOD（集合包）                            地圖 addon MOD（第三方，零 Lua，相容路徑）
 MinidoracatMiniMapFor42/                   SomeMapMod/
 └── media/                                 └── media/
     ├── lua/client/                            └── minimap/
     │   └── MinidoracatMiniMap.lua                 └── minidoracat_minimap.pyramid.zip
-    └── minimap/                                       （該地圖 bbox 的渲染圖，
-        └── minidoracat_minimap.pyramid.zip             bounds 自帶自動對位）
-            （Muldraugh 基底全圖）
+    │       （MAPS manifest 在此）                     （約定同名 zip，自動掃描掛載，
+    └── minimap/                                        bounds 自帶自動對位）
+        ├── Muldraugh_KY.pyramid.zip（基底，永遠掛載）
+        └── RavenCreek.pyramid.zip（範例：RavenCreek 啟用才掛載）
 
                     ┌──────────────────────────────────┐
  世界地圖開啟時      │ hook ISWorldMap:initDataAndStyle │
                     └────────────────┬─────────────────┘
-                                     │ 掃描 getActivatedMods()
-                                     │ 每個 MOD 檢查 media/minimap/<約定檔名>
+                                     │ (1) MAPS manifest：基底 + 已啟用地圖 MOD 的 zip
+                                     │ (2) 相容路徑：掃描 getActivatedMods() 的約定同名 zip
                                      ▼
-                    mapAPI:addImagePyramid(絕對路徑) × N（含本 MOD 自己，不特判）
+                    mapAPI:addImagePyramid(絕對路徑) × N
                                      │
                                      ▼
-                    單一 Pyramid 樣式層（fileName 尾綴匹配全部 zip）
-                    疊在原版樣式之上；addon 後註冊，畫在基底之上
+                    每個「檔名」一個 Pyramid 樣式層（fileName 尾綴匹配；
+                    多層並存是引擎原生支援，原版即有 forest.pyramid.zip 獨立樣式層）
+                    疊在原版樣式之上；addon 層後建，畫在基底之上
+                    （引擎對層列「正序」繪製、新層 append 到尾——後建的層在上）
 ```
 
-- **檔名即匹配鍵**：引擎樣式層以 `endsWith(File.separator + fileName)` 匹配已掛載 zip，
-  所以基底與 addon 必須同檔名。
+- **一個樣式層只綁一個檔名**：引擎以 `endsWith(File.separator + fileName)` 匹配已掛載 zip，
+  loader 對每個檔名動態建一層；同名多 zip（相容路徑的多個 addon）由同一層全數匹配。
 - **每顆 zip 自帶 bounds**（`pyramid.txt` 內世界 square 座標），引擎自動對位，無需檔名編碼座標。
+- **收錄準則**：小型／核心地圖走集合包（manifest）；大型地圖（pyramid zip 動輒數百 MB）
+  建議走第三方 addon 相容路徑分開發佈，避免只玩部分地圖的玩家被迫下載全部。
 - 效能由引擎處理：LRU 紋理快取、多層級 LOD、非同步載入（相對 B41 per-cell 紋理方案）。
 
 ## MOD 資訊
@@ -134,7 +143,7 @@ MinidoracatMiniMapFor42/
         ├── mod.info
         └── media/
             ├── lua/client/MinidoracatMiniMap.lua
-            └── minimap/           # pyramid zip 約定目錄（產物不進版控）
+            └── minimap/           # pyramid zip 集合目錄（產物不進版控）
 ```
 
 ## 本地開發
@@ -153,7 +162,11 @@ pwsh -NoProfile -File scripts/build_pyramids.ps1
 pwsh -NoProfile -File scripts/build_pyramids.ps1 -GamePath "D:\SteamLibrary\steamapps\common\ProjectZomboid" -MapName "Muldraugh, KY"
 ```
 
-addon 的 zip 用 pzmap Studio（GUI）選該地圖 MOD →「遊戲內小地圖」模式輸出同名 zip。
+支援新地圖（進集合包）：pzmap Studio（GUI）選該地圖 →「遊戲內小地圖」模式輸出
+`<地圖名>.pyramid.zip`（預設輸出名，免改名）放進本 MOD `media/minimap/`，
+並在 `MinidoracatMiniMap.lua` 的 `MAPS` manifest 加一行對應該地圖 mod ID。
+第三方 MOD 自帶支援（不進集合包）：輸出改名為約定檔名 `minidoracat_minimap.pyramid.zip`
+放進**該 MOD 自己的** `media/minimap/`，零 Lua。
 
 ### 2. 掛載到遊戲目錄
 

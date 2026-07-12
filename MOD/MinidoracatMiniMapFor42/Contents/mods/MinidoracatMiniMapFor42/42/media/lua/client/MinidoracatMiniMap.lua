@@ -1,75 +1,134 @@
 -- MinidoracatMiniMap.lua
 -- Minidoracat MiniMap for B42 — 世界地圖 ImagePyramid 疊加層（client 端，單機/多人皆同）
 --
--- 架構（基底 + addon 同檔名匹配，詳見專案 README.md 與
--- MinidoracatMapRendering/docs/minimap-mod-design.md「同名檔案設計」一節）：
---   所有 MOD（含本 MOD 自己，不特判）在 media/minimap/ 放同名 pyramid zip（CANONICAL）。
---   世界地圖初始化後掃描 getActivatedMods()，檔案存在即 mapAPI:addImagePyramid(絕對路徑)。
---   單一 Pyramid 樣式層以檔名「尾綴匹配」全部已掛載 zip
---   （WorldMapPyramidStyleLayer.java: endsWith(File.separator + fileName)），
---   每顆 zip 自帶 bounds 自動對位，後註冊者（addon）畫在先註冊者（基底）之上。
+-- 架構（manifest 驅動集合包 + 第三方 addon 相容，詳見專案 README.md）：
+--   (1) 本 MOD 的 media/minimap/ 集中放各地圖的 pyramid zip（檔名＝地圖原名，
+--       即 pzmap Studio 預設輸出名），MAPS manifest 宣告「哪顆 zip 對應哪個地圖 MOD」；
+--       基底圖永遠掛載，地圖 MOD 的圖僅該 MOD 啟用時掛載（沒裝該地圖，畫它的圖＝錯）。
+--   (2) 相容路徑：第三方 MOD 在自己的 media/minimap/ 放約定同名 zip（LEGACY_CANONICAL）
+--       即被自動掃描掛載，零 Lua——原「基底 + addon 同檔名匹配」設計原封保留。
+--   引擎面：一個 Pyramid 樣式層只綁一個檔名、以「尾綴匹配」全部已掛載 zip
+--   （WorldMapPyramidStyleLayer.java:48: endsWith(File.separator + fileName)），
+--   故每個「檔名」建一層。多層並存是原生支援：原版即掛 forest.pyramid.zip
+--   （WorldMap.java:145-148）並為其建獨立 pyramid 樣式層（ISMapDefinitions.lua:337-339）。
+--   疊層順序：newPyramidLayer 把新層 append 到層列尾（WorldMapStyleV2.java:21-24），
+--   繪製對層列「正序」迭代（WorldMapRenderer.java:920-923）——後建的層畫在上面，
+--   故基底層先建（最底）、addon 層後建（最上）。每顆 zip 自帶 bounds 自動對位。
+--   注意：同一層內的同名多 zip（多個第三方 addon）引擎是「反序」迭代
+--   （WorldMapPyramidStyleLayer.java:46-51），先註冊者畫在上面。
 
-local CANONICAL = "minidoracat_minimap.pyramid.zip"
-local LAYER_ID = "minidoracat_minimap"
+local OWN_MOD_ID = "MinidoracatMiniMapFor42" -- 同 mod.info 的 id
+
+-- 本 MOD 自帶圖檔 manifest：zip＝media/minimap/ 下檔名；mapMod 省略＝基底、永遠掛載，
+-- 指定時＝該地圖 MOD 的 mod ID，啟用才掛載。支援新地圖：pzmap Studio 渲染出
+-- <地圖名>.pyramid.zip（預設輸出名，免改名）丟進 media/minimap/，在此加一行即可。
+local MAPS = {
+    { zip = "Muldraugh_KY.pyramid.zip" }, -- 基底全圖（B42 主世界）
+    -- { zip = "RavenCreek.pyramid.zip", mapMod = "RavenCreek" },
+}
+
+-- 第三方 addon 相容約定檔名（零 Lua）：地圖 MOD 自附 minimap 支援時使用
+local LEGACY_CANONICAL = "minidoracat_minimap.pyramid.zip"
 
 local function log(msg)
     print("[MinidoracatMiniMap] " .. tostring(msg))
 end
 
--- 掃描所有啟用 MOD，回傳含約定 zip 的絕對路徑清單
-local function collectPyramidPaths()
-    local paths = {}
-    -- 必須用平台分隔符組路徑：Pyramid 樣式層以 endsWith(File.separator .. fileName)
-    -- 匹配 zip，Windows 上用 "/" 串檔名會導致圖層永遠匹配不到
+-- 回傳 <modRoot>/media/minimap/<zip> 的存在路徑；找不到回 nil。
+-- 必須用平台分隔符組路徑：Pyramid 樣式層以 endsWith(File.separator .. fileName)
+-- 匹配 zip，Windows 上用 "/" 串檔名會導致圖層永遠匹配不到。
+-- B42 的 media 一律在版本目錄（42/）或 common/ 之下，不在 MOD 根目錄
+-- （ChooseGameInfo.Mod 建構子；getVersionDir/getCommonDir 皆回傳絕對路徑）。
+-- 版本目錄優先（與遊戲的 version-覆蓋-common 語意一致），每個 MOD 只取一顆。
+local function findZip(modInfo, sep, zip)
+    for _, root in ipairs({ modInfo:getVersionDir(), modInfo:getCommonDir() }) do
+        if root then
+            local path = root .. sep .. "media" .. sep .. "minimap" .. sep .. zip
+            if fileExists(path) then
+                return path
+            end
+        end
+    end
+    return nil
+end
+
+-- 回傳待掛載清單 { { path=絕對路徑, zip=檔名 }, ... }，順序＝MAPS 再 legacy addon
+-- （applyMiniMapPyramids 依序掛載/建層，addon 層後建、畫在基底之上）
+local function collectPyramids()
+    local list = {}
     local sep = getFileSeparator()
     local mods = getActivatedMods()
+    local active = {}
+    for i = 1, mods:size() do
+        active[mods:get(i - 1)] = true
+    end
+
+    -- (1) 本 MOD manifest：基底 + 已啟用地圖 MOD 的圖檔。缺檔一律有 log——
+    -- zip 是 gitignored 產物，「漏渲染／漏打包」是最可能的事故，不能靜默
+    local own = getModInfoByID(OWN_MOD_ID)
+    if own then
+        for _, entry in ipairs(MAPS) do
+            if not entry.mapMod or active[entry.mapMod] then
+                local path = findZip(own, sep, entry.zip)
+                if path then
+                    table.insert(list, { path = path, zip = entry.zip })
+                elseif not entry.mapMod then
+                    log("基底圖檔缺失: " .. entry.zip .. "（尚未渲染？應位於 42/media/minimap/，見 scripts/build_pyramids.ps1）")
+                else
+                    log("地圖 MOD " .. entry.mapMod .. " 已啟用，但集合包缺 " .. entry.zip .. "（漏渲染或漏打包？）")
+                end
+            end
+        end
+    else
+        log("getModInfoByID(\"" .. OWN_MOD_ID .. "\") 回 nil——OWN_MOD_ID 與 mod.info 的 id 不符？manifest 圖層全數停用")
+    end
+
+    -- (2) 相容路徑：掃描其他啟用 MOD 的約定同名 zip（第三方 addon，零 Lua）。
+    -- 排除本 MOD 自己：本 MOD 走 manifest；開發機殘留的舊約定檔名 zip 不該被雙掛
     for i = 1, mods:size() do
         local modID = mods:get(i - 1)
-        local modInfo = getModInfoByID(modID)
-        if modInfo then
-            -- B42 的 media 一律在版本目錄（42/）或 common/ 之下，不在 MOD 根目錄
-            -- （ChooseGameInfo.Mod 建構子；getVersionDir/getCommonDir 皆回傳絕對路徑）。
-            -- 版本目錄優先（與遊戲的 version-覆蓋-common 語意一致），每個 MOD 只取一顆。
-            for _, root in ipairs({ modInfo:getVersionDir(), modInfo:getCommonDir() }) do
-                if root then
-                    local path = root .. sep .. "media" .. sep .. "minimap" .. sep .. CANONICAL
-                    if fileExists(path) then
-                        table.insert(paths, path)
-                        break
-                    end
+        if modID ~= OWN_MOD_ID then
+            local modInfo = getModInfoByID(modID)
+            if modInfo then
+                local path = findZip(modInfo, sep, LEGACY_CANONICAL)
+                if path then
+                    table.insert(list, { path = path, zip = LEGACY_CANONICAL })
                 end
             end
         end
     end
-    return paths
+    return list
 end
 
 local function applyMiniMapPyramids(mapUI)
     local mapAPI = mapUI.mapAPI
     local styleAPI = mapAPI:getStyleAPI()
 
-    local paths = collectPyramidPaths()
-    if #paths == 0 then
-        log("未找到任何 " .. CANONICAL .. "，不加圖層")
+    local entries = collectPyramids()
+    if #entries == 0 then
+        log("未找到任何 pyramid zip，不加圖層")
         return
     end
 
     -- 掛載 zip（Java 側 WorldMap.addImagePyramid 自帶去重，重開地圖重複呼叫安全）
-    for _, path in ipairs(paths) do
-        mapAPI:addImagePyramid(path)
-        log("已掛載 pyramid: " .. path)
+    for _, e in ipairs(entries) do
+        mapAPI:addImagePyramid(e.path)
+        log("已掛載 pyramid: " .. e.path)
     end
 
-    -- 樣式層：疊在原版樣式之上，不清空原版（刻意不學 showTerrainImage 的 styleAPI:clear()）
-    -- 防重複註冊：重跑初始化時圖層已存在就不重加
-    if styleAPI:indexOfLayer(LAYER_ID) == -1 then
-        local layer = styleAPI:newPyramidLayer(LAYER_ID)
-        layer:setPyramidFileName(CANONICAL)
-        layer:addFill(0.0, 255.0, 255.0, 255.0, 255.0)
+    -- 樣式層：疊在原版樣式之上，不清空原版（刻意不學 showTerrainImage 的 styleAPI:clear()）。
+    -- 每個「檔名」一層（引擎一層只綁一個檔名）；防重複註冊：圖層已存在就不重加
+    for _, e in ipairs(entries) do
+        local layerId = "minidoracat_" .. (e.zip:gsub("%.pyramid%.zip$", ""))
+        if styleAPI:indexOfLayer(layerId) == -1 then
+            local layer = styleAPI:newPyramidLayer(layerId)
+            layer:setPyramidFileName(e.zip)
+            layer:addFill(0.0, 255.0, 255.0, 255.0, 255.0)
+        end
     end
 
     mapAPI:setBoolean("ImagePyramid", true)
-    log("圖層就緒（" .. #paths .. " 個 pyramid zip）")
+    log("圖層就緒（" .. #entries .. " 個 pyramid zip）")
 end
 
 --------------------------------------------------------------------------------
