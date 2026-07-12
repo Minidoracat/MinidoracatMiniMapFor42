@@ -1,0 +1,14 @@
+{
+    "Sandbox_MinidoracatMiniMap": "Minidoracat ミニマップ",
+    "Sandbox_MinidoracatMiniMapAllowZombieDots": "リアルタイムゾンビ表示を許可",
+    "Sandbox_MinidoracatMiniMapAllowZombieDots_tooltip": "プレイヤーがミニマップの表示範囲内のゾンビ位置をリアルタイム表示することを許可します。無効にすると全プレイヤーで機能がオフになります（管理者の変更は即時反映）。",
+    "Sandbox_MinidoracatMiniMapAllowZombieIntensity": "ゾンビヒートマップを許可",
+    "Sandbox_MinidoracatMiniMapAllowZombieIntensity_tooltip": "プレイヤーがミニマップにゾンビ密度ヒートマップを重ねることを許可します。無効にすると強制的に非表示になります（管理者の変更は即時反映）。",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay": "セーフハウス範囲表示",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay_tooltip": "プレイヤーのミニマップに表示するセーフハウス範囲枠を制御：オフ／自分のもののみ／すべて（他プレイヤー含む）。PVPサーバーでは「自分のもののみ」で敵拠点の位置漏洩を防げます。",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay_option1": "オフ",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay_option2": "自分のもののみ",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay_option3": "すべて",
+    "Sandbox_MinidoracatMiniMapAllowNavShare": "陣営目標共有を許可",
+    "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "プレイヤーがナビ目標を陣営メンバーと共有すること（サーバー経由転送）を許可します。無効にするとサーバーが共有リクエストを拒否します。"
+}

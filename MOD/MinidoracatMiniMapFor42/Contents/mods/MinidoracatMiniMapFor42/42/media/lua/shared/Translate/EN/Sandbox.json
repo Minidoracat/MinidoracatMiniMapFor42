@@ -1,0 +1,14 @@
+{
+    "Sandbox_MinidoracatMiniMap": "Minidoracat MiniMap",
+    "Sandbox_MinidoracatMiniMapAllowZombieDots": "Allow live zombie dots",
+    "Sandbox_MinidoracatMiniMapAllowZombieDots_tooltip": "Allow players to show real-time zombie positions within the mini-map view. When disabled, the feature is turned off for every player (admin changes apply live).",
+    "Sandbox_MinidoracatMiniMapAllowZombieIntensity": "Allow zombie heatmap",
+    "Sandbox_MinidoracatMiniMapAllowZombieIntensity_tooltip": "Allow players to overlay the zombie population heatmap on the mini-map. When disabled it is force-hidden (admin changes apply live).",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay": "Safehouse area display",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay_tooltip": "Controls safehouse area outlines on players' mini-maps: off / own only / all (including other players'). PVP servers may prefer \"Own only\" to avoid leaking enemy base locations.",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay_option1": "Off",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay_option2": "Own only",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay_option3": "All",
+    "Sandbox_MinidoracatMiniMapAllowNavShare": "Allow faction target sharing",
+    "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "Allow players to share navigation targets with faction members (relayed by the server). When disabled the server rejects share requests."
+}

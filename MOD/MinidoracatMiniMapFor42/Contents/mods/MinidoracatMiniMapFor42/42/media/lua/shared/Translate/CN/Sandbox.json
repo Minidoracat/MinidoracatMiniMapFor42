@@ -1,0 +1,14 @@
+{
+    "Sandbox_MinidoracatMiniMap": "Minidoracat 小地图",
+    "Sandbox_MinidoracatMiniMapAllowZombieDots": "允许实时丧尸点位",
+    "Sandbox_MinidoracatMiniMapAllowZombieDots_tooltip": "允许玩家在小地图上显示可视范围内丧尸的实时位置。关闭后所有玩家的丧尸点位功能失效（管理员改动即时生效）。",
+    "Sandbox_MinidoracatMiniMapAllowZombieIntensity": "允许丧尸热度图",
+    "Sandbox_MinidoracatMiniMapAllowZombieIntensity_tooltip": "允许玩家在小地图上叠加丧尸族群热度图。关闭后强制隐藏（管理员改动即时生效）。",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay": "安全屋范围显示",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay_tooltip": "控制玩家小地图上的安全屋范围框：关闭／仅自己所属的／全部（含其他玩家）。PVP 服务器可用「仅自己的」避免泄露敌方基地范围。",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay_option1": "关闭",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay_option2": "仅自己的",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay_option3": "全部",
+    "Sandbox_MinidoracatMiniMapAllowNavShare": "允许阵营目标分享",
+    "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "允许玩家把导航目标分享给同阵营成员（经服务器转发）。关闭后服务器直接拒收分享请求。"
+}

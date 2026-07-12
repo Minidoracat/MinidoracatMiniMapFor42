@@ -1,0 +1,14 @@
+{
+    "Sandbox_MinidoracatMiniMap": "Minidoracat 小地圖",
+    "Sandbox_MinidoracatMiniMapAllowZombieDots": "允許即時殭屍點位",
+    "Sandbox_MinidoracatMiniMapAllowZombieDots_tooltip": "允許玩家在小地圖上顯示可視範圍內殭屍的即時位置。關閉後所有玩家的殭屍點位功能失效（管理員改動即時生效）。",
+    "Sandbox_MinidoracatMiniMapAllowZombieIntensity": "允許殭屍熱度圖",
+    "Sandbox_MinidoracatMiniMapAllowZombieIntensity_tooltip": "允許玩家在小地圖上疊加殭屍族群熱度圖。關閉後強制隱藏（管理員改動即時生效）。",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay": "安全屋範圍顯示",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay_tooltip": "控制玩家小地圖上的安全屋範圍框：關閉／僅自己所屬的／全部（含其他玩家）。PVP 伺服器可用「僅自己的」避免洩漏敵方基地範圍。",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay_option1": "關閉",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay_option2": "僅自己的",
+    "Sandbox_MinidoracatMiniMapSafehouseDisplay_option3": "全部",
+    "Sandbox_MinidoracatMiniMapAllowNavShare": "允許陣營目標分享",
+    "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "允許玩家把導航目標分享給同陣營成員（經伺服器轉送）。關閉後伺服器直接拒收分享請求。"
+}

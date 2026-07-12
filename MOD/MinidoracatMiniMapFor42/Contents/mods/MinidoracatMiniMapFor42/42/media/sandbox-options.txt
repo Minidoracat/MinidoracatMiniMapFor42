@@ -1,0 +1,13 @@
+VERSION = 1,
+
+option MinidoracatMiniMap.AllowZombieDots
+{type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowZombieDots,}
+
+option MinidoracatMiniMap.AllowZombieIntensity
+{type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowZombieIntensity,}
+
+option MinidoracatMiniMap.SafehouseDisplay
+{type = enum, numValues = 3, default = 3, page = MinidoracatMiniMap, translation = MinidoracatMiniMapSafehouseDisplay,}
+
+option MinidoracatMiniMap.AllowNavShare
+{type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowNavShare,}

@@ -1,5 +1,6 @@
 {
     "IGUI_MapOption_PlaceNames": "地名",
+    "IGUI_MapOption_RemoteSymbols": "其他玩家標記",
     "IGUI_MapOption_ZombieIntensity": "殭屍熱度",
     "IGUI_MapOption_ZombieDots": "即時殭屍點位"
 }
