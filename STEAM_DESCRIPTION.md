@@ -36,4 +36,5 @@
 
 [b]#地圖 #小地圖 #minimap #worldmap #Minidoracat[/b]
 
+Workshop ID: 3763913359
 Mod ID: MinidoracatMiniMapFor42

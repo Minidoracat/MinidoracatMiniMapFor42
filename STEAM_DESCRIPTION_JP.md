@@ -39,4 +39,5 @@
 
 [b]#map #minimap #worldmap #Minidoracat[/b]
 
+Workshop ID: 3763913359
 Mod ID: MinidoracatMiniMapFor42
