@@ -35,6 +35,14 @@ Project Zomboid Build 42 遊戲內世界地圖圖片化 MOD。
   小地圖縮很小時不再被裁切遮住
 - **HUD 微調**：滑鼠懸停時小地圖邊框微亮（0.4→0.55），縮放熱區顯示 HUD 角落括號
 
+## 截圖
+
+| | |
+|---|---|
+| ![設定視窗](docs/screenshots/settings-window.png) | ![圖層選單與殭屍點位](docs/screenshots/layers-menu-zombie-dots.png) |
+| ![設定導航目標](docs/screenshots/nav-set-target.png) | ![陣營目標分享](docs/screenshots/nav-share-faction.png) |
+| ![導航邊緣指示](docs/screenshots/nav-edge-indicator.png) | ![管理員沙盒選項](docs/screenshots/admin-sandbox-options.png) |
+
 ## 設定
 
 主選單或遊戲內 **選項 → 模組 → Minidoracat 小地圖**：
