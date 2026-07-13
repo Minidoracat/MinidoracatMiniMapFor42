@@ -13,7 +13,7 @@
 [/list]
 
 [h2]🧩 地圖 MOD 支援[/h2]
-搭配 [b]Minidoracat MiniMap - MOD Maps[/b] 地圖包 addon：內含多張地圖 MOD 的
+搭配 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]Minidoracat MiniMap - MOD Maps[/url] 地圖包 addon：內含多張地圖 MOD 的
 小地圖圖像與範圍框線（含名稱、多語翻譯），[u]自動偵測[/u]——對應的地圖 MOD
 有啟用才顯示，沒裝不誤畫；裝了地圖包還會多出專屬選項（MOD 地圖區塊開關、
 框線開關、框線顏色）。

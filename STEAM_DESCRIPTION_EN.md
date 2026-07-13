@@ -14,7 +14,7 @@ engine's native ImagePyramid mechanism:
 [/list]
 
 [h2]🧩 Map MOD support[/h2]
-Pair it with the [b]Minidoracat MiniMap - MOD Maps[/b] map pack addon: it ships
+Pair it with the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]Minidoracat MiniMap - MOD Maps[/url] map pack addon: it ships
 mini-map images and area outlines (with names, multi-language) for several map
 MODs, [u]auto-detected[/u] — a map's image only shows when that map MOD is
 enabled, so nothing is drawn for maps you don't have. Installing the map pack

@@ -14,7 +14,7 @@
 [/list]
 
 [h2]🧩 マップ MOD サポート[/h2]
-[b]Minidoracat MiniMap - MOD Maps[/b] マップパック addon と併用：複数のマップ MOD の
+[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]Minidoracat MiniMap - MOD Maps[/url] マップパック addon と併用：複数のマップ MOD の
 ミニマップ画像と範囲枠線（名前つき・多言語対応）を収録、[u]自動検出[/u]——
 対応するマップ MOD が有効なときだけ表示され、入れていない地図を誤描画しません。
 マップパック導入で専用オプション（MOD マップ画像の表示切替・枠線切替・枠線色）も
