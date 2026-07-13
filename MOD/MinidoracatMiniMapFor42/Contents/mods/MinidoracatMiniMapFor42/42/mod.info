@@ -2,5 +2,5 @@ name=Minidoracat MiniMap for B42
 id=MinidoracatMiniMapFor42
 description=[B42]遊戲內世界地圖圖片化 MOD（ImagePyramid）。內建各地圖小地圖圖檔、依啟用的地圖 MOD 自動掛載；並自動掃描第三方 addon 的同名 pyramid 圖檔（零 Lua）。By Minidoracat
 poster=poster.png
-modversion=42.19.0-0.1.0
+modversion=42.19.0-0.2.0
 versionMin=42.19.0
