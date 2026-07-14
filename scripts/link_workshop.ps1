@@ -28,6 +28,11 @@ $WorkshopLink = Join-Path $WorkshopDir "MinidoracatMiniMapFor42"
 $ModsDir = Join-Path $env:UserProfile "Zomboid\mods"
 $ModsLink = Join-Path $ModsDir "MinidoracatMiniMapFor42"
 
+# 非 Steam 伺服器設定檔（-nosteam 伺服器不掃 Workshop，需把 mod id 寫進 ini 的 Mods=）
+$ServerIniDir = Join-Path $env:UserProfile "Zomboid\Server"
+$ServerModIds = @("MinidoracatMiniMapFor42")   # 寫入 Mods= 的 id
+$ServerModIdsOwn = $ServerModIds               # 移除時只動本 repo 擁有的 id
+
 # 驗證 MOD 來源目錄（以 mod.info 為準；workshop.txt 由 Workshop 上傳流程才會產生）
 if (-not (Test-Path (Join-Path $ModContent "42\mod.info"))) {
     Write-Host ""
@@ -168,6 +173,147 @@ function New-SymlinkElevated {
     return $false
 }
 
+# ============================================
+# 非 Steam 伺服器設定檔（Mods=）
+# ============================================
+
+function Select-ServerIni {
+    $inis = @(Get-ChildItem $ServerIniDir -Filter "*.ini" -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Extension -eq ".ini" })
+    if ($inis.Count -eq 0) {
+        Write-Host "  [伺服器] 找不到伺服器設定檔（$ServerIniDir\*.ini），跳過" -ForegroundColor Yellow
+        return $null
+    }
+    if ($inis.Count -eq 1) { return $inis[0].FullName }
+    Write-Host ""
+    for ($i = 0; $i -lt $inis.Count; $i++) {
+        Write-Host "  [$($i + 1)] $($inis[$i].Name)" -NoNewline
+        if ($inis[$i].Name -eq "servertest.ini") {
+            # PZ_Test.ps1 的 $SERVER_NAME 固定 servertest，本機測試都走這份
+            Write-Host "   <- PZ_Test.bat 主要測試伺服器" -ForegroundColor Green -NoNewline
+        }
+        Write-Host ""
+    }
+    $sel = Read-Host "請選擇伺服器設定檔（Enter 取消）"
+    $n = 0
+    if ([int]::TryParse($sel, [ref]$n) -and $n -ge 1 -and $n -le $inis.Count) {
+        return $inis[$n - 1].FullName
+    }
+    return $null
+}
+
+function Update-ServerIniMods {
+    param([string]$IniPath, [switch]$Remove)
+
+    # 讀取失敗（檔案被伺服器程序鎖住等）必須中止：$null 流下去會變成破壞性改寫
+    try {
+        # 編碼偵測：有 BOM → UTF-8 BOM；可嚴格 UTF-8 解碼 → UTF-8 無 BOM；否則系統 ANSI
+        $bytes = [IO.File]::ReadAllBytes($IniPath)
+        if ($bytes.Length -ge 2 -and (($bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) -or ($bytes[0] -eq 0xFE -and $bytes[1] -eq 0xFF))) {
+            Write-Host "  [伺服器] 設定檔是 UTF-16/32 編碼，不支援，未變更" -ForegroundColor Red
+            return
+        }
+        if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+            $enc = New-Object System.Text.UTF8Encoding($true)
+        } else {
+            try {
+                [void](New-Object System.Text.UTF8Encoding($false, $true)).GetString($bytes)
+                $enc = New-Object System.Text.UTF8Encoding($false)
+            } catch {
+                # 不用 [Text.Encoding]::Default：pwsh 7 下它是 UTF-8，會把 ANSI 中文毀成 U+FFFD
+                $enc = [System.Text.Encoding]::GetEncoding(
+                    [System.Globalization.CultureInfo]::CurrentCulture.TextInfo.ANSICodePage)
+            }
+        }
+        $lines = [IO.File]::ReadAllLines($IniPath, $enc)
+    } catch {
+        Write-Host "  [伺服器] 讀取設定檔失敗，未變更: $($_.Exception.Message)" -ForegroundColor Red
+        return
+    }
+    $idx = -1
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '^\s*Mods\s*=') { $idx = $i; break }
+    }
+    $current = @()
+    if ($idx -ge 0) {
+        $current = @(($lines[$idx] -replace '^\s*Mods\s*=', '') -split ';' |
+            ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    }
+
+    # B42 的 Mods= 條目帶 \ 前綴（如 \StarlitLibrary）：比對時去前綴，寫入時沿用檔內既有風格
+    $existingIds = @($current | ForEach-Object { $_.TrimStart('\') })
+    if ($Remove) {
+        # 只移除本 repo 擁有的 id，不動共用/主 MOD；大小寫寬鬆以順便清掉手打錯大小寫的殘留
+        $updated = @($current | Where-Object { $ServerModIdsOwn -notcontains $_.TrimStart('\') })
+    } else {
+        $prefix = '\'
+        if ($current.Count -gt 0 -and @($current | Where-Object { $_.StartsWith('\') }).Count -eq 0) {
+            $prefix = ''
+        }
+        $updated = @($current)
+        # PZ 的 mod id 比對是 case-sensitive：大小寫不同視為不存在，補上正確大小寫的條目
+        foreach ($id in $ServerModIds) {
+            if ($existingIds -cnotcontains $id) { $updated += "$prefix$id" }
+        }
+    }
+
+    if (($updated -join ';') -eq ($current -join ';')) {
+        Write-Host "  [伺服器] $(Split-Path -Leaf $IniPath) 的 Mods= 無需變更" -ForegroundColor DarkGray
+        return
+    }
+
+    $newLine = "Mods=" + ($updated -join ';')
+    if ($idx -ge 0) { $lines[$idx] = $newLine } else { $lines += $newLine }
+
+    # 伺服器啟動/關閉時會整檔回寫 ini（AGENTS.md），執行中寫入必被覆蓋——同名伺服器在跑就拒絕（偵測失敗放行）
+    $serverName = [IO.Path]::GetFileNameWithoutExtension($IniPath)
+    try {
+        $namePattern = '-servername\s+' + [regex]::Escape($serverName) + '(\s|$)'
+        $running = @(Get-CimInstance Win32_Process -Filter "Name='java.exe'" -ErrorAction Stop |
+            Where-Object { $_.CommandLine -match 'zombie\.network\.GameServer' -and
+                ($_.CommandLine -match $namePattern -or
+                 ($serverName -eq 'servertest' -and $_.CommandLine -notmatch '-servername\s')) })
+    } catch { $running = @() }
+    if ($running.Count -gt 0) {
+        Write-Host "  [伺服器] $serverName 伺服器正在執行，關閉時會整檔回寫覆蓋——請先停止伺服器再寫入" -ForegroundColor Red
+        return
+    }
+
+    # 備份失敗就不寫；寫入失敗要明講——不能讓紅字例外後面跟著綠色成功訊息
+    try {
+        Copy-Item $IniPath "$IniPath.bak" -Force -ErrorAction Stop
+    } catch {
+        Write-Host "  [伺服器] 備份失敗，取消寫入: $($_.Exception.Message)" -ForegroundColor Red
+        return
+    }
+    try {
+        [IO.File]::WriteAllLines($IniPath, $lines, $enc)
+    } catch {
+        Write-Host "  [伺服器] 寫入失敗: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "           原檔已備份為 .ini.bak，可還原" -ForegroundColor Yellow
+        return
+    }
+    Write-Host "  [伺服器] 已更新 $(Split-Path -Leaf $IniPath)（原檔備份為 .ini.bak）" -ForegroundColor Green
+    Write-Host "           $newLine" -ForegroundColor DarkGray
+}
+
+function Invoke-ServerIniPrompt {
+    param([switch]$Remove)
+    $question = if ($Remove) {
+        "是否同時從非 Steam 伺服器設定檔的 Mods= 移除？(y/N)"
+    } else {
+        "是否同時把 mod id 寫入非 Steam 伺服器設定檔的 Mods=？(y/N)"
+    }
+    $ans = Read-Host $question
+    if ($ans -notmatch '^[Yy]') { return }
+    $ini = Select-ServerIni
+    if ($ini) {
+        Update-ServerIniMods -IniPath $ini -Remove:$Remove
+    } else {
+        Write-Host "  [伺服器] 已取消，設定檔未變更" -ForegroundColor DarkGray
+    }
+}
+
 function Mount-Workshop {
     Write-Host ""
     Write-Host "正在建立符號連結..." -ForegroundColor Cyan
@@ -197,6 +343,13 @@ function Mount-Workshop {
         Write-Host "[部分完成] 請檢查上方狀態。" -ForegroundColor Yellow
         Write-Host "替代方案：啟用 Windows 開發人員模式後即可免管理員建立連結：" -ForegroundColor Yellow
         Write-Host "  設定 -> 系統 -> 開發人員專用 -> 開發人員模式" -ForegroundColor Yellow
+    }
+
+    Write-Host ""
+    if (Test-IsSymlink $ModsLink) {
+        Invoke-ServerIniPrompt
+    } else {
+        Write-Host "[提示] Mods 連結未建立，略過伺服器設定檔寫入詢問" -ForegroundColor Yellow
     }
     Write-Host ""
 }
@@ -243,6 +396,9 @@ function Dismount-Workshop {
     Write-Host ""
     Remove-SymlinkSafe -LinkPath $WorkshopLink -Label "Workshop"
     Remove-SymlinkSafe -LinkPath $ModsLink -Label "Mods"
+
+    Write-Host ""
+    Invoke-ServerIniPrompt -Remove
     Write-Host ""
 }
 
