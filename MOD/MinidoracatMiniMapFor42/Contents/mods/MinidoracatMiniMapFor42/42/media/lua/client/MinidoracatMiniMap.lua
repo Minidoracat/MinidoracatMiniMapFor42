@@ -199,22 +199,27 @@ local function applyMiniMapPyramids(mapUI)
     -- 掛載 zip（Java 側 WorldMap.addImagePyramid 自帶去重，重開地圖重複呼叫安全）
     for _, e in ipairs(entries) do
         mapAPI:addImagePyramid(e.path)
-        log("已掛載 pyramid: " .. e.path)
     end
 
     -- 樣式層：疊在原版樣式之上，不清空原版（刻意不學 showTerrainImage 的 styleAPI:clear()）。
-    -- 每個「檔名」一層（引擎一層只綁一個檔名）；防重複註冊：圖層已存在就不重加
+    -- 每個「檔名」一層（引擎一層只綁一個檔名）；防重複註冊：圖層已存在就不重加。
+    -- log 只在真正新增圖層時輸出——本函式會被開圖/樣式重建冪等重跑，無條件 log 會刷屏
+    local added = 0
     for _, e in ipairs(entries) do
         local layerId = "minidoracat_" .. (e.zip:gsub("%.pyramid%.zip$", ""))
         if styleAPI:indexOfLayer(layerId) == -1 then
             local layer = styleAPI:newPyramidLayer(layerId)
             layer:setPyramidFileName(e.zip)
             layer:addFill(0.0, 255.0, 255.0, 255.0, 255.0)
+            added = added + 1
+            log("已掛載 pyramid: " .. e.path)
         end
     end
 
     mapAPI:setBoolean("ImagePyramid", true)
-    log("圖層就緒（" .. #entries .. " 個 pyramid zip）")
+    if added > 0 then
+        log("圖層就緒（新增 " .. added .. "／共 " .. #entries .. " 個 pyramid zip）")
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -487,6 +492,15 @@ if PZAPI and PZAPI.ModOptions then
     addColorCombo("AnimalWildColor", "UI_MinidoracatMiniMap_AnimalWildColor", 2)      -- 預設綠
     addColorCombo("AnimalLivestockColor", "UI_MinidoracatMiniMap_AnimalLivestockColor", 1) -- 預設白
     addColorCombo("VehicleIconColor", "UI_MinidoracatMiniMap_VehicleIconColor", 4)    -- 預設天藍
+    -- 世界地圖（M）獨立圖標開關（預設關）：風格/顏色/物種與類別篩選共用小地圖設定
+    modOptions:addTickBox("WMZombieDots", "UI_MinidoracatMiniMap_WMZombieDots", false,
+        "UI_MinidoracatMiniMap_WM_tooltip")
+    modOptions:addTickBox("WMAnimalWild", "UI_MinidoracatMiniMap_WMAnimalWild", false,
+        "UI_MinidoracatMiniMap_WM_tooltip")
+    modOptions:addTickBox("WMAnimalLivestock", "UI_MinidoracatMiniMap_WMAnimalLivestock", false,
+        "UI_MinidoracatMiniMap_WM_tooltip")
+    modOptions:addTickBox("WMVehicleDots", "UI_MinidoracatMiniMap_WMVehicleDots", false,
+        "UI_MinidoracatMiniMap_WM_tooltip")
     -- 外框底色不透明度：只影響外框/按鈕列的黑底與其上的視覺重量；
     -- 地圖本體是 GPU 直繪（pyramid/圖磚不透明），引擎無整體 alpha 可調
     local opacityCombo = modOptions:addComboBox("Opacity", "UI_MinidoracatMiniMap_Opacity")
@@ -538,15 +552,61 @@ end
 
 -- 掛在 ISWorldMap:initDataAndStyle 之後：該函式建立世界地圖資料與預設樣式
 -- （內部呼叫 MapUtils.initDefaultStyleV3），是加自訂圖層的正確時機。
--- 不掛 MapUtils.initDefaultStyleV3 本身：LootMaps.Init.*（紙本地圖物品）也呼叫它，會被污染。
--- ponytail: 開圖狀態下切色盲選項或 debug TerrainImage 會重建樣式洗掉本圖層，重開地圖即恢復；
--- 需要更黏再改掛樣式重建點。
+-- 註：初建其實也會經內部 overlayPaper 觸發下方 wrap 補掛（instance 於
+-- ISWorldMap.lua:1506 先賦值、:1514 才 init）——此處是刻意冗餘的顯式主掛載點，
+-- 不依賴「initDataAndStyle 內部一定呼叫 overlayPaper」這個原版細節。
 local originalInitDataAndStyle = ISWorldMap.initDataAndStyle
 function ISWorldMap:initDataAndStyle()
     originalInitDataAndStyle(self)
     local ok, err = pcall(applyMiniMapPyramids, self)
     if not ok then
         log("初始化失敗: " .. tostring(err))
+    end
+end
+
+-- 樣式重建黏著（實測回饋：世界地圖沒有 MOD 地圖圖案）：原版會在遊戲中途重跑
+-- initDefaultStyleV3＋overlayPaper 把本 MOD 圖層洗掉——觸發點：prerender 的
+-- 色盲圖案不同步偵測（ISWorldMap.lua:367-370，切過無障礙選項/地圖面板勾選即中）、
+-- debug 右鍵「Reapply Style」（:933-937）、TerrainImage 關閉（:1067-1068）。
+-- 世界地圖是單例、initDataAndStyle 只跑一次，洗掉後不重啟不會復原。
+-- 修法＝wrap overlayPaper（洗圖層路徑都是 V3+overlayPaper 成對，掛 paper 之後
+-- 補圖層順序才正確）＋identity 只補世界地圖單例——LootMaps 紙本地圖物品
+-- 也走 V3/overlayPaper，但傳入自己的 mapUI、不匹配 ISWorldMap_instance，
+-- 不受污染（先前不 hook V3 的顧慮就是它）。addImagePyramid 去重＋
+-- indexOfLayer 防重複，重複補掛安全。
+-- 已知盲點：showTerrainImage（TerrainImage 開，:1073-1080）走 styleAPI:clear()
+-- 且不配 overlayPaper，本 wrap 攔不到——TERRAIN_IMAGE=getDebug()（:10）
+-- debug-only，正常遊玩不觸發，不處理
+if MapUtils and MapUtils.overlayPaper then
+    local originalOverlayPaper = MapUtils.overlayPaper
+    function MapUtils.overlayPaper(mapUI)
+        originalOverlayPaper(mapUI)
+        if ISWorldMap_instance and mapUI == ISWorldMap_instance then
+            local ok, err = pcall(applyMiniMapPyramids, mapUI)
+            if not ok then
+                log("世界地圖樣式重建後補掛失敗: " .. tostring(err))
+            end
+        end
+    end
+end
+
+-- 開圖保險：每次 ShowWorldMap 後補掛一次（冪等：addImagePyramid 去重＋
+-- indexOfLayer 防重複）。實測仍出現過「開圖當下圖層已缺失、按 debug
+-- Reapply Style 才回來」——上方 overlayPaper wrap 攔得住所有打到單例的
+-- overlayPaper 呼叫；實測仍缺圖代表另有成因（不走 overlayPaper 的洗層路徑，
+-- 或 applyMiniMapPyramids 某次間歇失敗、如 collectPyramids 暫時回空），
+-- 尚未定位，開圖補掛把可見缺圖窗口歸零。成本＝每次開圖一次、非每幀。
+-- 簽名同原版（ISWorldMap.lua:1500）
+if ISWorldMap and ISWorldMap.ShowWorldMap then
+    local originalShowWorldMap = ISWorldMap.ShowWorldMap
+    function ISWorldMap.ShowWorldMap(playerNum, centerX, centerY, zoom)
+        originalShowWorldMap(playerNum, centerX, centerY, zoom)
+        if ISWorldMap_instance then
+            local ok, err = pcall(applyMiniMapPyramids, ISWorldMap_instance)
+            if not ok then
+                log("開圖補掛失敗: " .. tostring(err))
+            end
+        end
     end
 end
 
@@ -1049,19 +1109,29 @@ local UNIFIED_APPEAR_TICKS = {
     { id = "TextAnnotations", label = "UI_MinidoracatMiniMap_TextAnnotations", default = false },
     { id = "LockPosition", label = "UI_MinidoracatMiniMap_LockPosition", default = false },
 }
+-- 世界地圖（M）圖標開關：與小地圖開關獨立（放本 MOD 視窗、不注入原版世界地圖
+-- 選項面板避免混淆），風格/顏色/篩選共用小地圖設定（同一 ModOptions 永久記錄）
+local UNIFIED_WM_TICKS = {
+    { id = "WMZombieDots", label = "UI_MinidoracatMiniMap_WMZombieDots" },
+    { id = "WMAnimalWild", label = "UI_MinidoracatMiniMap_WMAnimalWild" },
+    { id = "WMAnimalLivestock", label = "UI_MinidoracatMiniMap_WMAnimalLivestock" },
+    { id = "WMVehicleDots", label = "UI_MinidoracatMiniMap_WMVehicleDots" },
+}
 -- 區塊骨架：builder 依 id 分派（見 unifiedRebuild）；gate＝伺服器沙盒閘（停用時標示原因）
 local UNIFIED_SECTIONS = {
     { id = "layers", label = "UI_MinidoracatMiniMap_SecLayers" },
     { id = "zombie", label = "UI_MinidoracatMiniMap_SecZombie", gate = "AllowZombieDots" },
     { id = "animals", label = "UI_MinidoracatMiniMap_SecAnimals", gate = "AllowAnimalDots" },
     { id = "vehicles", label = "UI_MinidoracatMiniMap_SecVehicles", gate = "AllowVehicleDots" },
+    { id = "worldmap", label = "UI_MinidoracatMiniMap_SecWorldMap" },
     { id = "appearance", label = "UI_MinidoracatMiniMap_SecAppearance" },
 }
 -- ponytail: 展開狀態 session 記憶即可，跨場記憶（存 ModOptions）是升級路徑
 local unifiedExpand = { layers = true }
 -- 固定分欄（實測回饋：貪婪平衡會讓區塊隨展開狀態在左右欄跳動，破壞空間記憶）：
--- 左欄＝圖層顯示/外觀與行為，右欄＝殭屍點位/動物圖標/載具圖標——全展開高度相近
-local UNIFIED_LANE = { layers = 1, appearance = 1, zombie = 2, animals = 2, vehicles = 2 }
+-- 左欄＝圖層顯示/世界地圖圖標/外觀與行為，右欄＝殭屍點位/動物圖標/載具圖標
+local UNIFIED_LANE = { layers = 1, worldmap = 1, appearance = 1,
+    zombie = 2, animals = 2, vehicles = 2 }
 local settingsUI -- 單例；獨立頂層視窗，不隨小地圖 Recreate 消失（apply 自行重抓 mm）
 
 -- 地圖包 addon 專屬選項（有註冊才出現）：OnGameBoot＝所有 MOD lua 載入完
@@ -1212,6 +1282,12 @@ local function unifiedHeaderSummary(sec, pn)
         return onOff(getBoolOption("AnimalWild", false) or getBoolOption("AnimalLivestock", false))
     elseif sec.id == "vehicles" then
         return onOff(getBoolOption("VehicleDots", false))
+    elseif sec.id == "worldmap" then
+        local any = false
+        for i = 1, #UNIFIED_WM_TICKS do
+            if getBoolOption(UNIFIED_WM_TICKS[i].id, false) then any = true end
+        end
+        return onOff(any)
     end
     return nil
 end
@@ -1250,6 +1326,9 @@ local function unifiedRebuild(win)
         tw(getText("UI_MinidoracatMiniMap_VehicleDots")))
     for i = 1, #ADOTS_VEHCAT_UI do
         max2 = math.max(max2, tw(getText(ADOTS_VEHCAT_UI[i].label)))
+    end
+    for i = 1, #UNIFIED_WM_TICKS do
+        max2 = math.max(max2, tw(getText(UNIFIED_WM_TICKS[i].label)))
     end
     local need2 = max2 + TICK_W + 8       -- 2 欄群組單欄所需
     local max3 = 0                        -- 物種格（圖示＋勾選＋名）
@@ -1450,6 +1529,19 @@ local function unifiedRebuild(win)
                 end
                 curY = curY + math.ceil(#ADOTS_VEHCAT_UI / cols2) * rowH
                 for i = 1, #UNIFIED_VEHICLE_COMBOS do addComboRow(UNIFIED_VEHICLE_COMBOS[i]) end
+            elseif sec.id == "worldmap" then
+                local col = 0
+                for i = 1, #UNIFIED_WM_TICKS do
+                    local t = UNIFIED_WM_TICKS[i]
+                    addTick(curX + 4 + col * colW2, curY, colW2 - 8, getText(t.label),
+                        getBoolOption(t.id, false), onModTick, { id = t.id })
+                    col = col + 1
+                    if col == cols2 then col = 0; curY = curY + rowH end
+                end
+                if col ~= 0 then curY = curY + rowH end
+                add(ISLabel:new(curX + 4, curY, fontH, getText("UI_MinidoracatMiniMap_WMShared"),
+                    0.62, 0.62, 0.62, 1, UIFont.Small, true))
+                curY = curY + rowH
             elseif sec.id == "appearance" then
                 for i = 1, #UNIFIED_APPEAR_COMBOS do addComboRow(UNIFIED_APPEAR_COMBOS[i]) end
                 local col = 0
@@ -1574,14 +1666,19 @@ end
 
 toggleSettingsWindow = function(outer)
     if not settingsUI then settingsUI = buildSettingsWindow() end
+    local pn = outer.playerNum or 0
     if settingsUI:isVisible() then
-        settingsUI:setVisible(false)
-        return
+        -- 同一位玩家再按＝關閉；不同玩家按（分割畫面：世界地圖單例／各自小地圖
+        -- 都會轉呼此處）＝改掛新擁有者重建重定位，而不是把前一位的視窗關掉——
+        -- 否則 P2 第一按只會關 P1 的窗，或直接沿用 P1 身分讀寫引擎選項
+        if settingsUI._playerNum == pn then
+            settingsUI:setVisible(false)
+            return
+        end
     end
-    settingsUI._playerNum = outer.playerNum or 0 -- 視窗擁有者（分割畫面各自讀寫自己的小地圖）
+    settingsUI._playerNum = pn -- 視窗擁有者（分割畫面各自讀寫自己的小地圖）
     unifiedRebuild(settingsUI) -- 開窗即重建＝同步現值（可能在 ESC 選項頁被改過）
     -- 靠小地圖左側、夾進該玩家 viewport（取法同圖層面板定位）
-    local pn = outer.playerNum or 0
     local sx, sy = getPlayerScreenLeft(pn), getPlayerScreenTop(pn)
     local sw, sh = getPlayerScreenWidth(pn), getPlayerScreenHeight(pn)
     local x = outer:getAbsoluteX() - settingsUI.width - 8
@@ -1646,7 +1743,8 @@ installMinidoracatButtons = function(mm)
     local minW = 6 * ref.width + 5 * 2 + (mm.borderSize or 2) * 2 + 4
     if minW > RESIZE_MIN then RESIZE_MIN = minW end
     -- ponytail: 新鈕未登記手把導航列（原版 insertNewLineOfButtons 於 createChildren
-    -- 一次性登記，事後補列會亂序）；手把用戶仍可經圖層面板操作，需要時再補
+    -- 一次性登記，事後補列會亂序）；手把用戶走 ESC 選項頁（PZAPI ModOptions
+    -- 已列全部開關），需要時再補登記
 end
 
 -- 齒輪改開設定視窗；無 PZAPI（設定無處持久化）時維持原版行為（開圖層面板）
@@ -1670,7 +1768,8 @@ end
 -- 繪製掛 ISMiniMapInner:prerender：UIWorldMap.java:152 render 先畫地圖本體、
 -- 行 317 才 super.render() → UIElement.java:1594 呼叫 Lua prerender，
 -- 故點位畫在地圖之上、齒輪面板（inner 子元件，1604 子元件迴圈較晚畫）之下。
--- 世界地圖（M 鍵）刻意不畫：範圍太大、點位沒意義，只做角落小地圖。
+-- 世界地圖（M 鍵）亦可畫（WM* 獨立開關，見 drawZombieDotsOn 與 ISWorldMap
+-- prerender wrap）——客戶端只知道已載入個體，拉遠不會鋪滿全圖。
 --------------------------------------------------------------------------------
 
 local ZDOTS_INTERVAL_MS = 300 -- 取樣間隔（毫秒）
@@ -1698,14 +1797,24 @@ local ZDOTS_SCAN_MAX = 4000
 local ZDOTS_NEAR = 30 -- 近圈半徑（世界格）
 local ZDOTS_MID = 80  -- 中圈半徑
 
--- 取樣狀態按 playerNum 分槽（分割畫面各玩家有各自的視窗/節流/點池，
--- 共用模組變數會讓第二位玩家沿用第一位的取樣結果）；槽位重用不產生每幀垃圾
-local zdotsStates = {} -- [pn] = { dots, near, mid, far, count, nextMs }
-local function zdotsStateFor(pn)
-    local st = zdotsStates[pn]
+-- 取樣狀態掛在地圖元件上（分割畫面各玩家、以及同玩家的「小地圖／世界地圖」
+-- 兩個表面各自持有——按 playerNum 分槽會讓兩表面互搶點池與節流、視窗範圍
+-- 不同會畫錯）；元件重建＝狀態自然重置，池重用不產生每幀垃圾
+local function zdotsStateFor(el)
+    local st = el._minidoracatZDots
     if not st then
         st = { dots = {}, near = {}, mid = {}, far = {}, count = 0, nextMs = 0 }
-        zdotsStates[pn] = st
+        el._minidoracatZDots = st
+    end
+    -- 世界地圖是 singleton：關閉只隱藏（ISWorldMap.lua:1157 setVisible(false)）、
+    -- 再開改寫 playerNum 重用同物件（:1547-1550）——換擁有者即重置，
+    -- 分割畫面不沿用前一位的點池
+    local pn = el.playerNum or 0
+    if st.owner ~= pn then
+        st.owner = pn
+        st.count = 0
+        st.nextMs = 0
+        st.failOnce = nil
     end
     return st
 end
@@ -1726,7 +1835,7 @@ end
 
 local function sampleZombieDots(inner)
     local pn = inner.playerNum or 0
-    local st = zdotsStateFor(pn)
+    local st = zdotsStateFor(inner)
     local now = getTimestampMs()
     if now < st.nextMs then return st end
     st.nextMs = now + ZDOTS_INTERVAL_MS
@@ -1749,7 +1858,7 @@ local function sampleZombieDots(inner)
     local mid2 = ZDOTS_MID * ZDOTS_MID
     -- pcall 防競態：getZombieList 是模擬端會增刪的活 ArrayList，size 與 get
     -- 之間殭屍被移除會丟 IndexOutOfBounds——失敗就放棄本輪取樣（300ms 後重試）
-    local ok = pcall(function()
+    local ok, err = pcall(function()
         local n = list:size()
         if n > ZDOTS_SCAN_MAX then n = ZDOTS_SCAN_MAX end
         local nearC, midC, farC = 0, 0, 0
@@ -1793,8 +1902,40 @@ local function sampleZombieDots(inner)
         take(st.far, farC)
         st.count = count
     end)
-    if not ok then st.count = 0 end
+    if not ok then
+        st.count = 0
+        -- pcall 防的是活清單競態（暫時性，下輪取樣自癒）；持久性錯誤（API 漂移）
+        -- 不能全靜默——每表面 log 一次留診斷線索（同動物取樣 failOnce 慣例）
+        if not st.failOnce then
+            st.failOnce = true
+            log("殭屍取樣失敗（本表面僅記錄一次）: " .. tostring(err))
+        end
+    end
     return st
+end
+
+-- 殭屍點繪製（小地圖與世界地圖共用；el 需有 mapAPI/width/height/playerNum）。
+-- optId＝該表面的開關（小地圖 ZombieDots／世界地圖 WMZombieDots）；
+-- 顏色/大小/上限與伺服器沙盒閘兩表面共用
+local function drawZombieDotsOn(el, optId)
+    if not getBoolOption(optId, false) then return end -- 關閉＝零成本
+    if sandboxGate("AllowZombieDots", true) == false then return end -- 伺服器沙盒禁用
+    local st = sampleZombieDots(el)
+    local c = ZDOTS_COLORS[getComboIndex("ZombieDotColor", 1)] or ZDOTS_COLORS[1]
+    local size = ZDOTS_SIZES[getComboIndex("ZombieDotSize", 2)] or 3
+    local mapAPI = el.mapAPI
+    for i = 1, st.count do
+        local d = st.dots[i]
+        -- 世界→UI 座標：worldToUIX/Y＝UIWorldMapV1.java:298/311
+        local ux = mapAPI:worldToUIX(d.x, d.y)
+        local uy = mapAPI:worldToUIY(d.x, d.y)
+        -- 手動裁到視窗內（Lua drawRect 不吃元件裁切）；含描邊起繪於 ux-2。
+        -- drawRect＝ISUIElement.lua:1191（引數 x,y,w,h,a,r,g,b）
+        if ux >= 2 and uy >= 2 and ux <= el.width - size and uy <= el.height - size then
+            el:drawRect(ux - 2, uy - 2, size + 2, size + 2, ZDOTS_EDGE_A, 0, 0, 0)
+            el:drawRect(ux - 1, uy - 1, size, size, ZDOTS_A, c[1], c[2], c[3])
+        end
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -1931,13 +2072,22 @@ local function adotsVehCategory(v)
     return "standard"
 end
 
-local adotsStates = {} -- [pn] 分槽理由同 zdotsStates（分割畫面各自取樣）
+-- 取樣狀態掛在地圖元件上（分槽理由同 zdotsStateFor：兩表面/分割畫面各自持有）
 local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
     local pn = inner.playerNum or 0
-    local st = adotsStates[pn]
+    local st = inner._minidoracatADots
     if not st then
         st = { dots = {}, count = 0, nextMs = 0 }
-        adotsStates[pn] = st
+        inner._minidoracatADots = st
+    end
+    -- 世界地圖 singleton 換擁有者重置（同 zdotsStateFor 註解）：點池、節流、
+    -- cache key 與 log-once 旗標都不跨玩家沿用——牲畜隱私過濾按各自身分重算
+    if st.owner ~= pn then
+        st.owner = pn
+        st.count = 0
+        st.nextMs = 0
+        st.flags = nil
+        st.errLogged = nil
     end
     local now = getTimestampMs()
     -- 開關組合＋篩選字串一起入 cache key：節流窗內任一變了就立即重取樣，
@@ -2049,11 +2199,13 @@ local function adotsDrawGlyph(inner, tex, ux, uy, size, r, g, b)
     inner:drawTextureScaled(tex, ux, uy, size, size, 1, r, g, b)
 end
 
-local function drawAnimalDots(inner)
+-- wildOpt/liveOpt/vehOpt＝該表面的開關選項（小地圖 AnimalWild…／世界地圖 WM 前綴）；
+-- 風格/大小/顏色/物種與類別篩選、伺服器沙盒閘皆兩表面共用
+local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
     local allowAnimals = sandboxGate("AllowAnimalDots", true) ~= false -- 伺服器沙盒閘門
-    local wantWild = allowAnimals and getBoolOption("AnimalWild", false)
-    local wantLive = allowAnimals and getBoolOption("AnimalLivestock", false)
-    local wantVeh = getBoolOption("VehicleDots", false)
+    local wantWild = allowAnimals and getBoolOption(wildOpt, false)
+    local wantLive = allowAnimals and getBoolOption(liveOpt, false)
+    local wantVeh = getBoolOption(vehOpt, false)
         and sandboxGate("AllowVehicleDots", true) ~= false
     if not (wantWild or wantLive or wantVeh) then return end -- 全關＝零成本
     local st = sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
@@ -2254,8 +2406,66 @@ end
 if ISWorldMap and ISWorldMap.prerender then
     local originalWorldMapPrerender = ISWorldMap.prerender
     function ISWorldMap:prerender()
+        -- 世界地圖圖標：獨立 WM* 開關（統一視窗「世界地圖圖標」區），
+        -- 風格/顏色/篩選與小地圖共用。客戶端只知道已載入區域的個體，
+        -- 拉遠不會鋪滿全圖——圖標天然只出現在玩家周邊。
+        -- 畫在 original prerender「之前」：引擎地圖本體在 Java 層早已畫完
+        -- （UIWorldMap.java:152→317 才進 Lua prerender），而 original 內含
+        -- 註記編輯預覽（ISWorldMapSymbols.lua:1459）——先畫圖標，預覽才不被反蓋。
+        -- 持久繪製錯誤首次記 log（同小地圖動物繪製的 log-once 策略）
+        local adOk, adErr = pcall(drawAnimalDots, self, "WMAnimalWild", "WMAnimalLivestock", "WMVehicleDots")
+        if not adOk and not self._minidoracatWMADotsErrLogged then
+            self._minidoracatWMADotsErrLogged = true
+            log("世界地圖動物圖標繪製失敗: " .. tostring(adErr))
+        end
+        local zdOk, zdErr = pcall(drawZombieDotsOn, self, "WMZombieDots")
+        if not zdOk and not self._minidoracatWMZDotsErrLogged then
+            self._minidoracatWMZDotsErrLogged = true
+            log("世界地圖殭屍點繪製失敗: " .. tostring(zdErr))
+        end
         originalWorldMapPrerender(self)
         pcall(drawMapBounds, self)
+    end
+end
+
+-- 世界地圖按鈕列加「爪印」鈕＝開統一設定視窗（實測回饋：玩家在世界地圖上
+-- 找不到圖標開關——入口必須在人所在的表面）。原版按鈕鏈狀排列後 shrinkWrap
+-- 右貼齊（ISWorldMap.lua:299-356），事後插入須重算：新鈕接在 forget(?) 之後、
+-- 關閉鈕前，closeBtn 右移、面板重新縮包＋右貼齊
+if ISWorldMap and ISWorldMap.createChildren then
+    local originalWMCreateChildren = ISWorldMap.createChildren
+    function ISWorldMap:createChildren()
+        originalWMCreateChildren(self)
+        -- pcall 邊界：這段是對原版排版的事後手術（依賴 closeBtn/buttonPanel 欄位與
+        -- shrinkWrap 行為），例外若外洩會沿 createChildren→ISWorldMap:new 炸掉整張
+        -- 世界地圖——失敗只該損失爪印鈕（小地圖齒輪仍是入口）
+        local ok, err = pcall(function()
+            if self._minidoracatWMBtn then return end -- 冪等：重跑不重複插鈕
+            if not (modOptions and self.buttonPanel and self.closeBtn) then return end
+            local btnSize = self.closeBtn.height
+            local btn = ISButton:new(self.closeBtn.x, 0, btnSize, btnSize, "", self,
+                function(target) toggleSettingsWindow(target) end)
+            btn:initialise()
+            local paw = adotsTexture and adotsTexture("media/ui/LootableMaps/map_pawprint.png")
+            if paw then
+                btn:setImage(paw) -- setImage/forceImageSize 用法同原版 optionBtn（:309-310）
+                btn:forceImageSize(math.floor(btnSize * 0.6), math.floor(btnSize * 0.6))
+            else
+                btn:setTitle("i")
+            end
+            btn.tooltip = getText("UI_MinidoracatMiniMap_BtnSettings")
+            self.buttonPanel:addChild(btn)
+            self.closeBtn:setX(btn:getRight() + 10) -- 10＝UI_BORDER_SPACING（ISWorldMap.lua:8，原版按鈕間距 :314/:351 用它）
+            self.buttonPanel:shrinkWrap(0, 0, nil)
+            self.buttonPanel:setX(self.width - 10 - self.buttonPanel.width)
+            self._minidoracatWMBtn = btn
+            -- ponytail: 未登記手把導航列（同小地圖新鈕的取捨——事後補列會亂序），
+            -- 手把用戶走 ESC 選項頁（PZAPI ModOptions 已列全部開關；引擎原生三項
+            -- 原版世界地圖選項面板本就可及），需要時再補登記
+        end)
+        if not ok then
+            log("世界地圖爪印鈕安裝失敗: " .. tostring(err))
+        end
     end
 end
 
@@ -2473,7 +2683,7 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         pcall(drawNavTargets, self)
         -- 動物圖標（畫在殭屍點位之下：殭屍小點蓋大圖標可辨）。持久錯誤首次記 log
         -- 免全靜默（API 漂移/第三方動物資料異常可診斷；既有三個 pcall 沿舊慣例不動）
-        local adOk, adErr = pcall(drawAnimalDots, self)
+        local adOk, adErr = pcall(drawAnimalDots, self, "AnimalWild", "AnimalLivestock", "VehicleDots")
         if not adOk and not self._minidoracatADotsErrLogged then
             self._minidoracatADotsErrLogged = true
             log("動物圖標繪製失敗: " .. tostring(adErr))
@@ -2498,27 +2708,7 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
             cBtn.borderColor.g = flOn and 0.85 or 0.4
             cBtn.borderColor.b = 0.4
         end
-        if not getBoolOption("ZombieDots", false) then return end -- 關閉＝零成本
-        if sandboxGate("AllowZombieDots", true) == false then return end -- 伺服器沙盒禁用
-        local st = sampleZombieDots(self) -- per-player 取樣狀態（分割畫面各自獨立）
-        local c = ZDOTS_COLORS[getComboIndex("ZombieDotColor", 1)] or ZDOTS_COLORS[1]
-        local size = ZDOTS_SIZES[getComboIndex("ZombieDotSize", 2)] or 3
-        local mapAPI = self.mapAPI
-        for i = 1, st.count do
-            local d = st.dots[i]
-            -- 世界→UI 座標：worldToUIX/Y＝UIWorldMapV1.java:298/311
-            -- （mapAPI 是 getAPIv3，V3→V2→V1 繼承鏈 UIWorldMapV3.java:10、V2.java:8）；
-            -- 原版用例 ISMultiplayerZoneEditor.lua:83 + MultiplayerZoneEditorMode_NonPVP.lua:58
-            local ux = mapAPI:worldToUIX(d.x, d.y)
-            local uy = mapAPI:worldToUIY(d.x, d.y)
-            -- 手動裁到視窗內（Lua drawRect 不吃元件裁切）；含描邊起繪於 ux-2，
-            -- 右/下界以 ux+size ≤ 邊長推得，免溢出 inner 疊到外框
-            if ux >= 2 and uy >= 2 and ux <= self.width - size and uy <= self.height - size then
-                -- drawRect＝ISUIElement.lua:1191（引數 x,y,w,h,a,r,g,b）；先黑底再填色＝描邊
-                self:drawRect(ux - 2, uy - 2, size + 2, size + 2, ZDOTS_EDGE_A, 0, 0, 0)
-                self:drawRect(ux - 1, uy - 1, size, size, ZDOTS_A, c[1], c[2], c[3])
-            end
-        end
+        drawZombieDotsOn(self, "ZombieDots") -- 繪製本體共用化（世界地圖用 WMZombieDots）
     end
 end
 
