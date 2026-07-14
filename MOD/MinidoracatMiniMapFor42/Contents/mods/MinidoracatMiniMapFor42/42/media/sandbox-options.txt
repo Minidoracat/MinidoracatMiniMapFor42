@@ -11,3 +11,12 @@ option MinidoracatMiniMap.SafehouseDisplay
 
 option MinidoracatMiniMap.AllowNavShare
 {type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowNavShare,}
+
+option MinidoracatMiniMap.AllowAnimalDots
+{type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowAnimalDots,}
+
+option MinidoracatMiniMap.AllowOthersLivestock
+{type = boolean, default = false, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowOthersLivestock,}
+
+option MinidoracatMiniMap.AllowVehicleDots
+{type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowVehicleDots,}

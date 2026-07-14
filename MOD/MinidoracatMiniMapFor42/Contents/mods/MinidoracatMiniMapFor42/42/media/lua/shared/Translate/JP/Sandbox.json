@@ -10,5 +10,11 @@
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_option2": "自分のもののみ",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_option3": "すべて",
     "Sandbox_MinidoracatMiniMapAllowNavShare": "陣営目標共有を許可",
-    "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "プレイヤーがナビ目標を陣営メンバーと共有すること（サーバー経由転送）を許可します。無効にするとサーバーが共有リクエストを拒否します。"
+    "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "プレイヤーがナビ目標を陣営メンバーと共有すること（サーバー経由転送）を許可します。無効にするとサーバーが共有リクエストを拒否します。",
+    "Sandbox_MinidoracatMiniMapAllowAnimalDots": "動物アイコンを許可",
+    "Sandbox_MinidoracatMiniMapAllowAnimalDots_tooltip": "プレイヤーがミニマップに周囲の動物アイコン（野生・家畜）を表示することを許可します。無効にすると全プレイヤーで機能がオフになります（管理者の変更は即時反映）。",
+    "Sandbox_MinidoracatMiniMapAllowOthersLivestock": "他プレイヤーの家畜を表示",
+    "Sandbox_MinidoracatMiniMapAllowOthersLivestock_tooltip": "有効にすると、自分が所属していないセーフハウス内の家畜も表示されます。拠点のプライバシー保護のためデフォルトは無効。セーフハウス範囲外の家畜は常に表示されます。",
+    "Sandbox_MinidoracatMiniMapAllowVehicleDots": "車両アイコンを許可",
+    "Sandbox_MinidoracatMiniMapAllowVehicleDots_tooltip": "プレイヤーがミニマップに周囲の車両アイコンを表示することを許可します。無効にすると全プレイヤーで機能がオフになります（管理者の変更は即時反映）。"
 }

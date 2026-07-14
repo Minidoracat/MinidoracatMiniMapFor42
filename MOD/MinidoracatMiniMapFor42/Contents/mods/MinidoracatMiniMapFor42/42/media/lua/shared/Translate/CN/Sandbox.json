@@ -10,5 +10,11 @@
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_option2": "仅自己的",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_option3": "全部",
     "Sandbox_MinidoracatMiniMapAllowNavShare": "允许阵营目标分享",
-    "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "允许玩家把导航目标分享给同阵营成员（经服务器转发）。关闭后服务器直接拒收分享请求。"
+    "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "允许玩家把导航目标分享给同阵营成员（经服务器转发）。关闭后服务器直接拒收分享请求。",
+    "Sandbox_MinidoracatMiniMapAllowAnimalDots": "允许动物图标",
+    "Sandbox_MinidoracatMiniMapAllowAnimalDots_tooltip": "允许玩家在小地图上显示附近动物图标（野生与畜养）。关闭后所有玩家的动物图标功能失效（管理员改动即时生效）。",
+    "Sandbox_MinidoracatMiniMapAllowOthersLivestock": "显示其他玩家的牲畜",
+    "Sandbox_MinidoracatMiniMapAllowOthersLivestock_tooltip": "开启后，玩家也能看到自己不属于的安全屋内的牲畜。默认关闭以保护基地隐私；安全屋范围外的牲畜一律可见。",
+    "Sandbox_MinidoracatMiniMapAllowVehicleDots": "允许载具图标",
+    "Sandbox_MinidoracatMiniMapAllowVehicleDots_tooltip": "允许玩家在小地图上显示附近载具图标。关闭后所有玩家的载具图标功能失效（管理员改动即时生效）。"
 }

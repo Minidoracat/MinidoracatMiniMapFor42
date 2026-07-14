@@ -1,4 +1,5 @@
 {
+    "IGUI_MapOption_Isometric": "アイソメ表示",
     "IGUI_MapOption_PlaceNames": "地名",
     "IGUI_MapOption_RemoteSymbols": "他プレイヤーの記号",
     "IGUI_MapOption_ZombieIntensity": "ゾンビ密度",

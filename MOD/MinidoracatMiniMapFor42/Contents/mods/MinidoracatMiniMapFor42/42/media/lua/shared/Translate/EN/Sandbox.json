@@ -10,5 +10,11 @@
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_option2": "Own only",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_option3": "All",
     "Sandbox_MinidoracatMiniMapAllowNavShare": "Allow faction target sharing",
-    "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "Allow players to share navigation targets with faction members (relayed by the server). When disabled the server rejects share requests."
+    "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "Allow players to share navigation targets with faction members (relayed by the server). When disabled the server rejects share requests.",
+    "Sandbox_MinidoracatMiniMapAllowAnimalDots": "Allow animal icons",
+    "Sandbox_MinidoracatMiniMapAllowAnimalDots_tooltip": "Allow players to show nearby animal icons (wild and livestock) on the mini-map. When disabled, the feature is turned off for every player (admin changes apply live).",
+    "Sandbox_MinidoracatMiniMapAllowOthersLivestock": "Show other players' livestock",
+    "Sandbox_MinidoracatMiniMapAllowOthersLivestock_tooltip": "When enabled, players can also see livestock inside safehouses they don't belong to. Off by default to protect base privacy. Livestock outside any safehouse area is always visible.",
+    "Sandbox_MinidoracatMiniMapAllowVehicleDots": "Allow vehicle icons",
+    "Sandbox_MinidoracatMiniMapAllowVehicleDots_tooltip": "Allow players to show nearby vehicle icons on the mini-map. When disabled, the feature is turned off for every player (admin changes apply live)."
 }

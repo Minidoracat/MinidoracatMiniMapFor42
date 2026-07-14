@@ -378,6 +378,15 @@ local function getCustomSize(playerNum)
     return w, h
 end
 
+-- 圖標染色下拉的共用項目序（＝繪製端 ADOTS_PALETTE 索引，兩表順序必須一致）：
+-- Okabe-Ito 色盲友善色系（紅綠色盲下八色仍可辨），綠/天藍沿用實測亮度
+local ADOTS_COLOR_ITEMS = {
+    "UI_MinidoracatMiniMap_IColor_White", "UI_MinidoracatMiniMap_IColor_Green",
+    "UI_MinidoracatMiniMap_IColor_Orange", "UI_MinidoracatMiniMap_IColor_Sky",
+    "UI_MinidoracatMiniMap_IColor_Yellow", "UI_MinidoracatMiniMap_IColor_Magenta",
+    "UI_MinidoracatMiniMap_IColor_Blue", "UI_MinidoracatMiniMap_IColor_Vermilion",
+}
+
 if PZAPI and PZAPI.ModOptions then
     modOptions = PZAPI.ModOptions:create("MinidoracatMiniMap", "UI_MinidoracatMiniMap_Options")
 
@@ -449,6 +458,35 @@ if PZAPI and PZAPI.ModOptions then
     zMaxCombo:addItem("UI_MinidoracatMiniMap_ZDotMax_200", true) -- 預設 200
     zMaxCombo:addItem("UI_MinidoracatMiniMap_ZDotMax_400", false)
     zMaxCombo:addItem("UI_MinidoracatMiniMap_ZDotMax_800", false)
+    -- 動物圖標（預設關）：野生/畜養獨立開關＋風格/尺寸（繪製端每幀讀值，存檔即生效）
+    modOptions:addTickBox("AnimalWild", "UI_MinidoracatMiniMap_AnimalWild", false,
+        "UI_MinidoracatMiniMap_AnimalWild_tooltip")
+    modOptions:addTickBox("AnimalLivestock", "UI_MinidoracatMiniMap_AnimalLivestock", false,
+        "UI_MinidoracatMiniMap_AnimalLivestock_tooltip")
+    local aStyleCombo = modOptions:addComboBox("AnimalIconStyle", "UI_MinidoracatMiniMap_AnimalIconStyle")
+    aStyleCombo:addItem("UI_MinidoracatMiniMap_AIconStyle_Symbol", true) -- 預設地圖符號
+    aStyleCombo:addItem("UI_MinidoracatMiniMap_AIconStyle_Item", false)
+    local aSizeCombo = modOptions:addComboBox("AnimalIconSize", "UI_MinidoracatMiniMap_AnimalIconSize")
+    aSizeCombo:addItem("UI_MinidoracatMiniMap_ZDotSize_Small", false) -- 小/中/大字樣沿用 ZDotSize 鍵
+    aSizeCombo:addItem("UI_MinidoracatMiniMap_ZDotSize_Medium", true)
+    aSizeCombo:addItem("UI_MinidoracatMiniMap_ZDotSize_Large", false)
+    -- 載具圖標（預設關）：無內建車形地圖圖示，以方向盤符號顯示（見 ADOTS_VEH_SYM）
+    modOptions:addTickBox("VehicleDots", "UI_MinidoracatMiniMap_VehicleDots", false,
+        "UI_MinidoracatMiniMap_VehicleDots_tooltip")
+    -- 篩選停用清單（統一視窗的物種/載具類別勾選自動寫入；CSV、空＝全開）。
+    -- PZAPI 無多選元件，做成可見進階欄位（同 CustomSize 先例）——一般玩家用視窗操作
+    modOptions:addTextEntry("AnimalSpeciesFilter", "UI_MinidoracatMiniMap_AnimalSpeciesFilter", "",
+        "UI_MinidoracatMiniMap_AnimalSpeciesFilter_tooltip")
+    modOptions:addTextEntry("VehicleCategoryFilter", "UI_MinidoracatMiniMap_VehicleCategoryFilter", "",
+        "UI_MinidoracatMiniMap_VehicleCategoryFilter_tooltip")
+    -- 圖標染色三下拉（玩家偏好/色盲需求；繪製端每幀讀值即時生效）
+    local function addColorCombo(id, labelKey, defaultIdx)
+        local c = modOptions:addComboBox(id, labelKey)
+        for i = 1, #ADOTS_COLOR_ITEMS do c:addItem(ADOTS_COLOR_ITEMS[i], i == defaultIdx) end
+    end
+    addColorCombo("AnimalWildColor", "UI_MinidoracatMiniMap_AnimalWildColor", 2)      -- 預設綠
+    addColorCombo("AnimalLivestockColor", "UI_MinidoracatMiniMap_AnimalLivestockColor", 1) -- 預設白
+    addColorCombo("VehicleIconColor", "UI_MinidoracatMiniMap_VehicleIconColor", 4)    -- 預設天藍
     -- 外框底色不透明度：只影響外框/按鈕列的黑底與其上的視覺重量；
     -- 地圖本體是 GPU 直繪（pyramid/圖磚不透明），引擎無整體 alpha 可調
     local opacityCombo = modOptions:addComboBox("Opacity", "UI_MinidoracatMiniMap_Opacity")
@@ -613,9 +651,10 @@ if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.getVisibleOptions then
         local result = originalGetVisibleOptions(self)
         if self.showAllOptions then return result end -- debug/admin 模式已列全量，不重複加
         local names = { "Players" }
-        if isClient() then -- 隊友圖標與名字僅多人顯示
+        if isClient() then -- 隊友圖標僅多人顯示；名字（PlayerNames）不給獨立勾選框：
+            -- 它無 ModOptions 項、隨 RemotePlayers 連動（applyToggleOptions 與
+            -- 面板 onTickBox 皆同寫），獨立勾了也會被下次套用蓋回
             table.insert(names, "RemotePlayers")
-            table.insert(names, "PlayerNames")
         end
         table.insert(names, "ZombieIntensity")
         table.insert(names, "PlaceNames")
@@ -632,16 +671,37 @@ if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.getVisibleOptions then
     end
 end
 
--- 齒輪面板勾「地名」時連帶開「符號」：同 applyToggleOptions 的閘門耦合，這裡補
--- 齒輪面板的即時路徑（原版 onTickBox 只寫單一選項值，ISMiniMap.lua:14-20）。
--- 只在勾選 PlaceNames 時觸發；我們注入的殭屍點位 tickbox 走自訂 handler 不經此處。
+-- 齒輪面板引擎選項勾選的兩件補課（原版 onTickBox 對一般項只寫單一引擎選項值
+-- ——ColorblindPatterns 特例除外，ISMiniMap.lua:14-20；我們注入的殭屍點位等
+-- tickbox 走自訂 handler 不經此處）：
+-- 1. 耦合選項即時連動：勾「地名」連帶開「符號」、切「隊友圖標」同寫「隊友名字」
+--    ——同 applyToggleOptions 的耦合，補面板的即時路徑。
+-- 2. 「ESC 選項頁也有同名項」的引擎開關回寫 ModOptions——引擎值僅活在記憶體，
+--    不回寫則之後任何 applyToggleOptions（改尺寸/顏色等設定套用、重建）都會拿
+--    ModOptions 舊值把面板勾選蓋回去（玩家實測：面板關熱度後一調設定就被勾回）。
+--    耦合先做、回寫在後：save() 寫檔失敗拋錯時不可綁架耦合。
+-- 同步表與 getVisibleOptions 注入清單一一對應——新增注入項時兩處要一起改。
+local PANEL_MODOPTION_SYNC = {
+    Players = true, RemotePlayers = true, ZombieIntensity = true, PlaceNames = true,
+}
 if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.onTickBox then
     local originalPanelOnTickBox = ISMiniMapOptionsPanel.onTickBox
     function ISMiniMapOptionsPanel:onTickBox(index, selected, option)
         originalPanelOnTickBox(self, index, selected, option)
-        if selected and option and option.getName and option:getName() == "PlaceNames" then
+        local name = option and option.getName and option:getName()
+        if selected and name == "PlaceNames" then
             self.map.mapAPI:setBoolean("Symbols", true)
             self:synchUI() -- 讓「符號」勾選框立即反映（synchUI＝ISMiniMap.lua:128）
+        elseif name == "RemotePlayers" then
+            self.map.mapAPI:setBoolean("PlayerNames", selected) -- 名字隨圖標（同 applyToggleOptions）
+            self:synchUI() -- debug/admin 全量面板列有 PlayerNames，讓其勾選框即時反映
+        end
+        if modOptions and name and PANEL_MODOPTION_SYNC[name] then
+            local opt = modOptions:getOption(name)
+            if opt then
+                opt:setValue(selected) -- 同步 ESC 選項頁元件（ModOptions.lua:68-73）
+                PZAPI.ModOptions:save() -- 立即落地 ini（同 onMinidoracatTick 做法）
+            end
         end
     end
 end
@@ -660,6 +720,9 @@ if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.createChildren
     -- （ZombieDots 繪製端與 LockPosition 事件端每幀/每次讀值，無需 apply）
     local GEAR_TICKS = {
         { id = "ZombieDots", label = "IGUI_MapOption_ZombieDots", default = false },
+        { id = "AnimalWild", label = "UI_MinidoracatMiniMap_AnimalWild", default = false },
+        { id = "AnimalLivestock", label = "UI_MinidoracatMiniMap_AnimalLivestock", default = false },
+        { id = "VehicleDots", label = "UI_MinidoracatMiniMap_VehicleDots", default = false },
         { id = "StreetNames", label = "UI_MinidoracatMiniMap_StreetNames", default = true,
             apply = function(panel, selected)
                 if panel.map and panel.map.mapAPI then
@@ -869,42 +932,136 @@ if ISMiniMap and ISMiniMap.Recreate then
             ui:removeFromUIManager()
             mm.optionsUI = nil
         end
-        return originalRecreate(playerNum)
+        -- 原生三項跨重建快照：原版 Recreate 砍舊建新（ISMiniMap.lua:778-781）且
+        -- 不先 saveSettings（那要等玩家資料拆除，ISPlayerData.lua:59）——本場剛在
+        -- 統一視窗改的等軸測/符號/遠端符號會被 restoreSettings 的舊檔值蓋掉
+        local snap
+        local api = mm and mm.inner and mm.inner.mapAPI
+        if api then
+            snap = {
+                Isometric = api:getBoolean("Isometric"),
+                Symbols = api:getBoolean("Symbols"),
+                RemoteSymbols = api:getBoolean("RemoteSymbols"),
+            }
+        end
+        local result = originalRecreate(playerNum)
+        if snap then
+            local nmm = getPlayerMiniMap(playerNum)
+            local napi = nmm and nmm.inner and nmm.inner.mapAPI
+            if napi then
+                napi:setBoolean("Isometric", snap.Isometric)
+                napi:setBoolean("Symbols", snap.Symbols)
+                napi:setBoolean("RemoteSymbols", snap.RemoteSymbols)
+            end
+        end
+        return result
     end
 end
 
 --------------------------------------------------------------------------------
--- 詳細設定視窗＋按鈕列擴充（免跑 ESC 選項頁）：
---   齒輪鈕改開本視窗（原版齒輪＝開圖層面板，ISMiniMap.lua:578-580）；
---   圖層面板改掛新「=」鈕；「C」鈕＝回到玩家（清自由查看旗標）。
+-- 統一控制視窗＋按鈕列擴充（免跑 ESC 選項頁）：
+--   齒輪鈕開啟；五個可收合區塊（圖層/殭屍點位/動物/載具/外觀行為）整併
+--   原設定視窗與圖層面板注入項——「=」鈕已退役，引擎原生三項
+--   （等軸測/符號/遠端符號）移入「圖層顯示」區。
 -- 視窗以 ISCollapsableWindow 頂層呈現（標題拖曳＋關閉鈕內建，
 -- ISCollapsableWindow.lua:26-61），改值即寫回 ModOptions（同步 ESC 頁元件，
 -- ModOptions.lua:68-73）並走既有 modOptions:apply()——尺寸重建/開關即時/
--- 透明度一條龍，不另寫套用邏輯。
+-- 透明度一條龍，不另寫套用邏輯。收合/展開/全選採「全清重建」模式
+-- （同原版 synchUI 全重建先例，ISMiniMap.lua:133-142），免逐元件同步。
 --------------------------------------------------------------------------------
-local SETTINGS_ROWS = {
-    { kind = "combo", id = "MapSize", label = "UI_MinidoracatMiniMap_Size", default = 2,
-        items = { "UI_MinidoracatMiniMap_Size_Small", "UI_MinidoracatMiniMap_Size_Medium",
-            "UI_MinidoracatMiniMap_Size_Large", "UI_MinidoracatMiniMap_Size_Huge" } },
-    { kind = "combo", id = "AdornMode", label = "UI_MinidoracatMiniMap_AdornMode", default = 2,
-        items = { "UI_MinidoracatMiniMap_AdornMode_Hover", "UI_MinidoracatMiniMap_AdornMode_Always" } },
-    { kind = "combo", id = "ZombieDotColor", label = "UI_MinidoracatMiniMap_ZombieDotColor", default = 1,
+-- 前置宣告（本體見下方「動物圖標」一節；視窗畫物種小圖用）
+local adotsTexture, ADOTS_ART
+
+-- 物種/載具類別篩選（統一視窗勾選；CSV 存「停用」鍵、空字串＝全開）。
+-- 鼠類 UI 上合併 rat+mouse（圖標也共用 map_rodent）
+local ADOTS_SPECIES_UI = {
+    { key = "cow",     label = "UI_MinidoracatMiniMap_Sp_Cow",     groups = { "cow" } },
+    { key = "sheep",   label = "UI_MinidoracatMiniMap_Sp_Sheep",   groups = { "sheep" } },
+    { key = "pig",     label = "UI_MinidoracatMiniMap_Sp_Pig",     groups = { "pig" } },
+    { key = "deer",    label = "UI_MinidoracatMiniMap_Sp_Deer",    groups = { "deer" } },
+    { key = "chicken", label = "UI_MinidoracatMiniMap_Sp_Chicken", groups = { "chicken" } },
+    { key = "turkey",  label = "UI_MinidoracatMiniMap_Sp_Turkey",  groups = { "turkey" } },
+    { key = "rabbit",  label = "UI_MinidoracatMiniMap_Sp_Rabbit",  groups = { "rabbit" } },
+    { key = "raccoon", label = "UI_MinidoracatMiniMap_Sp_Raccoon", groups = { "raccoon" } },
+    { key = "rodent",  label = "UI_MinidoracatMiniMap_Sp_Rodent",  groups = { "rat", "mouse" } },
+}
+local ADOTS_VEHCAT_UI = {
+    { key = "standard", label = "UI_MinidoracatMiniMap_VCat_Standard" },
+    { key = "heavy",    label = "UI_MinidoracatMiniMap_VCat_Heavy" },
+    { key = "sport",    label = "UI_MinidoracatMiniMap_VCat_Sport" },
+    { key = "special",  label = "UI_MinidoracatMiniMap_VCat_Special" },
+}
+
+-- 各區的下拉/勾選定義（沿用 settingsApply 管線；engine=true 直寫引擎選項——
+-- 原版語意：Isometric/Symbols 由原版 saveSettings 跨場存 WorldMapSettings
+-- （ISMiniMap.lua:605-616）、RemoteSymbols 原版即不持久化）
+local UNIFIED_LAYER_TICKS = {
+    { id = "Players", label = "UI_MinidoracatMiniMap_Players", default = true },
+    { id = "RemotePlayers", label = "UI_MinidoracatMiniMap_RemotePlayers", default = true, mpOnly = true },
+    { id = "ZombieIntensity", label = "UI_MinidoracatMiniMap_ZombieIntensity", default = false },
+    { id = "PlaceNames", label = "UI_MinidoracatMiniMap_PlaceNames", default = true },
+    { id = "StreetNames", label = "UI_MinidoracatMiniMap_StreetNames", default = true },
+    { id = "Safehouses", label = "UI_MinidoracatMiniMap_Safehouses", default = true },
+    { id = "Isometric", label = "IGUI_MapOption_Isometric", engine = true },
+    { id = "Symbols", label = "IGUI_MapOption_Symbols", engine = true },
+    { id = "RemoteSymbols", label = "IGUI_MapOption_RemoteSymbols", engine = true },
+}
+local UNIFIED_ZOMBIE_COMBOS = {
+    { id = "ZombieDotColor", label = "UI_MinidoracatMiniMap_ZombieDotColor", default = 1,
         items = { "UI_MinidoracatMiniMap_ZDotColor_Orange", "UI_MinidoracatMiniMap_ZDotColor_Yellow",
             "UI_MinidoracatMiniMap_ZDotColor_Purple", "UI_MinidoracatMiniMap_ZDotColor_White",
             "UI_MinidoracatMiniMap_ZDotColor_Red" } },
-    { kind = "combo", id = "ZombieDotSize", label = "UI_MinidoracatMiniMap_ZombieDotSize", default = 2,
+    { id = "ZombieDotSize", label = "UI_MinidoracatMiniMap_ZombieDotSize", default = 2,
         items = { "UI_MinidoracatMiniMap_ZDotSize_Small", "UI_MinidoracatMiniMap_ZDotSize_Medium",
             "UI_MinidoracatMiniMap_ZDotSize_Large" } },
-    { kind = "combo", id = "ZombieDotMax", label = "UI_MinidoracatMiniMap_ZombieDotMax", default = 2,
+    { id = "ZombieDotMax", label = "UI_MinidoracatMiniMap_ZombieDotMax", default = 2,
         items = { "UI_MinidoracatMiniMap_ZDotMax_100", "UI_MinidoracatMiniMap_ZDotMax_200",
             "UI_MinidoracatMiniMap_ZDotMax_400", "UI_MinidoracatMiniMap_ZDotMax_800" } },
-    { kind = "combo", id = "Opacity", label = "UI_MinidoracatMiniMap_Opacity", default = 1,
+}
+local UNIFIED_ANIMAL_COMBOS = {
+    { id = "AnimalIconStyle", label = "UI_MinidoracatMiniMap_AnimalIconStyle", default = 1,
+        items = { "UI_MinidoracatMiniMap_AIconStyle_Symbol", "UI_MinidoracatMiniMap_AIconStyle_Item" } },
+    { id = "AnimalIconSize", label = "UI_MinidoracatMiniMap_AnimalIconSize", default = 2,
+        items = { "UI_MinidoracatMiniMap_ZDotSize_Small", "UI_MinidoracatMiniMap_ZDotSize_Medium",
+            "UI_MinidoracatMiniMap_ZDotSize_Large" } },
+    { id = "AnimalWildColor", label = "UI_MinidoracatMiniMap_AnimalWildColor", default = 2,
+        items = ADOTS_COLOR_ITEMS },
+    { id = "AnimalLivestockColor", label = "UI_MinidoracatMiniMap_AnimalLivestockColor", default = 1,
+        items = ADOTS_COLOR_ITEMS },
+}
+local UNIFIED_VEHICLE_COMBOS = {
+    { id = "VehicleIconColor", label = "UI_MinidoracatMiniMap_VehicleIconColor", default = 4,
+        items = ADOTS_COLOR_ITEMS },
+}
+local UNIFIED_APPEAR_COMBOS = {
+    { id = "MapSize", label = "UI_MinidoracatMiniMap_Size", default = 2,
+        items = { "UI_MinidoracatMiniMap_Size_Small", "UI_MinidoracatMiniMap_Size_Medium",
+            "UI_MinidoracatMiniMap_Size_Large", "UI_MinidoracatMiniMap_Size_Huge" } },
+    { id = "AdornMode", label = "UI_MinidoracatMiniMap_AdornMode", default = 2,
+        items = { "UI_MinidoracatMiniMap_AdornMode_Hover", "UI_MinidoracatMiniMap_AdornMode_Always" } },
+    { id = "Opacity", label = "UI_MinidoracatMiniMap_Opacity", default = 1,
         items = { "UI_MinidoracatMiniMap_Opacity_Full", "UI_MinidoracatMiniMap_Opacity_Half",
             "UI_MinidoracatMiniMap_Opacity_Faint" } },
-    { kind = "tick", id = "FreeLook", label = "UI_MinidoracatMiniMap_FreeLook", default = true },
-    { kind = "tick", id = "ClickOpenWorldMap", label = "UI_MinidoracatMiniMap_ClickOpenWorldMap", default = false },
-    { kind = "tick", id = "TextAnnotations", label = "UI_MinidoracatMiniMap_TextAnnotations", default = false },
 }
+local UNIFIED_APPEAR_TICKS = {
+    { id = "FreeLook", label = "UI_MinidoracatMiniMap_FreeLook", default = true },
+    { id = "ClickOpenWorldMap", label = "UI_MinidoracatMiniMap_ClickOpenWorldMap", default = false },
+    { id = "TextAnnotations", label = "UI_MinidoracatMiniMap_TextAnnotations", default = false },
+    { id = "LockPosition", label = "UI_MinidoracatMiniMap_LockPosition", default = false },
+}
+-- 區塊骨架：builder 依 id 分派（見 unifiedRebuild）；gate＝伺服器沙盒閘（停用時標示原因）
+local UNIFIED_SECTIONS = {
+    { id = "layers", label = "UI_MinidoracatMiniMap_SecLayers" },
+    { id = "zombie", label = "UI_MinidoracatMiniMap_SecZombie", gate = "AllowZombieDots" },
+    { id = "animals", label = "UI_MinidoracatMiniMap_SecAnimals", gate = "AllowAnimalDots" },
+    { id = "vehicles", label = "UI_MinidoracatMiniMap_SecVehicles", gate = "AllowVehicleDots" },
+    { id = "appearance", label = "UI_MinidoracatMiniMap_SecAppearance" },
+}
+-- ponytail: 展開狀態 session 記憶即可，跨場記憶（存 ModOptions）是升級路徑
+local unifiedExpand = { layers = true }
+-- 固定分欄（實測回饋：貪婪平衡會讓區塊隨展開狀態在左右欄跳動，破壞空間記憶）：
+-- 左欄＝圖層顯示/外觀與行為，右欄＝殭屍點位/動物圖標/載具圖標——全展開高度相近
+local UNIFIED_LANE = { layers = 1, appearance = 1, zombie = 2, animals = 2, vehicles = 2 }
 local settingsUI -- 單例；獨立頂層視窗，不隨小地圖 Recreate 消失（apply 自行重抓 mm）
 
 -- 地圖包 addon 專屬選項（有註冊才出現）：OnGameBoot＝所有 MOD lua 載入完
@@ -925,12 +1082,12 @@ Events.OnGameBoot.Add(function()
     mbColor:addItem("UI_MinidoracatMiniMap_MBColor_Yellow", false)
     mbColor:addItem("UI_MinidoracatMiniMap_MBColor_Purple", false)
     mbColor:addItem("UI_MinidoracatMiniMap_MBColor_White", false)
-    -- 設定視窗（齒輪按鈕開的詳細視窗）同步加三列
-    table.insert(SETTINGS_ROWS, { kind = "tick", id = "MapPackLayers",
+    -- 統一視窗同步加項：圖層區兩顆勾選＋外觀區框線顏色下拉
+    table.insert(UNIFIED_LAYER_TICKS, { id = "MapPackLayers",
         label = "UI_MinidoracatMiniMap_MapPackLayers", default = true })
-    table.insert(SETTINGS_ROWS, { kind = "tick", id = "MapBounds",
+    table.insert(UNIFIED_LAYER_TICKS, { id = "MapBounds",
         label = "UI_MinidoracatMiniMap_MapBounds", default = true })
-    table.insert(SETTINGS_ROWS, { kind = "combo", id = "MapBoundsColor",
+    table.insert(UNIFIED_APPEAR_COMBOS, { id = "MapBoundsColor",
         label = "UI_MinidoracatMiniMap_MapBoundsColor", default = 1,
         items = { "UI_MinidoracatMiniMap_MBColor_Green", "UI_MinidoracatMiniMap_MBColor_Cyan",
             "UI_MinidoracatMiniMap_MBColor_Yellow", "UI_MinidoracatMiniMap_MBColor_Purple",
@@ -948,65 +1105,470 @@ local function settingsApply(entry, value)
     PZAPI.ModOptions:save()
 end
 
-local function buildSettingsWindow()
-    local fontH = getTextManager():getFontHeight(UIFont.Small)
-    local rowH = fontH + 12
+-- CSV 集合（停用鍵）：gmatch 用例 ISCharacterScreen.lua（Kahlua 支援）。
+-- 空集合以 "-" sentinel 儲存：PZAPI 存讀管線會把空 textentry 讀成 nil 再存成
+-- 字串 "nil"（load 用 luautils.split 丟尾端空欄，ModOptions.lua:304），
+-- 空字串走一輪就變髒——讀取端把 "-"/"nil" 一律視為空
+local function unifiedCsvSet(raw)
+    local set = {}
+    for w in string.gmatch(tostring(raw or ""), "[^,]+") do
+        if w ~= "-" and w ~= "nil" then set[w] = true end
+    end
+    return set
+end
+
+-- 篩選讀取（sampler 每輪呼叫；以原始字串為 key 快取解析結果）。
+-- 回傳「停用 group 集合」與原始字串（原始字串併入取樣 cache key）
+local adotsFilterCaches = {} -- [optId] = { raw, groups }
+local function adotsDisabledGroups(optId, uiDefs)
+    if not modOptions then return nil, "" end
+    local opt = modOptions:getOption(optId)
+    if not opt then return nil, "" end
+    local raw = tostring(opt:getValue() or "")
+    local c = adotsFilterCaches[optId]
+    if not c or c.raw ~= raw then
+        local dis = unifiedCsvSet(raw)
+        local groups = {}
+        for i = 1, #uiDefs do
+            local def = uiDefs[i]
+            if dis[def.key] then
+                if def.groups then
+                    for j = 1, #def.groups do groups[def.groups[j]] = true end
+                else
+                    groups[def.key] = true
+                end
+            end
+        end
+        c = { raw = raw, groups = groups }
+        adotsFilterCaches[optId] = c
+    end
+    return c.groups, raw
+end
+
+-- 篩選寫入：單鍵切換／全選全不選；序列化依定義序（ini diff 穩定）。
+-- 不呼叫 apply()——取樣端下輪（≤0.5s）經 cache key 察覺變更
+local function unifiedSetFilter(optId, uiDefs, key, enabled)
+    if not modOptions then return end
+    local opt = modOptions:getOption(optId)
+    if not opt then return end
+    local dis = unifiedCsvSet(opt:getValue())
+    if enabled then dis[key] = nil else dis[key] = true end
+    local parts = {}
+    for i = 1, #uiDefs do
+        if dis[uiDefs[i].key] then parts[#parts + 1] = uiDefs[i].key end
+    end
+    -- 空集合寫 "-"（見 unifiedCsvSet 註解的 PZAPI 空字串髒化問題）
+    opt:setValue(#parts > 0 and table.concat(parts, ",") or "-")
+    PZAPI.ModOptions:save()
+end
+local function unifiedSetAllFilter(optId, uiDefs, enabled)
+    if not modOptions then return end
+    local opt = modOptions:getOption(optId)
+    if not opt then return end
+    if enabled then
+        opt:setValue("-") -- 空集合 sentinel（見 unifiedCsvSet 註解）
+    else
+        local parts = {}
+        for i = 1, #uiDefs do parts[#parts + 1] = uiDefs[i].key end
+        opt:setValue(table.concat(parts, ","))
+    end
+    PZAPI.ModOptions:save()
+end
+
+-- 引擎選項直讀直寫（等軸測/符號/遠端符號）：無小地圖時讀 false、寫 no-op。
+-- pn＝視窗擁有者（分割畫面 P2+ 開的視窗不能讀寫到 P1 的小地圖）
+local function unifiedEngineGet(name, pn)
+    pn = pn or 0
+    local mm = getSpecificPlayer(pn) and getPlayerMiniMap(pn)
+    local api = mm and mm.inner and mm.inner.mapAPI
+    return api ~= nil and api:getBoolean(name) or false
+end
+local function unifiedEngineSet(name, v, pn)
+    pn = pn or 0
+    local mm = getSpecificPlayer(pn) and getPlayerMiniMap(pn)
+    local api = mm and mm.inner and mm.inner.mapAPI
+    if api then api:setBoolean(name, v) end
+end
+
+-- 收合區塊標題的現況摘要（重建時計算；區塊收合期間值不會從本視窗變動）
+local function unifiedHeaderSummary(sec, pn)
+    local function onOff(v)
+        return getText(v and "UI_MinidoracatMiniMap_On" or "UI_MinidoracatMiniMap_Off")
+    end
+    if sec.id == "layers" then
+        local n, on = 0, 0
+        for i = 1, #UNIFIED_LAYER_TICKS do
+            local t = UNIFIED_LAYER_TICKS[i]
+            if not (t.mpOnly and not isClient()) then
+                n = n + 1
+                local v = t.engine and unifiedEngineGet(t.id, pn) or (not t.engine and getBoolOption(t.id, t.default))
+                if v then on = on + 1 end
+            end
+        end
+        return on .. "/" .. n
+    elseif sec.id == "zombie" then
+        return onOff(getBoolOption("ZombieDots", false))
+    elseif sec.id == "animals" then
+        return onOff(getBoolOption("AnimalWild", false) or getBoolOption("AnimalLivestock", false))
+    elseif sec.id == "vehicles" then
+        return onOff(getBoolOption("VehicleDots", false))
+    end
+    return nil
+end
+
+-- 全清重建：收合/展開/全選類操作直接重建所有列（值變動一律讀現值，免同步邏輯）。
+-- v3 版面：雙欄 lane（區塊貪婪放進較短欄，全展開高度約砍半）＋內容捲動容器
+-- （高度夾 viewport，永不超出螢幕——先前全展開高於螢幕、底部被切＝疊字/消失根因）
+local function unifiedRebuild(win)
+    local panel = win._content
+    for i = 1, #win._rows do panel:removeChild(win._rows[i]) end
+    win._rows = {}
+    win._headers = {}
+    win._icons = {}
+    local pn = win._playerNum or 0 -- 視窗擁有者（分割畫面 P2+ 不能讀寫到 P1）
+    local tm = getTextManager()
+    local fontH = tm:getFontHeight(UIFont.Small)
+    local rowH = fontH + 8
     local pad = 10
-    local labelW = 150
-    local widgetW = 160
-    local win = ISCollapsableWindow:new(0, 0, pad + labelW + widgetW + pad, 100)
+    -- 各語系標籤實測寬度決定 lane 寬與欄數：CJK/EN 字長差異大，固定欄寬會
+    -- 右緣裁字、兩欄疊字（實測回饋）。MeasureStringX 用例 ISMiniMap.lua:31
+    local function tw(t) return tm:MeasureStringX(UIFont.Small, t) end
+    local TICK_W = fontH + 10 -- tickbox 方框＋間距的寬度預算（過估安全）
+    local max2 = 0 -- 2 欄群組（圖層/外觀勾選/動物母開關/載具類別）最長標籤
+    for i = 1, #UNIFIED_LAYER_TICKS do
+        local t = UNIFIED_LAYER_TICKS[i]
+        if not (t.mpOnly and not isClient()) then
+            max2 = math.max(max2, tw(getTextOrNull(t.label) or t.id))
+        end
+    end
+    for i = 1, #UNIFIED_APPEAR_TICKS do
+        max2 = math.max(max2, tw(getText(UNIFIED_APPEAR_TICKS[i].label)))
+    end
+    max2 = math.max(max2, tw(getText("UI_MinidoracatMiniMap_AnimalWild")),
+        tw(getText("UI_MinidoracatMiniMap_AnimalLivestock")),
+        tw(getText("UI_MinidoracatMiniMap_ZombieDots")),
+        tw(getText("UI_MinidoracatMiniMap_VehicleDots")))
+    for i = 1, #ADOTS_VEHCAT_UI do
+        max2 = math.max(max2, tw(getText(ADOTS_VEHCAT_UI[i].label)))
+    end
+    local need2 = max2 + TICK_W + 8       -- 2 欄群組單欄所需
+    local max3 = 0                        -- 物種格（圖示＋勾選＋名）
+    for i = 1, #ADOTS_SPECIES_UI do
+        max3 = math.max(max3, tw(getText(ADOTS_SPECIES_UI[i].label)))
+    end
+    local need3 = max3 + TICK_W + fontH + 10
+    local comboLabelW = 0                 -- combo 列標籤欄
+    local comboGroups = { UNIFIED_ZOMBIE_COMBOS, UNIFIED_ANIMAL_COMBOS,
+        UNIFIED_VEHICLE_COMBOS, UNIFIED_APPEAR_COMBOS }
+    for g = 1, #comboGroups do
+        for i = 1, #comboGroups[g] do
+            comboLabelW = math.max(comboLabelW, tw(getText(comboGroups[g][i].label)))
+        end
+    end
+    -- lane 寬＝滿足 lane 內最寬需求（2 欄雙倍/3 欄三倍/combo 標籤＋最小下拉 130），
+    -- 夾上限後降欄數（2→1、3→2→1）——寧可長高（有捲動兜底），不裁字
+    local laneW = math.max(300, need2 * 2 + 12, need3 * 3 + 12, comboLabelW + 130 + 12)
+    if laneW > 420 then laneW = 420 end
+    local cols2 = (need2 * 2 + 12 <= laneW) and 2 or 1
+    local cols3 = 3
+    if need3 * 3 + 12 > laneW then
+        cols3 = (need3 * 2 + 12 <= laneW) and 2 or 1
+    end
+    local colW2 = math.floor((laneW - 6) / cols2)
+    local colW3 = math.floor((laneW - 6) / cols3)
+    local W = pad * 2 + laneW * 2 + 12 + 14 -- 雙 lane＋中縫＋右側捲軸預留
+    win:setWidth(W)
+    panel:setWidth(W)
+    -- 標題列右側鈕補位：釘選/收合鈕以「建立當下」寬度定位（ISCollapsableWindow.lua:72/83，
+    -- anchorRight 對 Lua setWidth 不生效——實測釘選卡在舊寬度處），改寬後手動跟上
+    local tbBtn = win.pinButton or win.collapseButton
+    local tbH = tbBtn and tbBtn.height or 16
+    if win.pinButton then win.pinButton:setX(W - 1 - tbH) end
+    if win.collapseButton then win.collapseButton:setX(W - 1 - tbH) end
+    -- 雙欄游標：curX/curY＝目前 lane 的基準 x 與游標 y（helpers 讀寫 curY）；
+    -- 座標皆為 panel 內容座標（捲動由 panel 處理）
+    local laneX = { pad, pad + laneW + 12 }
+    local laneY = { 0, 0 }
+    local curX, curY = laneX[1], 0
+
+    local function add(el)
+        panel:addChild(el)
+        win._rows[#win._rows + 1] = el
+        return el
+    end
+    local function onModTick(target, index, selected, e)
+        settingsApply(e, selected)
+        -- PlaceNames 開啟會連動強制 Symbols=true（applyToggleOptions 的耦合）：
+        -- 重建讓「符號」勾選框立即反映引擎現值，不留 UI/引擎分裂
+        if e.id == "PlaceNames" then unifiedRebuild(win) end
+    end
+    local function onEngineTick(target, index, selected, e) unifiedEngineSet(e.id, selected, pn) end
+    -- ISTickBox:new 用法同原設定視窗建法（ISTickBox.lua:282）；單框單選項
+    local function addTick(x, yy, w, labelText, checked, cb, arg)
+        local t = ISTickBox:new(x, yy, w, fontH + 4, "", win, cb, arg)
+        t:initialise()
+        t:addOption(labelText)
+        t:setSelected(1, checked and true or false)
+        return add(t)
+    end
+    -- 下拉列（ISComboBox 建法/回呼同原視窗：ISComboBox.lua:586/253）；
+    -- 標籤欄寬＝全部 combo 標籤實測最寬（各語系自適應），佔滿目前 lane
+    local function addComboRow(entry)
+        add(ISLabel:new(curX, curY + 3, fontH, getText(entry.label), 1, 1, 1, 1, UIFont.Small, true))
+        local combo = ISComboBox:new(curX + comboLabelW + 8, curY, laneW - comboLabelW - 8, fontH + 6, win,
+            function(target, box, e) settingsApply(e, box.selected) end, entry)
+        combo:initialise()
+        for j = 1, #entry.items do combo:addOption(getText(entry.items[j])) end
+        combo.selected = getComboIndex(entry.id, entry.default)
+        add(combo)
+        curY = curY + rowH
+    end
+    local function addBtn(x, yy, w, labelText, fn, tooltip)
+        local b = ISButton:new(x, yy, w, fontH + 4, labelText, win, fn)
+        b:initialise()
+        b.borderColor = { r = 0.4, g = 0.4, b = 0.4, a = 1 }
+        if tooltip then b.tooltip = tooltip end
+        return add(b)
+    end
+
+    -- 一鍵全展開/全收合（實測回饋）：頂列橫跨兩 lane
+    local halfTop = math.floor((W - pad * 2 - 4) / 2)
+    addBtn(pad, 0, halfTop, getText("UI_MinidoracatMiniMap_ExpandAll"), function()
+        for i = 1, #UNIFIED_SECTIONS do unifiedExpand[UNIFIED_SECTIONS[i].id] = true end
+        unifiedRebuild(win)
+    end)
+    addBtn(pad + halfTop + 4, 0, halfTop, getText("UI_MinidoracatMiniMap_CollapseAll"), function()
+        for i = 1, #UNIFIED_SECTIONS do unifiedExpand[UNIFIED_SECTIONS[i].id] = nil end
+        unifiedRebuild(win)
+    end)
+    laneY[1] = rowH + 4
+    laneY[2] = rowH + 4
+
+    for s = 1, #UNIFIED_SECTIONS do
+        local sec = UNIFIED_SECTIONS[s]
+        local expanded = unifiedExpand[sec.id] and true or false
+        local cur = UNIFIED_LANE[sec.id] or 1 -- 固定分欄，位置不隨展開狀態變動
+        curX = laneX[cur]
+        curY = laneY[cur]
+        -- 標題列＝空字 ISButton（點擊/hover 底），文字由捲動面板 render 畫
+        -- （ISButton 標題強制置中，左對齊＋右側摘要只能自畫）
+        local hdr = ISButton:new(curX - 4, curY, laneW + 8, fontH + 6, "", win,
+            function(target, btn)
+                unifiedExpand[btn._minidoracatSec] = not unifiedExpand[btn._minidoracatSec]
+                unifiedRebuild(win)
+            end)
+        hdr._minidoracatSec = sec.id
+        hdr:initialise()
+        hdr.borderColor = { r = 0.35, g = 0.35, b = 0.35, a = 1 }
+        hdr.backgroundColor = { r = 1, g = 1, b = 1, a = 0.06 }
+        add(hdr)
+        win._headers[#win._headers + 1] = {
+            x = curX + 2, y = curY + 3, rx = curX + laneW - 2,
+            text = (expanded and "- " or "+ ") .. getText(sec.label),
+            right = unifiedHeaderSummary(sec, pn),
+        }
+        curY = curY + fontH + 10
+        if expanded then
+            if sec.gate and sandboxGate(sec.gate, true) == false then
+                add(ISLabel:new(curX + 4, curY, fontH, getText("UI_MinidoracatMiniMap_ServerDisabled"),
+                    0.95, 0.55, 0.25, 1, UIFont.Small, true))
+                curY = curY + rowH
+            end
+            if sec.id == "layers" then
+                local col = 0
+                for i = 1, #UNIFIED_LAYER_TICKS do
+                    local t = UNIFIED_LAYER_TICKS[i]
+                    if not (t.mpOnly and not isClient()) then
+                        local checked = t.engine and unifiedEngineGet(t.id, pn)
+                            or (not t.engine and getBoolOption(t.id, t.default))
+                        addTick(curX + 4 + col * colW2, curY, colW2 - 8,
+                            getTextOrNull(t.label) or t.id, checked,
+                            t.engine and onEngineTick or onModTick, t)
+                        col = col + 1
+                        if col == cols2 then col = 0; curY = curY + rowH end
+                    end
+                end
+                if col ~= 0 then curY = curY + rowH end
+            elseif sec.id == "zombie" then
+                addTick(curX + 4, curY, laneW - 6, getText("UI_MinidoracatMiniMap_ZombieDots"),
+                    getBoolOption("ZombieDots", false), onModTick, { id = "ZombieDots" })
+                curY = curY + rowH
+                for i = 1, #UNIFIED_ZOMBIE_COMBOS do addComboRow(UNIFIED_ZOMBIE_COMBOS[i]) end
+            elseif sec.id == "animals" then
+                local masters = {
+                    { id = "AnimalWild", label = "UI_MinidoracatMiniMap_AnimalWild" },
+                    { id = "AnimalLivestock", label = "UI_MinidoracatMiniMap_AnimalLivestock" },
+                }
+                local col = 0
+                for i = 1, #masters do
+                    addTick(curX + 4 + col * colW2, curY, colW2 - 8, getText(masters[i].label),
+                        getBoolOption(masters[i].id, false), onModTick, { id = masters[i].id })
+                    col = col + 1
+                    if col == cols2 then col = 0; curY = curY + rowH end
+                end
+                if col ~= 0 then curY = curY + rowH end
+                -- 物種網格（欄數自適應）：列首小圖（捲動面板 render 畫）＋勾選（勾＝顯示）
+                local disOpt = modOptions and modOptions:getOption("AnimalSpeciesFilter")
+                local dis = unifiedCsvSet(disOpt and disOpt:getValue() or "")
+                for i = 1, #ADOTS_SPECIES_UI do
+                    local def = ADOTS_SPECIES_UI[i]
+                    local cx = curX + 4 + ((i - 1) % cols3) * colW3
+                    local cy = curY + math.floor((i - 1) / cols3) * rowH
+                    local art = ADOTS_ART and ADOTS_ART[def.groups[1]]
+                    win._icons[#win._icons + 1] = { name = art and art.sym, x = cx, y = cy, size = fontH + 2 }
+                    addTick(cx + fontH + 5, cy, colW3 - fontH - 6, getText(def.label), not dis[def.key],
+                        function(target, index, selected, e)
+                            unifiedSetFilter("AnimalSpeciesFilter", ADOTS_SPECIES_UI, e.key, selected)
+                        end, def)
+                end
+                curY = curY + math.ceil(#ADOTS_SPECIES_UI / cols3) * rowH + 2
+                local halfW = math.floor((laneW - 10) / 2)
+                addBtn(curX + 4, curY, halfW, getText("UI_MinidoracatMiniMap_SelectAll"), function()
+                    unifiedSetAllFilter("AnimalSpeciesFilter", ADOTS_SPECIES_UI, true)
+                    unifiedRebuild(win)
+                end)
+                addBtn(curX + 4 + halfW + 4, curY, halfW, getText("UI_MinidoracatMiniMap_SelectNone"), function()
+                    unifiedSetAllFilter("AnimalSpeciesFilter", ADOTS_SPECIES_UI, false)
+                    unifiedRebuild(win)
+                end)
+                curY = curY + rowH
+                for i = 1, #UNIFIED_ANIMAL_COMBOS do addComboRow(UNIFIED_ANIMAL_COMBOS[i]) end
+            elseif sec.id == "vehicles" then
+                addTick(curX + 4, curY, laneW - 6, getText("UI_MinidoracatMiniMap_VehicleDots"),
+                    getBoolOption("VehicleDots", false), onModTick, { id = "VehicleDots" })
+                curY = curY + rowH
+                local disOpt = modOptions and modOptions:getOption("VehicleCategoryFilter")
+                local dis = unifiedCsvSet(disOpt and disOpt:getValue() or "")
+                for i = 1, #ADOTS_VEHCAT_UI do
+                    local def = ADOTS_VEHCAT_UI[i]
+                    local cx = curX + 4 + ((i - 1) % cols2) * colW2
+                    local cy = curY + math.floor((i - 1) / cols2) * rowH
+                    addTick(cx, cy, colW2 - 8, getText(def.label), not dis[def.key],
+                        function(target, index, selected, e)
+                            unifiedSetFilter("VehicleCategoryFilter", ADOTS_VEHCAT_UI, e.key, selected)
+                        end, def)
+                end
+                curY = curY + math.ceil(#ADOTS_VEHCAT_UI / cols2) * rowH
+                for i = 1, #UNIFIED_VEHICLE_COMBOS do addComboRow(UNIFIED_VEHICLE_COMBOS[i]) end
+            elseif sec.id == "appearance" then
+                for i = 1, #UNIFIED_APPEAR_COMBOS do addComboRow(UNIFIED_APPEAR_COMBOS[i]) end
+                local col = 0
+                for i = 1, #UNIFIED_APPEAR_TICKS do
+                    local t = UNIFIED_APPEAR_TICKS[i]
+                    addTick(curX + 4 + col * colW2, curY, colW2 - 8, getText(t.label),
+                        getBoolOption(t.id, t.default), onModTick, t)
+                    col = col + 1
+                    if col == cols2 then col = 0; curY = curY + rowH end
+                end
+                if col ~= 0 then curY = curY + rowH end
+                -- 恢復預設尺寸：清 CustomSize 回下拉正方形（apply→save 順序同 settingsApply）
+                addBtn(curX + 4, curY + 2, laneW - 6, getText("UI_MinidoracatMiniMap_ResetSize"),
+                    function()
+                        if not modOptions then return end
+                        local opt = modOptions:getOption("CustomSize")
+                        if not opt then return end
+                        opt:setValue("")
+                        if modOptions.apply then modOptions:apply() end
+                        PZAPI.ModOptions:save()
+                    end, getText("UI_MinidoracatMiniMap_ResetSize_tooltip"))
+                curY = curY + rowH + 4
+            end
+        end
+        laneY[cur] = curY + 6
+    end
+    -- 內容高＝較長 lane；面板高夾玩家 viewport，超出開捲動
+    -- （setScrollHeight/getScrollHeight＝ISUIElement 內建捲動 API）
+    local contentH = math.max(laneY[1], laneY[2]) + 4
+    local vh = getPlayerScreenHeight(pn)
+    local maxPanelH = math.floor(vh * 0.9) - win:titleBarHeight() - 8
+    local panelH = math.min(contentH, maxPanelH)
+    panel:setHeight(panelH)
+    panel:setScrollHeight(contentH)
+    -- 內容縮短時把捲動位置夾回有效範圍（否則留白/內容跑出上緣）
+    local maxScroll = math.max(0, contentH - panelH)
+    local ys = panel:getYScroll()
+    if ys < -maxScroll then panel:setYScroll(-maxScroll) end
+    if ys > 0 then panel:setYScroll(0) end
+    if panel.vscroll then
+        panel.vscroll:setHeight(panelH)
+        panel.vscroll:setX(W - 12)
+    end
+    win:setHeight(win:titleBarHeight() + panelH + 4)
+    -- 重建會改變寬高：視窗開著時重新夾回擁有者 viewport（底部上推、右緣不溢出）
+    if win:isVisible() then
+        local sx, sy = getPlayerScreenLeft(pn), getPlayerScreenTop(pn)
+        local sw, sh = getPlayerScreenWidth(pn), getPlayerScreenHeight(pn)
+        local x, wy = win:getX(), win:getY()
+        if x + win.width > sx + sw then x = sx + sw - win.width end
+        if x < sx then x = sx end
+        if wy + win.height > sy + sh then wy = sy + sh - win.height end
+        if wy < sy then wy = sy end
+        win:setX(x)
+        win:setY(wy)
+    end
+end
+
+local function buildSettingsWindow()
+    local win = ISCollapsableWindow:new(0, 0, 700, 200) -- 寬高由 unifiedRebuild 重算
     win.resizable = false -- 同圖層面板做法（ISMiniMap.lua:187）
     win:setTitle(getText("UI_MinidoracatMiniMap_Options")) -- setTitle＝ISCollapsableWindow.lua:18-20
     win:initialise()
     win:addToUIManager()
     win:setVisible(false)
-    win._minidoracatWidgets = {}
-    local y = win:titleBarHeight() + 8
-    for i = 1, #SETTINGS_ROWS do
-        local entry = SETTINGS_ROWS[i]
-        if entry.kind == "combo" then
-            -- ISLabel 用法同圖層面板 double 列（ISMiniMap.lua:61-62）
-            local label = ISLabel:new(pad, y + 3, fontH, getText(entry.label), 1, 1, 1, 1, UIFont.Small, true)
-            win:addChild(label)
-            -- ISComboBox:new(x,y,w,h,target,onChange,arg1,arg2)＝ISComboBox.lua:586；
-            -- onChange(target, box, arg1)＝ISComboBox.lua:253
-            local combo = ISComboBox:new(pad + labelW, y, widgetW, fontH + 6, win,
-                function(target, box, e) settingsApply(e, box.selected) end, entry)
-            combo:initialise()
-            for j = 1, #entry.items do
-                combo:addOption(getText(entry.items[j]))
-            end
-            combo.selected = getComboIndex(entry.id, entry.default)
-            win:addChild(combo)
-            win._minidoracatWidgets[entry.id] = combo
-        else
-            local tick = ISTickBox:new(pad, y, labelW + widgetW, fontH + 6, "", win,
-                function(target, index, selected, e) settingsApply(e, selected) end, entry)
-            tick:initialise()
-            tick:addOption(getText(entry.label))
-            tick:setSelected(1, getBoolOption(entry.id, entry.default))
-            win:addChild(tick)
-            win._minidoracatWidgets[entry.id] = tick
-        end
-        y = y + rowH
+    win._rows = {}
+    win._headers = {}
+    win._icons = {}
+    win._playerNum = 0
+    -- 內容捲動容器：所有列掛在這層；內容高超過 viewport 出捲軸。
+    -- setScrollChildren/addScrollBars/setScrollHeight＝ISUIElement 內建；
+    -- stencil 於 prerender 設、render 尾清＝原版滾動清單慣例（ISScrollingListBox 同構）
+    local panel = ISPanel:new(0, win:titleBarHeight(), win.width, 100)
+    panel:initialise()
+    panel.backgroundColor = { r = 0, g = 0, b = 0, a = 0 }
+    panel.borderColor = { r = 0, g = 0, b = 0, a = 0 }
+    panel:setScrollChildren(true)
+    panel:addScrollBars()
+    function panel:onMouseWheel(del)
+        local maxScroll = math.max(0, (self:getScrollHeight() or 0) - self.height)
+        local ys = self:getYScroll() - del * 48
+        if ys < -maxScroll then ys = -maxScroll end
+        if ys > 0 then ys = 0 end
+        self:setYScroll(ys)
+        return true
     end
-    -- 恢復預設尺寸：清除拖曳縮放寫入的自訂長寬（CustomSize），回到尺寸下拉的
-    -- 正方形（apply→save 順序同 settingsApply，清除結果須落地）
-    local resetBtn = ISButton:new(pad, y + 2, labelW + widgetW, fontH + 8,
-        getText("UI_MinidoracatMiniMap_ResetSize"), win, function()
-            if not modOptions then return end
-            local opt = modOptions:getOption("CustomSize")
-            if not opt then return end
-            opt:setValue("")
-            if modOptions.apply then modOptions:apply() end
-            PZAPI.ModOptions:save()
-        end)
-    resetBtn:initialise()
-    resetBtn.borderColor = { r = 0.4, g = 0.4, b = 0.4, a = 1 }
-    resetBtn.tooltip = getText("UI_MinidoracatMiniMap_ResetSize_tooltip")
-    win:addChild(resetBtn)
-    y = y + rowH + 4
-    win:setHeight(y + pad)
+    function panel:prerender()
+        self:setStencilRect(0, 0, self.width, self.height)
+        ISPanel.prerender(self)
+    end
+    -- 自畫層：區塊標題（左對齊＋右側摘要）與物種小圖（drawText＝ISUIElement.lua:1293）。
+    -- 畫在 panel 的 render＝子元件之後（文字疊在 header 鈕 hover 底色之上——
+    -- 掛 prerender 會被 hover 蓋掉，實測回饋）；且在 stencil 內＝跟內容一起裁切，
+    -- 直繪座標手動加 getYScroll 跟隨捲動；視窗收合時 panel 不繪＝無穿透
+    function panel:render()
+        ISPanel.render(self)
+        local w = self.parent
+        local ys = self:getYScroll()
+        local tm = getTextManager()
+        for i = 1, #w._headers do
+            local h = w._headers[i]
+            self:drawText(h.text, h.x, h.y + ys, 0.92, 0.72, 0.25, 1, UIFont.Small)
+            if h.right then
+                local tww = tm:MeasureStringX(UIFont.Small, h.right)
+                self:drawText(h.right, h.rx - tww, h.y + ys, 0.62, 0.62, 0.62, 1, UIFont.Small)
+            end
+        end
+        for i = 1, #w._icons do
+            local ic = w._icons[i]
+            local tex = ic.name and adotsTexture and adotsTexture(ic.name)
+            if tex then
+                self:drawTextureScaled(tex, ic.x, ic.y + 1 + ys, ic.size, ic.size, 1, 0.92, 0.92, 0.92)
+            end
+        end
+        self:clearStencilRect()
+    end
+    win:addChild(panel)
+    win._content = panel
+    unifiedRebuild(win)
     return win
 end
 
@@ -1016,17 +1578,8 @@ toggleSettingsWindow = function(outer)
         settingsUI:setVisible(false)
         return
     end
-    for i = 1, #SETTINGS_ROWS do -- 開窗時同步現值（可能在 ESC 選項頁被改過）
-        local entry = SETTINGS_ROWS[i]
-        local wgt = settingsUI._minidoracatWidgets[entry.id]
-        if wgt then
-            if entry.kind == "combo" then
-                wgt.selected = getComboIndex(entry.id, entry.default)
-            else
-                wgt:setSelected(1, getBoolOption(entry.id, entry.default))
-            end
-        end
-    end
+    settingsUI._playerNum = outer.playerNum or 0 -- 視窗擁有者（分割畫面各自讀寫自己的小地圖）
+    unifiedRebuild(settingsUI) -- 開窗即重建＝同步現值（可能在 ESC 選項頁被改過）
     -- 靠小地圖左側、夾進該玩家 viewport（取法同圖層面板定位）
     local pn = outer.playerNum or 0
     local sx, sy = getPlayerScreenLeft(pn), getPlayerScreenTop(pn)
@@ -1043,11 +1596,11 @@ toggleSettingsWindow = function(outer)
     settingsUI:bringToTop()
 end
 
--- 按鈕列重排：7 顆（M - + C = ⚙ X）以動態間距塞進 inner 寬度
+-- 按鈕列重排：6 顆（M - + C ⚙ X）以動態間距塞進 inner 寬度
 -- （原版置中排版只按 5 顆算，ISMiniMap.lua:417；最小寬 180 時縮間距到 2px 仍可容納）
 local function relayoutBottomButtons(mm)
     local order = { mm.button1, mm.button2, mm.button3, mm._minidoracatCenterBtn,
-        mm._minidoracatLayersBtn, mm.button4, mm.button6 }
+        mm.button4, mm.button6 }
     local btns = {}
     for i = 1, #order do
         if order[i] then btns[#btns + 1] = order[i] end
@@ -1078,15 +1631,9 @@ installMinidoracatButtons = function(mm)
     cBtn.tooltip = getText("UI_MinidoracatMiniMap_BtnCenter") -- ISButton 內建 tooltip（ISButton.lua:317-321）
     mm.bottomPanel:addChild(cBtn)
     mm._minidoracatCenterBtn = cBtn
-    -- 「=」圖層開關：原齒輪面板改掛這顆
-    local lBtn = ISButton:new(0, ref.y, ref.width, ref.height, "=", mm, function(target)
-        target:onToggleOptionsPanel()
-    end)
-    lBtn:initialise()
-    lBtn.borderColor = { r = 0.4, g = 0.4, b = 0.4, a = 1 }
-    lBtn.tooltip = getText("UI_MinidoracatMiniMap_BtnLayers")
-    mm.bottomPanel:addChild(lBtn)
-    mm._minidoracatLayersBtn = lBtn
+    -- 「=」圖層面板鈕已退役：引擎原生三項移入統一視窗「圖層顯示」區。
+    -- 原版面板機制（getVisibleOptions/onTickBox wrap 等）保留不拆——
+    -- 面板已無入口，但第三方 MOD 若開啟它，注入與回寫仍正確
     mm.button4.tooltip = getText("UI_MinidoracatMiniMap_BtnSettings")
     -- 原版按鈕補 tooltip（M/-/+/X 原版無滑鼠提示；tooltip 欄位同上）
     if mm.button1 then mm.button1.tooltip = getText("UI_MinidoracatMiniMap_BtnWorldMap") end
@@ -1094,9 +1641,9 @@ installMinidoracatButtons = function(mm)
     if mm.button3 then mm.button3.tooltip = getText("UI_MinidoracatMiniMap_BtnZoomIn") end
     if mm.button6 then mm.button6.tooltip = getText("UI_MinidoracatMiniMap_BtnClose") end
     relayoutBottomButtons(mm)
-    -- 7 顆按鈕的最小可容寬度回寫尺寸下限：UI 字型放大時 BUTTON_HGT 跟著變大，
-    -- 固定 180 會塞不下（7 鈕＋6×2px 間距＋外框），動態墊高避免縮到溢出
-    local minW = 7 * ref.width + 6 * 2 + (mm.borderSize or 2) * 2 + 4
+    -- 6 顆按鈕的最小可容寬度回寫尺寸下限：UI 字型放大時 BUTTON_HGT 跟著變大，
+    -- 固定 180 會塞不下（6 鈕＋5×2px 間距＋外框），動態墊高避免縮到溢出
+    local minW = 6 * ref.width + 5 * 2 + (mm.borderSize or 2) * 2 + 4
     if minW > RESIZE_MIN then RESIZE_MIN = minW end
     -- ponytail: 新鈕未登記手把導航列（原版 insertNewLineOfButtons 於 createChildren
     -- 一次性登記，事後補列會亂序）；手把用戶仍可經圖層面板操作，需要時再補
@@ -1163,6 +1710,20 @@ local function zdotsStateFor(pn)
     return st
 end
 
+-- 小地圖可視範圍的世界座標外接框：視窗四角 uiToWorld（2 參數版用例
+-- ISMiniMap.lua:234-235）取 min/max——等軸測下視窗是世界座標裡的旋轉四邊形，
+-- 外接框是超集，夠用；±2 格邊距容住取樣間隔內的移動。殭屍與動物取樣共用。
+local function visibleWorldAABB(inner)
+    local mapAPI = inner.mapAPI
+    local w, h = inner.width, inner.height
+    local wx1, wy1 = mapAPI:uiToWorldX(0, 0), mapAPI:uiToWorldY(0, 0)
+    local wx2, wy2 = mapAPI:uiToWorldX(w, 0), mapAPI:uiToWorldY(w, 0)
+    local wx3, wy3 = mapAPI:uiToWorldX(w, h), mapAPI:uiToWorldY(w, h)
+    local wx4, wy4 = mapAPI:uiToWorldX(0, h), mapAPI:uiToWorldY(0, h)
+    return math.min(wx1, wx2, wx3, wx4) - 2, math.max(wx1, wx2, wx3, wx4) + 2,
+        math.min(wy1, wy2, wy3, wy4) - 2, math.max(wy1, wy2, wy3, wy4) + 2
+end
+
 local function sampleZombieDots(inner)
     local pn = inner.playerNum or 0
     local st = zdotsStateFor(pn)
@@ -1176,18 +1737,7 @@ local function sampleZombieDots(inner)
     -- 只收「小地圖可視範圍內」的殭屍再套 ZDOTS_MAX：getZombieList 的順序是
     -- 載入序而非距離序，早期版本取「清單前 N 隻」會被別處先生成的大群吃光
     -- 名額，玩家身邊的反而畫不出來（實測：管理員刷群後即重現）。
-    -- 可視框＝視窗四角 uiToWorld（2 參數版用例 ISMiniMap.lua:234-235）的
-    -- min/max 外接框（等軸測下視窗是世界座標裡的旋轉四邊形，外接框是超集，夠用）
-    local mapAPI = inner.mapAPI
-    local w, h = inner.width, inner.height
-    local wx1, wy1 = mapAPI:uiToWorldX(0, 0), mapAPI:uiToWorldY(0, 0)
-    local wx2, wy2 = mapAPI:uiToWorldX(w, 0), mapAPI:uiToWorldY(w, 0)
-    local wx3, wy3 = mapAPI:uiToWorldX(w, h), mapAPI:uiToWorldY(w, h)
-    local wx4, wy4 = mapAPI:uiToWorldX(0, h), mapAPI:uiToWorldY(0, h)
-    local minX = math.min(wx1, wx2, wx3, wx4) - 2
-    local maxX = math.max(wx1, wx2, wx3, wx4) + 2
-    local minY = math.min(wy1, wy2, wy3, wy4) - 2
-    local maxY = math.max(wy1, wy2, wy3, wy4) + 2
+    local minX, maxX, minY, maxY = visibleWorldAABB(inner)
     -- 上限檔位每輪讀值（ZombieDotMax combobox），存檔即生效
     local maxDots = ZDOTS_MAXES[getComboIndex("ZombieDotMax", 2)] or ZDOTS_MAX
     -- 距離基準＝玩家位置（自由查看拖走視窗也以「離自己」為優先，符合直覺）；
@@ -1245,6 +1795,319 @@ local function sampleZombieDots(inner)
     end)
     if not ok then st.count = 0 end
     return st
+end
+
+--------------------------------------------------------------------------------
+-- 動物圖標（AnimalDots，預設關）：野生/畜養獨立開關＋兩種圖標風格。
+-- 資料源：getCell():getAnimals()（IsoCell.java:4533——Java 端過濾 objectList
+-- 回傳新 LinkedList；IsoCell/IsoAnimal 已 exposed＝LuaManager.java:2147/1785）。
+-- 與殭屍清單不同：這是每呼叫新建的快照（非活 ArrayList），成本在建表——
+-- 取樣節流是必要而非優化；動物數量級低（數十），免殭屍側的距離分桶。
+-- 物種歸併：getAnimalType()（IsoAnimal.java:1608）回 stage 級 key（hen/chick…），
+-- 以 Lua 全域表 AnimalDefinitions.animals[type].group 併成 10 物種
+-- （shared/Definitions/animal/*.lua；Java 讀同表＝AnimalDefinitions.java:176-183）。
+-- 圖標素材（皆遊戲內建，零自帶資產）：
+--   符號風格＝原版地圖符號（MapSymbolDefinitions.lua:60-71 註冊的
+--   media/ui/LootableMaps/map_*.png，白 glyph→乘法染色：白=畜養、綠=野生）；
+--   物品風格＝物品欄彩圖（getTexture("Item_X") 無路徑寫法用例 ISHutchUI.lua:95）。
+-- getTexture 走引擎共享快取（Texture.java:482-484），本地再快取一層免每幀 hash。
+--------------------------------------------------------------------------------
+local ADOTS_INTERVAL_MS = 500 -- 動物移動慢，刷新率要求低於殭屍的 300ms
+local ADOTS_MAX = 100         -- 視窗內同時顯示上限（動物+載具合計，防禦性封頂）
+local ADOTS_SCAN_MAX = 500    -- 清單掃描硬上限（LinkedList get(i) 為 O(n)，防病態存檔）
+-- 尺寸分風格兩表：物品彩圖細節多、同尺寸下比單色 glyph 糊（實測回饋），整表調大
+local ADOTS_SIZES_SYM = { 12, 16, 20 }  -- 符號風格 小/中（預設）/大（px）
+local ADOTS_SIZES_ITEM = { 16, 20, 26 } -- 物品彩圖風格 小/中（預設）/大（px）
+-- 圖標染色盤：索引對應 ADOTS_COLOR_ITEMS（選項註冊區）順序，兩表必須同步。
+-- Okabe-Ito 色盲友善色系；綠/天藍沿用實測亮度（乘法染色在深色地圖需偏亮 tint）
+local ADOTS_PALETTE = {
+    { 1.0, 1.0, 1.0 },    -- 白
+    { 0.47, 0.88, 0.37 }, -- 綠（現行野生色）
+    { 0.90, 0.62, 0.0 },  -- 橘（#E69F00）
+    { 0.45, 0.8, 1.0 },   -- 天藍（現行載具色）
+    { 0.94, 0.89, 0.26 }, -- 黃（#F0E442）
+    { 0.86, 0.52, 0.70 }, -- 紫紅（#CC79A7 提亮）
+    { 0.20, 0.55, 0.85 }, -- 藍（#0072B2 提亮）
+    { 0.90, 0.42, 0.10 }, -- 硃紅（#D55E00 提亮）
+}
+local function adotsColor(optId, default)
+    return ADOTS_PALETTE[getComboIndex(optId, default)] or ADOTS_PALETTE[default]
+end
+-- 載具：內建無車形地圖圖示（LootableMaps 92 張與 MapSymbolDefinitions 皆無 car），
+-- 取最接近的原版符號「方向盤」（顏色由 VehicleIconColor 下拉決定，預設天藍）
+local ADOTS_VEH_SYM = "media/ui/LootableMaps/map_steeringwheel.png"
+
+-- 物種 → 圖標素材。活鹿無物品圖（不可入包的動物只有屍體圖），物品風格用鹿屍圖；
+-- 未知物種（其他 MOD 動物）→ 腳印備援。（local 前置宣告於統一視窗一節——視窗畫物種小圖）
+ADOTS_ART = {
+    chicken = { sym = "media/ui/LootableMaps/map_chicken.png", item = "Item_Chicken_HenBrown" },
+    cow     = { sym = "media/ui/LootableMaps/map_cow.png",     item = "Item_CowBrown_Calf" },
+    pig     = { sym = "media/ui/LootableMaps/map_pig.png",     item = "Item_PigWhite_Piglet" },
+    sheep   = { sym = "media/ui/LootableMaps/map_sheep.png",   item = "Item_SheepSuffolk_Lamb" },
+    deer    = { sym = "media/ui/LootableMaps/map_deer.png",    item = "Item_DeerFemale_Dead" },
+    rabbit  = { sym = "media/ui/LootableMaps/map_rabbit.png",  item = "Item_Rabbit" },
+    raccoon = { sym = "media/ui/LootableMaps/map_raccoon.png", item = "Item_Raccoon" },
+    rat     = { sym = "media/ui/LootableMaps/map_rodent.png",  item = "Item_Rat" },
+    mouse   = { sym = "media/ui/LootableMaps/map_rodent.png",  item = "Item_Mouse" },
+    turkey  = { sym = "media/ui/LootableMaps/map_turkey.png",  item = "Item_TurkeyHen" },
+}
+local ADOTS_FALLBACK_SYM = "media/ui/LootableMaps/map_pawprint.png"
+
+-- 材質快取：只快取成功——miss 交給引擎 nullTextures 負快取（Texture.java:479-480，
+-- 同為 O(1) hash）；引擎把載入例外視為可重試、材質包重載也會清引擎快取，
+-- 本地快取 false 會把暫時失敗變成整場永久消失
+local adotsTexCache = {} -- [名稱] = Texture
+function adotsTexture(name) -- local 前置宣告於統一視窗一節
+    if not name then return nil end
+    local t = adotsTexCache[name]
+    if t == nil then
+        t = getTexture(name)
+        if t then adotsTexCache[name] = t end
+    end
+    return t
+end
+
+local adotsGroupCache = {} -- [animalType] = 物種 group 字串
+local function adotsGroup(atype)
+    if atype == nil then return "unknown" end -- 載入前窗口 type 可為空；nil 鍵入快取的保險
+    local g = adotsGroupCache[atype]
+    if g == nil then
+        local defs = AnimalDefinitions and AnimalDefinitions.animals
+        local def = defs and defs[atype]
+        g = (def and def.group) or "unknown"
+        adotsGroupCache[atype] = g
+    end
+    return g
+end
+
+-- 「別人的牲畜」判定：畜養動物位於「自己不是成員的安全屋」內。
+-- 動物與畜養區（DesignationZoneAnimal.java 全檔無 owner 欄位）都沒有擁有者資料，
+-- 安全屋是唯一可歸屬的範圍——成員判定同 drawSafehouses（String 版 playerAllowed，
+-- SafeHouse.java:290-292）。範圍外的散養牲畜無從歸屬，一律視為可見。
+-- 每輪取樣先抽成純 Lua 表：每動物重掃 Java 清單是 O(動物×安全屋) 跨界呼叫、
+-- 病態 MP 配置（50 屋×30 牲畜）有取樣幀尖峰；抽表後內迴圈是純 Lua 數值比較
+-- （drawSafehouses 逐幀重讀是畫框所需，這裡 500ms 一次快照即可）
+local function adotsSafehouseRects(username)
+    if not (SafeHouse and SafeHouse.getSafehouseList) then return nil end
+    local list = SafeHouse.getSafehouseList()
+    if not list or list:size() == 0 then return nil end
+    local rects = {}
+    for i = 0, list:size() - 1 do
+        local sh = list:get(i)
+        rects[i + 1] = { x1 = sh:getX(), y1 = sh:getY(), x2 = sh:getX2(), y2 = sh:getY2(),
+            allowed = username ~= nil and sh:playerAllowed(username) }
+    end
+    return rects
+end
+
+-- 含界判定照原版半開區間（containsLocation＝SafeHouse.java:636-638：>= x1 且 < x2），
+-- 用 <= 會把剛好在東/南界外一格的牲畜誤隱藏。
+-- 注意這是「顯示層政策」非防作弊：動物同步只看 connection relevance，
+-- 修改過的客戶端仍讀得到已同步資料——與安全屋框線的顯示閘門同一定位。
+local function adotsHiddenLivestock(ax, ay, rects)
+    for i = 1, #rects do
+        local r = rects[i]
+        if ax >= r.x1 and ax < r.x2 and ay >= r.y1 and ay < r.y2 then
+            return not r.allowed
+        end
+    end
+    return false
+end
+
+-- 載具分類：警燈車（警/消/救，橫跨 mechanicType 1/3）優先判特勤——
+-- hasLightbar＝BaseVehicle.java:9107（script.getLightbar().enable）；
+-- 其餘依 VehicleScript.getMechanicType（:1942；腳本值對照 media/scripts/generated/
+-- vehicles/**：皮卡/廂型=2、luxury/警用跑車=3、一般=1）
+local function adotsVehCategory(v)
+    -- 先取 script 判 nil 再問警燈：hasLightbar 直接解參考 script
+    -- （BaseVehicle.java:9107），而 script==null 是引擎承認的運行態
+    -- （原版多處自防，如 BaseVehicle.java:6511）——不防會 NPE 廢掉整輪取樣
+    local script = v:getScript()
+    if not script then return "standard" end
+    if v:hasLightbar() then return "special" end
+    local mt = script:getMechanicType() or 1
+    if mt == 2 then return "heavy" end
+    if mt == 3 then return "sport" end
+    return "standard"
+end
+
+local adotsStates = {} -- [pn] 分槽理由同 zdotsStates（分割畫面各自取樣）
+local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
+    local pn = inner.playerNum or 0
+    local st = adotsStates[pn]
+    if not st then
+        st = { dots = {}, count = 0, nextMs = 0 }
+        adotsStates[pn] = st
+    end
+    local now = getTimestampMs()
+    -- 開關組合＋篩選字串一起入 cache key：節流窗內任一變了就立即重取樣，
+    -- 否則剛關掉的類別/物種會殘留舊點池最多 500ms。此 key 僅供節流判斷：
+    -- 篩選欄位是 ESC 頁可手打的自由文字，就算打出含分隔符的怪值，
+    -- 碰撞最壞也只是 ≤500ms 殘影、怪 token 過不了 group 比對＝惰性 no-op
+    local disAnimal, rawA = adotsDisabledGroups("AnimalSpeciesFilter", ADOTS_SPECIES_UI)
+    local disVeh, rawV = adotsDisabledGroups("VehicleCategoryFilter", ADOTS_VEHCAT_UI)
+    local flags = ((wantWild and 1 or 0) + (wantLive and 2 or 0) + (wantVeh and 4 or 0))
+        .. "|" .. rawA .. "|" .. rawV
+    if now < st.nextMs and st.flags == flags then return st end
+    st.flags = flags
+    st.nextMs = now + ADOTS_INTERVAL_MS
+    st.count = 0
+    local cell = getCell()
+    if not cell then return st end
+    local minX, maxX, minY, maxY = visibleWorldAABB(inner) -- 可視框剔除（同殭屍取樣）
+    -- 他人牲畜可見性（僅 MP；沙盒開放時整段跳過，省每動物掃安全屋）
+    local hideOthers = isClient() and sandboxGate("AllowOthersLivestock", false) == false
+    local playerObj = getSpecificPlayer(pn)
+    local username = playerObj and playerObj:getUsername()
+    -- 點池欄位每次全量覆寫（含 veh 旗標）——池重用會殘留上一輪欄位
+    local function push(x, y, veh, wild, group)
+        local c = st.count + 1
+        st.count = c
+        local d = st.dots[c]
+        if not d then d = {}; st.dots[c] = d end
+        d.x = x
+        d.y = y
+        d.veh = veh
+        d.wild = wild
+        d.group = group
+        return c >= ADOTS_MAX
+    end
+    -- pcall 防競態：清單雖是快照，元素仍是活物件（isDead/getX 期間可能被模擬端移除）。
+    -- 動物/載具各自一個 failure boundary：第三方動物資料出錯不連坐清空載具
+    -- （反之亦然）；失敗保留該輪已 push 的部分結果。首錯記 log 一次
+    -- （取樣層最可能出錯：第三方資料/API 漂移，broad catch 不能全靜默）
+    local function failOnce(err)
+        if not st.errLogged then
+            st.errLogged = true
+            log("動物/載具取樣失敗: " .. tostring(err))
+        end
+    end
+    if wantWild or wantLive then
+        local ok, err = pcall(function()
+            local list = cell:getAnimals()
+            local shRects = hideOthers and adotsSafehouseRects(username) or nil
+            local n = list and list:size() or 0
+            if n > ADOTS_SCAN_MAX then n = ADOTS_SCAN_MAX end
+            for i = 1, n do
+                local a = list:get(i - 1)
+                local ax, ay = a:getX(), a:getY()
+                -- isDead＝IsoGameCharacter.java:4896（死亡動物屍體不畫）
+                if ax >= minX and ax <= maxX and ay >= minY and ay <= maxY and not a:isDead() then
+                    local wild = a:isWild() -- IsoAnimal.java:3222
+                    if (wild and wantWild) or (not wild and wantLive) then
+                        if wild or not shRects or not adotsHiddenLivestock(ax, ay, shRects) then
+                            local group = adotsGroup(a:getAnimalType())
+                            if not (disAnimal and disAnimal[group]) then -- 物種篩選
+                                if push(ax, ay, false, wild, group) then break end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+        if not ok then failOnce(err) end
+    end
+    -- 載具：getVehicles() 回 HashSet（IsoCell.java:155/2698）——沒有 get(i)，
+    -- ISVehicleBloodUI.lua:80-82 的 get 寫法是原版冷門路徑的雷、勿仿；
+    -- 以 :toArray()＋ipairs 迭代（原版用例 Vehicles.lua:1038）
+    if wantVeh and st.count < ADOTS_MAX then
+        local ok, err = pcall(function()
+            local vlist = cell:getVehicles()
+            local varr = vlist and vlist:toArray()
+            if varr then
+                local scanned = 0
+                for _, v in ipairs(varr) do
+                    scanned = scanned + 1
+                    if scanned > ADOTS_SCAN_MAX then break end
+                    local vx, vy = v:getX(), v:getY()
+                    if vx >= minX and vx <= maxX and vy >= minY and vy <= maxY then
+                        if not (disVeh and disVeh[adotsVehCategory(v)]) then -- 類別篩選
+                            if push(vx, vy, true, false, nil) then break end
+                        end
+                    end
+                end
+            end
+        end)
+        if not ok then failOnce(err) end
+    end
+    return st
+end
+
+-- 繪製（prerender wrap 內呼叫）：
+--   符號風格＝黑影四斜角偏移＋染色本體疊繪兩次（白 glyph 線條細、單次繪 alpha 偏淡，
+--   疊繪增濃；疊繪次數是實測調校旋鈕）——drawTextureScaled 引數 (tex,x,y,w,h,a,r,g,b)，
+--   本檔標題列 wrap 與 ISCollapsableWindow.lua:160 同序；
+--   物品風格＝黑底方塊（drawRect）＋原色彩圖＋野生綠角標。
+-- 白 glyph 繪製：黑影四斜角＋染色本體疊繪兩次（白 glyph 線條細、單次繪 alpha 偏淡，
+-- 疊繪增濃；次數是實測調校旋鈕）——動物符號風格與載具共用
+local function adotsDrawGlyph(inner, tex, ux, uy, size, r, g, b)
+    inner:drawTextureScaled(tex, ux - 1, uy - 1, size, size, 0.85, 0, 0, 0)
+    inner:drawTextureScaled(tex, ux + 1, uy - 1, size, size, 0.85, 0, 0, 0)
+    inner:drawTextureScaled(tex, ux - 1, uy + 1, size, size, 0.85, 0, 0, 0)
+    inner:drawTextureScaled(tex, ux + 1, uy + 1, size, size, 0.85, 0, 0, 0)
+    inner:drawTextureScaled(tex, ux, uy, size, size, 1, r, g, b)
+    inner:drawTextureScaled(tex, ux, uy, size, size, 1, r, g, b)
+end
+
+local function drawAnimalDots(inner)
+    local allowAnimals = sandboxGate("AllowAnimalDots", true) ~= false -- 伺服器沙盒閘門
+    local wantWild = allowAnimals and getBoolOption("AnimalWild", false)
+    local wantLive = allowAnimals and getBoolOption("AnimalLivestock", false)
+    local wantVeh = getBoolOption("VehicleDots", false)
+        and sandboxGate("AllowVehicleDots", true) ~= false
+    if not (wantWild or wantLive or wantVeh) then return end -- 全關＝零成本
+    local st = sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
+    if st.count == 0 then return end
+    local styleItem = getComboIndex("AnimalIconStyle", 1) == 2
+    local sizeIdx = getComboIndex("AnimalIconSize", 2)
+    local sizeSym = ADOTS_SIZES_SYM[sizeIdx] or 16
+    -- 動物依風格選表；載具恆為 glyph → 恆用 SYM 尺寸（ITEM 表放大是針對彩圖模糊）
+    local aSize = styleItem and (ADOTS_SIZES_ITEM[sizeIdx] or 20) or sizeSym
+    -- 染色三下拉每幀讀值（同殭屍點顏色模式，存檔即生效）
+    local wildC = adotsColor("AnimalWildColor", 2)
+    local liveC = adotsColor("AnimalLivestockColor", 1)
+    local vehC = adotsColor("VehicleIconColor", 4)
+    local mapAPI = inner.mapAPI
+    for i = 1, st.count do
+        local d = st.dots[i]
+        local size = d.veh and sizeSym or aSize
+        local half = math.floor(size / 2) -- 圖標中心對齊目標位置
+        local ux = mapAPI:worldToUIX(d.x, d.y) - half
+        local uy = mapAPI:worldToUIY(d.x, d.y) - half
+        -- 手動裁切同殭屍點位（Lua 繪製不吃元件裁切）；留 1px 邊給影子/描邊
+        if ux >= 1 and uy >= 1 and ux + size <= inner.width - 1 and uy + size <= inner.height - 1 then
+            if d.veh then -- 載具：恆用符號（無對應物品圖），顏色可自訂
+                local tex = adotsTexture(ADOTS_VEH_SYM)
+                if tex then
+                    adotsDrawGlyph(inner, tex, ux, uy, size, vehC[1], vehC[2], vehC[3])
+                end
+            else
+                local art = ADOTS_ART[d.group]
+                local tex, asItem
+                if styleItem and art then
+                    tex = adotsTexture(art.item)
+                    asItem = tex ~= nil
+                end
+                if not tex then
+                    tex = adotsTexture(art and art.sym or ADOTS_FALLBACK_SYM)
+                        or adotsTexture(ADOTS_FALLBACK_SYM)
+                end
+                if tex then
+                    if asItem then
+                        inner:drawRect(ux - 1, uy - 1, size + 2, size + 2, 0.75, 0, 0, 0)
+                        inner:drawTextureScaled(tex, ux, uy, size, size, 1, 1, 1, 1)
+                        if d.wild then -- 角標＝野生（彩圖不可染色，用角標區分；色跟野生下拉）
+                            inner:drawRect(ux + size - 3, uy - 1, 4, 4, 1,
+                                wildC[1], wildC[2], wildC[3])
+                        end
+                    else
+                        local c = d.wild and wildC or liveC
+                        adotsDrawGlyph(inner, tex, ux, uy, size, c[1], c[2], c[3])
+                    end
+                end
+            end
+        end
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -1590,10 +2453,11 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
     local originalInnerPrerender = ISMiniMapInner.prerender
     function ISMiniMapInner:prerender()
         originalInnerPrerender(self)
-        -- 沙盒禁用殭屍熱度時每幀壓回；重新允許時恢復被壓的值（雙向即時）。
-        -- 以實例旗標記住「是本閘門壓的」才恢復——不能對 ModOptions 值調和：
-        -- 齒輪面板的熱度勾選是直寫引擎選項（僅當場生效的設計），逐幀調和會蓋掉它。
-        -- 邊緣情況：壓制期間玩家在齒輪面板關掉熱度無法被辨識，重新允許時仍恢復為開
+        -- 沙盒禁用殭屍熱度時每幀壓回；重新允許時恢復（雙向即時）。
+        -- 以實例旗標記住「是本閘門壓過」才恢復；恢復值讀 ModOptions——面板勾選
+        -- 已回寫 ModOptions（見齒輪面板 onTickBox wrap），它即單一真相，
+        -- 壓制期間玩家改勾選也會在重新允許時恢復成玩家要的值。
+        -- 無 PZAPI（面板不回寫）時維持舊行為：恢復為開
         if sandboxGate("AllowZombieIntensity", true) == false then
             if self.mapAPI:getBoolean("ZombieIntensity") then
                 self._minidoracatZISuppressed = true
@@ -1601,11 +2465,39 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
             end
         elseif self._minidoracatZISuppressed then
             self._minidoracatZISuppressed = nil
-            self.mapAPI:setBoolean("ZombieIntensity", true)
+            self.mapAPI:setBoolean("ZombieIntensity",
+                modOptions == nil or getBoolOption("ZombieIntensity", false))
         end
         pcall(drawSafehouses, self) -- pcall 防清單併發增刪（同殭屍取樣的防禦策略）
         pcall(drawMapBounds, self)
         pcall(drawNavTargets, self)
+        -- 動物圖標（畫在殭屍點位之下：殭屍小點蓋大圖標可辨）。持久錯誤首次記 log
+        -- 免全靜默（API 漂移/第三方動物資料異常可診斷；既有三個 pcall 沿舊慣例不動）
+        local adOk, adErr = pcall(drawAnimalDots, self)
+        if not adOk and not self._minidoracatADotsErrLogged then
+            self._minidoracatADotsErrLogged = true
+            log("動物圖標繪製失敗: " .. tostring(adErr))
+        end
+        -- 自由查看「已離開跟隨」提示（導航軟體回中提示的同款模式）：拖離後地圖
+        -- 底部浮出琥珀色膠囊＋C 鈕同步高亮——點地圖本就會回中（onMouseUp 清旗標），
+        -- 這裡只補視覺提醒，回中即消失（實測回饋：玩家不知道為何地圖不跟人）
+        local flOn = self._minidoracatFreelook and getBoolOption("FreeLook", true)
+        if flOn then
+            local hint = getText("UI_MinidoracatMiniMap_FreelookHint")
+            local tm = getTextManager()
+            local hw = tm:MeasureStringX(UIFont.Small, hint)
+            local fh = tm:getFontHeight(UIFont.Small)
+            local hx = math.floor((self.width - hw) / 2)
+            local hy = self.height - fh - 10
+            self:drawRect(hx - 8, hy - 3, hw + 16, fh + 6, 0.72, 0, 0, 0)
+            self:drawText(hint, hx, hy, 1, 0.85, 0.4, 1, UIFont.Small)
+        end
+        local cBtn = self.parent and self.parent._minidoracatCenterBtn
+        if cBtn then -- C 鈕琥珀高亮＝次要提示；還原值同建立時的原版灰框
+            cBtn.borderColor.r = flOn and 1 or 0.4
+            cBtn.borderColor.g = flOn and 0.85 or 0.4
+            cBtn.borderColor.b = 0.4
+        end
         if not getBoolOption("ZombieDots", false) then return end -- 關閉＝零成本
         if sandboxGate("AllowZombieDots", true) == false then return end -- 伺服器沙盒禁用
         local st = sampleZombieDots(self) -- per-player 取樣狀態（分割畫面各自獨立）
