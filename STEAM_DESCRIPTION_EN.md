@@ -24,6 +24,7 @@ engine's native ImagePyramid mechanism:
 [*] [b]Zombie heatmap[/b] toggle (off by default)
 [*] [b]Animal icons[/b] (off by default): live nearby animals — separate wild/livestock toggles, 9 species filters; map-symbol or colored item-icon style, adjustable size and color (colorblind-friendly 8-color palette)
 [*] [b]Vehicle icons[/b] (off by default): steering-wheel markers for nearby vehicles; standard / heavy-duty / sports / emergency (lightbar) category filters, adjustable color
+[*] [b]World map icons[/b]: zombie / animal / vehicle icons on the world map (M) too — four separate toggles; style, colors and filters follow your mini-map settings; a new paw button on the world map opens the settings window directly
 [*] [b]Street names[/b]: on the corner mini-map too (vanilla only shows them on the world map)
 [*] [b]Safehouse outlines[/b]: yours in green, others in red
 [*] [b]Free look[/b]: drag to pan and stay, click once to snap back to the player; a recenter hint appears while panned away (like navigation apps)
