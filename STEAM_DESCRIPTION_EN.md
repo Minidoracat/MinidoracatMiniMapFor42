@@ -22,7 +22,7 @@ engine's native ImagePyramid mechanism:
 [*] [b]Navigation targets[/b]: right-click the map to set a target — flag + edge direction arrow + distance, auto-clears on arrival; share to your faction with one click
 [*] [b]Live zombie dots[/b] (off by default): real-time zombie positions with adjustable color / size / cap
 [*] [b]Zombie heatmap[/b] toggle (off by default)
-[*] [b]Animal icons[/b] (off by default): live nearby animals — separate wild/livestock toggles, 9 species filters; map-symbol or colored item-icon style, adjustable size and color (colorblind-friendly 8-color palette)
+[*] [b]Animal icons[/b] (off by default): live nearby animals — separate wild/livestock toggles and 9 built-in species filters; the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]third-party MOD compatibility pack[/url] adds supported species such as dogs and horses; map-symbol or colored item-icon style, adjustable size and color (colorblind-friendly 8-color palette)
 [*] [b]Vehicle icons[/b] (off by default): steering-wheel markers for nearby vehicles; standard / heavy-duty / sports / emergency (lightbar) category filters, adjustable color
 [*] [b]World map icons[/b]: zombie / animal / vehicle icons on the world map (M) too — four separate toggles; style, colors and filters follow your mini-map settings; a new paw button on the world map opens the settings window directly
 [*] [b]Street names[/b]: on the corner mini-map too (vanilla only shows them on the world map)

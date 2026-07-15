@@ -1,5 +1,13 @@
 # Changelog
 
+## [42.19.0-0.6.0] - 2026-07-15
+
+### 新增
+
+- 新增 `MinidoracatMiniMapAPI.registerAnimalGroup(ownerModId, group, labelKey, symbolPath, itemPath)`，
+  讓獨立相容包把第三方 `IsoAnimal` 群組加入既有物種篩選，並可選擇提供自己的符號與彩圖；
+  未提供素材時使用原版爪印安全備援，不接受 callback，也不接管上游 MOD 自己的地圖標記。
+
 ## [42.19.0-0.5.0] - 2026-07-15
 
 ### 新增

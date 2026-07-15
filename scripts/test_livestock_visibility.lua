@@ -9,6 +9,31 @@ local body = assert(source:match(
     "%-%- test:livestock%-visibility:start\n(.-)\n%-%- test:livestock%-visibility:end"),
     "找不到 adotsLivestockVisible 測試區段")
 local compile = loadstring or load
+
+local registryBody = assert(source:match(
+    "%-%- test:animal%-group%-registry:start\n(.-)\n%-%- test:animal%-group%-registry:end"),
+    "找不到 registerAnimalGroup 測試區段")
+local registryChunk, registryErr = compile([[
+local messages = {}
+local function print(message) messages[#messages + 1] = message end
+local ADOTS_SPECIES_UI = {
+    { key = "cow", label = "UI_Cow", groups = { "cow" } },
+    { key = "rodent", label = "UI_Rodent", groups = { "rat", "mouse" } },
+}
+local ADOTS_ART = { cow = { sym = "cow.png" } }
+local ADOTS_FALLBACK_SYM = "paw.png"
+MinidoracatMiniMapAPI = {}
+]] .. registryBody .. "\n" .. [[
+return {
+    register = MinidoracatMiniMapAPI.registerAnimalGroup,
+    species = ADOTS_SPECIES_UI,
+    art = ADOTS_ART,
+    messages = messages,
+}
+]])
+assert(registryChunk, registryErr)
+local registry = registryChunk()
+
 local chunk, err = compile(body .. "\nreturn adotsLivestockVisible")
 assert(chunk, err)
 local visible = chunk()
@@ -80,6 +105,7 @@ local sampleBody = assert(source:match(
 local samplePrelude = [=[
 local now, mode, username = 1000, 1, "A"
 local rectsByUser, animals, vehicles, distances = {}, {}, {}, {}
+local disabledAnimalGroups, animalGroup = nil, "cow"
 local function getTimestampMs() return now end
 local function sandboxDist(name) return distances[name] end
 local function livestockVisibilityMode() return mode end
@@ -90,7 +116,12 @@ local defaultPlayer = {
 }
 local player = defaultPlayer
 local function getSpecificPlayer() return player end
-local function adotsDisabledGroups() return nil, "-" end
+local function adotsDisabledGroups(optId)
+    if optId == "AnimalSpeciesFilter" then
+        return disabledAnimalGroups, disabledAnimalGroups and "dog" or "-"
+    end
+    return nil, "-"
+end
 local ADOTS_SPECIES_UI, ADOTS_VEHCAT_UI = {}, {}
 local function visibleWorldAABB() return -100, 100, -100, 100 end
 local ADOTS_INTERVAL_MS, ADOTS_MAX, ADOTS_SCAN_MAX = 500, 500, 1000
@@ -104,7 +135,7 @@ local function adotsLivestockVisible(ax, ay, currentMode, rects)
     end
     return currentMode == 2
 end
-local function adotsGroup() return "cow" end
+local function adotsGroup() return animalGroup end
 local function adotsVehCategory() return "standard" end
 local function log(err) error(err) end
 local function javaList(values)
@@ -141,6 +172,8 @@ return {
     setUsername = function(value) username = value end,
     setAnimals = function(value) animals = value end,
     setVehicles = function(value) vehicles = value end,
+    setAnimalGroup = function(value) animalGroup = value end,
+    setDisabledAnimalGroups = function(value) disabledAnimalGroups = value end,
     setDistances = function(animalDistance, vehicleDistance)
         distances.AnimalIconDistance = animalDistance
         distances.VehicleIconDistance = vehicleDistance
@@ -279,6 +312,42 @@ local function sandboxGate() return allowed end
 assert(navChunk, navErr)
 local navHarness = navChunk()
 
+assert(registry.register("MinidoracatMiniMapCompatFor42", "dog",
+    "UI_MinidoracatMiniMapCompat_Dog"), "合法動物群組註冊失敗")
+assert(#registry.species == 3, "合法註冊未加入物種定義")
+assert(registry.species[3].owner == "MinidoracatMiniMapCompatFor42"
+    and registry.species[3].groups[1] == "dog", "註冊資料內容錯誤")
+assert(registry.art.dog and registry.art.dog.sym == "paw.png", "未知物種未使用原版爪印備援")
+assert(registry.register("MinidoracatMiniMapCompatFor42", "dog",
+    "UI_MinidoracatMiniMapCompat_Dog"), "相同註冊應為冪等成功")
+assert(#registry.species == 3, "相同註冊重複加入物種定義")
+assert(registry.register("MinidoracatMiniMapCompatFor42", "horse",
+    "UI_MinidoracatMiniMapCompat_Horse", "map_horse.png", "Item_Horse.png"),
+    "自訂素材動物群組註冊失敗")
+assert(#registry.species == 4 and registry.art.horse.sym == "map_horse.png"
+    and registry.art.horse.item == "Item_Horse.png", "自訂素材未完整保存")
+assert(registry.register("MinidoracatMiniMapCompatFor42", "horse",
+    "UI_MinidoracatMiniMapCompat_Horse", "map_horse.png", "Item_Horse.png"),
+    "相同自訂素材註冊應為冪等成功")
+assert(not registry.register("MinidoracatMiniMapCompatFor42", "horse",
+    "UI_MinidoracatMiniMapCompat_Horse", "other_horse.png", "Item_Horse.png"),
+    "相同群組不應靜默更換素材")
+assert(not registry.register("OtherCompat", "dog", "UI_OtherDog"),
+    "不同擁有者不應覆蓋既有群組")
+assert(not registry.register("Compat", "cow", "UI_OtherCow"),
+    "第三方定義不應覆蓋內建群組")
+assert(not registry.register("Compat", "mouse", "UI_Mouse"),
+    "第三方定義不應覆蓋合併物種的子群組")
+for _, invalid in ipairs({ "", " ", "-", "nil", "dog,cat" }) do
+    assert(not registry.register("Compat", invalid, "UI_Invalid"),
+        "非法 group 應被拒絕: " .. invalid)
+end
+assert(not registry.register("", "cat", "UI_Cat")
+    and not registry.register("Compat", "cat", ""), "空 owner/label 應被拒絕")
+assert(not registry.register("Compat", "cat", "UI_Cat", "")
+    and not registry.register("Compat", "bird", "UI_Bird", nil, 42),
+    "空白或非字串素材路徑應被拒絕")
+
 assert(normalizeDistance(nil) == nil, "距離缺值應視為不限制")
 assert(normalizeDistance(0) == nil, "距離 0 應視為不限制")
 assert(normalizeDistance(-1) == nil, "負距離應視為不限制")
@@ -319,6 +388,8 @@ local other = { { x1 = 0, y1 = 0, x2 = 10, y2 = 10, allowed = false } }
 
 harness.setRects("A", own)
 harness.setRects("B", other)
+harness.setAnimalGroup("cow")
+harness.setDisabledAnimalGroups(nil)
 harness.setAnimals({ harness.animal(5, 5, false) })
 harness.setNow(1000)
 harness.setMode(1)
@@ -341,6 +412,19 @@ harness.setMode(4)
 harness.setAnimals({ harness.animal(5, 5, false), harness.animal(6, 6, true) })
 local sampled = harness.sample(inner, true, true, false)
 assert(sampled.count == 1 and sampled.dots[1].wild == true, "模式4錯誤隱藏野生動物")
+
+harness.setMode(1)
+harness.setAnimalGroup("dog")
+harness.setAnimals({ harness.animal(5, 5, false) })
+harness.setDisabledAnimalGroups(nil)
+harness.setNow(2250)
+sampled = harness.sample(inner, false, true, false)
+assert(sampled.count == 1 and sampled.dots[1].group == "dog", "已註冊 dog 群組未進入點池")
+harness.setDisabledAnimalGroups({ dog = true })
+harness.setNow(2260)
+assert(harness.sample(inner, false, true, false).count == 0, "停用 dog 篩選未立即清除點池")
+harness.setDisabledAnimalGroups(nil)
+harness.setAnimalGroup("cow")
 
 local empty = {}
 
@@ -472,4 +556,4 @@ navHarness.receive("A", "B", 2, 3)
 assert(not navHarness.cacheEmpty(), "開啟導航分享時應接受有效封包")
 
 print("livestock visibility: " .. #cases
-    .. " policy cases + mode/distance/gate/cache cases passed")
+    .. " policy cases + registry/mode/distance/gate/cache cases passed")

@@ -2087,6 +2087,53 @@ ADOTS_ART = {
 }
 local ADOTS_FALLBACK_SYM = "media/ui/LootableMaps/map_pawprint.png"
 
+-- 第三方相容包可為既有 IsoAnimal group 加入物種篩選項，並選擇提供自己的符號／彩圖。
+-- 本 API 只登記 UI/篩選資料與素材路徑：不接收 callback、不讀第三方私有狀態，也不接管其標記。
+-- 同一 group 僅能由一個定義擁有；完全相同的重複註冊視為冪等成功。
+-- test:animal-group-registry:start
+function MinidoracatMiniMapAPI.registerAnimalGroup(ownerModId, group, labelKey, symbolPath, itemPath)
+    local valid = type(ownerModId) == "string" and string.find(ownerModId, "%S") ~= nil
+        and type(group) == "string" and string.find(group, "%S") ~= nil
+        and type(labelKey) == "string" and string.find(labelKey, "%S") ~= nil
+        and (symbolPath == nil or (type(symbolPath) == "string" and string.find(symbolPath, "%S") ~= nil))
+        and (itemPath == nil or (type(itemPath) == "string" and string.find(itemPath, "%S") ~= nil))
+        and group ~= "-" and group ~= "nil"
+        and string.find(group, ",", 1, true) == nil
+    if not valid then
+        print("[MinidoracatMiniMap] registerAnimalGroup 參數錯誤"
+            .. "（需 ownerModId, group, labelKey；素材路徑可省略但不可為空；group 不可含逗號或使用保留值）")
+        return false
+    end
+
+    local expectedSymbol = symbolPath or ADOTS_FALLBACK_SYM
+
+    for i = 1, #ADOTS_SPECIES_UI do
+        local def = ADOTS_SPECIES_UI[i]
+        for j = 1, #def.groups do
+            if def.groups[j] == group then
+                local art = ADOTS_ART[group]
+                if def.owner == ownerModId and def.key == group and def.label == labelKey
+                    and art and art.sym == expectedSymbol and art.item == itemPath then
+                    return true
+                end
+                print("[MinidoracatMiniMap] registerAnimalGroup: group '" .. group
+                    .. "' 已被其他物種定義使用（來源 " .. ownerModId .. "）")
+                return false
+            end
+        end
+    end
+
+    table.insert(ADOTS_SPECIES_UI, {
+        key = group,
+        label = labelKey,
+        groups = { group },
+        owner = ownerModId,
+    })
+    ADOTS_ART[group] = { sym = expectedSymbol, item = itemPath }
+    return true
+end
+-- test:animal-group-registry:end
+
 -- 材質快取：只快取成功——miss 交給引擎 nullTextures 負快取（Texture.java:479-480，
 -- 同為 O(1) hash）；引擎把載入例外視為可重試、材質包重載也會清引擎快取，
 -- 本地快取 false 會把暫時失敗變成整場永久消失
