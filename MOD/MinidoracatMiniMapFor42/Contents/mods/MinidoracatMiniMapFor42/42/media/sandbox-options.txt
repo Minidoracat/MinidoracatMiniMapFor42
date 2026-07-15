@@ -3,11 +3,17 @@ VERSION = 1,
 option MinidoracatMiniMap.AllowZombieDots
 {type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowZombieDots,}
 
+option MinidoracatMiniMap.ZombieDotDistance
+{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMap, translation = MinidoracatMiniMapZombieDotDistance,}
+
 option MinidoracatMiniMap.AllowZombieIntensity
 {type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowZombieIntensity,}
 
 option MinidoracatMiniMap.SafehouseDisplay
 {type = enum, numValues = 3, default = 3, page = MinidoracatMiniMap, translation = MinidoracatMiniMapSafehouseDisplay,}
+
+option MinidoracatMiniMap.SafehouseDisplayDistance
+{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMap, translation = MinidoracatMiniMapSafehouseDisplayDistance,}
 
 option MinidoracatMiniMap.AllowNavShare
 {type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowNavShare,}
@@ -15,8 +21,14 @@ option MinidoracatMiniMap.AllowNavShare
 option MinidoracatMiniMap.AllowAnimalDots
 {type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowAnimalDots,}
 
-option MinidoracatMiniMap.AllowOthersLivestock
-{type = boolean, default = false, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowOthersLivestock,}
+option MinidoracatMiniMap.AnimalIconDistance
+{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAnimalIconDistance,}
+
+option MinidoracatMiniMap.LivestockVisibility
+{type = enum, numValues = 4, default = 2, page = MinidoracatMiniMap, translation = MinidoracatMiniMapLivestockVisibility,}
 
 option MinidoracatMiniMap.AllowVehicleDots
 {type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowVehicleDots,}
+
+option MinidoracatMiniMap.VehicleIconDistance
+{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMap, translation = MinidoracatMiniMapVehicleIconDistance,}

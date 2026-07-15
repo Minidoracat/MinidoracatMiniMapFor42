@@ -249,15 +249,34 @@ getBoolOption = function(id, default) -- 本體（前置宣告見檔案上方）
     return opt:getValue()
 end
 
--- 沙盒管理閘門（media/sandbox-options.txt 定義）：MP 由伺服器沙盒值決定、
--- 客戶端每幀讀值——管理員沙盒面板改動同步到客戶端後即時生效；
--- 單機或舊存檔缺表/缺鍵時一律回 default（＝允許）
+-- 沙盒管理閘門（media/sandbox-options.txt 定義）：客戶端每幀讀值——
+-- 管理員沙盒面板改動同步後即時生效；缺表/缺鍵時回呼叫端提供的 default
 local function sandboxGate(name, default)
     local sb = SandboxVars and SandboxVars.MinidoracatMiniMap
     local v = sb and sb[name]
     if v == nil then return default end
     return v
 end
+
+-- 距離沙盒值 0 或缺值＝不限制；僅正數啟用距離閘門
+-- test:sandbox-distance:start
+local function sandboxDist(name)
+    local v = sandboxGate(name, 0)
+    if type(v) == "number" and v > 0 then return v end
+    return nil
+end
+-- test:sandbox-distance:end
+
+-- 牲畜可見性：1=全部、2=隱藏其他安全屋內、3=僅我方安全屋內、4=全部隱藏。
+-- 單機沒有可用的玩家間安全屋歸屬語意，前 3 檔等同全部顯示；第 4 檔仍有效。
+-- test:livestock-effective-mode:start
+local function livestockVisibilityMode()
+    local mode = sandboxGate("LivestockVisibility", 2)
+    if type(mode) ~= "number" or mode < 1 or mode > 4 then mode = 2 end
+    if not isClient() and mode ~= 4 then return 1 end
+    return mode
+end
+-- test:livestock-effective-mode:end
 
 -- combobox 值＝選中項索引（同 AdornMode 用法）；超界或無選項回預設
 local function getComboIndex(id, default)
@@ -834,6 +853,8 @@ if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.createChildren
         -- 面板重建路徑（synchUI 全清子元件重跑 createChildren，ISMiniMap.lua:133-142）：
         -- 舊 tickbox 已被 removeChild，這裡蓋掉引用表＝不重複、不殘留
         self._minidoracatTicks = {}
+        local livestockMode = livestockVisibilityMode()
+        self._minidoracatLivestockMode = livestockMode
         local maxRight = self.width
         for i = 1, #GEAR_TICKS do
             local entry = GEAR_TICKS[i]
@@ -841,7 +862,11 @@ if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.createChildren
             local tickBox = ISTickBox:new(xPad, y, self.width, entryHgt, "", self,
                 self.onMinidoracatTick, entry)
             tickBox:initialise()
-            tickBox:addOption(getTextOrNull(entry.label) or entry.id) -- addOption＝ISTickBox.lua:227
+            local label = getTextOrNull(entry.label) or entry.id
+            if entry.id == "AnimalLivestock" and livestockMode == 4 then
+                label = label .. ": " .. getText("UI_MinidoracatMiniMap_LivestockHiddenBySandbox")
+            end
+            tickBox:addOption(label) -- addOption＝ISTickBox.lua:227
             tickBox:setSelected(1, getBoolOption(entry.id, entry.default)) -- setSelected＝ISTickBox.lua:51
             tickBox:setWidthToFit() -- ISTickBox.lua:266
             self:addChild(tickBox)
@@ -867,6 +892,18 @@ if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.createChildren
                 end
             end
         end
+    end
+
+    -- 沙盒值可由管理員即時同步；模式跨入/離開 4 時強制走原版重建路徑，
+    -- 避免已開啟的齒輪面板沿用 createChildren 當下的舊警示文字。
+    local originalPanelPrerender = ISMiniMapOptionsPanel.prerender
+    function ISMiniMapOptionsPanel:prerender()
+        local mode = livestockVisibilityMode()
+        if self._minidoracatLivestockMode ~= nil and self._minidoracatLivestockMode ~= mode then
+            self.screenHeight = -1 -- 讓 originalPanelSynchUI 清子元件並重跑 createChildren
+            self:synchUI()
+        end
+        originalPanelPrerender(self)
     end
 end
 
@@ -1112,11 +1149,20 @@ local UNIFIED_APPEAR_TICKS = {
 -- 世界地圖（M）圖標開關：與小地圖開關獨立（放本 MOD 視窗、不注入原版世界地圖
 -- 選項面板避免混淆），風格/顏色/篩選共用小地圖設定（同一 ModOptions 永久記錄）
 local UNIFIED_WM_TICKS = {
-    { id = "WMZombieDots", label = "UI_MinidoracatMiniMap_WMZombieDots" },
-    { id = "WMAnimalWild", label = "UI_MinidoracatMiniMap_WMAnimalWild" },
-    { id = "WMAnimalLivestock", label = "UI_MinidoracatMiniMap_WMAnimalLivestock" },
-    { id = "WMVehicleDots", label = "UI_MinidoracatMiniMap_WMVehicleDots" },
+    { id = "WMZombieDots", label = "UI_MinidoracatMiniMap_WMZombieDots", gate = "AllowZombieDots" },
+    { id = "WMAnimalWild", label = "UI_MinidoracatMiniMap_WMAnimalWild", gate = "AllowAnimalDots" },
+    { id = "WMAnimalLivestock", label = "UI_MinidoracatMiniMap_WMAnimalLivestock", gate = "AllowAnimalDots" },
+    { id = "WMVehicleDots", label = "UI_MinidoracatMiniMap_WMVehicleDots", gate = "AllowVehicleDots" },
 }
+
+-- 標題摘要顯示有效狀態，不把已被伺服器閘門壓制的勾選算進去。
+-- test:worldmap-effective-tick:start
+local function unifiedWorldMapTickOn(t)
+    if not getBoolOption(t.id, false) then return false end
+    if t.gate and sandboxGate(t.gate, true) == false then return false end
+    return t.id ~= "WMAnimalLivestock" or livestockVisibilityMode() ~= 4
+end
+-- test:worldmap-effective-tick:end
 -- 區塊骨架：builder 依 id 分派（見 unifiedRebuild）；gate＝伺服器沙盒閘（停用時標示原因）
 local UNIFIED_SECTIONS = {
     { id = "layers", label = "UI_MinidoracatMiniMap_SecLayers" },
@@ -1279,16 +1325,21 @@ local function unifiedHeaderSummary(sec, pn)
         end
         return on .. "/" .. n
     elseif sec.id == "zombie" then
-        return onOff(getBoolOption("ZombieDots", false))
+        return onOff(getBoolOption("ZombieDots", false)
+            and sandboxGate("AllowZombieDots", true) ~= false)
     elseif sec.id == "animals" then
-        return onOff(getBoolOption("AnimalWild", false) or getBoolOption("AnimalLivestock", false))
+        local allowed = sandboxGate("AllowAnimalDots", true) ~= false
+        local livestock = getBoolOption("AnimalLivestock", false) and livestockVisibilityMode() ~= 4
+        return onOff(allowed and (getBoolOption("AnimalWild", false) or livestock))
     elseif sec.id == "vehicles" then
-        return onOff(getBoolOption("VehicleDots", false))
+        return onOff(getBoolOption("VehicleDots", false)
+            and sandboxGate("AllowVehicleDots", true) ~= false)
     elseif sec.id == "worldmap" then
         -- 對等勾選清單＝計數摘要（同 layers；開/關會被誤讀成母開關——實測回饋）
         local on = 0
         for i = 1, #UNIFIED_WM_TICKS do
-            if getBoolOption(UNIFIED_WM_TICKS[i].id, false) then on = on + 1 end
+            local t = UNIFIED_WM_TICKS[i]
+            if unifiedWorldMapTickOn(t) then on = on + 1 end
         end
         return on .. "/" .. #UNIFIED_WM_TICKS
     end
@@ -1305,6 +1356,8 @@ local function unifiedRebuild(win)
     win._headers = {}
     win._icons = {}
     local pn = win._playerNum or 0 -- 視窗擁有者（分割畫面 P2+ 不能讀寫到 P1）
+    local livestockMode = livestockVisibilityMode()
+    win._minidoracatLivestockMode = livestockMode
     local tm = getTextManager()
     local fontH = tm:getFontHeight(UIFont.Small)
     local rowH = fontH + 8
@@ -1349,7 +1402,9 @@ local function unifiedRebuild(win)
     end
     -- lane 寬＝滿足 lane 內最寬需求（2 欄雙倍/3 欄三倍/combo 標籤＋最小下拉 130），
     -- 夾上限後降欄數（2→1、3→2→1）——寧可長高（有捲動兜底），不裁字
-    local laneW = math.max(300, need2 * 2 + 12, need3 * 3 + 12, comboLabelW + 130 + 12)
+    local statusW = tw(getText("UI_MinidoracatMiniMap_LivestockHiddenBySandbox")) + 8
+    local laneW = math.max(300, need2 * 2 + 12, need3 * 3 + 12,
+        comboLabelW + 130 + 12, statusW)
     if laneW > 420 then laneW = 420 end
     local cols2 = (need2 * 2 + 12 <= laneW) and 2 or 1
     local cols3 = 3
@@ -1489,6 +1544,12 @@ local function unifiedRebuild(win)
                     if col == cols2 then col = 0; curY = curY + rowH end
                 end
                 if col ~= 0 then curY = curY + rowH end
+                if livestockMode == 4 then
+                    add(ISLabel:new(curX + 4, curY, fontH,
+                        getText("UI_MinidoracatMiniMap_LivestockHiddenBySandbox"),
+                        0.95, 0.55, 0.25, 1, UIFont.Small, true))
+                    curY = curY + rowH
+                end
                 -- 物種網格（欄數自適應）：列首小圖（捲動面板 render 畫）＋勾選（勾＝顯示）
                 local disOpt = modOptions and modOptions:getOption("AnimalSpeciesFilter")
                 local dis = unifiedCsvSet(disOpt and disOpt:getValue() or "")
@@ -1542,6 +1603,12 @@ local function unifiedRebuild(win)
                     if col == cols2 then col = 0; curY = curY + rowH end
                 end
                 if col ~= 0 then curY = curY + rowH end
+                if livestockMode == 4 then
+                    add(ISLabel:new(curX + 4, curY, fontH,
+                        getText("UI_MinidoracatMiniMap_LivestockHiddenBySandbox"),
+                        0.95, 0.55, 0.25, 1, UIFont.Small, true))
+                    curY = curY + rowH
+                end
                 add(ISLabel:new(curX + 4, curY, fontH, getText("UI_MinidoracatMiniMap_WMShared"),
                     0.62, 0.62, 0.62, 1, UIFont.Small, true))
                 curY = curY + rowH
@@ -1665,6 +1732,15 @@ local function buildSettingsWindow()
     win:addChild(panel)
     win._content = panel
     unifiedRebuild(win)
+    -- 視窗保持開啟時也追蹤伺服器 live sandbox 更新；只在有效模式改變時重建，
+    -- 平常 prerender 不增加配置或子元件 churn。
+    local originalSettingsPrerender = win.prerender
+    function win:prerender()
+        if self._minidoracatLivestockMode ~= livestockVisibilityMode() then
+            unifiedRebuild(self)
+        end
+        originalSettingsPrerender(self)
+    end
     return win
 end
 
@@ -1818,6 +1894,7 @@ local function zdotsStateFor(el)
         st.owner = pn
         st.count = 0
         st.nextMs = 0
+        st.hasPlayer = nil
         st.failOnce = nil
     end
     return st
@@ -1837,13 +1914,21 @@ local function visibleWorldAABB(inner)
         math.min(wy1, wy2, wy3, wy4) - 2, math.max(wy1, wy2, wy3, wy4) + 2
 end
 
+-- test:zombie-sampling:start
 local function sampleZombieDots(inner)
     local pn = inner.playerNum or 0
     local st = zdotsStateFor(inner)
+    local dist = sandboxDist("ZombieDotDistance")
     local now = getTimestampMs()
-    if now < st.nextMs then return st end
+    local playerObj = getSpecificPlayer(pn)
+    local hasPlayer = playerObj ~= nil
+    if now < st.nextMs and st.distance == dist and st.hasPlayer == hasPlayer then return st end
+    st.distance = dist
+    st.hasPlayer = hasPlayer
     st.nextMs = now + ZDOTS_INTERVAL_MS
     st.count = 0
+    -- 距離閘門啟用時缺玩家物件必須 fail closed；先於 mapAPI/list 存取，兼顧 teardown。
+    if dist and not playerObj then return st end
     local cell = getCell()
     local list = cell and cell:getZombieList()
     if not list then return st end
@@ -1854,10 +1939,11 @@ local function sampleZombieDots(inner)
     -- 上限檔位每輪讀值（ZombieDotMax combobox），存檔即生效
     local maxDots = ZDOTS_MAXES[getComboIndex("ZombieDotMax", 2)] or ZDOTS_MAX
     -- 距離基準＝玩家位置（自由查看拖走視窗也以「離自己」為優先，符合直覺）；
-    -- 無玩家（理論不會發生於 prerender）退回視窗中心
-    local playerObj = getSpecificPlayer(pn)
+    -- getSpecificPlayer/getX/getY 原版用例 ISMiniMap.lua:216-222；未啟用距離閘門且
+    -- 缺玩家時沿用舊行為退回視窗中心
     local px = playerObj and playerObj:getX() or ((minX + maxX) / 2)
     local py = playerObj and playerObj:getY() or ((minY + maxY) / 2)
+    local dist2 = dist and dist * dist
     local near2 = ZDOTS_NEAR * ZDOTS_NEAR
     local mid2 = ZDOTS_MID * ZDOTS_MID
     -- pcall 防競態：getZombieList 是模擬端會增刪的活 ArrayList，size 與 get
@@ -1872,19 +1958,21 @@ local function sampleZombieDots(inner)
             if zx >= minX and zx <= maxX and zy >= minY and zy <= maxY then
                 local ddx, ddy = zx - px, zy - py
                 local d2 = ddx * ddx + ddy * ddy
-                local pool, c
-                if d2 <= near2 then
-                    if nearC < maxDots then nearC = nearC + 1; pool = st.near; c = nearC end
-                elseif d2 <= mid2 then
-                    if midC < maxDots then midC = midC + 1; pool = st.mid; c = midC end
-                else
-                    if farC < maxDots then farC = farC + 1; pool = st.far; c = farC end
-                end
-                if pool then
-                    local d = pool[c]
-                    if not d then d = {}; pool[c] = d end
-                    d.x = zx
-                    d.y = zy
+                if not dist2 or d2 <= dist2 then
+                    local pool, c
+                    if d2 <= near2 then
+                        if nearC < maxDots then nearC = nearC + 1; pool = st.near; c = nearC end
+                    elseif d2 <= mid2 then
+                        if midC < maxDots then midC = midC + 1; pool = st.mid; c = midC end
+                    else
+                        if farC < maxDots then farC = farC + 1; pool = st.far; c = farC end
+                    end
+                    if pool then
+                        local d = pool[c]
+                        if not d then d = {}; pool[c] = d end
+                        d.x = zx
+                        d.y = zy
+                    end
                 end
                 if nearC >= maxDots then break end -- 近圈吃滿額度＝後面必不入選
             end
@@ -1917,6 +2005,7 @@ local function sampleZombieDots(inner)
     end
     return st
 end
+-- test:zombie-sampling:end
 
 -- 殭屍點繪製（小地圖與世界地圖共用；el 需有 mapAPI/width/height/playerNum）。
 -- optId＝該表面的開關（小地圖 ZombieDots／世界地圖 WMZombieDots）；
@@ -2025,39 +2114,43 @@ local function adotsGroup(atype)
     return g
 end
 
--- 「別人的牲畜」判定：畜養動物位於「自己不是成員的安全屋」內。
--- 動物與畜養區（DesignationZoneAnimal.java 全檔無 owner 欄位）都沒有擁有者資料，
--- 安全屋是唯一可歸屬的範圍——成員判定同 drawSafehouses（String 版 playerAllowed，
--- SafeHouse.java:290-292）。範圍外的散養牲畜無從歸屬，一律視為可見。
+-- 牲畜歸屬只能用所在安全屋代理：動物與畜養區（DesignationZoneAnimal.java
+-- 全檔無 owner 欄位）都沒有持久化的玩家擁有者資料。成員判定同 drawSafehouses
+-- （String 版 playerAllowed，SafeHouse.java:290-292）。
 -- 每輪取樣先抽成純 Lua 表：每動物重掃 Java 清單是 O(動物×安全屋) 跨界呼叫、
 -- 病態 MP 配置（50 屋×30 牲畜）有取樣幀尖峰；抽表後內迴圈是純 Lua 數值比較
 -- （drawSafehouses 逐幀重讀是畫框所需，這裡 500ms 一次快照即可）
 local function adotsSafehouseRects(username)
     if not (SafeHouse and SafeHouse.getSafehouseList) then return nil end
     local list = SafeHouse.getSafehouseList()
-    if not list or list:size() == 0 then return nil end
+    if not list then return nil end
     local rects = {}
     for i = 0, list:size() - 1 do
         local sh = list:get(i)
         rects[i + 1] = { x1 = sh:getX(), y1 = sh:getY(), x2 = sh:getX2(), y2 = sh:getY2(),
-            allowed = username ~= nil and sh:playerAllowed(username) }
+            allowed = username ~= nil and username ~= "" and sh:playerAllowed(username) }
     end
     return rects
 end
 
 -- 含界判定照原版半開區間（containsLocation＝SafeHouse.java:636-638：>= x1 且 < x2），
 -- 用 <= 會把剛好在東/南界外一格的牲畜誤隱藏。
--- 注意這是「顯示層政策」非防作弊：動物同步只看 connection relevance，
--- 修改過的客戶端仍讀得到已同步資料——與安全屋框線的顯示閘門同一定位。
-local function adotsHiddenLivestock(ax, ay, rects)
+-- nil rects＝SafeHouse API/清單或玩家身分不可用；模式 2/3 一律 fail closed。
+-- 有效空清單則不同：模式 2 顯示安全屋外牲畜，模式 3 全隱藏。
+-- 注意這是「顯示層政策」非防作弊：修改過的客戶端仍讀得到已同步資料。
+-- test:livestock-visibility:start
+local function adotsLivestockVisible(ax, ay, mode, rects)
+    if mode == 1 then return true end
+    if mode == 4 or rects == nil then return false end
     for i = 1, #rects do
         local r = rects[i]
         if ax >= r.x1 and ax < r.x2 and ay >= r.y1 and ay < r.y2 then
-            return not r.allowed
+            return r.allowed
         end
     end
-    return false
+    return mode == 2
 end
+-- test:livestock-visibility:end
 
 -- 載具分類：警燈車（警/消/救，橫跨 mechanicType 1/3）優先判特勤——
 -- hasLightbar＝BaseVehicle.java:9107（script.getLightbar().enable）；
@@ -2077,6 +2170,7 @@ local function adotsVehCategory(v)
 end
 
 -- 取樣狀態掛在地圖元件上（分槽理由同 zdotsStateFor：兩表面/分割畫面各自持有）
+-- test:animal-sampling:start
 local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
     local pn = inner.playerNum or 0
     local st = inner._minidoracatADots
@@ -2091,28 +2185,45 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
         st.count = 0
         st.nextMs = 0
         st.flags = nil
+        st.mode = nil
+        st.username = nil
+        st.hasPlayer = nil
         st.errLogged = nil
     end
     local now = getTimestampMs()
+    local da = sandboxDist("AnimalIconDistance")
+    local dv = sandboxDist("VehicleIconDistance")
+    local livestockMode = livestockVisibilityMode()
+    -- getSpecificPlayer/getX/getY 原版用例 ISMiniMap.lua:216-222；getUsername 原版用例
+    -- ISScoreboard.lua:108。模式與 username 分欄入 cache key，避免拼接碰撞與換角沿用
+    local playerObj = getSpecificPlayer(pn)
+    local px = playerObj and playerObj:getX()
+    local py = playerObj and playerObj:getY()
+    local username = playerObj and playerObj:getUsername()
+    local hasPlayer = playerObj ~= nil
     -- 開關組合＋篩選字串一起入 cache key：節流窗內任一變了就立即重取樣，
     -- 否則剛關掉的類別/物種會殘留舊點池最多 500ms。此 key 僅供節流判斷：
     -- 篩選欄位是 ESC 頁可手打的自由文字，就算打出含分隔符的怪值，
     -- 碰撞最壞也只是 ≤500ms 殘影、怪 token 過不了 group 比對＝惰性 no-op
     local disAnimal, rawA = adotsDisabledGroups("AnimalSpeciesFilter", ADOTS_SPECIES_UI)
     local disVeh, rawV = adotsDisabledGroups("VehicleCategoryFilter", ADOTS_VEHCAT_UI)
-    local flags = ((wantWild and 1 or 0) + (wantLive and 2 or 0) + (wantVeh and 4 or 0))
-        .. "|" .. rawA .. "|" .. rawV
-    if now < st.nextMs and st.flags == flags then return st end
+    local mask = (wantWild and 1 or 0) + (wantLive and 2 or 0) + (wantVeh and 4 or 0)
+    local flags = tostring(mask) .. "|" .. tostring(da) .. "|" .. tostring(dv)
+        .. "|" .. tostring(rawA) .. "|" .. tostring(rawV)
+    if now < st.nextMs and st.flags == flags and st.mode == livestockMode
+        and st.username == username and st.hasPlayer == hasPlayer then return st end
     st.flags = flags
+    st.mode = livestockMode
+    st.username = username
+    st.hasPlayer = hasPlayer
     st.nextMs = now + ADOTS_INTERVAL_MS
     st.count = 0
     local cell = getCell()
     if not cell then return st end
     local minX, maxX, minY, maxY = visibleWorldAABB(inner) -- 可視框剔除（同殭屍取樣）
-    -- 他人牲畜可見性（僅 MP；沙盒開放時整段跳過，省每動物掃安全屋）
-    local hideOthers = isClient() and sandboxGate("AllowOthersLivestock", false) == false
-    local playerObj = getSpecificPlayer(pn)
-    local username = playerObj and playerObj:getUsername()
+    -- 距離啟用但缺玩家時，對應動物或載具類別 fail closed
+    local da2 = da and da * da
+    local dv2 = dv and dv * dv
     -- 點池欄位每次全量覆寫（含 veh 旗標）——池重用會殘留上一輪欄位
     local function push(x, y, veh, wild, group)
         local c = st.count + 1
@@ -2136,24 +2247,33 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
             log("動物/載具取樣失敗: " .. tostring(err))
         end
     end
-    if wantWild or wantLive then
+    if (wantWild or (wantLive and livestockMode ~= 4)) and (not da or playerObj ~= nil) then
         local ok, err = pcall(function()
             local list = cell:getAnimals()
-            local shRects = hideOthers and adotsSafehouseRects(username) or nil
+            local shRects
+            if wantLive and (livestockMode == 2 or livestockMode == 3)
+                and username ~= nil and username ~= "" then
+                shRects = adotsSafehouseRects(username)
+            end
             local n = list and list:size() or 0
             if n > ADOTS_SCAN_MAX then n = ADOTS_SCAN_MAX end
             for i = 1, n do
                 local a = list:get(i - 1)
                 local ax, ay = a:getX(), a:getY()
+                local inDistance = not da2
+                    or (ax - px) * (ax - px) + (ay - py) * (ay - py) <= da2
                 -- isDead＝IsoGameCharacter.java:4896（死亡動物屍體不畫）
-                if ax >= minX and ax <= maxX and ay >= minY and ay <= maxY and not a:isDead() then
+                if ax >= minX and ax <= maxX and ay >= minY and ay <= maxY
+                    and inDistance and not a:isDead() then
                     local wild = a:isWild() -- IsoAnimal.java:3222
-                    if (wild and wantWild) or (not wild and wantLive) then
-                        if wild or not shRects or not adotsHiddenLivestock(ax, ay, shRects) then
-                            local group = adotsGroup(a:getAnimalType())
-                            if not (disAnimal and disAnimal[group]) then -- 物種篩選
-                                if push(ax, ay, false, wild, group) then break end
-                            end
+                    local show = wild and wantWild
+                    if not wild then
+                        show = wantLive and adotsLivestockVisible(ax, ay, livestockMode, shRects)
+                    end
+                    if show then
+                        local group = adotsGroup(a:getAnimalType())
+                        if not (disAnimal and disAnimal[group]) then -- 物種篩選
+                            if push(ax, ay, false, wild, group) then break end
                         end
                     end
                 end
@@ -2164,7 +2284,7 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
     -- 載具：getVehicles() 回 HashSet（IsoCell.java:155/2698）——沒有 get(i)，
     -- ISVehicleBloodUI.lua:80-82 的 get 寫法是原版冷門路徑的雷、勿仿；
     -- 以 :toArray()＋ipairs 迭代（原版用例 Vehicles.lua:1038）
-    if wantVeh and st.count < ADOTS_MAX then
+    if wantVeh and st.count < ADOTS_MAX and (not dv or playerObj ~= nil) then
         local ok, err = pcall(function()
             local vlist = cell:getVehicles()
             local varr = vlist and vlist:toArray()
@@ -2174,7 +2294,10 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
                     scanned = scanned + 1
                     if scanned > ADOTS_SCAN_MAX then break end
                     local vx, vy = v:getX(), v:getY()
-                    if vx >= minX and vx <= maxX and vy >= minY and vy <= maxY then
+                    local inDistance = not dv2
+                        or (vx - px) * (vx - px) + (vy - py) * (vy - py) <= dv2
+                    if vx >= minX and vx <= maxX and vy >= minY and vy <= maxY
+                        and inDistance then
                         if not (disVeh and disVeh[adotsVehCategory(v)]) then -- 類別篩選
                             if push(vx, vy, true, false, nil) then break end
                         end
@@ -2186,6 +2309,7 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
     end
     return st
 end
+-- test:animal-sampling:end
 
 -- 繪製（prerender wrap 內呼叫）：
 --   符號風格＝黑影四斜角偏移＋染色本體疊繪兩次（白 glyph 線條細、單次繪 alpha 偏淡，
@@ -2315,31 +2439,48 @@ local function drawClippedEdge(inner, x1, y1, x2, y2, r, g, b)
     end
 end
 
+-- test:safehouse-distance:start
 local function drawSafehouses(inner)
     if not (SafeHouse and SafeHouse.getSafehouseList) then return end
     if not getBoolOption("Safehouses", true) then return end
+    local dist = sandboxDist("SafehouseDisplayDistance")
     -- 沙盒顯示模式：1=關閉、2=僅自己的、3=全部（預設；缺表視為 3）
     local shMode = sandboxGate("SafehouseDisplay", 3)
     if shMode == 1 then return end
     local list = SafeHouse.getSafehouseList()
     if not list or list:size() == 0 then return end
+    -- getSpecificPlayer/getX/getY 原版用例 ISMiniMap.lua:216-222；getUsername 原版用例
+    -- ISScoreboard.lua:108。距離啟用但缺玩家時全部 fail closed
     local playerObj = getSpecificPlayer(inner.playerNum or 0)
+    if dist and not playerObj then return end
+    local px = playerObj and playerObj:getX()
+    local py = playerObj and playerObj:getY()
     local username = playerObj and playerObj:getUsername()
+    local dist2 = dist and dist * dist
     local mapAPI = inner.mapAPI
     for i = 0, list:size() - 1 do
         local sh = list:get(i)
+        -- 安全屋幾何 getter＝SafeHouse.java:596-633；getX2/getY2 回 x+w/y+h
         local x1, y1 = sh:getX(), sh:getY()
         local x2, y2 = sh:getX2(), sh:getY2()
-        -- 四角投影（worldToUIX/Y 同殭屍點位；等軸測下矩形成菱形故逐邊畫線）
-        local ux1, uy1 = mapAPI:worldToUIX(x1, y1), mapAPI:worldToUIY(x1, y1)
-        local ux2, uy2 = mapAPI:worldToUIX(x2, y1), mapAPI:worldToUIY(x2, y1)
-        local ux3, uy3 = mapAPI:worldToUIX(x2, y2), mapAPI:worldToUIY(x2, y2)
-        local ux4, uy4 = mapAPI:worldToUIX(x1, y2), mapAPI:worldToUIY(x1, y2)
         -- 成員判定走 String 版 playerAllowed（SafeHouse.java:290-292，只查
         -- owner＋players）——IsoPlayer 版（:284-287）含管理員 CanGoInsideSafehouses
         -- 後門，admin 測試會全判綠
         local mine = username ~= nil and sh:playerAllowed(username)
-        if shMode ~= 2 or mine then -- 模式 2＝僅畫自己所屬的
+        local visible = shMode ~= 2 or mine -- 模式 2＝僅畫自己所屬的
+        if visible and dist2 then
+            -- 玩家點到矩形的最近點；x2/y2 沿用上方原版 getter 原值
+            local nx = math.max(x1, math.min(px, x2))
+            local ny = math.max(y1, math.min(py, y2))
+            local dx, dy = px - nx, py - ny
+            visible = dx * dx + dy * dy <= dist2
+        end
+        if visible then
+            -- 四角投影（worldToUIX/Y 同殭屍點位；等軸測下矩形成菱形故逐邊畫線）
+            local ux1, uy1 = mapAPI:worldToUIX(x1, y1), mapAPI:worldToUIY(x1, y1)
+            local ux2, uy2 = mapAPI:worldToUIX(x2, y1), mapAPI:worldToUIY(x2, y1)
+            local ux3, uy3 = mapAPI:worldToUIX(x2, y2), mapAPI:worldToUIY(x2, y2)
+            local ux4, uy4 = mapAPI:worldToUIX(x1, y2), mapAPI:worldToUIY(x1, y2)
             local r, g, b = 1.0, 0.25, 0.2            -- 他人＝紅
             if mine then r, g, b = 0.25, 0.95, 0.35 end -- 自己＝綠
             drawClippedEdge(inner, ux1, uy1, ux2, uy2, r, g, b)
@@ -2349,6 +2490,7 @@ local function drawSafehouses(inner)
         end
     end
 end
+-- test:safehouse-distance:end
 
 --------------------------------------------------------------------------------
 -- MOD 地圖範圍框線＋名稱（MapBounds，預設開）：對 manifest 裡「已啟用的地圖 MOD」
@@ -2485,6 +2627,28 @@ local navShared = {}       -- [playerNum] = true（處於分享狀態，清除/�
 local sharedTargets = {}   -- [username] = {x=,y=}（同陣營成員分享來的，本場記憶）
 local NAV_ARRIVE_DIST = 5  -- 抵達判定（世界格）
 
+-- 沙盒關閉時清掉送、收兩側本機 cache；持續為 false 時也會清除延遲抵達的封包。
+-- Events.OnTick.Add 原版用例 client/Chat/ISChat.lua:943。
+local lastAllowNavShare = sandboxGate("AllowNavShare", true) ~= false
+-- test:nav-share-gate:start
+local function navShareGateTick()
+    local allowed = sandboxGate("AllowNavShare", true) ~= false
+    if not allowed and (lastAllowNavShare or next(navShared) or next(sharedTargets)) then
+        navShared = {}
+        sharedTargets = {}
+    end
+    lastAllowNavShare = allowed
+end
+
+-- 關閉期間到達的舊封包直接丟棄，避免「最後一個 false tick 後收到、重開前未清」復活。
+local function navAcceptShared(to, author, x, y)
+    if sandboxGate("AllowNavShare", true) == false then return end
+    sharedTargets[to] = sharedTargets[to] or {}
+    sharedTargets[to][author] = { x = x, y = y }
+end
+-- test:nav-share-gate:end
+Events.OnTick.Add(navShareGateTick)
+
 local function navSaveModData(playerObj, t)
     -- modData 隨角色存檔持久（IsoPlayer:getModData，Lua 泛用持久掛點）
     local md = playerObj:getModData()
@@ -2592,8 +2756,10 @@ local function drawNavTargets(inner)
     local pn = inner.playerNum or 0
     local mapAPI = inner.mapAPI
     local playerObj = getSpecificPlayer(pn)
-    -- 陣營分享來的：只畫「給這位玩家」的桶（青旗＋名字）
-    local bucket = playerObj and sharedTargets[playerObj:getUsername()]
+    -- 陣營分享來的：只畫「給這位玩家」的桶（青旗＋名字）；getUsername 原版用例
+    -- ISScoreboard.lua:108。已收到的目標仍受目前 AllowNavShare 閘門即時控制
+    local bucket = sandboxGate("AllowNavShare", true) ~= false
+        and playerObj and sharedTargets[playerObj:getUsername()]
     if bucket then
         for author, t in pairs(bucket) do
             drawNavIndicator(inner, mapAPI:worldToUIX(t.x, t.y), mapAPI:worldToUIY(t.x, t.y),
@@ -2655,8 +2821,7 @@ end
 Events.OnServerCommand.Add(function(module, command, args)
     if module ~= "MinidoracatMiniMap" or not args then return end
     if command == "sharedTarget" and args.author and args.to and args.x and args.y then
-        sharedTargets[args.to] = sharedTargets[args.to] or {}
-        sharedTargets[args.to][args.author] = { x = args.x, y = args.y }
+        navAcceptShared(args.to, args.author, args.x, args.y)
     elseif command == "clearShared" and args.author and args.to then
         local bucket = sharedTargets[args.to]
         if bucket then bucket[args.author] = nil end

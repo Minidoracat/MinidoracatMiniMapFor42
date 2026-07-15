@@ -28,7 +28,7 @@ engine's native ImagePyramid mechanism:
 [*] [b]Street names[/b]: on the corner mini-map too (vanilla only shows them on the world map)
 [*] [b]Safehouse outlines[/b]: yours in green, others in red
 [*] [b]Free look[/b]: drag to pan and stay, click once to snap back to the player; a recenter hint appears while panned away (like navigation apps)
-[*] [b]Server sandbox controls[/b]: disallow zombie dots / heatmap / animal / vehicle icons, safehouse display mode (all / own only / off), other players' livestock privacy, faction sharing — admin panel changes apply live
+[*] [b]Server sandbox controls[/b]: disable zombie dots / heatmap / animal / vehicle icons; limit zombie / animal / vehicle / safehouse-outline display distance; configure safehouse display, four livestock visibility modes and faction sharing — admin changes apply live
 [*] [b]Singleplayer & multiplayer[/b]: works out of the box in SP; in MP the server enables the mod (PZ servers dictate the mod list — players can't sideload it), and admins stay in control via the sandbox options above — the mod only visualizes data the client already receives, no extra intel
 [*] [b]Languages[/b]: Traditional Chinese / Simplified Chinese / English / Japanese
 [/list]
