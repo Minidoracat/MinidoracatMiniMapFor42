@@ -1260,7 +1260,9 @@ local function unifiedEngineSet(name, v, pn)
     if api then api:setBoolean(name, v) end
 end
 
--- 收合區塊標題的現況摘要（重建時計算；區塊收合期間值不會從本視窗變動）
+-- 區塊標題的現況摘要（panel:render 每幀現算——展開區的勾選改動、甚至 ESC
+-- 選項頁改動都即時反映；≤6 區、純選項記憶體讀，每幀成本可忽略。實測回饋：
+-- 舊版重建時算一次存字串，勾選後要再點收合/展開才更新）
 local function unifiedHeaderSummary(sec, pn)
     local function onOff(v)
         return getText(v and "UI_MinidoracatMiniMap_On" or "UI_MinidoracatMiniMap_Off")
@@ -1283,11 +1285,12 @@ local function unifiedHeaderSummary(sec, pn)
     elseif sec.id == "vehicles" then
         return onOff(getBoolOption("VehicleDots", false))
     elseif sec.id == "worldmap" then
-        local any = false
+        -- 對等勾選清單＝計數摘要（同 layers；開/關會被誤讀成母開關——實測回饋）
+        local on = 0
         for i = 1, #UNIFIED_WM_TICKS do
-            if getBoolOption(UNIFIED_WM_TICKS[i].id, false) then any = true end
+            if getBoolOption(UNIFIED_WM_TICKS[i].id, false) then on = on + 1 end
         end
-        return onOff(any)
+        return on .. "/" .. #UNIFIED_WM_TICKS
     end
     return nil
 end
@@ -1444,7 +1447,7 @@ local function unifiedRebuild(win)
         win._headers[#win._headers + 1] = {
             x = curX + 2, y = curY + 3, rx = curX + laneW - 2,
             text = (expanded and "- " or "+ ") .. getText(sec.label),
-            right = unifiedHeaderSummary(sec, pn),
+            sec = sec, -- 摘要由 panel:render 每幀現算（見 unifiedHeaderSummary）
         }
         curY = curY + fontH + 10
         if expanded then
@@ -1644,9 +1647,10 @@ local function buildSettingsWindow()
         for i = 1, #w._headers do
             local h = w._headers[i]
             self:drawText(h.text, h.x, h.y + ys, 0.92, 0.72, 0.25, 1, UIFont.Small)
-            if h.right then
-                local tww = tm:MeasureStringX(UIFont.Small, h.right)
-                self:drawText(h.right, h.rx - tww, h.y + ys, 0.62, 0.62, 0.62, 1, UIFont.Small)
+            local right = h.sec and unifiedHeaderSummary(h.sec, w._playerNum or 0)
+            if right then
+                local tww = tm:MeasureStringX(UIFont.Small, right)
+                self:drawText(right, h.rx - tww, h.y + ys, 0.62, 0.62, 0.62, 1, UIFont.Small)
             end
         end
         for i = 1, #w._icons do
