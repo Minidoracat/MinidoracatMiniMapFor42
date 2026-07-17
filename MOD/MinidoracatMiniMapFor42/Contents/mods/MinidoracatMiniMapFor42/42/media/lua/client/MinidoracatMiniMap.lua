@@ -71,6 +71,26 @@ function MinidoracatMiniMapAPI.registerMaps(ownerModId, entries)
     end
 end
 
+-- Zone 渲染 API（家族第四個 addon＝MinidoracatMiniMapZonesFor42 的資料層專用）：
+-- 資料 addon 註冊 provider，本 MOD 每幀呼叫取回「已翻譯、已正規化」的 zone 陣列，
+-- 在小地圖與世界地圖填半透明色＋畫框線＋標名稱。zoneApiVersion 供 addon 掛載前守衛
+-- 版本（契約 C1）——舊主 MOD 無此欄位／無 registerZoneProvider，addon 應安靜降級。
+-- provider 契約（C2）：providerFn 每幀被呼叫（世界＋小地圖），必須回傳「快取 table」、
+-- 勿每幀重建/過濾/合併；本 MOD 對回傳只讀不改。zone schema（provider 產、繪製端讀）：
+--   { id=string, name=string(已翻譯顯示名),
+--     rects={ { x1=, y1=, x2=, y2= }, ... }(世界 square 座標),
+--     fill={ r=, g=, b= }(0-1), fillAlpha=number,
+--     border={ r=, g=, b= }(0-1), borderAlpha=number, category=string|nil }
+local registeredZoneProviders = {} -- { { owner = <addon mod ID>, fn = providerFn }, ... }
+MinidoracatMiniMapAPI.zoneApiVersion = 1
+function MinidoracatMiniMapAPI.registerZoneProvider(ownerModId, providerFn)
+    if type(ownerModId) ~= "string" or ownerModId == "" or type(providerFn) ~= "function" then
+        print("[MinidoracatMiniMap] registerZoneProvider 參數錯誤（需 ownerModId 字串、providerFn function）")
+        return
+    end
+    table.insert(registeredZoneProviders, { owner = ownerModId, fn = providerFn })
+end
+
 -- MOD 地圖框線繪製資料（collectPyramids 於地圖初始化時重建；drawMapBounds 每幀讀）
 local mapOverlays = {}
 
@@ -829,6 +849,14 @@ if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.createChildren
             label = "UI_MinidoracatMiniMap_MapBounds", default = true })
     end)
 
+    -- Zone 圖層總開關齒輪項（有 zone provider 註冊才加；同 MapPack 動態追加模式）。
+    -- 選項本體在下方 ESC/統一視窗的 OnGameBoot 註冊；此處只補齒輪面板這一面。
+    Events.OnGameBoot.Add(function()
+        if #registeredZoneProviders == 0 then return end
+        table.insert(GEAR_TICKS, { id = "ZoneLayer",
+            label = "UI_MinidoracatMiniMap_ZoneLayer", default = true })
+    end)
+
     -- 勾選變更 handler：ISTickBox 回呼簽名 (target, index, selected, args...)
     -- （ISTickBox.lua:175-176；原版同款且同以第 4 參傳資料，ISMiniMap.lua:14/48）
     function ISMiniMapOptionsPanel:onMinidoracatTick(index, selected, entry)
@@ -1198,6 +1226,11 @@ Events.OnGameBoot.Add(function()
     mbColor:addItem("UI_MinidoracatMiniMap_MBColor_Yellow", false)
     mbColor:addItem("UI_MinidoracatMiniMap_MBColor_Purple", false)
     mbColor:addItem("UI_MinidoracatMiniMap_MBColor_White", false)
+    -- 框線透明度：三檔沿用小地圖 Opacity 的翻譯鍵與語意
+    local mbAlpha = modOptions:addComboBox("MapBoundsAlpha", "UI_MinidoracatMiniMap_MapBoundsAlpha")
+    mbAlpha:addItem("UI_MinidoracatMiniMap_Opacity_Full", true) -- 順序須同 MAPB_ALPHAS
+    mbAlpha:addItem("UI_MinidoracatMiniMap_Opacity_Half", false)
+    mbAlpha:addItem("UI_MinidoracatMiniMap_Opacity_Faint", false)
     -- 統一視窗同步加項：圖層區兩顆勾選＋外觀區框線顏色下拉
     table.insert(UNIFIED_LAYER_TICKS, { id = "MapPackLayers",
         label = "UI_MinidoracatMiniMap_MapPackLayers", default = true })
@@ -1208,6 +1241,20 @@ Events.OnGameBoot.Add(function()
         items = { "UI_MinidoracatMiniMap_MBColor_Green", "UI_MinidoracatMiniMap_MBColor_Cyan",
             "UI_MinidoracatMiniMap_MBColor_Yellow", "UI_MinidoracatMiniMap_MBColor_Purple",
             "UI_MinidoracatMiniMap_MBColor_White" } })
+    table.insert(UNIFIED_APPEAR_COMBOS, { id = "MapBoundsAlpha",
+        label = "UI_MinidoracatMiniMap_MapBoundsAlpha", default = 1,
+        items = { "UI_MinidoracatMiniMap_Opacity_Full", "UI_MinidoracatMiniMap_Opacity_Half",
+            "UI_MinidoracatMiniMap_Opacity_Faint" } })
+end)
+
+-- Zone 圖層總開關（有 zone provider 註冊才出現）：註冊 ModOptions 選項本體＋
+-- 統一視窗圖層區加項。齒輪面板那一面在上方 GEAR 區已補；三面共用同一 ZoneLayer 選項。
+Events.OnGameBoot.Add(function()
+    if #registeredZoneProviders == 0 or not modOptions then return end
+    modOptions:addTickBox("ZoneLayer", "UI_MinidoracatMiniMap_ZoneLayer", true,
+        "UI_MinidoracatMiniMap_ZoneLayer_tooltip")
+    table.insert(UNIFIED_LAYER_TICKS, { id = "ZoneLayer",
+        label = "UI_MinidoracatMiniMap_ZoneLayer", default = true })
 end)
 
 local function settingsApply(entry, value)
@@ -2448,6 +2495,7 @@ end
 -- （UIWorldMap.java:255-257，同齒輪面板被裁的機制，這裡反過來是助力），
 -- 僅做粗略剔除省繪製呼叫。單機無安全屋＝清單空＝零成本。
 --------------------------------------------------------------------------------
+-- test:clipped-edge:start
 local SH_EDGE_A = 0.85
 
 -- Liang-Barsky 線段裁切到 [0,w]×[0,h]：明確裁切、不依賴 stencil 行為
@@ -2479,12 +2527,15 @@ end
 -- 畫一條裁切後的邊：drawLine＝ISUIElement.lua:1235（收元件相對座標——
 -- Java 端 DrawLine 自加 absolute offset，UIElement.java:489-492；nil 材質＝純色線，
 -- 引擎自用例 AnimalPathfind.java:105）
-local function drawClippedEdge(inner, x1, y1, x2, y2, r, g, b)
+-- a 省略＝沿用 SH_EDGE_A（安全屋/地圖框既有呼叫皆傳 7 參，行為不變）；
+-- zone 框線傳入 borderAlpha 走此可選第 8 參
+local function drawClippedEdge(inner, x1, y1, x2, y2, r, g, b, a)
     local cx1, cy1, cx2, cy2 = clipSegment(x1, y1, x2, y2, inner.width, inner.height)
     if cx1 then
-        inner:drawLine(nil, cx1, cy1, cx2, cy2, 1, SH_EDGE_A, r, g, b)
+        inner:drawLine(nil, cx1, cy1, cx2, cy2, 1, a or SH_EDGE_A, r, g, b)
     end
 end
+-- test:clipped-edge:end
 
 -- test:safehouse-distance:start
 local function drawSafehouses(inner)
@@ -2557,11 +2608,16 @@ local MAPB_COLORS = {
     { 0.8, 0.45, 1.0 },  -- 紫
     { 1.0, 1.0, 1.0 },   -- 白
 }
+-- 框線透明度倍率表：索引對應 MapBoundsAlpha 下拉順序，三檔語意與數值同小地圖
+-- Opacity（CHROME_FACTORS）；乘在既有 alpha 上（框線基準 SH_EDGE_A、名稱底墊 0.6、
+-- 名稱文字 0.95），第 1 檔＝1.0 保證預設外觀與加選項前逐位元相同
+local MAPB_ALPHAS = { 1.0, 0.5, 0.15 }
 
 local function drawMapBounds(inner)
     if #mapOverlays == 0 then return end
     if not getBoolOption("MapBounds", true) then return end
     local c = MAPB_COLORS[getComboIndex("MapBoundsColor", 1)] or MAPB_COLORS[1]
+    local af = MAPB_ALPHAS[getComboIndex("MapBoundsAlpha", 1)] or 1.0
     local mapAPI = inner.mapAPI
     for i = 1, #mapOverlays do
         local ov = mapOverlays[i]
@@ -2570,10 +2626,10 @@ local function drawMapBounds(inner)
         local ux2, uy2 = mapAPI:worldToUIX(x2, y1), mapAPI:worldToUIY(x2, y1)
         local ux3, uy3 = mapAPI:worldToUIX(x2, y2), mapAPI:worldToUIY(x2, y2)
         local ux4, uy4 = mapAPI:worldToUIX(x1, y2), mapAPI:worldToUIY(x1, y2)
-        drawClippedEdge(inner, ux1, uy1, ux2, uy2, c[1], c[2], c[3])
-        drawClippedEdge(inner, ux2, uy2, ux3, uy3, c[1], c[2], c[3])
-        drawClippedEdge(inner, ux3, uy3, ux4, uy4, c[1], c[2], c[3])
-        drawClippedEdge(inner, ux4, uy4, ux1, uy1, c[1], c[2], c[3])
+        drawClippedEdge(inner, ux1, uy1, ux2, uy2, c[1], c[2], c[3], SH_EDGE_A * af)
+        drawClippedEdge(inner, ux2, uy2, ux3, uy3, c[1], c[2], c[3], SH_EDGE_A * af)
+        drawClippedEdge(inner, ux3, uy3, ux4, uy4, c[1], c[2], c[3], SH_EDGE_A * af)
+        drawClippedEdge(inner, ux4, uy4, ux1, uy1, c[1], c[2], c[3], SH_EDGE_A * af)
         -- 名稱：缺譯退 mod ID（慣例同齒輪面板 getTextOrNull(label) or id）；
         -- nameKey 為 nil 時不可傳入 getTextOrNull（Java 端 startsWith 會 NPE，
         -- Translator.java:324）
@@ -2585,12 +2641,167 @@ local function drawMapBounds(inner)
             local cx = (ux1 + ux3) / 2 - tw / 2 -- 菱形中心＝對角中點
             local cy = (uy1 + uy3) / 2 - th / 2
             if cx >= 2 and cy >= 2 and cx + tw <= inner.width - 2 and cy + th <= inner.height - 2 then
-                inner:drawRect(cx - 3, cy - 1, tw + 6, th + 2, 0.6, 0, 0, 0)
-                inner:drawText(name, cx, cy, 1, 1, 1, 0.95, UIFont.Small)
+                inner:drawRect(cx - 3, cy - 1, tw + 6, th + 2, 0.6 * af, 0, 0, 0)
+                inner:drawText(name, cx, cy, 1, 1, 1, 0.95 * af, UIFont.Small)
             end
         end
     end
 end
+
+--------------------------------------------------------------------------------
+-- Zone 圖層（資料由 registerZoneProvider 的 addon 提供；本 MOD 只渲染）：
+-- 分兩段插入以對齊 z-order——fillPass 走最底層（base map 之上、框線之下），
+-- linePass（框線＋名稱）與 drawMapBounds 同層。無 provider 或全空表＝dormant 零成本。
+-- 開關 ZoneLayer 關閉即 early-return，連 provider 都不呼叫（不觸發快取重建）。
+--------------------------------------------------------------------------------
+
+-- 填色：每 rect 四角 worldToUIX/Y 投影（等軸測下矩形成菱形）→ 投影後 AABB 出視窗即略過
+-- （DrawPolygon 不裁切、不查 isVisible，角落小地圖會畫出視窗外，研究 §1）→ drawPolygon
+-- 純色填（⚠ 參數序 r,g,b,a）。整段包 setStencilRect/clearStencilRect 硬裁到元件矩形，
+-- 兜住投影誤差與貼齊視窗邊的溢出（真 GPU stencil，ISUIElement.lua:459/475）。
+-- test:zone-render:start
+-- Zone provider 繪製錯誤 log-once：provider 是外部 addon，個別隔離後壞的不得拖垮整個
+-- pass；依 owner 各記一次（沿用動物圖標 log-once 策略），旗標存 inner 實例
+local function zoneProviderErrorOnce(inner, owner, err)
+    local logged = inner._minidoracatZoneProviderErr
+    if not logged then
+        logged = {}
+        inner._minidoracatZoneProviderErr = logged
+    end
+    if not logged[owner] then
+        logged[owner] = true
+        log("Zone provider 繪製失敗 (" .. tostring(owner) .. "): " .. tostring(err))
+    end
+end
+
+-- 繪製本體拆出：drawZoneFill 用 pcall(具名函式) 包起免每幀配置閉包；stencil 開啟狀態
+-- 記在 inner 實例，跨 pcall 邊界回傳給呼叫端做無條件清除（見 drawZoneFill 的 A1 保護）
+local function drawZoneFillBody(inner)
+    local mapAPI = inner.mapAPI
+    local w, h = inner.width, inner.height
+    for pi = 1, #registeredZoneProviders do
+        local provider = registeredZoneProviders[pi]
+        -- A2：每個 provider 個別 pcall，壞的跳過續跑下一個（附 owner，log-once）
+        local pok, zones = pcall(provider.fn)
+        if not pok then
+            zoneProviderErrorOnce(inner, provider.owner, zones)
+        elseif type(zones) == "table" then
+            for zi = 1, #zones do
+                local z = zones[zi]
+                local fill, rects = z.fill, z.rects
+                if fill and rects then
+                    local a = z.fillAlpha or 0.2
+                    for ri = 1, #rects do
+                        local rc = rects[ri]
+                        local ux1, uy1 = mapAPI:worldToUIX(rc.x1, rc.y1), mapAPI:worldToUIY(rc.x1, rc.y1)
+                        local ux2, uy2 = mapAPI:worldToUIX(rc.x2, rc.y1), mapAPI:worldToUIY(rc.x2, rc.y1)
+                        local ux3, uy3 = mapAPI:worldToUIX(rc.x2, rc.y2), mapAPI:worldToUIY(rc.x2, rc.y2)
+                        local ux4, uy4 = mapAPI:worldToUIX(rc.x1, rc.y2), mapAPI:worldToUIY(rc.x1, rc.y2)
+                        local minx = math.min(ux1, ux2, ux3, ux4)
+                        local maxx = math.max(ux1, ux2, ux3, ux4)
+                        local miny = math.min(uy1, uy2, uy3, uy4)
+                        local maxy = math.max(uy1, uy2, uy3, uy4)
+                        if maxx >= 0 and minx <= w and maxy >= 0 and miny <= h then
+                            if not inner._minidoracatZoneStencilOn then
+                                inner:setStencilRect(0, 0, w, h)
+                                inner._minidoracatZoneStencilOn = true
+                            end
+                            inner:drawPolygon(nil, ux1, uy1, ux2, uy2, ux3, uy3, ux4, uy4,
+                                fill.r, fill.g, fill.b, a)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function drawZoneFill(inner)
+    if #registeredZoneProviders == 0 then return end
+    if not getBoolOption("ZoneLayer", true) then return end
+    inner._minidoracatZoneStencilOn = false
+    -- A1：繪製本體整段包 pcall，clearStencilRect 於其後無條件執行——setStencilRect 後
+    -- 任何繪製/provider 錯誤都不得漏掉 clear，否則引擎全域 stencilLevel 洩漏（set 未配對
+    -- clear）→ 當幀後續 UI 持續被小地圖矩形裁切
+    local ok, err = pcall(drawZoneFillBody, inner)
+    if inner._minidoracatZoneStencilOn then inner:clearStencilRect() end
+    -- clear 已保證執行後，把繪製錯誤交回呼叫端 safeDrawZone 的 log-once（保留原行為）
+    if not ok then error(err, 0) end
+end
+
+-- 框線＋名稱：複用 drawClippedEdge（Liang-Barsky Lua 裁切）畫每 rect 四邊；
+-- 名稱仿 drawMapBounds 置中畫法（畫在第一個 rect 中心；⚠ drawRect 參數序 a,r,g,b）
+local function drawZoneLines(inner)
+    if #registeredZoneProviders == 0 then return end
+    if not getBoolOption("ZoneLayer", true) then return end
+    local mapAPI = inner.mapAPI
+    local w, h = inner.width, inner.height
+    local tm = getTextManager()
+    local th = tm:getFontHeight(UIFont.Small)
+    for pi = 1, #registeredZoneProviders do
+        local provider = registeredZoneProviders[pi]
+        -- A2：每個 provider 個別 pcall，壞的跳過續跑下一個（附 owner，log-once）
+        local pok, zones = pcall(provider.fn)
+        if not pok then
+            zoneProviderErrorOnce(inner, provider.owner, zones)
+        elseif type(zones) == "table" then
+            for zi = 1, #zones do
+                local z = zones[zi]
+                local border, rects = z.border, z.rects
+                if border and rects then
+                    local r, g, b, a = border.r, border.g, border.b, z.borderAlpha
+                    local zoneVisible = false
+                    for ri = 1, #rects do
+                        local rc = rects[ri]
+                        local ux1, uy1 = mapAPI:worldToUIX(rc.x1, rc.y1), mapAPI:worldToUIY(rc.x1, rc.y1)
+                        local ux2, uy2 = mapAPI:worldToUIX(rc.x2, rc.y1), mapAPI:worldToUIY(rc.x2, rc.y1)
+                        local ux3, uy3 = mapAPI:worldToUIX(rc.x2, rc.y2), mapAPI:worldToUIY(rc.x2, rc.y2)
+                        local ux4, uy4 = mapAPI:worldToUIX(rc.x1, rc.y2), mapAPI:worldToUIY(rc.x1, rc.y2)
+                        -- A3：投影後 AABB 早退（同 drawZoneFill）——略過離屏 rect 的
+                        -- clipSegment＋drawLine；zoneVisible 記住至少一 rect 落在視窗內
+                        local minx = math.min(ux1, ux2, ux3, ux4)
+                        local maxx = math.max(ux1, ux2, ux3, ux4)
+                        local miny = math.min(uy1, uy2, uy3, uy4)
+                        local maxy = math.max(uy1, uy2, uy3, uy4)
+                        if maxx >= 0 and minx <= w and maxy >= 0 and miny <= h then
+                            zoneVisible = true
+                            drawClippedEdge(inner, ux1, uy1, ux2, uy2, r, g, b, a)
+                            drawClippedEdge(inner, ux2, uy2, ux3, uy3, r, g, b, a)
+                            drawClippedEdge(inner, ux3, uy3, ux4, uy4, r, g, b, a)
+                            drawClippedEdge(inner, ux4, uy4, ux1, uy1, r, g, b, a)
+                        end
+                    end
+                    -- 名稱畫在第一個 rect 的中心，僅中心落在視窗內才畫（同 drawMapBounds）；
+                    -- 整區離屏（無 rect 在窗內）連名稱測量都省——名稱中心落在窗內必然使該
+                    -- rect AABB 與視窗相交，故 zoneVisible 為真，不影響應畫的名稱
+                    local name = z.name
+                    local rc = rects[1]
+                    if name and rc and zoneVisible then
+                        local tw = tm:MeasureStringX(UIFont.Small, name)
+                        local cxw, cyw = (rc.x1 + rc.x2) / 2, (rc.y1 + rc.y2) / 2
+                        local cx = mapAPI:worldToUIX(cxw, cyw) - tw / 2
+                        local cy = mapAPI:worldToUIY(cxw, cyw) - th / 2
+                        if cx >= 2 and cy >= 2 and cx + tw <= inner.width - 2 and cy + th <= inner.height - 2 then
+                            inner:drawRect(cx - 3, cy - 1, tw + 6, th + 2, 0.6, 0, 0, 0)
+                            inner:drawText(name, cx, cy, 1, 1, 1, 0.95, UIFont.Small)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Zone 繪製呼叫端共用：pcall 包裹＋首次錯誤記 log（同動物圖標 log-once 策略）——
+-- provider 是外部 addon 程式碼，拋錯不得拖垮整張地圖 prerender；旗標記在 inner 實例上
+local function safeDrawZone(inner, fn, flagKey)
+    local ok, err = pcall(fn, inner)
+    if not ok and not inner[flagKey] then
+        inner[flagKey] = true
+        log("Zone 圖層繪製失敗: " .. tostring(err))
+    end
+end
+-- test:zone-render:end
 
 -- 世界地圖（M）同步畫框線：wrap prerender（原版 prerender＝ISWorldMap.lua:363）。
 -- 時序同小地圖側（ISMiniMapInner:prerender）：引擎地圖畫在底、Lua prerender 疊加
@@ -2599,6 +2810,9 @@ end
 if ISWorldMap and ISWorldMap.prerender then
     local originalWorldMapPrerender = ISWorldMap.prerender
     function ISWorldMap:prerender()
+        -- Zone 填色置於 wrap 最前端＝最底層：Java 地圖本體早在 Lua prerender 前畫完
+        -- （UIWorldMap.java:152→317），置頂即壓在 base map 之上、動物圖標與框線之下
+        safeDrawZone(self, drawZoneFill, "_minidoracatWMZoneFillErrLogged")
         -- 世界地圖圖標：獨立 WM* 開關（統一視窗「世界地圖圖標」區），
         -- 風格/顏色/篩選與小地圖共用。客戶端只知道已載入區域的個體，
         -- 拉遠不會鋪滿全圖——圖標天然只出現在玩家周邊。
@@ -2618,6 +2832,7 @@ if ISWorldMap and ISWorldMap.prerender then
         end
         originalWorldMapPrerender(self)
         pcall(drawMapBounds, self)
+        safeDrawZone(self, drawZoneLines, "_minidoracatWMZoneLineErrLogged") -- 與 MapBounds 同層
     end
 end
 
@@ -2879,6 +3094,8 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
     local originalInnerPrerender = ISMiniMapInner.prerender
     function ISMiniMapInner:prerender()
         originalInnerPrerender(self)
+        -- Zone 填色緊接原版 prerender 之後＝最底層（base map 之上，安全屋/框線之下）
+        safeDrawZone(self, drawZoneFill, "_minidoracatZoneFillErrLogged")
         -- 沙盒禁用殭屍熱度時每幀壓回；重新允許時恢復（雙向即時）。
         -- 以實例旗標記住「是本閘門壓過」才恢復；恢復值讀 ModOptions——面板勾選
         -- 已回寫 ModOptions（見齒輪面板 onTickBox wrap），它即單一真相，
@@ -2896,6 +3113,7 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         end
         pcall(drawSafehouses, self) -- pcall 防清單併發增刪（同殭屍取樣的防禦策略）
         pcall(drawMapBounds, self)
+        safeDrawZone(self, drawZoneLines, "_minidoracatZoneLineErrLogged") -- 與 MapBounds 同層
         pcall(drawNavTargets, self)
         -- 動物圖標（畫在殭屍點位之下：殭屍小點蓋大圖標可辨）。持久錯誤首次記 log
         -- 免全靜默（API 漂移/第三方動物資料異常可診斷；既有三個 pcall 沿舊慣例不動）

@@ -4,7 +4,8 @@
 -- getOnlinePlayers 用例 ClientCommands.lua:634；Faction.getPlayerFaction 用例 ISFactionUI.lua:408。
 -- 伺服器端就過濾陣營＝非同陣營玩家根本收不到座標；陣營比對用名稱字串
 -- （同一 Java 物件經 Kahlua 兩次包裝的 == 不可靠）。
--- SP 下 OnClientCommand 不觸發，本檔為 no-op。
+-- B42 SP 走 spnetwork loopback，OnClientCommand 在單機也會觸發（非舊認知的 no-op）；
+-- 本檔在 SP 下亦運作，只是單機無其他線上玩家＝陣營轉送對象為空。
 
 local function sameFactionMembers(player)
     local faction = Faction.getPlayerFaction(player)

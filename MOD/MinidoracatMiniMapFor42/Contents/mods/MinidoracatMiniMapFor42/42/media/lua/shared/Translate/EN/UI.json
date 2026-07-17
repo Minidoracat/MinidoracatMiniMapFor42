@@ -129,9 +129,12 @@
     "UI_MinidoracatMiniMap_MapPackLayers": "Show MOD map tiles",
     "UI_MinidoracatMiniMap_MapPackLayers_tooltip": "Mount and display the MOD map images provided by a map pack. When off, only the base map image remains (outlines are unaffected). The mini-map rebuilds immediately; the world map applies on next load.",
     "UI_MinidoracatMiniMap_MapBoundsColor": "MOD map outline color",
+    "UI_MinidoracatMiniMap_MapBoundsAlpha": "MOD map outline opacity",
     "UI_MinidoracatMiniMap_MBColor_Cyan": "Cyan",
     "UI_MinidoracatMiniMap_MBColor_Yellow": "Yellow",
     "UI_MinidoracatMiniMap_MBColor_Purple": "Purple",
     "UI_MinidoracatMiniMap_MBColor_White": "White",
-    "UI_MinidoracatMiniMap_MBColor_Green": "Green (default)"
+    "UI_MinidoracatMiniMap_MBColor_Green": "Green (default)",
+    "UI_MinidoracatMiniMap_ZoneLayer": "Show zone layer",
+    "UI_MinidoracatMiniMap_ZoneLayer_tooltip": "Highlight zones supplied by a zone-layer add-on (such as server regions or resource sites) with a translucent fill, border and name on both the minimap and the world map. Turn off to hide the entire zone layer."
 }

@@ -1,5 +1,28 @@
 # Changelog
 
+## [42.19.0-0.7.0] - 2026-07-17
+
+### 新增
+
+- **Zone 渲染 API**：新增 `MinidoracatMiniMapAPI.registerZoneProvider(ownerModId, providerFn)`
+  與 `MinidoracatMiniMapAPI.zoneApiVersion = 1`，讓區域圖層 addon（家族第四個 MOD
+  MinidoracatMiniMapZonesFor42）把矩形區域資料交給本 MOD 渲染。本 MOD 每幀呼叫 provider
+  取回已翻譯、已正規化的 zone 陣列，在小地圖與世界地圖以半透明色塊填色、框線描邊並置中標名。
+  provider 每幀回傳快取表、繪製端只讀不改；provider 拋錯以 pcall 攔截並首次記 log，
+  不影響地圖其餘繪製。
+- **「顯示區域圖層」總開關**：偵測到有 zone provider 註冊時，於 ESC 選項頁、統一設定視窗
+  圖層區、齒輪面板三處動態追加開關（預設開）。關閉即整層不繪製，且不觸發 provider 重建。
+- **MOD 地圖框線透明度（MapBoundsAlpha）**：新下拉三檔（不透明／半透明／隱約，
+  沿用小地圖不透明度的翻譯鍵與倍率 1.0/0.5/0.15），同時作用於框線與名稱標籤；
+  預設不透明＝與先前外觀完全相同。ESC 選項頁與統一設定視窗外觀區同步提供，
+  隨地圖包安裝動態出現（同 MapBoundsColor）。
+  未安裝區域圖層 addon 時整條管線休眠、零成本。四語翻譯（繁中／簡中／英／日）齊備。
+
+### 變更
+
+- 更正 `MinidoracatMiniMapServer.lua` 開頭「SP 下 OnClientCommand 不觸發」的舊註解：
+  B42 單機走 spnetwork loopback，`OnClientCommand` 在單機同樣觸發。
+
 ## [42.19.0-0.6.0] - 2026-07-15
 
 ### 新增

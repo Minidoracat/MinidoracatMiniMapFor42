@@ -129,9 +129,12 @@
     "UI_MinidoracatMiniMap_MapPackLayers": "显示 MOD 地图区块",
     "UI_MinidoracatMiniMap_MapPackLayers_tooltip": "挂载并显示地图包提供的 MOD 地图图像。关闭后只剩基底地图图像（框线不受影响）；改动后小地图立即重建生效，世界地图下次进入存档生效。",
     "UI_MinidoracatMiniMap_MapBoundsColor": "MOD 地图框线颜色",
+    "UI_MinidoracatMiniMap_MapBoundsAlpha": "MOD 地图框线透明度",
     "UI_MinidoracatMiniMap_MBColor_Cyan": "青",
     "UI_MinidoracatMiniMap_MBColor_Yellow": "黄",
     "UI_MinidoracatMiniMap_MBColor_Purple": "紫",
     "UI_MinidoracatMiniMap_MBColor_White": "白",
-    "UI_MinidoracatMiniMap_MBColor_Green": "绿（默认）"
+    "UI_MinidoracatMiniMap_MBColor_Green": "绿（默认）",
+    "UI_MinidoracatMiniMap_ZoneLayer": "显示区域图层",
+    "UI_MinidoracatMiniMap_ZoneLayer_tooltip": "在小地图与世界地图上以半透明色块、框线与名称标出区域图层 addon 提供的区域（如服务器区域、资源地点）。关闭后整个区域图层都不绘制。"
 }

@@ -36,10 +36,18 @@
 搭配 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]Minidoracat MiniMap - MOD Maps[/url] 地圖包 addon：內含多張地圖 MOD 的
 小地圖圖像與範圍框線（含名稱、多語翻譯），[u]自動偵測[/u]——對應的地圖 MOD
 有啟用才顯示，沒裝不誤畫；裝了地圖包還會多出專屬選項（MOD 地圖區塊開關、
-框線開關、框線顏色）。
+框線開關、框線顏色、框線透明度）。
 地圖 MOD 作者也可自帶支援：把自己地圖渲染成同名
 [b]minidoracat_minimap.pyramid.zip[/b] 放進 [b]media/minimap/[/b]，
 [u]完全不用寫 Lua[/u]，本 MOD 會自動偵測並疊加顯示（自動對位，疊在基底之上）。
+
+[h2]🗺️ Zone 圖層 API（0.7.0+）[/h2]
+本 MOD 提供區域渲染框架：`registerZoneProvider` API 讓 addon 只需提供矩形區域資料，
+本 MOD 負責在小地圖與世界地圖上繪製半透明填色、框線與置中名稱標籤（「顯示區域
+圖層」開關，統一設定視窗）。搭配區域顯示 addon [b]Minidoracat MiniMap Zones[/b]
+（Mod ID: MinidoracatMiniMapZonesFor42）使用，可顯示伺服器自訂區域（`zones.json`，
+外部程式可寫入）與內建原版地圖資源 POI（軍事、醫療、超市等 15 類）。未安裝 addon
+時，此開關不會出現，不影響本 MOD 其餘功能。
 
 [h2]📋 MOD 資訊[/h2]
 [list]

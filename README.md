@@ -155,7 +155,7 @@ MinidoracatMiniMapFor42/        MinidoracatMiniMapModMapsFor42/    SomeMapMod/
   loader 對每個檔名動態建一層；同名多 zip（相容路徑的多個 addon）由同一層全數匹配。
 - **每顆 zip 自帶 bounds**（`pyramid.txt` 內世界 square 座標），引擎自動對位，無需檔名編碼座標。
 - **地圖包專屬功能**（裝了地圖包才出現選項）：MOD 地圖範圍框線＋名稱（四語翻譯、
-  五色可選）、MOD 地圖區塊顯示開關。
+  五色可選、三檔透明度）、MOD 地圖區塊顯示開關。
 - **發佈準則**：常用地圖進官方地圖包；大型地圖（pyramid zip 動輒數百 MB）建議獨立
   地圖包或第三方相容路徑分開發佈，避免只玩部分地圖的玩家被迫下載全部。
 - 效能由引擎處理：LRU 紋理快取、多層級 LOD、非同步載入（相對 B41 per-cell 紋理方案）。

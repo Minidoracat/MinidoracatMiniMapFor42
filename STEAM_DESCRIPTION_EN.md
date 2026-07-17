@@ -38,11 +38,22 @@ Pair it with the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=376
 mini-map images and area outlines (with names, multi-language) for several map
 MODs, [u]auto-detected[/u] — a map's image only shows when that map MOD is
 enabled, so nothing is drawn for maps you don't have. Installing the map pack
-also unlocks extra options (MOD map tiles toggle, outline toggle, outline color).
+also unlocks extra options (MOD map tiles toggle, outline toggle, outline color, outline opacity).
 Map MOD authors can also ship their own support: render your map into a file
 named [b]minidoracat_minimap.pyramid.zip[/b] and put it in [b]media/minimap/[/b] —
 [u]no Lua required[/u]. This MOD auto-detects and overlays it (auto-aligned,
 drawn above the base map).
+
+[h2]🗺️ Zone layer API (0.7.0+)[/h2]
+This MOD provides a zone-rendering framework: the `registerZoneProvider` API lets addons
+supply rectangle zone data while this MOD handles the drawing — semi-transparent fills,
+outlines and centered name labels on both the mini-map and the world map (a "Show zone
+layer" toggle in the unified settings window). Pair it with the zone-display addon
+[b]Minidoracat MiniMap Zones[/b] (Mod ID: MinidoracatMiniMapZonesFor42) to show
+server-defined zones (a `zones.json` writable by external tools) and built-in vanilla
+map resource POIs (military, medical, supermarkets and 15 categories total). Without the
+addon installed, this toggle simply doesn't appear — no impact on this MOD's other
+features.
 
 [h2]📋 MOD info[/h2]
 [list]

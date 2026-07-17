@@ -37,12 +37,22 @@
 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]Minidoracat MiniMap - MOD Maps[/url] マップパック addon と併用：複数のマップ MOD の
 ミニマップ画像と範囲枠線（名前つき・多言語対応）を収録、[u]自動検出[/u]——
 対応するマップ MOD が有効なときだけ表示され、入れていない地図を誤描画しません。
-マップパック導入で専用オプション（MOD マップ画像の表示切替・枠線切替・枠線色）も
+マップパック導入で専用オプション（MOD マップ画像の表示切替・枠線切替・枠線色・枠線の不透明度）も
 追加されます。
 マップ MOD 作者が自前でサポートを同梱することも可能：自分の地図を
 [b]minidoracat_minimap.pyramid.zip[/b] という名前でレンダリングして
 [b]media/minimap/[/b] に置くだけ、[u]Lua 不要[/u]。本 MOD が自動検出して
 オーバーレイ表示します（自動位置合わせ、ベースマップの上に描画）。
+
+[h2]🗺️ ゾーンレイヤー API（0.7.0+）[/h2]
+本 MOD はゾーン描画フレームワークを提供します：`registerZoneProvider` API により、
+addon は矩形ゾーンデータを渡すだけで、本 MOD がミニマップとワールドマップの両方に
+半透明の塗りつぶし・枠線・中央名前ラベルを描画します（統合設定ウィンドウの
+「ゾーンレイヤーを表示」トグル）。ゾーン表示 addon [b]Minidoracat MiniMap Zones[/b]
+（Mod ID: MinidoracatMiniMapZonesFor42）と組み合わせると、サーバー定義ゾーン
+（外部ツールから書き込み可能な `zones.json`）と内蔵バニラマップ資源 POI（軍事・
+医療・スーパーなど計 15 カテゴリ）を表示できます。addon 未導入の場合、このトグルは
+表示されず、本 MOD の他の機能には影響しません。
 
 [h2]📋 MOD 情報[/h2]
 [list]

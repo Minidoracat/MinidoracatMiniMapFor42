@@ -129,9 +129,12 @@
     "UI_MinidoracatMiniMap_MapPackLayers": "MODマップ画像を表示",
     "UI_MinidoracatMiniMap_MapPackLayers_tooltip": "マップパックのMODマップ画像をマウントして表示します。オフにするとベースマップ画像のみになります（枠線は影響されません）。ミニマップは即時再構築、ワールドマップは次回ロード時に反映。",
     "UI_MinidoracatMiniMap_MapBoundsColor": "MODマップ枠線の色",
+    "UI_MinidoracatMiniMap_MapBoundsAlpha": "MODマップ枠線の不透明度",
     "UI_MinidoracatMiniMap_MBColor_Cyan": "シアン",
     "UI_MinidoracatMiniMap_MBColor_Yellow": "イエロー",
     "UI_MinidoracatMiniMap_MBColor_Purple": "パープル",
     "UI_MinidoracatMiniMap_MBColor_White": "ホワイト",
-    "UI_MinidoracatMiniMap_MBColor_Green": "グリーン（デフォルト）"
+    "UI_MinidoracatMiniMap_MBColor_Green": "グリーン（デフォルト）",
+    "UI_MinidoracatMiniMap_ZoneLayer": "ゾーンレイヤーを表示",
+    "UI_MinidoracatMiniMap_ZoneLayer_tooltip": "ゾーンレイヤーアドオン（サーバー区域や資源地点など）が提供するゾーンを、ミニマップとワールドマップに半透明の塗り・枠線・名称で表示します。オフにするとゾーンレイヤー全体を描画しません。"
 }
