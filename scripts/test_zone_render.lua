@@ -72,8 +72,8 @@ return {
     fill = drawZoneFill,
     lines = drawZoneLines,
     safe = safeDrawZone,
-    addProvider = function(owner, fn)
-        registeredZoneProviders[#registeredZoneProviders + 1] = { owner = owner, fn = fn }
+    addProvider = function(owner, fn, internal)
+        registeredZoneProviders[#registeredZoneProviders + 1] = { owner = owner, fn = fn, internal = internal }
     end,
     clearProviders = function()
         for i = #registeredZoneProviders, 1, -1 do registeredZoneProviders[i] = nil end
@@ -119,16 +119,18 @@ local function visibleZone()
     } }
 end
 
--- A4-1：ZoneLayer=false → provider 不被呼叫
+-- A4-1：ZoneLayer=false → 外部 provider 不被呼叫、不繪製；內部（internal）POI provider 照常
 do
     zone.setZoneLayer(false)
-    local called = 0
-    zone.addProvider("addonA", function() called = called + 1; return visibleZone() end)
+    local extCalled, intCalled = 0, 0
+    zone.addProvider("addonExternal", function() extCalled = extCalled + 1; return visibleZone() end)
+    zone.addProvider("internalPOI", function() intCalled = intCalled + 1; return visibleZone() end, true)
     local inner = makeInner()
     zone.fill(inner)
     zone.lines(inner)
-    assert(called == 0, "ZoneLayer 關閉時 provider 不應被呼叫")
-    assert(inner.polyCount == 0 and inner.setCount == 0, "ZoneLayer 關閉時不應有任何繪製")
+    assert(extCalled == 0, "ZoneLayer 關閉時外部 provider 不應被呼叫")
+    assert(intCalled == 2, "ZoneLayer 關閉時內部 POI provider 仍應被呼叫（fill+lines 各一次）")
+    assert(inner.polyCount == 1, "ZoneLayer 關閉時內部 POI provider 的可見 zone 仍應填色")
     zone.clearProviders()
     zone.setZoneLayer(true)
     zone.resetLogs()
@@ -212,3 +214,128 @@ do
 end
 
 print("zone render: clipped-edge alpha + A1 stencil + A2 isolation + A3 AABB cases passed")
+
+--------------------------------------------------------------------------------
+-- registerZoneAction API：參數驗證 / dormant / options 正規化 / onTrigger callback
+--------------------------------------------------------------------------------
+local actionBody = assert(source:match(
+    "%-%- test:zone%-action:start\n(.-)\n%-%- test:zone%-action:end"),
+    "找不到 zone-action 測試區段")
+local actionPrelude = [=[
+MinidoracatMiniMapAPI = {}
+local function print() end
+]=]
+local actionSuffix = [=[
+return {
+    register = function(...) return MinidoracatMiniMapAPI.registerZoneAction(...) end,
+    actions = registeredZoneActions,
+}
+]=]
+local actionChunk, actionErr = compile(actionPrelude .. "\n" .. actionBody .. "\n" .. actionSuffix)
+assert(actionChunk, actionErr)
+local za = actionChunk()
+
+-- dormant：壞參數一律不註冊（無 owner / 無 labelKey / 無 onTrigger / onTrigger 非 function / spec 非 table）
+za.register(nil, { labelKey = "L", onTrigger = function() end })
+za.register("owner", { onTrigger = function() end })
+za.register("owner", { labelKey = "L" })
+za.register("owner", { labelKey = "L", onTrigger = "nope" })
+za.register("owner", "notatable")
+assert(#za.actions == 0, "壞參數不應註冊任何動作（dormant），得到 " .. #za.actions)
+
+-- 合法＋options 正規化（無/空 labelKey 的選項過濾）＋onTrigger 收到選中 value
+local got = "unset"
+za.register("ZonesOwner", {
+    labelKey = "UI_Gen", tooltipKey = "UI_GenTip",
+    options = {
+        { value = "current", labelKey = "UI_Cur" },
+        { value = "CH", labelKey = "UI_CH" },
+        { value = "bad" },              -- 無 labelKey → 過濾
+        { labelKey = "" },              -- 空 labelKey → 過濾
+    },
+    onTrigger = function(v) got = v end,
+})
+assert(#za.actions == 1, "合法參數應註冊一筆，得到 " .. #za.actions)
+local a = za.actions[1]
+assert(a.owner == "ZonesOwner" and a.labelKey == "UI_Gen" and a.tooltipKey == "UI_GenTip",
+    "動作欄位未正確保存")
+assert(#a.options == 2, "無/空 labelKey 的選項應被過濾，得到 " .. #a.options)
+assert(a.options[1].value == "current" and a.options[2].value == "CH", "options 值未保留")
+a.onTrigger(a.options[2].value)
+assert(got == "CH", "onTrigger 未收到選中的 value，得到 " .. tostring(got))
+
+-- 省略 options → 純按鈕（options=nil）；全部無效選項 → 亦退為純按鈕
+za.register("Owner2", { labelKey = "UI_Btn", onTrigger = function() end })
+assert(za.actions[2].options == nil, "省略 options 應為 nil（純按鈕）")
+za.register("Owner3", { labelKey = "UI_Btn", options = { { value = 1 } }, onTrigger = function() end })
+assert(za.actions[3].options == nil, "全部選項無效應退為 nil（純按鈕）")
+
+-- 空 tooltipKey → 存成 nil；純按鈕 onTrigger 收 nil
+local btnGot = "unset"
+za.register("Owner4", { labelKey = "UI_Btn", tooltipKey = "",
+    onTrigger = function(v) btnGot = v end })
+assert(za.actions[4].tooltipKey == nil, "空 tooltipKey 應存為 nil")
+za.actions[4].onTrigger(nil)
+assert(btnGot == nil, "純按鈕 onTrigger 應收到 nil")
+
+print("zone action: arg-validation / dormant / options-normalize / onTrigger cases passed")
+
+--------------------------------------------------------------------------------
+-- POI 圖標樣式選擇（MinidoracatMiniMapPOI.lua iconTexture）：單色 / 彩色 / 缺檔回退
+-- 抽 provider 檔的 -- test:poi-icon: 標記區段→補 getTexture/log stub→離線斷言。
+--------------------------------------------------------------------------------
+local poiPath = arg[2]
+    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMapPOI.lua"
+local poiFile = assert(io.open(poiPath, "rb"))
+local poiSource = poiFile:read("*a"):gsub("\r\n", "\n")
+poiFile:close()
+local iconBody = assert(poiSource:match(
+    "%-%- test:poi%-icon:start\n(.-)\n%-%- test:poi%-icon:end"),
+    "找不到 POI 圖標測試區段")
+local iconPrelude = [=[
+local textures = {}
+local function getTexture(path) return textures[path] end
+local logged = 0
+local function log() logged = logged + 1 end
+]=]
+local iconSuffix = [=[
+return {
+    setTex = function(path, v) textures[path] = v end,
+    pick = function(cat, colorMode) return iconTexture(cat, colorMode) end,
+    logCount = function() return logged end,
+}
+]=]
+local iconChunk, iconErr = compile(iconPrelude .. "\n" .. iconBody .. "\n" .. iconSuffix)
+assert(iconChunk, iconErr)
+local poi = iconChunk()
+
+-- military：mono 與 color 皆備 → 單色回 mono＋isColor=false、彩色回 color＋isColor=true
+poi.setTex("media/ui/poi_icons/poi_military.png", "MONO_MIL")
+poi.setTex("media/ui/poi_icons/color/poi_military.png", "COLOR_MIL")
+do
+    local tex, isColor = poi.pick("military", false)
+    assert(tex == "MONO_MIL" and isColor == false, "單色模式應取 mono 材質、isColor=false")
+    local ctex, cIsColor = poi.pick("military", true)
+    assert(ctex == "COLOR_MIL" and cIsColor == true, "彩色模式（檔在）應取 color 材質、isColor=true")
+    local btex, bIsColor = poi.pick("military", false)
+    assert(btex == "MONO_MIL" and bIsColor == false, "彩色快取後切回單色未取 mono")
+end
+
+-- police：僅 mono（模擬彩色素材未落地）→ 彩色模式回退 mono、isColor=false、log-once
+poi.setTex("media/ui/poi_icons/poi_police.png", "MONO_POL")
+do
+    local tex, isColor = poi.pick("police", true)
+    assert(tex == "MONO_POL" and isColor == false, "彩色檔缺應回退 mono、isColor=false")
+    assert(poi.logCount() == 1, "缺檔回退應 log-once（第一次）")
+    poi.setTex("media/ui/poi_icons/poi_gas.png", "MONO_GAS")
+    poi.pick("gas", true) -- 另一類別彩色仍缺
+    assert(poi.logCount() == 1, "缺檔 log 應全域 once，不重複")
+end
+
+-- 兩套皆缺 → tex=nil、isColor=false（主檔 iconPass 跳過該筆）
+do
+    local tex, isColor = poi.pick("nonexistent", false)
+    assert(tex == nil and isColor == false, "材質全缺應回 nil、isColor=false")
+end
+
+print("poi icon: mono/color/fallback/log-once cases passed")

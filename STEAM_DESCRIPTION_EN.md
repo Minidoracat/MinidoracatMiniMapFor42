@@ -44,16 +44,22 @@ named [b]minidoracat_minimap.pyramid.zip[/b] and put it in [b]media/minimap/[/b]
 [u]no Lua required[/u]. This MOD auto-detects and overlays it (auto-aligned,
 drawn above the base map).
 
-[h2]🗺️ Zone layer API (0.7.0+)[/h2]
-This MOD provides a zone-rendering framework: the `registerZoneProvider` API lets addons
-supply rectangle zone data while this MOD handles the drawing — semi-transparent fills,
-outlines and centered name labels on both the mini-map and the world map (a "Show zone
-layer" toggle in the unified settings window). Pair it with the zone-display addon
-[b]Minidoracat MiniMap Zones[/b] (Mod ID: MinidoracatMiniMapZonesFor42) to show
-server-defined zones (a `zones.json` writable by external tools) and built-in vanilla
-map resource POIs (military, medical, supermarkets and 15 categories total). Without the
-addon installed, this toggle simply doesn't appear — no impact on this MOD's other
-features.
+[h2]🗺️ Built-in resource points (POI, 0.8.0+) + Zone layer API (0.7.0+)[/h2]
+[b]Resource points ship with the mod[/b]: 499 built-in vanilla-map resource points across
+14 categories (military, police, gun store, medical, pharmacy, fire, library, school,
+grocery, gas, tools, outdoor, prison, storage — each with a distinct color). The
+default "icon mode" draws a tinted silhouette icon at every point (no label clutter), with
+an optional full-color icon style; an optional "Show resource blocks" adds translucent
+blocks and names, and every category can be toggled in the "Resource points" section of
+the unified settings window (each row shows its category icon; plus a quick toggle in
+the gear panel). This MOD also provides a zone-rendering framework:
+`registerZoneProvider(ownerModId, providerFn, optionLabelKey)` lets addons supply rectangle
+zone data while this MOD draws semi-transparent fills, outlines, centered names and icons on
+both the mini-map and world map; passing optionLabelKey grants a dedicated per-provider
+toggle. Pair it with the zone-display addon [b]Minidoracat MiniMap Zones[/b]
+(Mod ID: MinidoracatMiniMapZonesFor42) to additionally show server-defined zones (a
+`zones.json` writable by external tools). Without the addon, this MOD's other features are
+unaffected.
 
 [h2]📋 MOD info[/h2]
 [list]

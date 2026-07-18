@@ -28,3 +28,6 @@ temp/
 
 # poster 產生器輸出（正式檔已部署至 MOD 目錄，此為重產暫存）
 scripts/poster/posters/
+
+# Python 編譯快取
+__pycache__/

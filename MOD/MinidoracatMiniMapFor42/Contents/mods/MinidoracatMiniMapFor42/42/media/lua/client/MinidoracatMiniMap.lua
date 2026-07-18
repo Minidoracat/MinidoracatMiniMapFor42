@@ -77,19 +77,76 @@ end
 -- 版本（契約 C1）——舊主 MOD 無此欄位／無 registerZoneProvider，addon 應安靜降級。
 -- provider 契約（C2）：providerFn 每幀被呼叫（世界＋小地圖），必須回傳「快取 table」、
 -- 勿每幀重建/過濾/合併；本 MOD 對回傳只讀不改。zone schema（provider 產、繪製端讀）：
---   { id=string, name=string(已翻譯顯示名),
+--   { id=string, name=string|nil(已翻譯顯示名；nil＝不畫名稱),
 --     rects={ { x1=, y1=, x2=, y2= }, ... }(世界 square 座標),
---     fill={ r=, g=, b= }(0-1), fillAlpha=number,
---     border={ r=, g=, b= }(0-1), borderAlpha=number, category=string|nil }
-local registeredZoneProviders = {} -- { { owner = <addon mod ID>, fn = providerFn }, ... }
+--     fill={ r=, g=, b= }(0-1), fillAlpha=number(0＝不填),
+--     border={ r=, g=, b= }(0-1), borderAlpha=number(0＝不畫框),
+--     icon={ tex=<Texture>, r=, g=, b= }|nil(選配；每 rect 中心畫染色圖標),
+--     category=string|nil }
+-- 選配第三參 optionLabelKey：有給時本 MOD 於統一視窗動態追加一顆 per-provider 母開關
+-- （如「顯示伺服器區域」），關＝渲染時整個跳過該 provider。
+-- 選配第四參 internal：true＝本體內部 provider（如內建 POI），不受 ZoneLayer 總閘連坐、
+-- 只由自家開關（PoiIcons/PoiBlocks/類別）控制；外部 addon 一律省略（受 ZoneLayer 總閘）。
+local registeredZoneProviders = {} -- { { owner=, fn=, optionLabelKey=, optionKey=, internal= }, ... }
+-- ZoneLayer 總開關的 UI 出現條件＝「有『外部』provider」：內建 POI（internal=true）
+-- 繞過 ZoneLayer 閘門（見 drawZoneFill/Lines/Icons 的 gating），若把 internal 也計入，
+-- 純本體安裝會出現一顆對任何東西都無作用的死開關（codex review 抓出）。
+local function hasExternalZoneProvider()
+    for i = 1, #registeredZoneProviders do
+        if not registeredZoneProviders[i].internal then return true end
+    end
+    return false
+end
 MinidoracatMiniMapAPI.zoneApiVersion = 1
-function MinidoracatMiniMapAPI.registerZoneProvider(ownerModId, providerFn)
+function MinidoracatMiniMapAPI.registerZoneProvider(ownerModId, providerFn, optionLabelKey, internal)
     if type(ownerModId) ~= "string" or ownerModId == "" or type(providerFn) ~= "function" then
-        print("[MinidoracatMiniMap] registerZoneProvider 參數錯誤（需 ownerModId 字串、providerFn function）")
+        print("[MinidoracatMiniMap] registerZoneProvider bad arguments (need ownerModId string, providerFn function)")
         return
     end
-    table.insert(registeredZoneProviders, { owner = ownerModId, fn = providerFn })
+    local entry = { owner = ownerModId, fn = providerFn, internal = internal and true or nil }
+    if type(optionLabelKey) == "string" and optionLabelKey ~= "" then
+        entry.optionLabelKey = optionLabelKey
+        -- per-provider ModOptions key（ini 用；非字母數字換底線求穩定合法）
+        entry.optionKey = "ZoneProv_" .. ownerModId:gsub("[^%w]", "_")
+    end
+    table.insert(registeredZoneProviders, entry)
 end
+
+-- Zone 動作 API（通用小 API，供 zone-layer addon 在統一視窗「圖層顯示」區追加一列動作）：
+-- 主 MOD 於伺服器區域 tick 之後渲染 [combo]+[按鈕]（options 有給才有 combo）；按鈕點擊呼叫
+-- onTrigger(選中的 value)。無註冊＝零列（dormant）。spec 契約：
+--   { labelKey=string(按鈕文字鍵), tooltipKey=string|nil,
+--     options={ { value=any, labelKey=string }, ... }|nil(nil＝純按鈕),
+--     onTrigger=function(value)(value＝選中 option 的 value，無 options 時為 nil) }
+-- test:zone-action:start
+local registeredZoneActions = {} -- { { owner=, labelKey=, tooltipKey=, options=, onTrigger= }, ... }
+function MinidoracatMiniMapAPI.registerZoneAction(ownerModId, spec)
+    if type(ownerModId) ~= "string" or ownerModId == "" or type(spec) ~= "table"
+        or type(spec.labelKey) ~= "string" or spec.labelKey == ""
+        or type(spec.onTrigger) ~= "function" then
+        print("[MinidoracatMiniMap] registerZoneAction bad arguments (need ownerModId, spec.labelKey, spec.onTrigger)")
+        return
+    end
+    local options = nil
+    if type(spec.options) == "table" then
+        options = {}
+        for i = 1, #spec.options do
+            local o = spec.options[i]
+            if type(o) == "table" and type(o.labelKey) == "string" and o.labelKey ~= "" then
+                options[#options + 1] = { value = o.value, labelKey = o.labelKey }
+            end
+        end
+        if #options == 0 then options = nil end -- 全部無效＝視同無 options（純按鈕）
+    end
+    table.insert(registeredZoneActions, {
+        owner = ownerModId,
+        labelKey = spec.labelKey,
+        tooltipKey = (type(spec.tooltipKey) == "string" and spec.tooltipKey ~= "") and spec.tooltipKey or nil,
+        options = options,
+        onTrigger = spec.onTrigger,
+    })
+end
+-- test:zone-action:end
 
 -- MOD 地圖框線繪製資料（collectPyramids 於地圖初始化時重建；drawMapBounds 每幀讀）
 local mapOverlays = {}
@@ -540,6 +597,25 @@ if PZAPI and PZAPI.ModOptions then
         "UI_MinidoracatMiniMap_WM_tooltip")
     modOptions:addTickBox("WMVehicleDots", "UI_MinidoracatMiniMap_WMVehicleDots", false,
         "UI_MinidoracatMiniMap_WM_tooltip")
+    -- 內建 POI（原版地圖資源點，15 類）：圖標為主（預設開）、區塊選配（預設關）。
+    -- 繪製與 provider 都在 MinidoracatMiniMapPOI.lua（讀本命名空間的 PoiIcons/PoiBlocks/Cat_*）。
+    modOptions:addTickBox("PoiIcons", "UI_MinidoracatMiniMap_PoiIcons", true,
+        "UI_MinidoracatMiniMap_PoiIcons_tooltip")
+    modOptions:addTickBox("PoiBlocks", "UI_MinidoracatMiniMap_PoiBlocks", false,
+        "UI_MinidoracatMiniMap_PoiBlocks_tooltip")
+    -- 圖標樣式（預設關＝單色類別色剪影；開＝彩色全彩圖標）。POI provider 依此選材質集。
+    modOptions:addTickBox("PoiColorIcons", "UI_MinidoracatMiniMap_PoiColorIcons", false,
+        "UI_MinidoracatMiniMap_PoiColorIcons_tooltip")
+    -- 15 類別勾選（預設全開）：ORDER 定順序，逐鍵到 CATEGORIES 取 nameKey，缺鍵略過。
+    local poiCats = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.CATEGORIES
+    local poiOrder = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.ORDER
+    if type(poiCats) == "table" and type(poiOrder) == "table" then
+        for i = 1, #poiOrder do
+            local key = poiOrder[i]
+            local def = poiCats[key]
+            if def then modOptions:addTickBox("Cat_" .. key, def.nameKey, true) end
+        end
+    end
     -- 外框底色不透明度：只影響外框/按鈕列的黑底與其上的視覺重量；
     -- 地圖本體是 GPU 直繪（pyramid/圖磚不透明），引擎無整體 alpha 可調
     local opacityCombo = modOptions:addComboBox("Opacity", "UI_MinidoracatMiniMap_Opacity")
@@ -822,6 +898,7 @@ if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.createChildren
         { id = "AnimalWild", label = "UI_MinidoracatMiniMap_AnimalWild", default = false },
         { id = "AnimalLivestock", label = "UI_MinidoracatMiniMap_AnimalLivestock", default = false },
         { id = "VehicleDots", label = "UI_MinidoracatMiniMap_VehicleDots", default = false },
+        { id = "PoiIcons", label = "UI_MinidoracatMiniMap_PoiIcons", default = true },
         { id = "StreetNames", label = "UI_MinidoracatMiniMap_StreetNames", default = true,
             apply = function(panel, selected)
                 if panel.map and panel.map.mapAPI then
@@ -849,10 +926,10 @@ if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.createChildren
             label = "UI_MinidoracatMiniMap_MapBounds", default = true })
     end)
 
-    -- Zone 圖層總開關齒輪項（有 zone provider 註冊才加；同 MapPack 動態追加模式）。
+    -- Zone 圖層總開關齒輪項（有「外部」zone provider 註冊才加；同 MapPack 動態追加模式）。
     -- 選項本體在下方 ESC/統一視窗的 OnGameBoot 註冊；此處只補齒輪面板這一面。
     Events.OnGameBoot.Add(function()
-        if #registeredZoneProviders == 0 then return end
+        if not hasExternalZoneProvider() then return end
         table.insert(GEAR_TICKS, { id = "ZoneLayer",
             label = "UI_MinidoracatMiniMap_ZoneLayer", default = true })
     end)
@@ -1127,6 +1204,7 @@ local UNIFIED_LAYER_TICKS = {
     { id = "PlaceNames", label = "UI_MinidoracatMiniMap_PlaceNames", default = true },
     { id = "StreetNames", label = "UI_MinidoracatMiniMap_StreetNames", default = true },
     { id = "Safehouses", label = "UI_MinidoracatMiniMap_Safehouses", default = true },
+    -- PoiIcons/PoiBlocks 移入獨立「資源點」區塊（poicat），與 ZoneLayer 解耦
     { id = "Isometric", label = "IGUI_MapOption_Isometric", engine = true },
     { id = "Symbols", label = "IGUI_MapOption_Symbols", engine = true },
     { id = "RemoteSymbols", label = "IGUI_MapOption_RemoteSymbols", engine = true },
@@ -1194,6 +1272,7 @@ end
 -- 區塊骨架：builder 依 id 分派（見 unifiedRebuild）；gate＝伺服器沙盒閘（停用時標示原因）
 local UNIFIED_SECTIONS = {
     { id = "layers", label = "UI_MinidoracatMiniMap_SecLayers" },
+    { id = "poicat", label = "UI_MinidoracatMiniMap_SecPOI" },
     { id = "zombie", label = "UI_MinidoracatMiniMap_SecZombie", gate = "AllowZombieDots" },
     { id = "animals", label = "UI_MinidoracatMiniMap_SecAnimals", gate = "AllowAnimalDots" },
     { id = "vehicles", label = "UI_MinidoracatMiniMap_SecVehicles", gate = "AllowVehicleDots" },
@@ -1203,9 +1282,11 @@ local UNIFIED_SECTIONS = {
 -- ponytail: 展開狀態 session 記憶即可，跨場記憶（存 ModOptions）是升級路徑
 local unifiedExpand = { layers = true }
 -- 固定分欄（實測回饋：貪婪平衡會讓區塊隨展開狀態在左右欄跳動，破壞空間記憶）：
--- 左欄＝圖層顯示/世界地圖圖標/外觀與行為，右欄＝殭屍點位/動物圖標/載具圖標
-local UNIFIED_LANE = { layers = 1, worldmap = 1, appearance = 1,
-    zombie = 2, animals = 2, vehicles = 2 }
+-- 左欄＝圖層顯示/資源點/外觀與行為，右欄＝殭屍點位/動物圖標/載具圖標/世界地圖圖標。
+-- worldmap 置右欄：與同為「點位顯示」的殭屍/動物/載具同群（世界地圖圖標亦是這三類點位），
+-- 且平衡兩欄全展開高度（資源點併入左欄後左重，右移 worldmap 後左右列數約略持平）
+local UNIFIED_LANE = { layers = 1, poicat = 1, appearance = 1,
+    zombie = 2, animals = 2, vehicles = 2, worldmap = 2 }
 local settingsUI -- 單例；獨立頂層視窗，不隨小地圖 Recreate 消失（apply 自行重抓 mm）
 
 -- 地圖包 addon 專屬選項（有註冊才出現）：OnGameBoot＝所有 MOD lua 載入完
@@ -1247,14 +1328,26 @@ Events.OnGameBoot.Add(function()
             "UI_MinidoracatMiniMap_Opacity_Faint" } })
 end)
 
--- Zone 圖層總開關（有 zone provider 註冊才出現）：註冊 ModOptions 選項本體＋
--- 統一視窗圖層區加項。齒輪面板那一面在上方 GEAR 區已補；三面共用同一 ZoneLayer 選項。
+-- Zone 圖層總開關（有「外部」zone provider 註冊才出現；內建 POI 不算——它繞過此閘）：
+-- 註冊 ModOptions 選項本體＋統一視窗圖層區加項。齒輪面板那一面在上方 GEAR 區已補；
+-- 三面共用同一 ZoneLayer 選項。
 Events.OnGameBoot.Add(function()
-    if #registeredZoneProviders == 0 or not modOptions then return end
+    if not hasExternalZoneProvider() or not modOptions then return end
     modOptions:addTickBox("ZoneLayer", "UI_MinidoracatMiniMap_ZoneLayer", true,
         "UI_MinidoracatMiniMap_ZoneLayer_tooltip")
     table.insert(UNIFIED_LAYER_TICKS, { id = "ZoneLayer",
         label = "UI_MinidoracatMiniMap_ZoneLayer", default = true })
+    -- per-provider 母開關（provider 註冊時給了 optionLabelKey 才有；如 Zones addon 的
+    -- 「顯示伺服器區域」）：ModOptions 選項本體＋統一視窗圖層區加項。渲染時
+    -- drawZoneFill/Lines/Icons 依 optionKey 讀值，關＝整個 provider 跳過。
+    for i = 1, #registeredZoneProviders do
+        local p = registeredZoneProviders[i]
+        if p.optionKey then
+            modOptions:addTickBox(p.optionKey, p.optionLabelKey, true)
+            table.insert(UNIFIED_LAYER_TICKS, { id = p.optionKey,
+                label = p.optionLabelKey, default = true })
+        end
+    end
 end)
 
 local function settingsApply(entry, value)
@@ -1389,6 +1482,14 @@ local function unifiedHeaderSummary(sec, pn)
             if unifiedWorldMapTickOn(t) then on = on + 1 end
         end
         return on .. "/" .. #UNIFIED_WM_TICKS
+    elseif sec.id == "poicat" then
+        local order = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.ORDER
+        if type(order) ~= "table" then return nil end
+        local on = 0
+        for i = 1, #order do
+            if getBoolOption("Cat_" .. order[i], true) then on = on + 1 end
+        end
+        return on .. "/" .. #order
     end
     return nil
 end
@@ -1426,7 +1527,9 @@ local function unifiedRebuild(win)
     max2 = math.max(max2, tw(getText("UI_MinidoracatMiniMap_AnimalWild")),
         tw(getText("UI_MinidoracatMiniMap_AnimalLivestock")),
         tw(getText("UI_MinidoracatMiniMap_ZombieDots")),
-        tw(getText("UI_MinidoracatMiniMap_VehicleDots")))
+        tw(getText("UI_MinidoracatMiniMap_VehicleDots")),
+        tw(getText("UI_MinidoracatMiniMap_PoiIcons")),        -- poicat 母開關（現不在 LAYER_TICKS）
+        tw(getText("UI_MinidoracatMiniMap_PoiBlocks")))
     for i = 1, #ADOTS_VEHCAT_UI do
         max2 = math.max(max2, tw(getText(ADOTS_VEHCAT_UI[i].label)))
     end
@@ -1439,6 +1542,18 @@ local function unifiedRebuild(win)
         max3 = math.max(max3, tw(getText(ADOTS_SPECIES_UI[i].label)))
     end
     local need3 = max3 + TICK_W + fontH + 10
+    local maxPoi = 0                      -- POI 類別格（列首類別小圖＋勾選＋短標籤，目標 3 欄）
+    do
+        local po = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.ORDER
+        local pc = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.CATEGORIES
+        if type(po) == "table" and type(pc) == "table" then
+            for i = 1, #po do
+                local d = pc[po[i]]
+                if d then maxPoi = math.max(maxPoi, tw(getText(d.nameKey))) end
+            end
+        end
+    end
+    local needPoi = maxPoi + TICK_W + fontH + 10 -- +fontH+10＝列首小圖寬＋間距（同 need3 動物格）
     local comboLabelW = 0                 -- combo 列標籤欄
     local comboGroups = { UNIFIED_ZOMBIE_COMBOS, UNIFIED_ANIMAL_COMBOS,
         UNIFIED_VEHICLE_COMBOS, UNIFIED_APPEAR_COMBOS }
@@ -1450,7 +1565,7 @@ local function unifiedRebuild(win)
     -- lane 寬＝滿足 lane 內最寬需求（2 欄雙倍/3 欄三倍/combo 標籤＋最小下拉 130），
     -- 夾上限後降欄數（2→1、3→2→1）——寧可長高（有捲動兜底），不裁字
     local statusW = tw(getText("UI_MinidoracatMiniMap_LivestockHiddenBySandbox")) + 8
-    local laneW = math.max(300, need2 * 2 + 12, need3 * 3 + 12,
+    local laneW = math.max(300, need2 * 2 + 12, need3 * 3 + 12, needPoi * 3 + 12,
         comboLabelW + 130 + 12, statusW)
     if laneW > 420 then laneW = 420 end
     local cols2 = (need2 * 2 + 12 <= laneW) and 2 or 1
@@ -1458,8 +1573,13 @@ local function unifiedRebuild(win)
     if need3 * 3 + 12 > laneW then
         cols3 = (need3 * 2 + 12 <= laneW) and 2 or 1
     end
+    local poiCols = 3 -- POI 類別格：短標籤預設 3 欄，超寬語系降 2→1（同 cols3 自適應）
+    if needPoi * 3 + 12 > laneW then
+        poiCols = (needPoi * 2 + 12 <= laneW) and 2 or 1
+    end
     local colW2 = math.floor((laneW - 6) / cols2)
     local colW3 = math.floor((laneW - 6) / cols3)
+    local colWpoi = math.floor((laneW - 6) / poiCols)
     local W = pad * 2 + laneW * 2 + 12 + 14 -- 雙 lane＋中縫＋右側捲軸預留
     win:setWidth(W)
     panel:setWidth(W)
@@ -1476,7 +1596,14 @@ local function unifiedRebuild(win)
     local curX, curY = laneX[1], 0
 
     local function add(el)
+        -- 捲動面板子元件的 y 是「內容座標」，必須關掉 keepOnScreen——否則任何 setY/setHeight
+        -- 會把 y 夾到 getScreenHeight()-height（ISUIElement.lua:209-219/245-257 的螢幕夾制，
+        -- 設計給頂層視窗），內容超過一屏的列會被硬拉回 985 疊在一起（實機 MMdbg 探針證據）。
+        el.keepOnScreen = false
         panel:addChild(el)
+        -- 子元件隨捲動位移的真正開關是 panel 的 java 端 scrollChildren（buildSettingsWindow
+        -- 於 instantiate 後設定）；child.scrollWithParent 預設即 true（UIElement.java:46），
+        -- 兩者同真時 getAbsoluteY 才會加上 panel.getYScroll（UIElement.java:918-926）。
         win._rows[#win._rows + 1] = el
         return el
     end
@@ -1490,6 +1617,11 @@ local function unifiedRebuild(win)
     -- ISTickBox:new 用法同原設定視窗建法（ISTickBox.lua:282）；單框單選項
     local function addTick(x, yy, w, labelText, checked, cb, arg)
         local t = ISTickBox:new(x, yy, w, fontH + 4, "", win, cb, arg)
+        -- 必須在 addOption「之前」關 keepOnScreen：addOption→setHeight（ISTickBox.lua:234）
+        -- 會觸發螢幕夾制，且此刻尚未 addChild、無 parent → getKeepOnScreen() 預設回 true
+        -- （ISUIElement.lua:188-193 `not self.parent`）→ 內容 y>螢幕高-高度 的 tick 全被夾到
+        -- 同一點（全展開時外觀區四勾選疊字的根因；add() 內的補設對此已太遲）。
+        t.keepOnScreen = false
         t:initialise()
         t:addOption(labelText)
         t:setSelected(1, checked and true or false)
@@ -1573,6 +1705,94 @@ local function unifiedRebuild(win)
                     end
                 end
                 if col ~= 0 then curY = curY + rowH end
+                -- 註冊的 zone 動作列（如 Zones addon 的「生成範例檔」）：伺服器區域 tick 之後
+                -- 渲染 [combo]+[按鈕] 一列（options 有給才有 combo）。無註冊＝零列（dormant）。
+                for ai = 1, #registeredZoneActions do
+                    local action = registeredZoneActions[ai]
+                    local btnLabel = getText(action.labelKey)
+                    local btnTip = action.tooltipKey and getText(action.tooltipKey) or nil
+                    if action.options then
+                        local btnW = math.max(60, math.min(tw(btnLabel) + 20, laneW - 130))
+                        local comboW = laneW - 6 - btnW - 4
+                        local combo = ISComboBox:new(curX + 4, curY, comboW, fontH + 6, win,
+                            function(target, box) action._selected = box.selected end)
+                        combo:initialise()
+                        for j = 1, #action.options do
+                            combo:addOption(getText(action.options[j].labelKey))
+                        end
+                        combo.selected = action._selected or 1
+                        add(combo)
+                        addBtn(curX + 4 + comboW + 4, curY, btnW, btnLabel, function()
+                            local idx = combo.selected or 1
+                            action._selected = idx
+                            local opt = action.options[idx]
+                            action.onTrigger(opt and opt.value)
+                        end, btnTip)
+                    else
+                        addBtn(curX + 4, curY, laneW - 6, btnLabel,
+                            function() action.onTrigger(nil) end, btnTip)
+                    end
+                    curY = curY + rowH
+                end
+            elseif sec.id == "poicat" then
+                -- 兩顆母開關（與 ZoneLayer 解耦，只控內部 POI provider）：顯示資源點（圖標）
+                -- ＋顯示資源點區塊。同 animals 母開關版面（colW2 雙欄）。
+                local poiMasters = {
+                    { id = "PoiIcons", label = "UI_MinidoracatMiniMap_PoiIcons", default = true },
+                    { id = "PoiBlocks", label = "UI_MinidoracatMiniMap_PoiBlocks", default = false },
+                }
+                local mcol = 0
+                for i = 1, #poiMasters do
+                    addTick(curX + 4 + mcol * colW2, curY, colW2 - 8,
+                        getTextOrNull(poiMasters[i].label) or poiMasters[i].id,
+                        getBoolOption(poiMasters[i].id, poiMasters[i].default), onModTick, poiMasters[i])
+                    mcol = mcol + 1
+                    if mcol == cols2 then mcol = 0; curY = curY + rowH end
+                end
+                if mcol ~= 0 then curY = curY + rowH end
+                -- 圖標樣式切換（整列，與母開關區分）：勾＝彩色全彩圖標，不勾＝類別色單色剪影。
+                addTick(curX + 4, curY, laneW - 6,
+                    getTextOrNull("UI_MinidoracatMiniMap_PoiColorIcons") or "PoiColorIcons",
+                    getBoolOption("PoiColorIcons", false), onModTick, { id = "PoiColorIcons" })
+                curY = curY + rowH
+                -- 15 類別勾選格（poiCols 欄，短標籤預設 3 欄，欄距 8px）＋全選/全不選。
+                -- 每格獨立 Cat_<key> 布林選項；勾選經 settingsApply 落地，POI provider
+                -- 下一 tick 由簽章偵測到變動重建（沿 C2）。
+                local order = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.ORDER
+                local pcats = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.CATEGORIES
+                if type(order) == "table" and type(pcats) == "table" then
+                    local n = #order
+                    for i = 1, n do
+                        local key = order[i]
+                        local def = pcats[key]
+                        if def then
+                            local cx = curX + 4 + ((i - 1) % poiCols) * colWpoi
+                            local cy = curY + math.floor((i - 1) / poiCols) * rowH
+                            -- 列首類別小圖（捲動面板 render 畫，染該類別 color）＝面板即圖例，
+                            -- 與地圖上該類 POI 同色；缺圖時 tex=nil，render 跳過、版面不塌（沿動物物種格）
+                            local col = def.color or { r = 0.92, g = 0.92, b = 0.92 }
+                            win._icons[#win._icons + 1] = {
+                                tex = adotsTexture and adotsTexture("media/ui/poi_icons/poi_" .. key .. ".png"),
+                                x = cx, y = cy, size = fontH + 2, r = col.r, g = col.g, b = col.b }
+                            addTick(cx + fontH + 5, cy, colWpoi - fontH - 6, getText(def.nameKey),
+                                getBoolOption("Cat_" .. key, true),
+                                function(target, index, selected)
+                                    settingsApply({ id = "Cat_" .. key }, selected)
+                                end)
+                        end
+                    end
+                    curY = curY + math.ceil(n / poiCols) * rowH + 2
+                    local halfW = math.floor((laneW - 10) / 2)
+                    addBtn(curX + 4, curY, halfW, getText("UI_MinidoracatMiniMap_SelectAll"), function()
+                        for i = 1, n do settingsApply({ id = "Cat_" .. order[i] }, true) end
+                        unifiedRebuild(win)
+                    end)
+                    addBtn(curX + 4 + halfW + 4, curY, halfW, getText("UI_MinidoracatMiniMap_SelectNone"), function()
+                        for i = 1, n do settingsApply({ id = "Cat_" .. order[i] }, false) end
+                        unifiedRebuild(win)
+                    end)
+                    curY = curY + rowH
+                end
             elseif sec.id == "zombie" then
                 addTick(curX + 4, curY, laneW - 6, getText("UI_MinidoracatMiniMap_ZombieDots"),
                     getBoolOption("ZombieDots", false), onModTick, { id = "ZombieDots" })
@@ -1735,6 +1955,11 @@ local function buildSettingsWindow()
     panel:initialise()
     panel.backgroundColor = { r = 0, g = 0, b = 0, a = 0 }
     panel.borderColor = { r = 0, g = 0, b = 0, a = 0 }
+    -- 必須先 instantiate 再 setScrollChildren：後者在 javaObject 尚未建立時「靜默 no-op」
+    -- （ISUIElement.lua:1647-1649 直接 return）——旗標沒落到 java 端＝子元件渲染不吃
+    -- panel 捲動位移（UIElement.java:918-926 getAbsoluteY 的 scrollChildren 分支），
+    -- 症狀為勾選/下拉/按鈕固定不動、只有自畫標題/圖標（手動 +getYScroll）會捲。
+    panel:instantiate()
     panel:setScrollChildren(true)
     panel:addScrollBars()
     function panel:onMouseWheel(del)
@@ -1751,27 +1976,30 @@ local function buildSettingsWindow()
     end
     -- 自畫層：區塊標題（左對齊＋右側摘要）與物種小圖（drawText＝ISUIElement.lua:1293）。
     -- 畫在 panel 的 render＝子元件之後（文字疊在 header 鈕 hover 底色之上——
-    -- 掛 prerender 會被 hover 蓋掉，實測回饋）；且在 stencil 內＝跟內容一起裁切，
-    -- 直繪座標手動加 getYScroll 跟隨捲動；視窗收合時 panel 不繪＝無穿透
+    -- 掛 prerender 會被 hover 蓋掉，實測回饋）；且在 stencil 內＝跟內容一起裁切。
+    -- 直繪「勿」手動加 getYScroll：DrawText/DrawTexture 於 java 端已自加 this.yScroll
+    -- （UIElement.java:190-194/331-334），再加一次＝2× 速度、與子元件錯位；
+    -- 視窗收合時 panel 不繪＝無穿透
     function panel:render()
         ISPanel.render(self)
         local w = self.parent
-        local ys = self:getYScroll()
         local tm = getTextManager()
         for i = 1, #w._headers do
             local h = w._headers[i]
-            self:drawText(h.text, h.x, h.y + ys, 0.92, 0.72, 0.25, 1, UIFont.Small)
+            self:drawText(h.text, h.x, h.y, 0.92, 0.72, 0.25, 1, UIFont.Small)
             local right = h.sec and unifiedHeaderSummary(h.sec, w._playerNum or 0)
             if right then
                 local tww = tm:MeasureStringX(UIFont.Small, right)
-                self:drawText(right, h.rx - tww, h.y + ys, 0.62, 0.62, 0.62, 1, UIFont.Small)
+                self:drawText(right, h.rx - tww, h.y, 0.62, 0.62, 0.62, 1, UIFont.Small)
             end
         end
         for i = 1, #w._icons do
             local ic = w._icons[i]
-            local tex = ic.name and adotsTexture and adotsTexture(ic.name)
+            -- tex 預解（POI 類別格）或以 name 惰解（動物物種）；tint 缺省近白（沿動物）
+            local tex = ic.tex or (ic.name and adotsTexture and adotsTexture(ic.name))
             if tex then
-                self:drawTextureScaled(tex, ic.x, ic.y + 1 + ys, ic.size, ic.size, 1, 0.92, 0.92, 0.92)
+                self:drawTextureScaled(tex, ic.x, ic.y + 1, ic.size, ic.size, 1,
+                    ic.r or 0.92, ic.g or 0.92, ic.b or 0.92)
             end
         end
         self:clearStencilRect()
@@ -2652,7 +2880,8 @@ end
 -- Zone 圖層（資料由 registerZoneProvider 的 addon 提供；本 MOD 只渲染）：
 -- 分兩段插入以對齊 z-order——fillPass 走最底層（base map 之上、框線之下），
 -- linePass（框線＋名稱）與 drawMapBounds 同層。無 provider 或全空表＝dormant 零成本。
--- 開關 ZoneLayer 關閉即 early-return，連 provider 都不呼叫（不觸發快取重建）。
+-- 閘門 per-provider：外部 addon provider 受 ZoneLayer 總開關（關則跳過該 provider、
+-- 不呼叫）；內部 provider（internal，如內建 POI）不受 ZoneLayer 連坐，只由自家開關控制。
 --------------------------------------------------------------------------------
 
 -- 填色：每 rect 四角 worldToUIX/Y 投影（等軸測下矩形成菱形）→ 投影後 AABB 出視窗即略過
@@ -2670,7 +2899,7 @@ local function zoneProviderErrorOnce(inner, owner, err)
     end
     if not logged[owner] then
         logged[owner] = true
-        log("Zone provider 繪製失敗 (" .. tostring(owner) .. "): " .. tostring(err))
+        log("Zone provider draw failed (" .. tostring(owner) .. "): " .. tostring(err))
     end
 end
 
@@ -2681,15 +2910,22 @@ local function drawZoneFillBody(inner)
     local w, h = inner.width, inner.height
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
-        -- A2：每個 provider 個別 pcall，壞的跳過續跑下一個（附 owner，log-once）
-        local pok, zones = pcall(provider.fn)
-        if not pok then
+        -- 閘門：外部 provider 受 ZoneLayer 總閘（internal 不受）＋ per-provider 母開關
+        -- （optionKey 有給才 gate）；任一關則 pok 留 nil、整段跳過
+        local pok, zones
+        if (provider.internal or getBoolOption("ZoneLayer", true))
+            and (not provider.optionKey or getBoolOption(provider.optionKey, true)) then
+            -- A2：每個 provider 個別 pcall，壞的跳過續跑下一個（附 owner，log-once）
+            pok, zones = pcall(provider.fn)
+        end
+        if pok == false then
             zoneProviderErrorOnce(inner, provider.owner, zones)
         elseif type(zones) == "table" then
             for zi = 1, #zones do
                 local z = zones[zi]
                 local fill, rects = z.fill, z.rects
-                if fill and rects then
+                -- fillAlpha==0（如 POI 圖標模式）早退，連投影都省
+                if fill and rects and z.fillAlpha ~= 0 then
                     local a = z.fillAlpha or 0.2
                     for ri = 1, #rects do
                         local rc = rects[ri]
@@ -2718,7 +2954,6 @@ end
 
 local function drawZoneFill(inner)
     if #registeredZoneProviders == 0 then return end
-    if not getBoolOption("ZoneLayer", true) then return end
     inner._minidoracatZoneStencilOn = false
     -- A1：繪製本體整段包 pcall，clearStencilRect 於其後無條件執行——setStencilRect 後
     -- 任何繪製/provider 錯誤都不得漏掉 clear，否則引擎全域 stencilLevel 洩漏（set 未配對
@@ -2733,22 +2968,27 @@ end
 -- 名稱仿 drawMapBounds 置中畫法（畫在第一個 rect 中心；⚠ drawRect 參數序 a,r,g,b）
 local function drawZoneLines(inner)
     if #registeredZoneProviders == 0 then return end
-    if not getBoolOption("ZoneLayer", true) then return end
     local mapAPI = inner.mapAPI
     local w, h = inner.width, inner.height
     local tm = getTextManager()
     local th = tm:getFontHeight(UIFont.Small)
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
-        -- A2：每個 provider 個別 pcall，壞的跳過續跑下一個（附 owner，log-once）
-        local pok, zones = pcall(provider.fn)
-        if not pok then
+        -- 閘門（同 drawZoneFill）：外部受 ZoneLayer 總閘＋per-provider 母開關；internal 不受
+        local pok, zones
+        if (provider.internal or getBoolOption("ZoneLayer", true))
+            and (not provider.optionKey or getBoolOption(provider.optionKey, true)) then
+            -- A2：每個 provider 個別 pcall，壞的跳過續跑下一個（附 owner，log-once）
+            pok, zones = pcall(provider.fn)
+        end
+        if pok == false then
             zoneProviderErrorOnce(inner, provider.owner, zones)
         elseif type(zones) == "table" then
             for zi = 1, #zones do
                 local z = zones[zi]
                 local border, rects = z.border, z.rects
-                if border and rects then
+                -- borderAlpha==0（如 POI 圖標模式）早退
+                if border and rects and z.borderAlpha ~= 0 then
                     local r, g, b, a = border.r, border.g, border.b, z.borderAlpha
                     local zoneVisible = false
                     for ri = 1, #rects do
@@ -2798,7 +3038,53 @@ local function safeDrawZone(inner, fn, flagKey)
     local ok, err = pcall(fn, inner)
     if not ok and not inner[flagKey] then
         inner[flagKey] = true
-        log("Zone 圖層繪製失敗: " .. tostring(err))
+        log("Zone layer draw failed: " .. tostring(err))
+    end
+end
+
+-- 圖標 pass（與 linePass 同層）：zone 帶 icon={tex,r,g,b} 時，每 rect 中心投影，
+-- 中心點落在視窗內才畫 18px 染色圖標（DrawTextureScaled 引數序 tex,x,y,w,h,a,r,g,b——
+-- 同 adotsDrawGlyph 的白剪影染色手法；tex 由 provider 於建快取時 getTexture 解好，
+-- 未齊者 icon 留 nil，這裡自然跳過）。fill/line/icon 三 pass 對 ZoneLayer/per-provider
+-- 母開關的閘門一致。
+local ZONE_ICON_SIZE = 18
+local function drawZoneIcons(inner)
+    if #registeredZoneProviders == 0 then return end
+    local mapAPI = inner.mapAPI
+    local w, h = inner.width, inner.height
+    local s = ZONE_ICON_SIZE
+    local half = s / 2
+    for pi = 1, #registeredZoneProviders do
+        local provider = registeredZoneProviders[pi]
+        -- 閘門（同 drawZoneFill）：外部受 ZoneLayer 總閘＋per-provider 母開關；internal 不受
+        local pok, zones
+        if (provider.internal or getBoolOption("ZoneLayer", true))
+            and (not provider.optionKey or getBoolOption(provider.optionKey, true)) then
+            pok, zones = pcall(provider.fn)
+        end
+        if pok == false then
+            zoneProviderErrorOnce(inner, provider.owner, zones)
+        elseif type(zones) == "table" then
+            for zi = 1, #zones do
+                local z = zones[zi]
+                local icon, rects = z.icon, z.rects
+                if icon and icon.tex and rects then
+                    for ri = 1, #rects do
+                        local rc = rects[ri]
+                        local cxw, cyw = (rc.x1 + rc.x2) / 2, (rc.y1 + rc.y2) / 2
+                        local cx = mapAPI:worldToUIX(cxw, cyw)
+                        local cy = mapAPI:worldToUIY(cxw, cyw)
+                        -- 整矩形裁切（同動物圖標 :2670 手法，留 1px 邊）：只查中心會讓
+                        -- 圖標半寬溢出地圖框（codex review 抓出）
+                        local ix, iy = cx - half, cy - half
+                        if ix >= 1 and iy >= 1 and ix + s <= w - 1 and iy + s <= h - 1 then
+                            inner:drawTextureScaled(icon.tex, ix, iy, s, s,
+                                1, icon.r, icon.g, icon.b)
+                        end
+                    end
+                end
+            end
+        end
     end
 end
 -- test:zone-render:end
@@ -2833,6 +3119,7 @@ if ISWorldMap and ISWorldMap.prerender then
         originalWorldMapPrerender(self)
         pcall(drawMapBounds, self)
         safeDrawZone(self, drawZoneLines, "_minidoracatWMZoneLineErrLogged") -- 與 MapBounds 同層
+        safeDrawZone(self, drawZoneIcons, "_minidoracatWMZoneIconErrLogged") -- POI 圖標，同層
     end
 end
 
@@ -3114,6 +3401,7 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         pcall(drawSafehouses, self) -- pcall 防清單併發增刪（同殭屍取樣的防禦策略）
         pcall(drawMapBounds, self)
         safeDrawZone(self, drawZoneLines, "_minidoracatZoneLineErrLogged") -- 與 MapBounds 同層
+        safeDrawZone(self, drawZoneIcons, "_minidoracatZoneIconErrLogged") -- POI 圖標，同層
         pcall(drawNavTargets, self)
         -- 動物圖標（畫在殭屍點位之下：殭屍小點蓋大圖標可辨）。持久錯誤首次記 log
         -- 免全靜默（API 漂移/第三方動物資料異常可診斷；既有三個 pcall 沿舊慣例不動）

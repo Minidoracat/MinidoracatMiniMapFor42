@@ -1,5 +1,45 @@
 # Changelog
 
+## [42.19.0-0.8.0] - 2026-07-18
+
+### 新增
+
+- **內建資源點（POI）**：主 MOD 內建原版地圖的 499 筆資源點、14 類（軍事、警察、槍店、
+  醫療、藥局、消防、圖書／書店、學校、超市、加油站、五金／修車、戶外／打獵、監獄、
+  倉儲，各配可辨識色），裝本體即見。以內部 zone provider 註冊，預設「圖標模式」
+  （每點於中心畫染色剪影圖標、不鋪標籤），可勾「彩色資源點圖標」改用全彩圖；另有
+  「顯示資源點區塊」選配（半透明色塊＋名稱）。統一設定視窗新增「資源點」收合小節：
+  母開關＋彩色切換＋14 類 3 欄勾選格（列首帶類別小圖）＋全選／全不選；齒輪面板同步
+  提供「顯示資源點」快速開關。同建物含多類別房間時以主類別去重（如警局內含牢房不再
+  疊監獄圖標）；分類收錄原版 room 別名（medclinic／elementaryhall，
+  SuburbsDistributions.lua:162/:177）。圖標素材缺漏時 nil-safe 跳過，不影響區塊模式。
+  四語翻譯齊備。
+- **zone schema `icon` 欄位與 per-provider 開關**：zone 可帶 `icon = { tex, r, g, b }`
+  （每 rect 中心投影畫染色圖標，與框線同層）；`registerZoneProvider` 新增選配第三參
+  `optionLabelKey`，給了就由本 MOD 於統一視窗動態追加一顆 per-provider 母開關
+  （關＝渲染時整個跳過該 provider）。
+- **registerZoneAction API**：addon 可註冊設定頁動作列（`[下拉選單]+[按鈕]` 一列，
+  spec 帶 labelKey／tooltipKey／options／onTrigger），渲染於圖層區伺服器區域開關之後
+  ——Zones addon 的「生成區域範本」按鈕即以此實作。無註冊時零列（dormant）。
+
+### 修復
+
+- **統一設定視窗捲動與排版**（三項疊加根因，實機探針逐一驗證）：
+  1. `setScrollChildren(true)` 在 panel 的 javaObject 尚未建立時為靜默 no-op
+     （ISUIElement.lua:1647 直接 return），子元件渲染從不吃捲動位移——改為先
+     `instantiate()` 再設定；
+  2. 自畫標題／圖標的手動 `+getYScroll` 移除——java 端 DrawText／DrawTexture 已自加
+     yScroll（UIElement.java:190-194），再加一次＝雙倍速錯位；
+  3. vanilla `keepOnScreen` 螢幕夾制誤傷內容座標子元件：`addOption→setHeight`
+     （ISTickBox.lua:234）會把尚無 parent 的 tickbox y 夾到「螢幕高−元件高」
+     （ISUIElement.lua:245-251；getKeepOnScreen 預設 `not self.parent`），全展開時
+     超過一屏的勾選全疊在同一列——建構前顯式關閉 keepOnScreen。
+  修畢後全展開內容可完整捲動到底、逐列可點、文字不重疊。
+
+### 變更
+
+- 統一設定視窗所有開關／下拉即時套用並持久化（等同 ESC MOD 選項頁儲存，無需另開選單）。
+
 ## [42.19.0-0.7.0] - 2026-07-17
 
 ### 新增

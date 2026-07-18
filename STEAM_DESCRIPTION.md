@@ -41,13 +41,17 @@
 [b]minidoracat_minimap.pyramid.zip[/b] 放進 [b]media/minimap/[/b]，
 [u]完全不用寫 Lua[/u]，本 MOD 會自動偵測並疊加顯示（自動對位，疊在基底之上）。
 
-[h2]🗺️ Zone 圖層 API（0.7.0+）[/h2]
-本 MOD 提供區域渲染框架：`registerZoneProvider` API 讓 addon 只需提供矩形區域資料，
-本 MOD 負責在小地圖與世界地圖上繪製半透明填色、框線與置中名稱標籤（「顯示區域
-圖層」開關，統一設定視窗）。搭配區域顯示 addon [b]Minidoracat MiniMap Zones[/b]
-（Mod ID: MinidoracatMiniMapZonesFor42）使用，可顯示伺服器自訂區域（`zones.json`，
-外部程式可寫入）與內建原版地圖資源 POI（軍事、醫療、超市等 15 類）。未安裝 addon
-時，此開關不會出現，不影響本 MOD 其餘功能。
+[h2]🗺️ 內建資源點（POI，0.8.0+）＋ Zone 圖層 API（0.7.0+）[/h2]
+[b]裝本體即見資源點[/b]：內建原版地圖的 499 筆資源點、14 類（軍事、警察、槍店、醫療、
+藥局、消防、圖書、學校、超市、加油站、五金、戶外、監獄、倉儲，各配可辨識色）。
+預設「圖標模式」在每個資源點畫染色剪影圖標（不鋪滿標籤），可切換全彩圖標；另可開
+「顯示資源點區塊」（半透明色塊＋名稱），並於統一設定視窗「資源點」小節逐類勾選
+（列首帶類別小圖）、齒輪面板一鍵開關。
+本 MOD 同時提供區域渲染框架：`registerZoneProvider(ownerModId, providerFn, optionLabelKey)`
+讓 addon 只需提供矩形區域資料，本 MOD 負責在小地圖與世界地圖上繪製半透明填色、框線、
+置中名稱與圖標；給了 optionLabelKey 就自動獲得一顆專屬母開關。搭配區域顯示 addon
+[b]Minidoracat MiniMap Zones[/b]（Mod ID: MinidoracatMiniMapZonesFor42）可額外顯示伺服器
+自訂區域（`zones.json`，外部程式可寫入）。未安裝 addon 時不影響本 MOD 其餘功能。
 
 [h2]📋 MOD 資訊[/h2]
 [list]
