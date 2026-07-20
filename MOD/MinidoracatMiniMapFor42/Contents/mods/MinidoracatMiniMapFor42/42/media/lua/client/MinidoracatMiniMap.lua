@@ -190,6 +190,25 @@ local function findZip(modInfo, sep, zip)
     return nil
 end
 
+-- 重建框線資料（世界地圖/小地圖各 init 一次呼叫，冪等）：來源＝已註冊地圖包；
+-- 有 bounds 且對應地圖 MOD 啟用者才畫框。框線是 Lua 自繪定位輔助——不依賴 zip
+-- 是否渲染、不受「顯示 MOD 地圖區塊」與「圖片化地圖」開關影響，故自
+-- collectPyramids 拆出、置於圖片化閘門之前（codex review：閘門原在前會讓
+-- 關閉圖片化啟動時框線資料永遠空白）
+local function rebuildMapOverlays()
+    local mods = getActivatedMods()
+    local active = {}
+    for i = 1, mods:size() do active[mods:get(i - 1)] = true end
+    for i = #mapOverlays, 1, -1 do mapOverlays[i] = nil end
+    for _, pack in ipairs(registeredPacks) do
+        for _, entry in ipairs(pack.entries) do
+            if entry.bounds and entry.mapMod and active[entry.mapMod] then
+                table.insert(mapOverlays, entry)
+            end
+        end
+    end
+end
+
 -- 回傳待掛載清單 { { path=絕對路徑, zip=檔名 }, ... }，順序＝MAPS 再 legacy addon
 -- （applyMiniMapPyramids 依序掛載/建層，addon 層後建、畫在基底之上）
 local function collectPyramids()
@@ -199,18 +218,6 @@ local function collectPyramids()
     local active = {}
     for i = 1, mods:size() do
         active[mods:get(i - 1)] = true
-    end
-
-    -- 重建框線資料（世界地圖/小地圖各 init 一次呼叫本函式，冪等）：
-    -- 來源＝已註冊地圖包；有 bounds 且對應地圖 MOD 啟用者才畫框——
-    -- 框線不依賴 zip 是否渲染，也不受「顯示 MOD 地圖區塊」開關影響（定位用）
-    for i = #mapOverlays, 1, -1 do mapOverlays[i] = nil end
-    for _, pack in ipairs(registeredPacks) do
-        for _, entry in ipairs(pack.entries) do
-            if entry.bounds and entry.mapMod and active[entry.mapMod] then
-                table.insert(mapOverlays, entry)
-            end
-        end
     end
 
     -- (1) 本 MOD manifest：基底 + 已啟用地圖 MOD 的圖檔。缺檔一律有 log——
@@ -273,7 +280,32 @@ local function collectPyramids()
     return list
 end
 
+-- 已掛載樣式層 id 集（世界地圖/小地圖同名共用）：關閉圖片化時逐 id 卸載。
+-- 刻意不走 Reapply Style（initDefaultStyleV3 內含 styleAPI:clear()，會把「其他
+-- MOD」掛的樣式圖層一併洗掉、對方未必有補掛 hook——codex review 抓出）
+local mountedLayerIds = {}
+local appliedWorldImagery -- 世界地圖側已套用狀態快照（nil＝尚未掛載過；apply 比對用）
+local function removeMiniMapPyramidLayers(mapUI)
+    local styleAPI = mapUI.mapAPI:getStyleAPI()
+    for layerId in pairs(mountedLayerIds) do
+        if styleAPI:indexOfLayer(layerId) ~= -1 then
+            styleAPI:removeLayerById(layerId) -- 原版用例：initDefaultStyleV3 移除 "forest"
+        end
+    end
+end
+
 local function applyMiniMapPyramids(mapUI)
+    -- 框線資料重建先於圖片化閘門：框線是 Lua 自繪、與圖片化無關（codex review）
+    rebuildMapOverlays()
+    -- 圖片化地圖總開關（預設開）：本函式是所有掛載路徑（世界地圖 init/樣式重建
+    -- 補掛/開圖保險、小地圖 InitPlayer）的唯一入口——單點閘門。關閉時本函式
+    -- 不掛載；世界地圖側的即時卸載由 modOptions:apply 呼叫 removeMiniMapPyramidLayers、
+    -- 小地圖側由 Recreate 重建
+    local imageryOn = getBoolOption("MapImagery", true) == true
+    if ISWorldMap_instance and mapUI == ISWorldMap_instance then
+        appliedWorldImagery = imageryOn -- 世界地圖側基準（instance 於 init 前已賦值，見下方 wrap 註解）
+    end
+    if not imageryOn then return end
     local mapAPI = mapUI.mapAPI
     local styleAPI = mapAPI:getStyleAPI()
 
@@ -294,6 +326,7 @@ local function applyMiniMapPyramids(mapUI)
     local added = 0
     for _, e in ipairs(entries) do
         local layerId = "minidoracat_" .. (e.zip:gsub("%.pyramid%.zip$", ""))
+        mountedLayerIds[layerId] = true -- 記錄本 MOD 圖層 id（卸載用；重複記錄無妨）
         if styleAPI:indexOfLayer(layerId) == -1 then
             local layer = styleAPI:newPyramidLayer(layerId)
             layer:setPyramidFileName(e.zip)
@@ -308,6 +341,34 @@ local function applyMiniMapPyramids(mapUI)
         log("圖層就緒（新增 " .. added .. "／共 " .. #entries .. " 個 pyramid zip）")
     end
 end
+
+-- 純決策（離線測試矩陣覆蓋，見 scripts/test_key_migration.lua）：比對快照與現值
+-- → 動作計畫。snap.worldImagery＝世界地圖側已套用狀態（nil＝尚未掛載過，不動）；
+-- snap.hasMiniMap＝有小地圖實例才處理小地圖側（無小地圖仍要能切世界地圖——
+-- AllowMiniMap 關閉情境，codex review 抓出）
+-- test:apply-plan:start
+local function computeApplyPlan(snap, cur)
+    local plan = { reapplyWorldMap = false, clearCustomSize = false, recreate = false, live = false }
+    if snap.worldImagery ~= nil and snap.worldImagery ~= cur.imagery then
+        plan.reapplyWorldMap = true
+    end
+    if snap.hasMiniMap then
+        local sizeChanged = snap.sizeIndex ~= cur.sizeIndex
+        -- 尺寸下拉改動一律先清自訂尺寸——與其他開關同時改動也不可漏清
+        -- （舊 elseif 鏈在 imagery+尺寸同改時漏清，codex review 抓出）
+        plan.clearCustomSize = sizeChanged and cur.customSize ~= ""
+        if (snap.imagery == true) ~= cur.imagery
+            or (snap.packLayers == true) ~= cur.packLayers
+            or sizeChanged
+            or (snap.customSize or "") ~= cur.customSize then
+            plan.recreate = true
+        else
+            plan.live = true
+        end
+    end
+    return plan
+end
+-- test:apply-plan:end
 
 --------------------------------------------------------------------------------
 -- MOD 選項（PZAPI.ModOptions，B42 官方 API）
@@ -531,6 +592,11 @@ if PZAPI and PZAPI.ModOptions then
         "UI_MinidoracatMiniMap_Players_tooltip")
     modOptions:addTickBox("RemotePlayers", "UI_MinidoracatMiniMap_RemotePlayers", true,
         "UI_MinidoracatMiniMap_RemotePlayers_tooltip")
+    -- 圖片化地圖總開關（預設開）：關閉＝不掛任何 pyramid 圖層，小地圖/世界地圖
+    -- 回到原版向量樣式；圖標/資源點等其他功能不受影響。MOD 地圖無渲染圖者本就
+    -- 顯示原版樣式（多數地圖 MOD 自帶向量 worldmap 資料），關閉後同理
+    modOptions:addTickBox("MapImagery", "UI_MinidoracatMiniMap_MapImagery", true,
+        "UI_MinidoracatMiniMap_MapImagery_tooltip")
     -- 安全屋範圍（本 MOD 純 Lua 自繪，見下方 drawSafehouses）：繪製端每幀讀值即時生效
     modOptions:addTickBox("Safehouses", "UI_MinidoracatMiniMap_Safehouses", true,
         "UI_MinidoracatMiniMap_Safehouses_tooltip")
@@ -674,22 +740,41 @@ if PZAPI and PZAPI.ModOptions then
         -- 實作在 MinidoracatMiniMap_FloatIcon.lua，nil 防呆＝模組缺失/版本檢查未過時略過
         if Core.updateFloatIconVisibility then Core.updateFloatIconVisibility() end
         if not getSpecificPlayer(0) then return end
-        local mm = getPlayerMiniMap(0)
-        if not mm then return end
+        local cur = {
+            imagery = getBoolOption("MapImagery", true) == true,
+            packLayers = getBoolOption("MapPackLayers", true) == true,
+            sizeIndex = getSizeIndex(),
+            customSize = getCustomSizeRaw(),
+        }
         -- ponytail: 只處理 player 0，分割畫面其餘玩家沿用原版（原版 saveSettings 也只存 player 0）
-        if (mm._minidoracatPackLayers == true) ~= (getBoolOption("MapPackLayers", true) == true) then
-            ISMiniMap.Recreate(0) -- 地圖包圖層開關改動：重建以重新決定掛載/建層
-        elseif mm._minidoracatSizeIndex ~= getSizeIndex() then
-            -- 下拉改動＝快速重置：清掉自訂尺寸，以下拉倍率重建
-            -- （之後引擎照常存 ModOptions.ini，MainOptions.lua:3793）
-            local customOpt = self:getOption("CustomSize")
-            if customOpt and tostring(customOpt:getValue() or "") ~= "" then
-                customOpt:setValue("")
+        local mm = getPlayerMiniMap(0)
+        local plan = computeApplyPlan({
+            worldImagery = appliedWorldImagery,
+            hasMiniMap = mm ~= nil,
+            imagery = mm and mm._minidoracatImagery,
+            packLayers = mm and mm._minidoracatPackLayers,
+            sizeIndex = mm and mm._minidoracatSizeIndex,
+            customSize = mm and mm._minidoracatCustomSize,
+        }, cur)
+        -- 世界地圖側（不依賴小地圖存在——AllowMiniMap 關閉時亦可切換）：
+        -- 開＝補掛、關＝逐 id 卸載（不走 Reapply Style，見 removeMiniMapPyramidLayers 註解）
+        if plan.reapplyWorldMap and ISWorldMap_instance then
+            if cur.imagery then
+                pcall(applyMiniMapPyramids, ISWorldMap_instance)
+            else
+                pcall(removeMiniMapPyramidLayers, ISWorldMap_instance)
             end
-            ISMiniMap.Recreate(0)
-        elseif (mm._minidoracatCustomSize or "") ~= getCustomSizeRaw() then
-            ISMiniMap.Recreate(0) -- 自訂尺寸欄位改動（含手動清空還原）：重建套用
-        elseif mm.inner and mm.inner.mapAPI then
+            appliedWorldImagery = cur.imagery
+        end
+        if plan.clearCustomSize then
+            -- 下拉改動＝快速重置：清掉自訂尺寸（之後引擎照常存 ModOptions.ini，
+            -- MainOptions.lua:3793）
+            local customOpt = self:getOption("CustomSize")
+            if customOpt then customOpt:setValue("") end
+        end
+        if plan.recreate then
+            ISMiniMap.Recreate(0) -- 掛載/建層/尺寸相關改動：重建一次套用全部
+        elseif plan.live and mm.inner and mm.inner.mapAPI then
             applyToggleOptions(mm.inner.mapAPI) -- 純開關直接寫 mapAPI，即時生效
             applyChromeOpacity(mm) -- 外框不透明度亦即時生效
         end
@@ -798,6 +883,7 @@ if ISMiniMap and ISMiniMap.InitPlayer then
             minimap._minidoracatSizeIndex = sizeIndex -- 給 modOptions:apply() 判斷是否需重建
             minimap._minidoracatCustomSize = getCustomSizeRaw() -- 同上：自訂尺寸欄位變動判斷
             minimap._minidoracatPackLayers = getBoolOption("MapPackLayers", true) -- 同上：地圖包圖層開關
+            minimap._minidoracatImagery = getBoolOption("MapImagery", true) -- 同上：圖片化總開關
             -- 「永遠顯示」模式：建好即展開按鈕列，之後高度恆定（prerender 的自動
             -- 收合被下方 setAdornmentsVisible wrap 擋掉），地圖核心永不位移
             if isAdornAlways() and minimap.setAdornmentsVisible then
@@ -2388,6 +2474,66 @@ if ISWorldMap and ISWorldMap.createChildren then
         end)
         if not ok then
             log("世界地圖爪印鈕安裝失敗: " .. tostring(err))
+        end
+    end
+end
+
+-- 世界地圖（M）選項面板注入「圖片化地圖」勾選：與統一視窗/ESC 選項頁同一
+-- MapImagery 選項（三面同源）。面板屬世界地圖單例、非每次開圖重建——tick 以
+-- prerender 每幀讀值同步（setSelected 不觸發回呼），統一視窗/ESC 改動不脫鉤。
+-- 佈局沿原版 WorldMapOptions:createChildren 尾段做法：附加於最底、重算視窗尺寸
+-- （BUTTON_HGT/UI_BORDER_SPACING 是 ISWorldMap.lua 檔內 local，這裡自算字高/間距）
+if WorldMapOptions and WorldMapOptions.createChildren then
+    local originalWMOptCreateChildren = WorldMapOptions.createChildren
+    function WorldMapOptions:createChildren()
+        originalWMOptCreateChildren(self)
+        -- pcall 邊界：同爪印鈕——例外外洩會沿 createChildren 炸掉世界地圖，
+        -- 失敗只該損失這顆勾選（統一視窗/ESC 仍是入口）
+        local ok, err = pcall(function()
+            -- 冪等以「現任子元件」為準：原版 synchUI 於螢幕高度/debug 狀態變化時
+            -- 清空 children 重跑 createChildren，self 欄位會殘留、以欄位判斷會
+            -- 漏重插（codex review 抓出）
+            for _, child in pairs(self:getChildren()) do
+                if child._minidoracatImageryTick then return end
+            end
+            if not modOptions then return end
+            local fontH = getTextManager():getFontHeight(UIFont.Small)
+            local bottom = 0
+            for _, child in pairs(self:getChildren()) do
+                bottom = math.max(bottom, child:getBottom())
+            end
+            local tick = ISTickBox:new(11, bottom + 6, self.width, fontH + 4, "", self,
+                function(target, index, selected)
+                    -- settingsApply 同構（該函式是 Settings 模組內 local）：
+                    -- setValue → apply（雙表面重建/卸載）→ save 落盤
+                    local opt = modOptions:getOption("MapImagery")
+                    if not opt then return end
+                    opt:setValue(selected and true or false)
+                    if modOptions.apply then modOptions:apply() end
+                    PZAPI.ModOptions:save()
+                end)
+            tick:initialise()
+            tick:addOption(getText("UI_MinidoracatMiniMap_MapImagery"))
+            tick:setSelected(1, getBoolOption("MapImagery", true) and true or false)
+            tick:setWidthToFit()
+            self:addChild(tick)
+            local origTickPrerender = tick.prerender
+            function tick:prerender()
+                self:setSelected(1, getBoolOption("MapImagery", true) and true or false)
+                origTickPrerender(self)
+            end
+            tick._minidoracatImageryTick = true -- 冪等標記（掛在子元件上，見上方掃描）
+            -- 重算視窗尺寸（沿原版 createChildren 尾段：取子元件最大右/下緣）
+            local w, h = 0, 0
+            for _, child in pairs(self:getChildren()) do
+                w = math.max(w, child:getRight())
+                h = math.max(h, child:getBottom())
+            end
+            self:setWidth(w + 11)
+            self:setHeight(h + self:resizeWidgetHeight())
+        end)
+        if not ok then
+            log("世界地圖選項面板注入圖片化開關失敗: " .. tostring(err))
         end
     end
 end

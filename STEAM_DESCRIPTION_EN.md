@@ -15,7 +15,7 @@ engine's native ImagePyramid mechanism:
 
 [h2]🧰 Features[/h2]
 [list]
-[*] [b]Image-based world map & corner mini-map[/b] — buildings, roads and vegetation match the in-game look
+[*] [b]Image-based world map & corner mini-map[/b] — buildings, roads and vegetation match the in-game look; prefer vanilla? One toggle falls back to the vector style while every other feature keeps working
 [*] [b]Mini-map hotkey[/b]: / (slash, right of M) by default (rebindable); works even when the server sandbox disables the mini-map; installs still on the old HOME default are auto-migrated to / on first game start
 [*] [b]Floating toggle icon[/b]: an always-on-screen mini icon that toggles the mini-map on click — no hotkey needed; drag to reposition, position remembered, hover shows the current hotkey (can be disabled in settings)
 [*] [b]Flexible sizing[/b]: four presets + free resize by dragging the mini-map edges, remembered automatically

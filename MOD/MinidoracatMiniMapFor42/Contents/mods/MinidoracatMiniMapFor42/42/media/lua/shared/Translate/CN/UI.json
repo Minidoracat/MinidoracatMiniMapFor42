@@ -10,6 +10,8 @@
     "UI_MinidoracatMiniMap_AdornMode": "显示按钮栏",
     "UI_MinidoracatMiniMap_AdornMode_Hover": "鼠标悬停时（原版）",
     "UI_MinidoracatMiniMap_AdornMode_Always": "始终显示",
+    "UI_MinidoracatMiniMap_MapImagery": "图片化地图",
+    "UI_MinidoracatMiniMap_MapImagery_tooltip": "以实际游戏画面渲染的地图图片叠加原版地图（本 MOD 核心视觉）。关闭后小地图与世界地图回到原版向量样式；图标、资源点、丧尸点位等其他功能全部照常运作。",
     "UI_MinidoracatMiniMap_Players": "显示自己图标",
     "UI_MinidoracatMiniMap_Players_tooltip": "在小地图上显示自己的位置图标。",
     "UI_MinidoracatMiniMap_RemotePlayers": "显示队友图标",

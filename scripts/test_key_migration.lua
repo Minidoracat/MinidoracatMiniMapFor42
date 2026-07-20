@@ -317,4 +317,69 @@ assert(z5.selected == nil, "M5: 超界 .selected 未清除")
 assert(z5.value == nil, "M5: 超界檔位不應寫值")
 assert(sm.state().saveCalls == 1, "M5: 消耗訊號後未落盤重寫")
 
-print("[OK] scripts/test_key_migration.lua 全部通過（快捷鍵遷移 A-G、拖曳 H-K、選項遷移 M1-M5）")
+--------------------------------------------------------------------------------
+-- 圖片化開關 apply 決策矩陣（computeApplyPlan，主檔）：世界地圖/小地圖分側動作
+--------------------------------------------------------------------------------
+local mainPath = arg[3]
+    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua"
+local planBody = assert(readSource(mainPath):match(
+    "%-%- test:apply%-plan:start\n(.-)\n%-%- test:apply%-plan:end"),
+    "找不到 apply-plan 測試區段")
+local planChunk, planErr = compile(planBody .. "\nreturn computeApplyPlan")
+assert(planChunk, planErr)
+local plan = planChunk()
+
+local PLAN_BASE = { imagery = true, packLayers = true, sizeIndex = 2, customSize = "" }
+local function planCur(over)
+    local c = {}
+    for k, v in pairs(PLAN_BASE) do c[k] = v end
+    for k, v in pairs(over or {}) do c[k] = v end
+    return c
+end
+local function planSnap(over)
+    local s = { worldImagery = true, hasMiniMap = true,
+        imagery = true, packLayers = true, sizeIndex = 2, customSize = "" }
+    for k, v in pairs(over or {}) do s[k] = v end
+    return s
+end
+
+-- P1. 關閉圖片化（雙側都有）→ 世界地圖卸載＋小地圖重建、非 live
+local p = plan(planSnap(), planCur({ imagery = false }))
+assert(p.reapplyWorldMap and p.recreate and not p.live and not p.clearCustomSize, "P1: 雙側切換動作不齊")
+
+-- P2. 無小地圖（沙盒 AllowMiniMap 關）仍要能切世界地圖
+p = plan(planSnap({ hasMiniMap = false }), planCur({ imagery = false }))
+assert(p.reapplyWorldMap and not p.recreate and not p.live, "P2: 無小地圖時世界地圖切換失效")
+
+-- P3. 世界地圖從未掛載（worldImagery=nil）→ 不動世界地圖、小地圖照常。
+-- nil 無法經 override 表傳遞（nil 鍵不存在、蓋不掉基底值）——手組快照
+p = plan({ hasMiniMap = true, imagery = true, packLayers = true, sizeIndex = 2, customSize = "" },
+    planCur({ imagery = false }))
+assert(not p.reapplyWorldMap and p.recreate, "P3: 未掛載仍動世界地圖")
+
+-- P4. imagery＋尺寸同改：不可漏清自訂尺寸（舊 elseif 鏈的漏洞）
+p = plan(planSnap({ customSize = "300x240" }),
+    planCur({ imagery = false, sizeIndex = 3, customSize = "300x240" }))
+assert(p.reapplyWorldMap and p.clearCustomSize and p.recreate, "P4: 同改漏清自訂尺寸")
+
+-- P5. 只改尺寸（自訂為空）→ 重建、不清
+p = plan(planSnap(), planCur({ sizeIndex = 3 }))
+assert(p.recreate and not p.clearCustomSize and not p.reapplyWorldMap, "P5")
+
+-- P6. 只改自訂尺寸欄（含手動清空還原）→ 重建
+p = plan(planSnap(), planCur({ customSize = "300x240" }))
+assert(p.recreate and not p.clearCustomSize, "P6")
+
+-- P7. 只改地圖包開關 → 重建、不動世界地圖 imagery
+p = plan(planSnap(), planCur({ packLayers = false }))
+assert(p.recreate and not p.reapplyWorldMap, "P7")
+
+-- P8. 全無變動 → 只走 live（純開關即時路徑）
+p = plan(planSnap(), planCur())
+assert(p.live and not p.recreate and not p.reapplyWorldMap and not p.clearCustomSize, "P8")
+
+-- P9. 重新開啟圖片化 → 雙側恢復
+p = plan(planSnap({ worldImagery = false, imagery = false }), planCur())
+assert(p.reapplyWorldMap and p.recreate, "P9")
+
+print("[OK] scripts/test_key_migration.lua 全部通過（快捷鍵遷移 A-G、拖曳 H-K、選項遷移 M1-M5、apply 決策 P1-P9）")

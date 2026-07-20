@@ -10,6 +10,8 @@
     "UI_MinidoracatMiniMap_AdornMode": "ボタンバー表示",
     "UI_MinidoracatMiniMap_AdornMode_Hover": "マウスオーバー時（バニラ）",
     "UI_MinidoracatMiniMap_AdornMode_Always": "常に表示",
+    "UI_MinidoracatMiniMap_MapImagery": "画像マップ",
+    "UI_MinidoracatMiniMap_MapImagery_tooltip": "実際のゲーム画面からレンダリングした地図画像を重ねます（本 MOD のコア機能）。オフにするとミニマップとワールドマップはバニラのベクター表示に戻ります；アイコン・資源ポイント・ゾンビドットなど他の機能はすべてそのまま動作します。",
     "UI_MinidoracatMiniMap_Players": "自分のマーカーを表示",
     "UI_MinidoracatMiniMap_Players_tooltip": "ミニマップに自分の位置マーカーを表示します。",
     "UI_MinidoracatMiniMap_RemotePlayers": "仲間のマーカーを表示",

@@ -15,6 +15,15 @@
   /（斜線）並寫回 keysB42.ini（走 MainOptions.keyText → saveKeys 正規路徑；帶修飾鍵或
   已改鍵＝玩家刻意設定，不動）。marker 檔 Zomboid/Lua/
   MinidoracatMiniMap_keyMigratedV1.txt 記錄已處理，玩家事後刻意改回 HOME 不再干預。
+- **圖片化地圖總開關**（統一視窗「圖層顯示」首列＋ESC 選項頁＋世界地圖（M）
+  選項面板，三面同源，預設開）：關閉後
+  不掛任何 pyramid 圖層，小地圖與世界地圖回到原版向量樣式，圖標/資源點/殭屍點位
+  等其他功能全部照常。切換即時生效：世界地圖逐 id 卸載/補掛本 MOD 樣式圖層
+  （外科手術式——不走 Reapply Style，避免 styleAPI:clear 誤刪其他 MOD 的圖層）、
+  小地圖 Recreate 重建；applyMiniMapPyramids 為所有掛載路徑唯一入口＝單點閘門，
+  框線資料重建置於閘門之前（關閉圖片化時 MOD 地圖框線照常）。無小地圖
+  （沙盒 AllowMiniMap 關閉）時仍可切換世界地圖；apply 決策抽為純函式
+  computeApplyPlan＋離線矩陣測試 P1-P9。
 - **-debug 渲染除錯警告**：debug 模式下偵測到「世界渲染已被切至舊管線
   （PerformanceSettings.fboRenderChunk=false，多半是誤按 HOME）」或「開關綁定
   仍是 HOME」時，小地圖頂部顯示橘色警告條（前者優先、提示再按 HOME 復原）；

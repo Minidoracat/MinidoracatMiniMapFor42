@@ -10,6 +10,8 @@
     "UI_MinidoracatMiniMap_AdornMode": "Show button bar",
     "UI_MinidoracatMiniMap_AdornMode_Hover": "On mouse hover (vanilla)",
     "UI_MinidoracatMiniMap_AdornMode_Always": "Always visible",
+    "UI_MinidoracatMiniMap_MapImagery": "Image-based map",
+    "UI_MinidoracatMiniMap_MapImagery_tooltip": "Overlay the map with imagery rendered from the actual in-game look (this MOD's core visual). Turn it off to fall back to the vanilla vector style on both the mini-map and world map; icons, resource points, zombie dots and every other feature keep working.",
     "UI_MinidoracatMiniMap_Players": "Show my player marker",
     "UI_MinidoracatMiniMap_Players_tooltip": "Show your own position marker on the mini-map.",
     "UI_MinidoracatMiniMap_RemotePlayers": "Show teammate markers",

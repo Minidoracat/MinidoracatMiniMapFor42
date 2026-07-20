@@ -49,6 +49,8 @@ local hasExternalZoneProvider = Core.hasExternalZoneProvider
 -- 原版語意：Isometric/Symbols 由原版 saveSettings 跨場存 WorldMapSettings
 -- （ISMiniMap.lua:605-616）、RemoteSymbols 原版即不持久化）
 local UNIFIED_LAYER_TICKS = {
+    -- 圖片化地圖總開關：經 settingsApply → modOptions:apply 觸發雙表面重建/卸載
+    { id = "MapImagery", label = "UI_MinidoracatMiniMap_MapImagery", default = true },
     { id = "Players", label = "UI_MinidoracatMiniMap_Players", default = true },
     { id = "RemotePlayers", label = "UI_MinidoracatMiniMap_RemotePlayers", default = true, mpOnly = true },
     { id = "ZombieIntensity", label = "UI_MinidoracatMiniMap_ZombieIntensity", default = false },
