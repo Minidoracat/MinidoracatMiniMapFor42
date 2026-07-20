@@ -1,9 +1,18 @@
+-- 主檔拆分後：牲畜/取樣/註冊區段仍在主檔（arg[1]）；
+-- worldmap-effective-tick 與 UNIFIED_WM_TICKS 已移至 _Settings.lua（arg[2]）
 local sourcePath = arg[1]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua"
+local settingsPath = arg[2]
+    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Settings.lua"
 
-local file = assert(io.open(sourcePath, "rb"))
-local source = file:read("*a"):gsub("\r\n", "\n")
-file:close()
+local function readSource(path)
+    local file = assert(io.open(path, "rb"))
+    local content = file:read("*a"):gsub("\r\n", "\n")
+    file:close()
+    return content
+end
+local source = readSource(sourcePath)
+local settingsSource = readSource(settingsPath)
 
 local body = assert(source:match(
     "%-%- test:livestock%-visibility:start\n(.-)\n%-%- test:livestock%-visibility:end"),
@@ -73,7 +82,7 @@ end
 assert(distanceChunk, distanceErr)
 local normalizeDistance = distanceChunk()
 
-local worldMapBody = assert(source:match(
+local worldMapBody = assert(settingsSource:match(
     "%-%- test:worldmap%-effective%-tick:start\n(.-)\n%-%- test:worldmap%-effective%-tick:end"),
     "找不到 unifiedWorldMapTickOn 測試區段")
 local worldMapChunk, worldMapErr = compile([[
@@ -362,7 +371,7 @@ local worldMapMappings = {
 }
 for _, mapping in ipairs(worldMapMappings) do
     local id, gate = mapping[1], mapping[2]
-    assert(source:match('id = "' .. id .. '".-gate = "' .. gate .. '"'),
+    assert(settingsSource:match('id = "' .. id .. '".-gate = "' .. gate .. '"'),
         id .. " 未綁定正確伺服器閘門")
     worldMap.setOption(id, true)
     worldMap.setGate(gate, true)

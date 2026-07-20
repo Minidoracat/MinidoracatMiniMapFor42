@@ -1,12 +1,20 @@
 -- 一次性快捷鍵遷移（HOME→/）＋浮動圖標拖曳門檻回歸測試。
--- 仿 test_zone_render.lua 的 stub 風格：抽主檔標記區段→補最小 stub→組裝可離線跑。
+-- 仿 test_zone_render.lua 的 stub 風格：抽標記區段→補最小 stub→組裝可離線跑。
+-- 主檔拆分後：遷移區段在 _Migrate.lua（arg[1]）、浮動圖標拖曳區段在 _FloatIcon.lua（arg[2]）。
 -- 用法：lua scripts/test_key_migration.lua
-local sourcePath = arg[1]
-    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua"
+local migratePath = arg[1]
+    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Migrate.lua"
+local floatIconPath = arg[2]
+    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_FloatIcon.lua"
 
-local file = assert(io.open(sourcePath, "rb"))
-local source = file:read("*a"):gsub("\r\n", "\n")
-file:close()
+local function readSource(path)
+    local file = assert(io.open(path, "rb"))
+    local content = file:read("*a"):gsub("\r\n", "\n")
+    file:close()
+    return content
+end
+local source = readSource(migratePath)
+local floatSource = readSource(floatIconPath)
 
 local compile = loadstring or load
 
@@ -139,7 +147,7 @@ assert(mig.state().files[mig.marker] == nil, "G: saveKeys 失敗仍寫了 marker
 --------------------------------------------------------------------------------
 -- 浮動圖標拖曳門檻：≦4px＝點擊 toggle、>4px＝拖曳存位置
 --------------------------------------------------------------------------------
-local dragBody = assert(source:match(
+local dragBody = assert(floatSource:match(
     "%-%- test:float%-drag:start\n(.-)\n%s*%-%- test:float%-drag:end"),
     "找不到 float-drag 測試區段")
 local dragPrelude = [=[
