@@ -56,10 +56,18 @@ the gear panel). This MOD also provides a zone-rendering framework:
 `registerZoneProvider(ownerModId, providerFn, optionLabelKey)` lets addons supply rectangle
 zone data while this MOD draws semi-transparent fills, outlines, centered names and icons on
 both the mini-map and world map; passing optionLabelKey grants a dedicated per-provider
-toggle. Pair it with the zone-display addon [b]Minidoracat MiniMap Zones[/b]
+toggle. Pair it with the zone-display addon [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Minidoracat MiniMap Zones[/url]
 (Mod ID: MinidoracatMiniMapZonesFor42) to additionally show server-defined zones (a
 `zones.json` writable by external tools). Without the addon, this MOD's other features are
 unaffected.
+
+[h2]🔗 MOD series[/h2]
+This is the series' [b]main MOD[/b] and works fully on its own; the addons below are optional (all require this MOD):
+[list]
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps[/url] — map pack addon: mini-map images + area outlines for map MODs
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]MOD Compatibility[/url] — third-party compatibility pack: adds species such as dogs and horses to the animal icons
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones[/url] — server custom-zone display (zones.json; requires this MOD 0.8.0+)
+[/list]
 
 [h2]📋 MOD info[/h2]
 [list]

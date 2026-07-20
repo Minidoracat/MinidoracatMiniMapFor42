@@ -50,8 +50,16 @@
 本 MOD 同時提供區域渲染框架：`registerZoneProvider(ownerModId, providerFn, optionLabelKey)`
 讓 addon 只需提供矩形區域資料，本 MOD 負責在小地圖與世界地圖上繪製半透明填色、框線、
 置中名稱與圖標；給了 optionLabelKey 就自動獲得一顆專屬母開關。搭配區域顯示 addon
-[b]Minidoracat MiniMap Zones[/b]（Mod ID: MinidoracatMiniMapZonesFor42）可額外顯示伺服器
+[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Minidoracat MiniMap Zones[/url]（Mod ID: MinidoracatMiniMapZonesFor42）可額外顯示伺服器
 自訂區域（`zones.json`，外部程式可寫入）。未安裝 addon 時不影響本 MOD 其餘功能。
+
+[h2]🔗 系列 MOD[/h2]
+本 MOD 是系列[b]主 MOD[/b]，單獨安裝即可完整使用；以下 addon 依需求選裝（皆需本 MOD）：
+[list]
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps[/url]——地圖 MOD 圖像包：地圖 MOD 的小地圖圖像＋範圍框線
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]MOD Compatibility[/url]——第三方 MOD 相容包：動物圖標追加狗、馬等物種
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones[/url]——伺服器自訂區域顯示（zones.json；需本 MOD 0.8.0+）
+[/list]
 
 [h2]📋 MOD 資訊[/h2]
 [list]

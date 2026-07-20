@@ -55,9 +55,17 @@
 フレームワークも提供します：`registerZoneProvider(ownerModId, providerFn, optionLabelKey)`
 により addon は矩形ゾーンデータを渡すだけで、本 MOD がミニマップとワールドマップに半透明の
 塗り・枠線・中央名称・アイコンを描画します（optionLabelKey を渡すと専用トグルが付きます）。
-ゾーン表示 addon [b]Minidoracat MiniMap Zones[/b]（Mod ID: MinidoracatMiniMapZonesFor42）と
+ゾーン表示 addon [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Minidoracat MiniMap Zones[/url]（Mod ID: MinidoracatMiniMapZonesFor42）と
 組み合わせると、サーバー定義ゾーン（外部ツールから書き込み可能な `zones.json`）を追加表示
 できます。addon 未導入でも本 MOD の他機能には影響しません。
+
+[h2]🔗 シリーズ MOD[/h2]
+本 MOD はシリーズの[b]本体[/b]で、単体で完全に動作します。以下の addon はお好みで導入（いずれも本 MOD が必要）：
+[list]
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps[/url]——マップパック addon：マップ MOD のミニマップ画像＋範囲枠線
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]MOD Compatibility[/url]——サードパーティ MOD 互換パック：動物アイコンに犬・馬などを追加
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones[/url]——サーバーカスタムゾーン表示（zones.json；本体 0.8.0+ が必要）
+[/list]
 
 [h2]📋 MOD 情報[/h2]
 [list]
