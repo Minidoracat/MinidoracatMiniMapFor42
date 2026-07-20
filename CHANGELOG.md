@@ -1,5 +1,19 @@
 # Changelog
 
+## [42.19.0-0.10.0] - 2026-07-20
+
+### 修正
+
+- **一 mod 多地圖的逐圖閘門（`mapDir`）**：registerMaps 條目新增選配 `mapDir`
+  （地圖目錄名）。指定時除 mod ID 啟用外，還須該目錄實際載入世界才掛圖/畫框——
+  修 MP 伺服器只在 `Map=` 挑部分 SecretZ 據點時，未載入據點仍被畫出的誤顯示
+  （玩家 baker 回報）。判定源＝`getWorld():getMap()`（Java `Core.gameMap`）：
+  單機＝MapGroups 串起的全部啟用 MOD 目錄（行為不變）、MP 客戶端＝伺服器
+  `Map=` 清單（世界 init 時 IsoMetaGrid.getLotDirectories 回填；42.19 反編譯查證）。
+  拿不到清單＝fail-open 回退純 mod ID 閘門；空字串 mapDir 視同未指定（單點中和，
+  不整條目拒收）。離線回歸測試 `scripts/test_mapdir_gate.lua`（串列解析/修剪/
+  單目錄/fail-open 矩陣＋rebuildMapOverlays 整合過濾案例）。
+
 ## [42.19.0-0.9.0] - 2026-07-20
 
 ### 新增

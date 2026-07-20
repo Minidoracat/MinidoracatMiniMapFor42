@@ -129,7 +129,9 @@ ESC 選項頁按「接受」亦同步。設定存於 `%UserProfile%\Zomboid\Lua\
 獨立 MOD（`require=` 本 MOD）在自己的 `media/minimap/` 放 pyramid zip
 （**檔名＝地圖原名**，pzmap Studio 預設輸出名，渲染完免改名），client lua 呼叫
 `MinidoracatMiniMapAPI.registerMaps(自身 mod ID, 條目清單)` 註冊——基底永遠掛載，
-地圖 MOD 的圖僅該 MOD 啟用時掛載（沒裝該地圖，畫它的圖＝錯）：
+地圖 MOD 的圖僅該 MOD 啟用時掛載（沒裝該地圖，畫它的圖＝錯）；一 mod 多地圖
+（SecretZ 12 據點類）的條目可另指定 `mapDir`，MP 伺服器 `Map=` 未載入該目錄就不畫
+（拿不到清單時 fail-open 回退 mod ID 閘門）：
 
 ```
 主 MOD                          地圖包 addon（官方包/任何人可做）    第三方地圖 MOD（零 Lua 相容路徑）

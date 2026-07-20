@@ -43,6 +43,9 @@ local MAPS = {
 -- zip 放地圖包自己的 media/minimap/；bounds＝渲染時 pyramid.txt 的世界 square
 -- 座標（右/下排他，cell*256，MinidoracatMapRendering/src/pyramid.rs:179-186）；
 -- nameKey 缺譯退 mapMod。同地圖多 mod ID 變體＝同 zip/bounds 多條目（掛載去重）。
+-- 選配 mapDir＝該條目的地圖目錄名（media/maps/ 下資料夾）：一個 mod 內含多張地圖
+-- （如 SecretZ 12 據點）時指定——MP 伺服器 Map= 沒載入該目錄就不掛載也不畫框；
+-- 省略＝只看 mapMod（單地圖 mod 不需要）。
 local registeredPacks = {} -- { { owner = <地圖包 mod ID>, entries = {...} }, ... }
 MinidoracatMiniMapAPI = MinidoracatMiniMapAPI or {}
 function MinidoracatMiniMapAPI.registerMaps(ownerModId, entries)
@@ -56,6 +59,7 @@ function MinidoracatMiniMapAPI.registerMaps(ownerModId, entries)
     for i, e in ipairs(entries) do
         local ok = type(e) == "table" and type(e.zip) == "string" and e.zip ~= ""
             and (e.mapMod == nil or type(e.mapMod) == "string")
+            and (e.mapDir == nil or type(e.mapDir) == "string")
             and (e.nameKey == nil or type(e.nameKey) == "string")
         if ok and e.bounds ~= nil then
             ok = type(e.bounds) == "table" and #e.bounds == 4
@@ -190,24 +194,62 @@ local function findZip(modInfo, sep, zip)
     return nil
 end
 
+-- 一 mod 多地圖（SecretZ 類）的逐圖閘門：MP 伺服器可在 Map= 只挑部分地圖目錄
+-- 載入，mod ID 閘門看不出這層差異（回報實例：未載入的 SecretZ 據點仍被畫出）。
+-- getWorld():getMap()（Java Core.gameMap）＝實際載入地圖目錄的分號串列——單機為
+-- MapGroups 串起的全部啟用 MOD 目錄、MP 客戶端為伺服器 Map= 清單（世界 init 時
+-- IsoMetaGrid.getLotDirectories 回填；42.19 反編譯查證），兩種模式皆可信。
+-- 約束：僅供世界 init 之後呼叫（連線早期 Core.gameMap 短暫只有首項）——現有
+-- 呼叫點（applyMiniMapPyramids 各觸發源）皆滿足；新增更早呼叫點前先想這條。
+-- test:mapdir-gate:start
+local function getLoadedMapDirs()
+    local okCall, mapStr = pcall(function()
+        local world = getWorld()
+        return world and world:getMap() or nil
+    end)
+    if not okCall or type(mapStr) ~= "string" or mapStr == "" or mapStr == "DEFAULT" then
+        return nil -- 拿不到＝fail-open 退回純 mod ID 閘門（行為同無 mapDir 版本）
+    end
+    local dirs = {}
+    for dir in string.gmatch(mapStr, "[^;]+") do
+        dir = dir:match("^%s*(.-)%s*$")
+        if dir ~= "" then dirs[dir] = true end
+    end
+    if next(dirs) == nil then return nil end -- 拆完是空集＝同「拿不到」，fail-open
+    return dirs
+end
+
+-- 條目沒指定 mapDir、或載入清單拿不到＝通過；指定了就要求該目錄真的載入。
+-- 空字串視同未指定（codex review：validator 放行 ""，但 "" 永遠匹配不到——
+-- 單點中和、不整條目拒收，壞欄位只降級回 mod ID 閘門）
+local function passesMapDir(entry, loadedDirs)
+    return entry.mapDir == nil or entry.mapDir == ""
+        or loadedDirs == nil or loadedDirs[entry.mapDir] == true
+end
+-- test:mapdir-gate:end
+
 -- 重建框線資料（世界地圖/小地圖各 init 一次呼叫，冪等）：來源＝已註冊地圖包；
 -- 有 bounds 且對應地圖 MOD 啟用者才畫框。框線是 Lua 自繪定位輔助——不依賴 zip
 -- 是否渲染、不受「顯示 MOD 地圖區塊」與「圖片化地圖」開關影響，故自
 -- collectPyramids 拆出、置於圖片化閘門之前（codex review：閘門原在前會讓
 -- 關閉圖片化啟動時框線資料永遠空白）
+-- test:rebuild-overlays:start
 local function rebuildMapOverlays()
     local mods = getActivatedMods()
     local active = {}
     for i = 1, mods:size() do active[mods:get(i - 1)] = true end
+    local loadedDirs = getLoadedMapDirs()
     for i = #mapOverlays, 1, -1 do mapOverlays[i] = nil end
     for _, pack in ipairs(registeredPacks) do
         for _, entry in ipairs(pack.entries) do
-            if entry.bounds and entry.mapMod and active[entry.mapMod] then
+            if entry.bounds and entry.mapMod and active[entry.mapMod]
+                and passesMapDir(entry, loadedDirs) then
                 table.insert(mapOverlays, entry)
             end
         end
     end
 end
+-- test:rebuild-overlays:end
 
 -- 回傳待掛載清單 { { path=絕對路徑, zip=檔名 }, ... }，順序＝MAPS 再 legacy addon
 -- （applyMiniMapPyramids 依序掛載/建層，addon 層後建、畫在基底之上）
@@ -219,13 +261,14 @@ local function collectPyramids()
     for i = 1, mods:size() do
         active[mods:get(i - 1)] = true
     end
+    local loadedDirs = getLoadedMapDirs()
 
     -- (1) 本 MOD manifest：基底 + 已啟用地圖 MOD 的圖檔。缺檔一律有 log——
     -- zip 是 gitignored 產物，「漏渲染／漏打包」是最可能的事故，不能靜默
     local own = getModInfoByID(OWN_MOD_ID)
     if own then
         for _, entry in ipairs(MAPS) do
-            if not entry.mapMod or active[entry.mapMod] then
+            if (not entry.mapMod or active[entry.mapMod]) and passesMapDir(entry, loadedDirs) then
                 local path = findZip(own, sep, entry.zip)
                 if path then
                     table.insert(list, { path = path, zip = entry.zip })
@@ -248,7 +291,7 @@ local function collectPyramids()
             local ownerInfo = getModInfoByID(pack.owner)
             if ownerInfo then
                 for _, entry in ipairs(pack.entries) do
-                    if not entry.mapMod or active[entry.mapMod] then
+                    if (not entry.mapMod or active[entry.mapMod]) and passesMapDir(entry, loadedDirs) then
                         local path = findZip(ownerInfo, sep, entry.zip)
                         if path then
                             table.insert(list, { path = path, zip = entry.zip })
