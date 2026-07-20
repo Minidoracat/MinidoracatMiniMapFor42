@@ -16,14 +16,15 @@ engine's native ImagePyramid mechanism:
 [h2]🧰 Features[/h2]
 [list]
 [*] [b]Image-based world map & corner mini-map[/b] — buildings, roads and vegetation match the in-game look
-[*] [b]Mini-map hotkey[/b]: HOME by default (rebindable); works even when the server sandbox disables the mini-map
+[*] [b]Mini-map hotkey[/b]: / (slash, right of M) by default (rebindable); works even when the server sandbox disables the mini-map; installs still on the old HOME default are auto-migrated to / on first game start
+[*] [b]Floating toggle icon[/b]: an always-on-screen mini icon that toggles the mini-map on click — no hotkey needed; drag to reposition, position remembered, hover shows the current hotkey (can be disabled in settings)
 [*] [b]Flexible sizing[/b]: four presets + free resize by dragging the mini-map edges, remembered automatically
 [*] [b]Always-visible button bar[/b]: no more hover-expanding; gear button opens the unified settings window — two-column collapsible sections with expand/collapse all (no ESC menu needed)
 [*] [b]Navigation targets[/b]: right-click the map to set a target — flag + edge direction arrow + distance, auto-clears on arrival; share to your faction with one click
-[*] [b]Live zombie dots[/b] (off by default): real-time zombie positions with adjustable color / size / cap
+[*] [b]Live zombie dots[/b] (off by default): real-time zombie positions with adjustable color / size / opacity / cap
 [*] [b]Zombie heatmap[/b] toggle (off by default)
-[*] [b]Animal icons[/b] (off by default): live nearby animals — separate wild/livestock toggles and 9 built-in species filters; the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]third-party MOD compatibility pack[/url] adds supported species such as dogs and horses; map-symbol or colored item-icon style, adjustable size and color (colorblind-friendly 8-color palette)
-[*] [b]Vehicle icons[/b] (off by default): steering-wheel markers for nearby vehicles; standard / heavy-duty / sports / emergency (lightbar) category filters, adjustable color
+[*] [b]Animal icons[/b] (off by default): live nearby animals — separate wild/livestock toggles and 9 built-in species filters; the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]third-party MOD compatibility pack[/url] adds supported species such as dogs and horses; map-symbol or colored item-icon style, adjustable size, opacity and color (colorblind-friendly 8-color palette)
+[*] [b]Vehicle icons[/b] (off by default): steering-wheel markers for nearby vehicles; standard / heavy-duty / sports / emergency (lightbar) category filters, adjustable size, opacity and color
 [*] [b]World map icons[/b]: zombie / animal / vehicle icons on the world map (M) too — four separate toggles; style, colors and filters follow your mini-map settings; a new paw button on the world map opens the settings window directly
 [*] [b]Street names[/b]: on the corner mini-map too (vanilla only shows them on the world map)
 [*] [b]Safehouse outlines[/b]: yours in green, others in red
@@ -32,6 +33,8 @@ engine's native ImagePyramid mechanism:
 [*] [b]Singleplayer & multiplayer[/b]: works out of the box in SP; in MP the server enables the mod (PZ servers dictate the mod list — players can't sideload it), and admins stay in control via the sandbox options above — the mod only visualizes data the client already receives, no extra intel
 [*] [b]Languages[/b]: Traditional Chinese / Simplified Chinese / English / Japanese
 [/list]
+
+[b]⚠️ Note for -debug users[/b]: HOME is a hidden engine render-debug key — pressing it switches the world render path (roughly half the FPS, snow visuals change), and it fires alongside anything bound to HOME. This mod now defaults to / (slash) and auto-migrates old installs; if your toggle is still on HOME, please rebind. In game, the mini-map shows an orange warning bar whenever a binding conflict or the legacy render path is detected, with instructions to recover.
 
 [h2]🧩 Map MOD support[/h2]
 Pair it with the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]Minidoracat MiniMap - MOD Maps[/url] map pack addon: it ships
@@ -49,10 +52,13 @@ drawn above the base map).
 14 categories (military, police, gun store, medical, pharmacy, fire, library, school,
 grocery, gas, tools, outdoor, prison, storage — each with a distinct color). The
 default "icon mode" draws a tinted silhouette icon at every point (no label clutter), with
-an optional full-color icon style; an optional "Show resource blocks" adds translucent
-blocks and names, and every category can be toggled in the "Resource points" section of
+an optional full-color icon style, with size and opacity sliders; an optional "Show resource blocks" adds translucent
+blocks and names, and every category can be toggled in the "Resource point icons" section of
 the unified settings window (each row shows its category icon; plus a quick toggle in
-the gear panel). This MOD also provides a zone-rendering framework:
+the gear panel). [u]Resource-point data is extracted directly from the official vanilla
+map files[/u] (not hand-placed) — if a point looks wrong or misclassified, the official
+data itself is wrong; it will be corrected once the game fixes its data and this mod
+syncs with the update. This MOD also provides a zone-rendering framework:
 `registerZoneProvider(ownerModId, providerFn, optionLabelKey)` lets addons supply rectangle
 zone data while this MOD draws semi-transparent fills, outlines, centered names and icons on
 both the mini-map and world map; passing optionLabelKey grants a dedicated per-provider

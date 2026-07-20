@@ -161,6 +161,7 @@ end
 -- 前置宣告（定義在下方 ModOptions 一節）：collectPyramids 的地圖包段要讀
 -- MapPackLayers 選項——Lua 區域名稱僅宣告後可見，不前置宣告會誤綁全域（nil）
 local getBoolOption
+local updateFloatIconVisibility -- 本體在檔尾「浮動開關圖標」一節（modOptions:apply 引用）
 
 -- 回傳 <modRoot>/media/minimap/<zip> 的存在路徑；找不到回 nil。
 -- 必須用平台分隔符組路徑：Pyramid 樣式層以 endsWith(File.separator .. fileName)
@@ -364,6 +365,18 @@ local function getComboIndex(id, default)
     return v
 end
 
+-- slider 值（number）；無 PZAPI/選項回預設。夾 min/max：PZAPI load 對 slider
+-- 接受任何 number（ModOptions.lua:310-311 不驗證值域），手改 ini 超界要防
+local function getSliderValue(id, default, min, max)
+    if not modOptions then return default end
+    local opt = modOptions:getOption(id)
+    local v = opt and opt:getValue()
+    if type(v) ~= "number" then return default end
+    if min and v < min then return min end
+    if max and v > max then return max end
+    return v
+end
+
 -- 按鈕列（titleBar＋bottomPanel adornments）是否「永遠顯示」（combobox 索引 1=滑鼠
 -- 懸停時（原版）、2=永遠顯示）。預設永遠顯示；無 PZAPI（選項不存在）時維持原版行為。
 local function isAdornAlways()
@@ -549,10 +562,10 @@ if PZAPI and PZAPI.ModOptions then
     zColorCombo:addItem("UI_MinidoracatMiniMap_ZDotColor_Purple", false)
     zColorCombo:addItem("UI_MinidoracatMiniMap_ZDotColor_White", false)
     zColorCombo:addItem("UI_MinidoracatMiniMap_ZDotColor_Red", false)
-    local zSizeCombo = modOptions:addComboBox("ZombieDotSize", "UI_MinidoracatMiniMap_ZombieDotSize")
-    zSizeCombo:addItem("UI_MinidoracatMiniMap_ZDotSize_Small", false)
-    zSizeCombo:addItem("UI_MinidoracatMiniMap_ZDotSize_Medium", true) -- 預設中（3px）
-    zSizeCombo:addItem("UI_MinidoracatMiniMap_ZDotSize_Large", false)
+    -- 大小/透明度＝滑條（0.9.0，原三檔 combobox）：舊存值由 migrateSliderOptions
+    -- 一次性換算（PZAPI addSlider＝ModOptions.lua:206；ESC 頁自帶數值標）
+    modOptions:addSlider("ZombieDotSize", "UI_MinidoracatMiniMap_ZombieDotSize", 1, 16, 1, 3)
+    modOptions:addSlider("ZombieDotAlpha", "UI_MinidoracatMiniMap_ZombieDotAlphaOpt", 10, 100, 5, 100)
     -- 殭屍點上限（可視範圍內同時顯示的最大數量；取樣端每輪讀值即時生效）
     local zMaxCombo = modOptions:addComboBox("ZombieDotMax", "UI_MinidoracatMiniMap_ZombieDotMax")
     zMaxCombo:addItem("UI_MinidoracatMiniMap_ZDotMax_100", false)
@@ -567,10 +580,9 @@ if PZAPI and PZAPI.ModOptions then
     local aStyleCombo = modOptions:addComboBox("AnimalIconStyle", "UI_MinidoracatMiniMap_AnimalIconStyle")
     aStyleCombo:addItem("UI_MinidoracatMiniMap_AIconStyle_Symbol", true) -- 預設地圖符號
     aStyleCombo:addItem("UI_MinidoracatMiniMap_AIconStyle_Item", false)
-    local aSizeCombo = modOptions:addComboBox("AnimalIconSize", "UI_MinidoracatMiniMap_AnimalIconSize")
-    aSizeCombo:addItem("UI_MinidoracatMiniMap_ZDotSize_Small", false) -- 小/中/大字樣沿用 ZDotSize 鍵
-    aSizeCombo:addItem("UI_MinidoracatMiniMap_ZDotSize_Medium", true)
-    aSizeCombo:addItem("UI_MinidoracatMiniMap_ZDotSize_Large", false)
+    -- 大小/透明度滑條（0.9.0 起動物與載具各自獨立；舊共用 combobox 值一次性換算）
+    modOptions:addSlider("AnimalIconSize", "UI_MinidoracatMiniMap_AnimalIconSize", 8, 48, 1, 16)
+    modOptions:addSlider("AnimalIconAlpha", "UI_MinidoracatMiniMap_AnimalIconAlphaOpt", 10, 100, 5, 100)
     -- 載具圖標（預設關）：無內建車形地圖圖示，以方向盤符號顯示（見 ADOTS_VEH_SYM）
     modOptions:addTickBox("VehicleDots", "UI_MinidoracatMiniMap_VehicleDots", false,
         "UI_MinidoracatMiniMap_VehicleDots_tooltip")
@@ -588,6 +600,9 @@ if PZAPI and PZAPI.ModOptions then
     addColorCombo("AnimalWildColor", "UI_MinidoracatMiniMap_AnimalWildColor", 2)      -- 預設綠
     addColorCombo("AnimalLivestockColor", "UI_MinidoracatMiniMap_AnimalLivestockColor", 1) -- 預設白
     addColorCombo("VehicleIconColor", "UI_MinidoracatMiniMap_VehicleIconColor", 4)    -- 預設天藍
+    -- 載具大小/透明度滑條（0.9.0 前與動物共用 AnimalIconSize；遷移時以舊值播種）
+    modOptions:addSlider("VehicleIconSize", "UI_MinidoracatMiniMap_VehicleIconSize", 8, 48, 1, 16)
+    modOptions:addSlider("VehicleIconAlpha", "UI_MinidoracatMiniMap_VehicleIconAlphaOpt", 10, 100, 5, 100)
     -- 世界地圖（M）獨立圖標開關（預設關）：風格/顏色/物種與類別篩選共用小地圖設定
     modOptions:addTickBox("WMZombieDots", "UI_MinidoracatMiniMap_WMZombieDots", false,
         "UI_MinidoracatMiniMap_WM_tooltip")
@@ -606,6 +621,10 @@ if PZAPI and PZAPI.ModOptions then
     -- 圖標樣式（預設關＝單色類別色剪影；開＝彩色全彩圖標）。POI provider 依此選材質集。
     modOptions:addTickBox("PoiColorIcons", "UI_MinidoracatMiniMap_PoiColorIcons", false,
         "UI_MinidoracatMiniMap_PoiColorIcons_tooltip")
+    -- 大小/透明度滑條（0.9.0 新增；原固定 18px/不透明）——作用於所有 zone 圖標
+    -- （POI 為主；Zones addon 帶圖標的區域一併受控）
+    modOptions:addSlider("PoiIconSize", "UI_MinidoracatMiniMap_PoiIconSize", 8, 48, 1, 18)
+    modOptions:addSlider("PoiIconAlpha", "UI_MinidoracatMiniMap_PoiIconAlphaOpt", 10, 100, 5, 100)
     -- 15 類別勾選（預設全開）：ORDER 定順序，逐鍵到 CATEGORIES 取 nameKey，缺鍵略過。
     local poiCats = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.CATEGORIES
     local poiOrder = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.ORDER
@@ -625,17 +644,25 @@ if PZAPI and PZAPI.ModOptions then
     -- 鎖定位置：擋標題列拖曳與邊緣縮放（hitResizeEdge 與 titleBar wrap 各自讀值）
     modOptions:addTickBox("LockPosition", "UI_MinidoracatMiniMap_LockPosition", false,
         "UI_MinidoracatMiniMap_LockPosition_tooltip")
+    -- 浮動開關圖標（預設開）：常駐畫面小圖標，點擊開關小地圖、拖曳移動（見檔尾一節）
+    modOptions:addTickBox("FloatIcon", "UI_MinidoracatMiniMap_FloatIcon", true,
+        "UI_MinidoracatMiniMap_FloatIcon_tooltip")
     -- 自訂尺寸（textentry，PZAPI/ModOptions.lua:40）：拖曳小地圖邊緣縮放時自動寫入。
     -- 不存 WorldMapSettings：它非泛用 key-value——setDouble 只認建構時註冊的
     -- ConfigOption，未知鍵靜默 no-op（WorldMapSettings.java:73-77、32-42），
     -- 故改用 ModOptions；做成可見欄位讓玩家能手動清空還原。
     modOptions:addTextEntry("CustomSize", "UI_MinidoracatMiniMap_CustomSize", "",
         "UI_MinidoracatMiniMap_CustomSize_tooltip")
+    -- 浮動圖標位置（"x,y"）：拖曳圖標時自動寫入；同 CustomSize 做可見欄位可手動清空還原
+    modOptions:addTextEntry("FloatIconPos", "UI_MinidoracatMiniMap_FloatIconPos", "",
+        "UI_MinidoracatMiniMap_FloatIconPos_tooltip")
 
     -- 按「接受/套用」時由 MainOptions:apply 呼叫（3789）。該函式先跑 gameOptions:apply()
     -- （3787）把 UI 值寫回 option，所以此處 getValue() 已是新值。
     -- 無小地圖（主選單、沙盒未開 AllowMiniMap、尚未開圖）時只存值不動作。
     function modOptions:apply()
+        -- 浮動圖標不依附小地圖視窗，先於下方小地圖防呆處理（內含無玩家檢查）
+        if updateFloatIconVisibility then updateFloatIconVisibility() end
         if not getSpecificPlayer(0) then return end
         local mm = getPlayerMiniMap(0)
         if not mm then return end
@@ -1214,9 +1241,6 @@ local UNIFIED_ZOMBIE_COMBOS = {
         items = { "UI_MinidoracatMiniMap_ZDotColor_Orange", "UI_MinidoracatMiniMap_ZDotColor_Yellow",
             "UI_MinidoracatMiniMap_ZDotColor_Purple", "UI_MinidoracatMiniMap_ZDotColor_White",
             "UI_MinidoracatMiniMap_ZDotColor_Red" } },
-    { id = "ZombieDotSize", label = "UI_MinidoracatMiniMap_ZombieDotSize", default = 2,
-        items = { "UI_MinidoracatMiniMap_ZDotSize_Small", "UI_MinidoracatMiniMap_ZDotSize_Medium",
-            "UI_MinidoracatMiniMap_ZDotSize_Large" } },
     { id = "ZombieDotMax", label = "UI_MinidoracatMiniMap_ZombieDotMax", default = 2,
         items = { "UI_MinidoracatMiniMap_ZDotMax_100", "UI_MinidoracatMiniMap_ZDotMax_200",
             "UI_MinidoracatMiniMap_ZDotMax_400", "UI_MinidoracatMiniMap_ZDotMax_800" } },
@@ -1224,9 +1248,6 @@ local UNIFIED_ZOMBIE_COMBOS = {
 local UNIFIED_ANIMAL_COMBOS = {
     { id = "AnimalIconStyle", label = "UI_MinidoracatMiniMap_AnimalIconStyle", default = 1,
         items = { "UI_MinidoracatMiniMap_AIconStyle_Symbol", "UI_MinidoracatMiniMap_AIconStyle_Item" } },
-    { id = "AnimalIconSize", label = "UI_MinidoracatMiniMap_AnimalIconSize", default = 2,
-        items = { "UI_MinidoracatMiniMap_ZDotSize_Small", "UI_MinidoracatMiniMap_ZDotSize_Medium",
-            "UI_MinidoracatMiniMap_ZDotSize_Large" } },
     { id = "AnimalWildColor", label = "UI_MinidoracatMiniMap_AnimalWildColor", default = 2,
         items = ADOTS_COLOR_ITEMS },
     { id = "AnimalLivestockColor", label = "UI_MinidoracatMiniMap_AnimalLivestockColor", default = 1,
@@ -1235,6 +1256,36 @@ local UNIFIED_ANIMAL_COMBOS = {
 local UNIFIED_VEHICLE_COMBOS = {
     { id = "VehicleIconColor", label = "UI_MinidoracatMiniMap_VehicleIconColor", default = 4,
         items = ADOTS_COLOR_ITEMS },
+}
+-- 滑條列（大小 px／透明度 %）：值即像素/百分比，繪製端每幀讀值→拖動即時預覽；
+-- 落盤在滑鼠放開時（addSliderRows 的 onMouseUp wrap，避免拖曳中高頻檔案 IO）。
+-- 單一表包四群：Kahlua 編譯器每函式 locvar 上限 200（LexState.new_localvar 固定
+-- 陣列），主 chunk 已近上限——新頂層 local 要省著用（實測炸過：載入整檔失敗）
+local UNIFIED_SLIDERS = {
+    zombie = {
+        { id = "ZombieDotSize", label = "UI_MinidoracatMiniMap_ZombieDotSize",
+            default = 3, min = 1, max = 16, step = 1, fmt = "%dpx" },
+        { id = "ZombieDotAlpha", label = "UI_MinidoracatMiniMap_IconAlpha",
+            default = 100, min = 10, max = 100, step = 5, fmt = "%d%%" },
+    },
+    animals = {
+        { id = "AnimalIconSize", label = "UI_MinidoracatMiniMap_AnimalIconSize",
+            default = 16, min = 8, max = 48, step = 1, fmt = "%dpx" },
+        { id = "AnimalIconAlpha", label = "UI_MinidoracatMiniMap_IconAlpha",
+            default = 100, min = 10, max = 100, step = 5, fmt = "%d%%" },
+    },
+    vehicles = {
+        { id = "VehicleIconSize", label = "UI_MinidoracatMiniMap_VehicleIconSize",
+            default = 16, min = 8, max = 48, step = 1, fmt = "%dpx" },
+        { id = "VehicleIconAlpha", label = "UI_MinidoracatMiniMap_IconAlpha",
+            default = 100, min = 10, max = 100, step = 5, fmt = "%d%%" },
+    },
+    poi = {
+        { id = "PoiIconSize", label = "UI_MinidoracatMiniMap_PoiIconSize",
+            default = 18, min = 8, max = 48, step = 1, fmt = "%dpx" },
+        { id = "PoiIconAlpha", label = "UI_MinidoracatMiniMap_IconAlpha",
+            default = 100, min = 10, max = 100, step = 5, fmt = "%d%%" },
+    },
 }
 local UNIFIED_APPEAR_COMBOS = {
     { id = "MapSize", label = "UI_MinidoracatMiniMap_Size", default = 2,
@@ -1251,6 +1302,8 @@ local UNIFIED_APPEAR_TICKS = {
     { id = "ClickOpenWorldMap", label = "UI_MinidoracatMiniMap_ClickOpenWorldMap", default = false },
     { id = "TextAnnotations", label = "UI_MinidoracatMiniMap_TextAnnotations", default = false },
     { id = "LockPosition", label = "UI_MinidoracatMiniMap_LockPosition", default = false },
+    -- 勾選經 settingsApply → modOptions:apply()，浮動圖標顯示更新掛在該處
+    { id = "FloatIcon", label = "UI_MinidoracatMiniMap_FloatIcon", default = true },
 }
 -- 世界地圖（M）圖標開關：與小地圖開關獨立（放本 MOD 視窗、不注入原版世界地圖
 -- 選項面板避免混淆），風格/顏色/篩選共用小地圖設定（同一 ModOptions 永久記錄）
@@ -1554,9 +1607,11 @@ local function unifiedRebuild(win)
         end
     end
     local needPoi = maxPoi + TICK_W + fontH + 10 -- +fontH+10＝列首小圖寬＋間距（同 need3 動物格）
-    local comboLabelW = 0                 -- combo 列標籤欄
+    local comboLabelW = 0                 -- combo/滑條列標籤欄（同欄寬，混排對齊）
     local comboGroups = { UNIFIED_ZOMBIE_COMBOS, UNIFIED_ANIMAL_COMBOS,
-        UNIFIED_VEHICLE_COMBOS, UNIFIED_APPEAR_COMBOS }
+        UNIFIED_VEHICLE_COMBOS, UNIFIED_APPEAR_COMBOS,
+        UNIFIED_SLIDERS.zombie, UNIFIED_SLIDERS.animals,
+        UNIFIED_SLIDERS.vehicles, UNIFIED_SLIDERS.poi }
     for g = 1, #comboGroups do
         for i = 1, #comboGroups[g] do
             comboLabelW = math.max(comboLabelW, tw(getText(comboGroups[g][i].label)))
@@ -1645,6 +1700,53 @@ local function unifiedRebuild(win)
         b.borderColor = { r = 0.4, g = 0.4, b = 0.4, a = 1 }
         if tooltip then b.tooltip = tooltip end
         return add(b)
+    end
+    -- 滑條列：標籤＋ISSliderPanel＋右側數值標（嵌自訂視窗同構用例 ISWorldMap.lua:56）。
+    -- onValueChange 拖曳中連續觸發：只寫記憶體值（繪製端每幀讀值＝即時預覽），
+    -- 放開滑鼠才 save 落盤（避免拖曳中高頻檔案 IO）；初值 setCurrentValue 帶
+    -- ignoreOnChange=true 免建構時誤觸發（ISSliderPanel.lua:181）。
+    -- 迴圈收在本函式內：unifiedRebuild 本體已貼 Kahlua 200 locvar 上限，
+    -- 呼叫端每多一個數字 for 就佔 4 個 locvar（實測炸過：整檔載入失敗）
+    local function addSliderRows(list)
+        for i = 1, #list do
+            local entry = list[i]
+            add(ISLabel:new(curX, curY + 3, fontH, getText(entry.label), 1, 1, 1, 1, UIFont.Small, true))
+            local valW = tw("100%") + 10
+            local valLabel = ISLabel:new(curX + laneW - valW, curY + 3, fontH, "", 1, 1, 1, 1, UIFont.Small, true)
+            local slider = ISSliderPanel:new(curX + comboLabelW + 8, curY + 1,
+                laneW - comboLabelW - valW - 14, fontH + 4, win,
+                function(target, value)
+                    valLabel:setName(string.format(entry.fmt, value))
+                    if not modOptions then return end
+                    local opt = modOptions:getOption(entry.id)
+                    if opt then opt:setValue(value) end -- 同步 ESC 頁元件（ModOptions.lua slider setValue）
+                end)
+            slider:initialise()
+            slider.doToolTip = false
+            -- setValues 第 5 參 _ignoreCurVal 必須為 true：否則它會拿「建構期初始
+            -- currentValue（50）」觸發 onValueChange → 回呼把 50 夾限值寫進選項，
+            -- 污染存檔（實測：殭屍/動物大小開窗即變 16/48、透明度變 50——
+            -- 原版 MainOptions 沒中是因為它先 setValues 後掛回呼）
+            slider:setValues(entry.min, entry.max, entry.step, entry.step * 5, true)
+            slider:setCurrentValue(getSliderValue(entry.id, entry.default, entry.min, entry.max), true)
+            valLabel:setName(string.format(entry.fmt, slider:getCurrentValue()))
+            -- 放開才落盤（拖曳結束/點軌道/箭頭按鈕皆經 onMouseUp；拖出元件外走 Outside）
+            local origUp = slider.onMouseUp
+            function slider:onMouseUp(mx, my)
+                local r = origUp(self, mx, my)
+                if PZAPI and PZAPI.ModOptions then PZAPI.ModOptions:save() end
+                return r
+            end
+            local origUpOutside = slider.onMouseUpOutside
+            function slider:onMouseUpOutside(mx, my)
+                local r = origUpOutside(self, mx, my)
+                if PZAPI and PZAPI.ModOptions then PZAPI.ModOptions:save() end
+                return r
+            end
+            add(slider)
+            add(valLabel)
+            curY = curY + rowH
+        end
     end
 
     -- 一鍵全展開/全收合（實測回饋）：頂列橫跨兩 lane
@@ -1793,11 +1895,13 @@ local function unifiedRebuild(win)
                     end)
                     curY = curY + rowH
                 end
+                addSliderRows(UNIFIED_SLIDERS.poi)
             elseif sec.id == "zombie" then
                 addTick(curX + 4, curY, laneW - 6, getText("UI_MinidoracatMiniMap_ZombieDots"),
                     getBoolOption("ZombieDots", false), onModTick, { id = "ZombieDots" })
                 curY = curY + rowH
                 for i = 1, #UNIFIED_ZOMBIE_COMBOS do addComboRow(UNIFIED_ZOMBIE_COMBOS[i]) end
+                addSliderRows(UNIFIED_SLIDERS.zombie)
             elseif sec.id == "animals" then
                 local masters = {
                     { id = "AnimalWild", label = "UI_MinidoracatMiniMap_AnimalWild" },
@@ -1843,6 +1947,7 @@ local function unifiedRebuild(win)
                 end)
                 curY = curY + rowH
                 for i = 1, #UNIFIED_ANIMAL_COMBOS do addComboRow(UNIFIED_ANIMAL_COMBOS[i]) end
+                addSliderRows(UNIFIED_SLIDERS.animals)
             elseif sec.id == "vehicles" then
                 addTick(curX + 4, curY, laneW - 6, getText("UI_MinidoracatMiniMap_VehicleDots"),
                     getBoolOption("VehicleDots", false), onModTick, { id = "VehicleDots" })
@@ -1860,6 +1965,7 @@ local function unifiedRebuild(win)
                 end
                 curY = curY + math.ceil(#ADOTS_VEHCAT_UI / cols2) * rowH
                 for i = 1, #UNIFIED_VEHICLE_COMBOS do addComboRow(UNIFIED_VEHICLE_COMBOS[i]) end
+                addSliderRows(UNIFIED_SLIDERS.vehicles)
             elseif sec.id == "worldmap" then
                 local col = 0
                 for i = 1, #UNIFIED_WM_TICKS do
@@ -2139,10 +2245,10 @@ local ZDOTS_COLORS = {
     { 1.0, 1.0,  1.0  }, -- 白
     { 1.0, 0.0,  0.0  }, -- 紅
 }
-local ZDOTS_SIZES = { 2, 3, 4 } -- 小／中（預設）／大（px，外圍另有 1px 黑描邊）
+local ZDOTS_SIZES = { 2, 3, 4 } -- 舊三檔 combobox 的像素映射（僅 migrateSliderOptions 換算用；渲染改讀滑條）
 local ZDOTS_MAXES = { 100, 200, 400, 800 } -- 上限檔位（索引對應 ZombieDotMax combobox）
 local ZDOTS_A = 1.0
-local ZDOTS_EDGE_A = 0.8      -- 描邊透明度（黑）
+local ZDOTS_EDGE_A = 0.8      -- 描邊透明度（黑）；隨 ZombieDotAlpha 滑條等比縮放
 
 -- ponytail: 掃描硬上限 4000——超過的清單尾端不掃（輪替起點掃描是升級路徑），
 -- 實務上客戶端同步的殭屍數遠低於此，引擎也早在此之前就跑不動了
@@ -2290,7 +2396,8 @@ local function drawZombieDotsOn(el, optId)
     if sandboxGate("AllowZombieDots", true) == false then return end -- 伺服器沙盒禁用
     local st = sampleZombieDots(el)
     local c = ZDOTS_COLORS[getComboIndex("ZombieDotColor", 1)] or ZDOTS_COLORS[1]
-    local size = ZDOTS_SIZES[getComboIndex("ZombieDotSize", 2)] or 3
+    local size = getSliderValue("ZombieDotSize", 3, 1, 16)
+    local af = getSliderValue("ZombieDotAlpha", 100, 10, 100) / 100 -- 透明度係數（描邊/本體等比）
     local mapAPI = el.mapAPI
     for i = 1, st.count do
         local d = st.dots[i]
@@ -2300,8 +2407,8 @@ local function drawZombieDotsOn(el, optId)
         -- 手動裁到視窗內（Lua drawRect 不吃元件裁切）；含描邊起繪於 ux-2。
         -- drawRect＝ISUIElement.lua:1191（引數 x,y,w,h,a,r,g,b）
         if ux >= 2 and uy >= 2 and ux <= el.width - size and uy <= el.height - size then
-            el:drawRect(ux - 2, uy - 2, size + 2, size + 2, ZDOTS_EDGE_A, 0, 0, 0)
-            el:drawRect(ux - 1, uy - 1, size, size, ZDOTS_A, c[1], c[2], c[3])
+            el:drawRect(ux - 2, uy - 2, size + 2, size + 2, ZDOTS_EDGE_A * af, 0, 0, 0)
+            el:drawRect(ux - 1, uy - 1, size, size, ZDOTS_A * af, c[1], c[2], c[3])
         end
     end
 end
@@ -2324,7 +2431,8 @@ end
 local ADOTS_INTERVAL_MS = 500 -- 動物移動慢，刷新率要求低於殭屍的 300ms
 local ADOTS_MAX = 100         -- 視窗內同時顯示上限（動物+載具合計，防禦性封頂）
 local ADOTS_SCAN_MAX = 500    -- 清單掃描硬上限（LinkedList get(i) 為 O(n)，防病態存檔）
--- 尺寸分風格兩表：物品彩圖細節多、同尺寸下比單色 glyph 糊（實測回饋），整表調大
+-- 舊三檔 combobox 的像素映射（僅 migrateSliderOptions 換算用；渲染改讀滑條——
+-- 0.9.0 起大小由玩家滑條直接指定像素，物品風格不再整表放大）
 local ADOTS_SIZES_SYM = { 12, 16, 20 }  -- 符號風格 小/中（預設）/大（px）
 local ADOTS_SIZES_ITEM = { 16, 20, 26 } -- 物品彩圖風格 小/中（預設）/大（px）
 -- 圖標染色盤：索引對應 ADOTS_COLOR_ITEMS（選項註冊區）順序，兩表必須同步。
@@ -2640,13 +2748,18 @@ end
 --   物品風格＝黑底方塊（drawRect）＋原色彩圖＋野生綠角標。
 -- 白 glyph 繪製：黑影四斜角＋染色本體疊繪兩次（白 glyph 線條細、單次繪 alpha 偏淡，
 -- 疊繪增濃；次數是實測調校旋鈕）——動物符號風格與載具共用
-local function adotsDrawGlyph(inner, tex, ux, uy, size, r, g, b)
-    inner:drawTextureScaled(tex, ux - 1, uy - 1, size, size, 0.85, 0, 0, 0)
-    inner:drawTextureScaled(tex, ux + 1, uy - 1, size, size, 0.85, 0, 0, 0)
-    inner:drawTextureScaled(tex, ux - 1, uy + 1, size, size, 0.85, 0, 0, 0)
-    inner:drawTextureScaled(tex, ux + 1, uy + 1, size, size, 0.85, 0, 0, 0)
-    inner:drawTextureScaled(tex, ux, uy, size, size, 1, r, g, b)
-    inner:drawTextureScaled(tex, ux, uy, size, size, 1, r, g, b)
+local function adotsDrawGlyph(inner, tex, ux, uy, size, r, g, b, af)
+    af = af or 1 -- 透明度係數（黑影/本體等比；統一視窗物種小圖等呼叫端可省略）
+    -- 本體疊繪兩次（增濃細線 glyph）：兩 pass 標準 alpha 合成為 1-(1-x)^2，
+    -- 每 pass 直接用 af 會偏濃（50%→實得 75%，codex review 抓出）——
+    -- 反解每 pass alpha 使合成恰等於滑條百分比；af=1 時 bodyA=1＝現行外觀不變
+    local bodyA = af >= 1 and 1 or 1 - math.sqrt(1 - af)
+    inner:drawTextureScaled(tex, ux - 1, uy - 1, size, size, 0.85 * af, 0, 0, 0)
+    inner:drawTextureScaled(tex, ux + 1, uy - 1, size, size, 0.85 * af, 0, 0, 0)
+    inner:drawTextureScaled(tex, ux - 1, uy + 1, size, size, 0.85 * af, 0, 0, 0)
+    inner:drawTextureScaled(tex, ux + 1, uy + 1, size, size, 0.85 * af, 0, 0, 0)
+    inner:drawTextureScaled(tex, ux, uy, size, size, bodyA, r, g, b)
+    inner:drawTextureScaled(tex, ux, uy, size, size, bodyA, r, g, b)
 end
 
 -- wildOpt/liveOpt/vehOpt＝該表面的開關選項（小地圖 AnimalWild…／世界地圖 WM 前綴）；
@@ -2661,10 +2774,11 @@ local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
     local st = sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
     if st.count == 0 then return end
     local styleItem = getComboIndex("AnimalIconStyle", 1) == 2
-    local sizeIdx = getComboIndex("AnimalIconSize", 2)
-    local sizeSym = ADOTS_SIZES_SYM[sizeIdx] or 16
-    -- 動物依風格選表；載具恆為 glyph → 恆用 SYM 尺寸（ITEM 表放大是針對彩圖模糊）
-    local aSize = styleItem and (ADOTS_SIZES_ITEM[sizeIdx] or 20) or sizeSym
+    -- 大小/透明度滑條每幀讀值（0.9.0 起動物/載具各自獨立；風格不再影響大小）
+    local aSize = getSliderValue("AnimalIconSize", 16, 8, 48)
+    local vSize = getSliderValue("VehicleIconSize", 16, 8, 48)
+    local aAlpha = getSliderValue("AnimalIconAlpha", 100, 10, 100) / 100
+    local vAlpha = getSliderValue("VehicleIconAlpha", 100, 10, 100) / 100
     -- 染色三下拉每幀讀值（同殭屍點顏色模式，存檔即生效）
     local wildC = adotsColor("AnimalWildColor", 2)
     local liveC = adotsColor("AnimalLivestockColor", 1)
@@ -2672,7 +2786,7 @@ local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
     local mapAPI = inner.mapAPI
     for i = 1, st.count do
         local d = st.dots[i]
-        local size = d.veh and sizeSym or aSize
+        local size = d.veh and vSize or aSize
         local half = math.floor(size / 2) -- 圖標中心對齊目標位置
         local ux = mapAPI:worldToUIX(d.x, d.y) - half
         local uy = mapAPI:worldToUIY(d.x, d.y) - half
@@ -2681,7 +2795,7 @@ local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
             if d.veh then -- 載具：恆用符號（無對應物品圖），顏色可自訂
                 local tex = adotsTexture(ADOTS_VEH_SYM)
                 if tex then
-                    adotsDrawGlyph(inner, tex, ux, uy, size, vehC[1], vehC[2], vehC[3])
+                    adotsDrawGlyph(inner, tex, ux, uy, size, vehC[1], vehC[2], vehC[3], vAlpha)
                 end
             else
                 local art = ADOTS_ART[d.group]
@@ -2696,15 +2810,15 @@ local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
                 end
                 if tex then
                     if asItem then
-                        inner:drawRect(ux - 1, uy - 1, size + 2, size + 2, 0.75, 0, 0, 0)
-                        inner:drawTextureScaled(tex, ux, uy, size, size, 1, 1, 1, 1)
+                        inner:drawRect(ux - 1, uy - 1, size + 2, size + 2, 0.75 * aAlpha, 0, 0, 0)
+                        inner:drawTextureScaled(tex, ux, uy, size, size, aAlpha, 1, 1, 1)
                         if d.wild then -- 角標＝野生（彩圖不可染色，用角標區分；色跟野生下拉）
-                            inner:drawRect(ux + size - 3, uy - 1, 4, 4, 1,
+                            inner:drawRect(ux + size - 3, uy - 1, 4, 4, aAlpha,
                                 wildC[1], wildC[2], wildC[3])
                         end
                     else
                         local c = d.wild and wildC or liveC
-                        adotsDrawGlyph(inner, tex, ux, uy, size, c[1], c[2], c[3])
+                        adotsDrawGlyph(inner, tex, ux, uy, size, c[1], c[2], c[3], aAlpha)
                     end
                 end
             end
@@ -3047,12 +3161,14 @@ end
 -- 同 adotsDrawGlyph 的白剪影染色手法；tex 由 provider 於建快取時 getTexture 解好，
 -- 未齊者 icon 留 nil，這裡自然跳過）。fill/line/icon 三 pass 對 ZoneLayer/per-provider
 -- 母開關的閘門一致。
-local ZONE_ICON_SIZE = 18
 local function drawZoneIcons(inner)
     if #registeredZoneProviders == 0 then return end
     local mapAPI = inner.mapAPI
     local w, h = inner.width, inner.height
-    local s = ZONE_ICON_SIZE
+    -- 大小/透明度滑條每幀讀值（0.9.0；作用於所有 zone 圖標，POI 為主）；
+    -- 18＝滑條預設（同 ESC 頁 addSlider 預設值）
+    local s = getSliderValue("PoiIconSize", 18, 8, 48)
+    local ia = getSliderValue("PoiIconAlpha", 100, 10, 100) / 100
     local half = s / 2
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
@@ -3079,7 +3195,7 @@ local function drawZoneIcons(inner)
                         local ix, iy = cx - half, cy - half
                         if ix >= 1 and iy >= 1 and ix + s <= w - 1 and iy + s <= h - 1 then
                             inner:drawTextureScaled(icon.tex, ix, iy, s, s,
-                                1, icon.r, icon.g, icon.b)
+                                ia, icon.r, icon.g, icon.b)
                         end
                     end
                 end
@@ -3570,7 +3686,7 @@ local function endResize()
     end
 end
 
--- 取消進行中的拖曳並清理捕捉旗標（小地圖在拖曳中被移除——HOME 鍵/輪盤選單
+-- 取消進行中的拖曳並清理捕捉旗標（小地圖在拖曳中被移除——開關快捷鍵/輪盤選單
 -- Toggle——時 mouse up 永遠不會送達，不清會殘留「沒按鍵也跟著滑鼠縮放」的幽靈狀態）
 function cancelResize()
     local st = resizeState
@@ -3642,6 +3758,52 @@ function installResizeHooks(class, toOuter)
     end
 end
 
+-- ─── -debug 渲染除錯警告（正常遊玩零成本：非 debug 首行即返回） ───
+-- Home（keycode 199）在 Core.debug 下是引擎隱藏熱鍵：IsoCell.render（IsoCell.java:3314）
+-- 切換 PerformanceSettings.fboRenderChunk＝世界渲染在新 chunk-FBO 管線與舊版
+-- 逐 tile 路徑間切換（FPS 砍半、積雪外觀改變）。兩種警告，前者優先：
+-- 1) 已切至舊管線（fboRenderChunk=false）＝問題進行式，提示再按 HOME 復原
+-- 2) 開關綁定仍是 HOME＝每次開關小地圖都同時切渲染管線，建議改鍵
+-- fboRenderChunk 是 exposed class 的 public static 欄位（同 Keyboard.KEY_* 讀法），
+-- pcall 防未來版本移除欄位
+-- 整組收單一 local table：主 chunk 貼 Kahlua 200 locvar 上限（實測炸過），省宣告
+local debugWarn = {}
+function debugWarn.readFbo() return PerformanceSettings.fboRenderChunk end
+function debugWarn.text()
+    if not getDebug() then return nil end
+    local okFbo, fbo = pcall(debugWarn.readFbo)
+    if okFbo and fbo == false then
+        return getText("UI_MinidoracatMiniMap_WarnLegacyRender")
+    end
+    if getCore():getKey("MinidoracatMiniMap_Toggle") == Keyboard.KEY_HOME then
+        return getText("UI_MinidoracatMiniMap_WarnHomeBind")
+    end
+    return nil
+end
+
+-- 目前渲染管線狀態（-debug 才回傳，非 debug nil）：浮動圖標 tooltip 顯示用
+function debugWarn.renderMode()
+    if not getDebug() then return nil end
+    local okFbo, fbo = pcall(debugWarn.readFbo)
+    if not okFbo then return nil end
+    return getText("UI_MinidoracatMiniMap_RenderMode",
+        getText(fbo and "UI_MinidoracatMiniMap_RenderMode_Fbo"
+            or "UI_MinidoracatMiniMap_RenderMode_Legacy"))
+end
+
+function debugWarn.draw(outer)
+    local msg = debugWarn.text()
+    if not msg then return end
+    local fh = getTextManager():getFontHeight(UIFont.Small)
+    -- 條位置：標題列（若顯示）之下、地圖內容頂部；深底＋橘字（警示色）
+    local y = 0
+    if outer.titleBar and outer.titleBar:isVisible() then
+        y = outer.titleBar:getY() + outer.titleBar:getHeight()
+    end
+    outer:drawRect(0, y, outer.width, fh + 4, 0.75, 0, 0, 0)
+    outer:drawTextCentre(msg, outer.width / 2, y + 2, 1, 0.62, 0.2, 1, UIFont.Small)
+end
+
 -- 鎖定位置：擋標題列拖曳移動（原版 onMouseDown 起拖，ISMiniMap.lua:363-369）；
 -- 邊緣縮放由 hitResizeEdge 開頭的鎖定檢查一併停用。回 true 消化事件，
 -- 避免點擊落到 outer 觸發別的行為。
@@ -3688,7 +3850,7 @@ if ISMiniMapOuter and ISMiniMapInner and ISMiniMapTitleBar then
     installResizeHooks(ISMiniMapTitleBar, function(el) return el.miniMap end)
     -- bottomPanel 是裸 ISPanel 實例，在 InitPlayer hook 內逐實例補掛（見上方）
 
-    -- 拖曳中小地圖被 Toggle 移除（HOME 鍵/世界地圖輪盤）→ mouse up 收不到，
+    -- 拖曳中小地圖被 Toggle 移除（開關快捷鍵/世界地圖輪盤）→ mouse up 收不到，
     -- 先取消拖曳再走原版，避免幽靈縮放狀態
     if ISMiniMap and ISMiniMap.ToggleMiniMap then
         local originalToggleMiniMap = ISMiniMap.ToggleMiniMap
@@ -3716,6 +3878,7 @@ if ISMiniMapOuter and ISMiniMapOuter.prerender and ISMiniMapOuter.render then
     local originalOuterRender = ISMiniMapOuter.render
     function ISMiniMapOuter:render()
         originalOuterRender(self)
+        debugWarn.draw(self) -- -debug 專屬警告條（非 debug 一個布林即返回）
         if not modOptions then return end -- 縮放未啟用就不畫把手
         local st = (resizeState ~= nil and resizeState.outer == self) and resizeState or nil
         local hoverEdges = nil
@@ -3759,16 +3922,25 @@ if ISMiniMapOuter and ISMiniMapOuter.prerender and ISMiniMapOuter.render then
 end
 
 -- 快捷鍵：小地圖開關（選項 → 按鍵綁定 → [MinidoracatMiniMap] 可改鍵）。
--- 預設 HOME（原版 keyBinding.lua 無此鍵衝突；N 撞 StartVehicleEngine 故不用）。
+-- 預設 /（SLASH，M 鍵右方——大地圖 M、小地圖 /）：原版 keyBinding.lua 未綁定
+-- （含裸數字掃描）、引擎 Java 層無硬編碼、本機 213 個 Workshop MOD 與 keysB42.ini
+-- 全綁定掃描空閒；顯示名稱走 glfwGetKeyName＝「/」無歧義；文字輸入期間引擎不派送
+-- 綁定（GameKeyboard 以 isDoingTextEntry 抑制）；scancode 按實體位置、跨佈局穩定。
+-- 否決紀錄：HOME＝debug 引擎隱藏熱鍵（IsoCell.render 切換
+-- PerformanceSettings.fboRenderChunk，FPS 砍半＋積雪外觀變，見 debugWarn.draw）；
+-- K＝原版「Display FPS」（keyBinding.lua:199 以裸數字 37 註冊，掃 KEY_* 常數抓不到）；
+-- 0＝顯示字元在 UI 字型下似字母 o（實測回饋）；F7/F8/F9＝debug 裸鍵編輯器
+-- （載具/世界地圖/接縫，IngameState.java:1398/1424/1431）；F12 撞 Steam 截圖；
+-- N 撞 StartVehicleEngine；9 被 Bandits Week One 事件鍵使用。
 -- ToggleMiniMap 自帶防呆：沙盒未開 AllowMiniMap 時 getPlayerMiniMap 為 nil、直接略過。
 local function initBinds()
     table.insert(keyBinding, { value = "[MinidoracatMiniMap]" })
-    table.insert(keyBinding, { value = "MinidoracatMiniMap_Toggle", key = Keyboard.KEY_HOME })
+    table.insert(keyBinding, { value = "MinidoracatMiniMap_Toggle", key = Keyboard.KEY_SLASH })
 end
 Events.OnGameBoot.Add(initBinds)
 
-local function onKeyPressed(key)
-    if key ~= getCore():getKey("MinidoracatMiniMap_Toggle") then return end
+-- 開關小地圖（快捷鍵與浮動圖標共用入口；ponytail: 只處理 player 0，同 modOptions:apply）
+local function togglePlayerMiniMap()
     if not (ISMiniMap and ISMiniMap.ToggleMiniMap) then return end
     if not getSpecificPlayer(0) then return end -- 主選單等無玩家情境
     -- 不受沙盒 AllowMiniMap 限制：原版沒建小地圖時（getPlayerMiniMap 為 nil）
@@ -3787,7 +3959,312 @@ local function onKeyPressed(key)
     end
     ISMiniMap.ToggleMiniMap(0)
 end
+
+local function onKeyPressed(key)
+    if key ~= getCore():getKey("MinidoracatMiniMap_Toggle") then return end
+    togglePlayerMiniMap()
+end
 Events.OnKeyPressed.Add(onKeyPressed)
+
+-- ═══ 浮動開關圖標 ═══
+-- 常駐頂層小圖標：點擊＝開關小地圖（滑鼠玩家不依賴快捷鍵）、拖曳＝移動、
+-- 位置存 ModOptions FloatIconPos（"x,y"，同 CustomSize "WxH" 先例）。
+-- 獨立於小地圖視窗（Toggle 移除視窗時圖標仍在——這正是它存在的意義），
+-- 掛 UIManager 頂層（同 settingsUI 單例模式）。
+local floatIcon -- 單例
+local FLOAT_ICON_SIZE = 32
+local FLOAT_DRAG_THRESHOLD = 4 -- 位移門檻：≦門檻＝點擊，超過＝拖曳（仿原版 inner dragMoved 語意）
+
+local function floatIconSavePos(x, y)
+    if not modOptions then return end
+    local opt = modOptions:getOption("FloatIconPos")
+    if not opt then return end
+    opt:setValue(math.floor(x) .. "," .. math.floor(y))
+    PZAPI.ModOptions:save() -- 立即落地 ModOptions.ini（同 CustomSize 拖曳縮放做法）
+end
+
+local function floatIconLoadPos()
+    if not modOptions then return nil end
+    local opt = modOptions:getOption("FloatIconPos")
+    -- ""/"nil"/"-" 皆視為未設定（PZAPI textentry 空字串髒化問題，見 unifiedCsvSet）
+    local raw = opt and tostring(opt:getValue() or "") or ""
+    local sx, sy = string.match(raw, "^%s*(%d+)%s*,%s*(%d+)%s*$")
+    if sx then return tonumber(sx), tonumber(sy) end
+    return nil
+end
+
+-- 夾回螢幕內（解析度改變/存檔位置超界）；prerender 每幀呼叫，純數值比較成本可忽略
+local function floatIconClamp(el)
+    local x = math.max(0, math.min(el:getX(), getCore():getScreenWidth() - el:getWidth()))
+    local y = math.max(0, math.min(el:getY(), getCore():getScreenHeight() - el:getHeight()))
+    if x ~= el:getX() then el:setX(x) end
+    if y ~= el:getY() then el:setY(y) end
+end
+
+-- 套用存檔位置（未設定＝預設右緣偏上：避開右下角小地圖預設錨位與右上系統 HUD）。
+-- 建立時與 modOptions:apply 皆呼叫——ESC 改動位置欄（含清空還原預設）即時生效
+local function floatIconApplyPos(el)
+    local x, y = floatIconLoadPos()
+    if not x then
+        x = getCore():getScreenWidth() - FLOAT_ICON_SIZE - 6
+        y = math.floor(getCore():getScreenHeight() * 0.35)
+    end
+    el:setX(x)
+    el:setY(y)
+end
+
+-- 目前開關綁定的顯示文字（含修飾鍵前綴）：優先讀選項畫面 keyText（結構同遷移一節），
+-- 未就緒時退 Core 基本鍵名。hover 時現算——玩家改鍵後 tip 即時反映
+local function currentToggleKeyText()
+    if MainOptions and type(MainOptions.keyText) == "table" then
+        for _, v in ipairs(MainOptions.keyText) do
+            if not v.value and v.txt and v.txt:getName() == "MinidoracatMiniMap_Toggle" then
+                local prefix = MainOptions.getKeyPrefix and MainOptions.getKeyPrefix(v) or ""
+                return prefix .. getKeyName(v.keyCode)
+            end
+        end
+    end
+    return getKeyName(getCore():getKey("MinidoracatMiniMap_Toggle"))
+end
+
+local function ensureFloatIcon()
+    if floatIcon then return floatIcon end
+    if not ISPanel then return nil end
+    local ui = ISPanel:new(0, 0, FLOAT_ICON_SIZE, FLOAT_ICON_SIZE)
+    ui.backgroundColor = { r = 0, g = 0, b = 0, a = 0.7 }
+    ui.borderColor = { r = 1, g = 1, b = 1, a = 0.35 }
+    ui:initialise()
+    ui:instantiate()
+    ui.tex = getTexture("media/ui/minimap_toggle.png")
+    -- hover 提示（照抄 ISButton:updateTooltip，ISButton.lua:316-345）：顯示動作＋
+    -- 當前快捷鍵。按住（點擊/拖曳中）不顯示
+    function ui:updateFloatTooltip()
+        if self:isMouseOver() and not self._down then
+            if not self.tooltipUI then
+                self.tooltipUI = ISToolTip:new()
+                self.tooltipUI:setOwner(self)
+                self.tooltipUI:setVisible(false)
+                self.tooltipUI:setAlwaysOnTop(true)
+            end
+            if not self.tooltipUI:getIsVisible() then
+                self.tooltipUI:addToUIManager()
+                self.tooltipUI:setVisible(true)
+            end
+            local desc = getText("UI_MinidoracatMiniMap_FloatIcon_tip", currentToggleKeyText())
+            local mode = debugWarn.renderMode() -- -debug 限定：目前渲染管線狀態
+            if mode then desc = desc .. " \n" .. mode end
+            local warn = debugWarn.text()
+            if warn then desc = desc .. " \n" .. warn end
+            -- 多行不自動換行（同 ISButton.lua:326-330 的 maxLineWidth 切換）
+            self.tooltipUI.maxLineWidth = (mode or warn) and 1000 or 300
+            self.tooltipUI.description = desc
+            self.tooltipUI:setDesiredPosition(getMouseX(), self:getAbsoluteY() + self:getHeight() + 8)
+        elseif self.tooltipUI and self.tooltipUI:getIsVisible() then
+            self.tooltipUI:setVisible(false)
+            self.tooltipUI:removeFromUIManager()
+        end
+    end
+    function ui:hideFloatTooltip()
+        if self.tooltipUI and self.tooltipUI:getIsVisible() then
+            self.tooltipUI:setVisible(false)
+            self.tooltipUI:removeFromUIManager()
+        end
+    end
+    function ui:prerender()
+        -- 回主選單後 UIManager 元件仍存活：無玩家即自我隱藏（OnGameStart 再開回）
+        if not getSpecificPlayer(0) then
+            self:hideFloatTooltip() -- 隱藏後 prerender 不再執行，tip 須同步收掉
+            self:setVisible(false)
+            return
+        end
+        ISPanel.prerender(self)
+        floatIconClamp(self)
+        self:updateFloatTooltip()
+        local a = self:isMouseOver() and 1.0 or 0.75
+        if self.tex then
+            self:drawTextureScaled(self.tex, 3, 3, self.width - 6, self.height - 6, a, 1, 1, 1)
+        else
+            -- 材質缺漏 nil-safe（同 POI 圖標慣例）：畫「M」替代
+            local fh = getTextManager():getFontHeight(UIFont.Small)
+            self:drawTextCentre("M", self.width / 2, (self.height - fh) / 2, 1, 1, 1, a, UIFont.Small)
+        end
+    end
+    -- 拖曳：setCapture 五件套（同 installResizeHooks 模式——拖出元件外仍收 Move/Up）
+    -- test:float-drag:start
+    local function moveIcon(self)
+        if not self._down then return false end
+        local mx, my = getMouseX(), getMouseY()
+        if not self._dragged then
+            if math.abs(mx - self._downX) <= FLOAT_DRAG_THRESHOLD
+                and math.abs(my - self._downY) <= FLOAT_DRAG_THRESHOLD then
+                return true
+            end
+            self._dragged = true
+        end
+        self:setX(self._origX + (mx - self._downX))
+        self:setY(self._origY + (my - self._downY))
+        return true
+    end
+    local function releaseIcon(self)
+        if not self._down then return false end
+        self._down = nil
+        self:setCapture(false)
+        if self._dragged then
+            self._dragged = nil
+            floatIconClamp(self)
+            floatIconSavePos(self:getX(), self:getY())
+        else
+            togglePlayerMiniMap()
+        end
+        return true
+    end
+    -- test:float-drag:end
+    function ui:onMouseDown(px, py)
+        self._down = true
+        self._dragged = nil
+        self._downX, self._downY = getMouseX(), getMouseY()
+        self._origX, self._origY = self:getX(), self:getY()
+        self:setCapture(true)
+        return true
+    end
+    function ui:onMouseMove(dx, dy) return moveIcon(self) end
+    function ui:onMouseMoveOutside(dx, dy) return moveIcon(self) end
+    function ui:onMouseUp(px, py) return releaseIcon(self) end
+    function ui:onMouseUpOutside(px, py) return releaseIcon(self) end
+    floatIconApplyPos(ui)
+    ui:addToUIManager()
+    floatIcon = ui
+    return ui
+end
+
+-- 本體（前置宣告見檔案上方）：OnGameStart 與 modOptions:apply()（ESC 選項頁與
+-- 統一視窗勾選共同收斂點）呼叫；懶建立，選項關閉且從未建立時零成本
+updateFloatIconVisibility = function()
+    if not getSpecificPlayer(0) then return end
+    if getBoolOption("FloatIcon", true) then
+        local ui = ensureFloatIcon()
+        if ui then
+            floatIconApplyPos(ui) -- 重讀位置欄：ESC 改動/清空即時生效（拖曳存檔＝同值冪等）
+            ui:setVisible(true)
+            ui:bringToTop()
+        end
+    elseif floatIcon then
+        floatIcon:hideFloatTooltip() -- 隱藏後 prerender 停跑，tip 須在此收掉
+        floatIcon:setVisible(false)
+    end
+end
+Events.OnGameStart.Add(updateFloatIconVisibility)
+
+-- ═══ 一次性快捷鍵遷移：舊預設 HOME → / ═══
+-- 改預設救不了既有安裝：MainOptions.loadKeys 先註冊 Lua 預設、再以 keysB42.ini
+-- 既存值覆寫（MainOptions.lua:3601），ini 永遠贏。首次進遊戲時若綁定仍是
+-- 「無修飾鍵的 HOME」（＝沿用舊預設，非玩家刻意設定）則遷移為 K，並寫 marker 檔
+-- 記錄已處理——玩家事後刻意改回 HOME 不再干預。
+-- 寫回缺一不可（saveKeys 以 MainOptions.keyText 為真相來源整檔重寫並回填 Core，
+-- 只改 Core 會在玩家下次按選項套用時被 keyText 沖回）：keyText 條目 → saveKeys。
+-- test:key-migration:start
+local function migrateToggleKeyOnce()
+    -- marker 檔名放函式內：主 chunk 貼 Kahlua 200 locvar 上限，省頂層宣告
+    local MIGRATE_MARKER = "MinidoracatMiniMap_keyMigratedV1.txt"
+    local reader = getFileReader(MIGRATE_MARKER, false)
+    if reader then
+        reader:close()
+        return -- 已處理過
+    end
+    -- resolved＝狀態已判定（非 HOME／找到條目並處理完）。Core 是 HOME 但 keyText
+    -- 未就緒或條目缺失＝未解析：不寫 marker、下次進遊戲重試——否則遷移被永久跳過
+    local resolved = false
+    local ok, err = pcall(function()
+        if getCore():getKey("MinidoracatMiniMap_Toggle") ~= Keyboard.KEY_HOME then
+            resolved = true -- 已是 K 或玩家自改鍵，無事可做
+            return
+        end
+        if not (MainOptions and type(MainOptions.keyText) == "table" and MainOptions.saveKeys) then
+            return
+        end
+        for _, v in ipairs(MainOptions.keyText) do
+            -- 跳過分區標籤列（v.value = "[...]"，同原版 keyPressHandler 慣例）
+            if not v.value and v.txt and v.txt:getName() == "MinidoracatMiniMap_Toggle" then
+                if v.keyCode == Keyboard.KEY_HOME and not (v.shift or v.ctrl or v.alt) then
+                    v.keyCode = Keyboard.KEY_SLASH
+                    -- 同步選項畫面按鈕標題（同原版 keyPressHandler 寫法）
+                    if v.btn and MainOptions.getKeyPrefix then
+                        v.btn:setTitle(MainOptions.getKeyPrefix(v) .. getKeyName(Keyboard.KEY_SLASH))
+                    end
+                    -- saveKeys 內部 reinitKeyMaps 後逐條 writeKey→addKeyBinding
+                    -- 回填 Core（MainOptions.lua:3733-3771），無需另呼叫 addKeyBinding
+                    MainOptions.saveKeys()
+                    log("快捷鍵已自動遷移 HOME→/（舊預設在 -debug 下與引擎渲染除錯熱鍵衝突）")
+                end
+                resolved = true -- 找到條目並完成判定（已遷移，或帶修飾鍵＝刻意設定不動）
+                break
+            end
+        end
+    end)
+    if not ok then
+        log("快捷鍵遷移失敗（下次進遊戲重試）: " .. tostring(err))
+        return -- 不寫 marker，保留重試機會
+    end
+    if not resolved then
+        log("快捷鍵遷移未解析（選項畫面資料未就緒或條目缺失），下次進遊戲重試")
+        return
+    end
+    local writer = getFileWriter(MIGRATE_MARKER, true, false)
+    if writer then
+        writer:write("v1")
+        writer:close()
+    end
+end
+-- test:key-migration:end
+Events.OnGameStart.Add(migrateToggleKeyOnce)
+
+-- ═══ 一次性選項遷移：大小 combobox → 滑條（0.9.0） ═══
+-- PZAPI.ModOptions:load()（主選單建立時，MainOptions.lua:2823）讀到舊 combobox 行
+-- 會把索引寫進同 id 新 slider 選項的 .selected（load 依「存檔行舊型別」分派，
+-- ModOptions.lua:320；slider 自身永不寫該欄）——以此為訊號把檔位換算成像素值。
+-- save 後該行改寫為 slider 型別、.selected 不再出現＝天然冪等，免 marker 檔。
+-- test:slider-migration:start
+local function migrateSliderOptions()
+    if not modOptions then return end
+    local changed = false
+    -- 讀走 .selected（無論映射成敗都清掉並標記落盤；成功才寫值）。
+    -- 消耗訊號即須 save：以 slider 型別重寫該行——否則超界舊 combobox 行
+    -- 殘留 ini、每次啟動重新載入（codex review 抓出）
+    local function takeOldIndex(id)
+        local opt = modOptions:getOption(id)
+        if not (opt and type(opt.selected) == "number") then return nil, opt end
+        local idx = opt.selected
+        opt.selected = nil
+        changed = true
+        return idx, opt
+    end
+    local function conv(id, map)
+        local idx, opt = takeOldIndex(id)
+        if idx and opt and map[idx] then
+            opt:setValue(map[idx])
+            changed = true
+        end
+        return idx
+    end
+    conv("ZombieDotSize", ZDOTS_SIZES)
+    -- 動物：舊值依「當時的風格」選映射表（物品風格整表較大——0.9.0 前的行為）
+    local animalMap = getComboIndex("AnimalIconStyle", 1) == 2 and ADOTS_SIZES_ITEM or ADOTS_SIZES_SYM
+    local oldAnimalIdx = conv("AnimalIconSize", animalMap)
+    -- 載具：0.9.0 前與動物共用一顆且恆用 SYM 表——以舊動物索引播種新獨立選項
+    if oldAnimalIdx and ADOTS_SIZES_SYM[oldAnimalIdx] then
+        local vOpt = modOptions:getOption("VehicleIconSize")
+        if vOpt then
+            vOpt:setValue(ADOTS_SIZES_SYM[oldAnimalIdx])
+            changed = true
+        end
+    end
+    if changed then
+        PZAPI.ModOptions:save()
+        log("圖標大小選項已由舊檔位換算為滑條數值")
+    end
+end
+-- test:slider-migration:end
+Events.OnMainMenuEnter.Add(migrateSliderOptions) -- load() 之後最早的穩定時機；冪等，重回選單重跑無害
 
 -- 原版 bug 防呆：存檔缺 mods.txt（如測試時強關遊戲的頭幾秒）時
 -- saveInfo.activeMods 為 nil，MainScreen.getMissingMods 沒 nil 防呆會讓

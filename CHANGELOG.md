@@ -1,5 +1,57 @@
 # Changelog
 
+## [未發布]
+
+### 新增
+
+- **浮動開關圖標**：常駐畫面的小圖標（預設開），點擊直接開關小地圖——純滑鼠玩家
+  不再依賴快捷鍵。可拖曳擺放（4px 位移門檻區分點擊/拖曳），位置自動記憶
+  （ModOptions FloatIconPos "x,y"，同 CustomSize 先例可手動清空還原）；獨立於
+  小地圖視窗、關圖後仍在；hover 顯示提示「開關小地圖（快捷鍵：X）」——動態讀
+  當前綁定（含修飾鍵前綴），改鍵即時反映；統一設定視窗「外觀」區與 ESC 選項頁皆可開關；
+  材質（media/ui/minimap_toggle.png，64x64）缺漏時 nil-safe 以「M」字替代；
+  回主選單自動隱藏、進遊戲自動恢復。
+- **快捷鍵自動遷移**：首次進遊戲時若綁定仍是舊預設「無修飾鍵的 HOME」則自動改為
+  /（斜線）並寫回 keysB42.ini（走 MainOptions.keyText → saveKeys 正規路徑；帶修飾鍵或
+  已改鍵＝玩家刻意設定，不動）。marker 檔 Zomboid/Lua/
+  MinidoracatMiniMap_keyMigratedV1.txt 記錄已處理，玩家事後刻意改回 HOME 不再干預。
+- **-debug 渲染除錯警告**：debug 模式下偵測到「世界渲染已被切至舊管線
+  （PerformanceSettings.fboRenderChunk=false，多半是誤按 HOME）」或「開關綁定
+  仍是 HOME」時，小地圖頂部顯示橘色警告條（前者優先、提示再按 HOME 復原）；
+  浮動圖標 tooltip 同步附警告行，並常態多顯示一行「目前渲染管線：chunk-FBO（新版）
+  ／舊版逐 tile」讓 debug 使用者隨時可查。非 debug 環境一個布林判斷即返回、零成本。
+  fboRenderChunk 為 exposed class 的 public static 欄位（同 Keyboard.KEY_* 讀法），
+  以 pcall 防未來版本移除。Steam 描述同步把 -debug/HOME 注意事項獨立成醒目區塊。
+
+- **圖標大小/透明度全面滑條化**：殭屍點、動物圖標、載具圖標、資源點圖標四類
+  各自獨立「大小(px)」與「透明度(%)」滑條，統一設定視窗（內嵌 ISSliderPanel）與
+  ESC 選項頁（PZAPI 原生 addSlider）雙面可調；拖動即時預覽（繪製端每幀讀值）、
+  放開滑鼠才落盤（避免拖曳中高頻檔案 IO）。動物與載具大小自此拆分（原共用一顆
+  三檔下拉）；資源點圖標大小（原固定 18px，作用於所有 zone 圖標）與四類透明度
+  （原寫死常數）首次開放。舊三檔下拉存值於主選單一次性自動換算為對應像素
+  （動物依當時風格選映射表、載具以舊共用值播種；離線測試 M1-M5 覆蓋）。
+  世界地圖（M）圖標沿用共用設定、自動跟隨。
+
+### 變更
+
+- **統一設定視窗區塊標題一致化**：「殭屍點位」→「殭屍圖標」、「資源點」→
+  「資源點圖標」，與既有「動物圖標／載具圖標／世界地圖圖標」命名對齊（四語系
+  同步；Steam 描述引用的小節名一併更新）。
+- **小地圖預設快捷鍵 HOME → /（斜線）**：HOME 在 -debug 模式下是引擎隱藏熱鍵
+  （IsoCell.render 按鍵切換 PerformanceSettings.fboRenderChunk，整個世界渲染
+  退回舊版逐 tile 路徑——本機實測 FPS 約減半 244→124、地面積雪外觀隨渲染路徑
+  改變），與小地圖開關同鍵齊發，讓 debug 環境的使用者誤以為小地圖吃 FPS。
+  /（斜線，M 鍵右方——大地圖 M、小地圖 /）於原版 keyBinding.lua 未綁定（含裸數字
+  鍵碼掃描）、引擎 Java 層無硬編碼、無文字框編輯副作用（文字輸入期間引擎本就不
+  派送綁定）、本機 213 個 Workshop MOD 與 keysB42.ini 全 56 綁定掃描空閒、實體
+  位置跨鍵盤佈局穩定、顯示名稱「/」無歧義。選鍵否決紀錄：K 撞原版「Display FPS」
+  （keyBinding.lua:199 以裸數字 37 註冊，掃 KEY_* 常數抓不到）；0 的顯示字元在
+  UI 字型下似字母 o；F7/F8/F9 是 debug 裸鍵編輯器（載具/世界地圖/接縫，
+  IngameState.java:1398/1424/1431）、F12 撞 Steam 截圖；9 被 Bandits Week One
+  事件鍵使用；N 撞 StartVehicleEngine。注意：綁定會持久化寫入 keysB42.ini、
+  既存值蓋過新預設
+  （MainOptions.loadKeys 於 ini 讀入後覆寫）——存量安裝由上方「快捷鍵自動遷移」接手。
+
 ## [42.19.0-0.8.0] - 2026-07-18
 
 ### 新增
