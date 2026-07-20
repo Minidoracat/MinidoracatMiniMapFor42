@@ -31,3 +31,4 @@ scripts/poster/posters/
 
 # Python 編譯快取
 __pycache__/
+luac.out
