@@ -26,7 +26,7 @@ local ADOTS_SIZES_ITEM = { 16, 20, 26 } -- 動物物品彩圖風格 小/中（�
 -- ═══ 一次性快捷鍵遷移：舊預設 HOME → / ═══
 -- 改預設救不了既有安裝：MainOptions.loadKeys 先註冊 Lua 預設、再以 keysB42.ini
 -- 既存值覆寫（MainOptions.lua:3601），ini 永遠贏。首次進遊戲時若綁定仍是
--- 「無修飾鍵的 HOME」（＝沿用舊預設，非玩家刻意設定）則遷移為 K，並寫 marker 檔
+-- 「無修飾鍵的 HOME」（＝沿用舊預設，非玩家刻意設定）則遷移為 /，並寫 marker 檔
 -- 記錄已處理——玩家事後刻意改回 HOME 不再干預。
 -- 寫回缺一不可（saveKeys 以 MainOptions.keyText 為真相來源整檔重寫並回填 Core，
 -- 只改 Core 會在玩家下次按選項套用時被 keyText 沖回）：keyText 條目 → saveKeys。
