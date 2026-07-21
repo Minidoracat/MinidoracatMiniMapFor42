@@ -215,8 +215,10 @@ local function getLoadedMapDirs()
         dir = dir:match("^%s*(.-)%s*$")
         if dir ~= "" then dirs[dir] = true end
     end
-    if next(dirs) == nil then return nil end -- 拆完是空集＝同「拿不到」，fail-open
-    return dirs
+    -- PZ Kahlua 無 next（BaseLib.java 僅註冊 18 個全域、TableLib 只有 pairs/ipairs），
+    -- 空表偵測用 pairs 探測——0.10.0 曾用 next 導致實機掛載鏈全炸（離線測試跑標準 Lua 沒抓到）
+    for _ in pairs(dirs) do return dirs end
+    return nil -- 拆完是空集＝同「拿不到」，fail-open
 end
 
 -- 條目沒指定 mapDir、或載入清單拿不到＝通過；指定了就要求該目錄真的載入。
@@ -2599,9 +2601,20 @@ local lastAllowNavShare = sandboxGate("AllowNavShare", true) ~= false
 -- test:nav-share-gate:start
 local function navShareGateTick()
     local allowed = sandboxGate("AllowNavShare", true) ~= false
-    if not allowed and (lastAllowNavShare or next(navShared) or next(sharedTargets)) then
-        navShared = {}
-        sharedTargets = {}
+    if not allowed then
+        -- 每 tick 跑：非空才重建表，避免持續 false 期間每 tick 配置兩張空表。
+        -- 空表偵測用 pairs 探測（PZ Kahlua 無 next，見 getLoadedMapDirs 註解）
+        local dirty = lastAllowNavShare
+        if not dirty then
+            for _ in pairs(navShared) do dirty = true; break end
+        end
+        if not dirty then
+            for _ in pairs(sharedTargets) do dirty = true; break end
+        end
+        if dirty then
+            navShared = {}
+            sharedTargets = {}
+        end
     end
     lastAllowNavShare = allowed
 end

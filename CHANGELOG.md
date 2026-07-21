@@ -1,5 +1,29 @@
 # Changelog
 
+## [42.19.0-0.10.1] - 2026-07-21
+
+### 修正
+
+- **緊急修復：0.10.0 圖片化地圖全面失效（退回原版向量樣式）**：mapDir 逐圖閘門的
+  `getLoadedMapDirs` 使用了 PZ Kahlua 未註冊的全域 `next()`，只要
+  `getWorld():getMap()` 回傳有效清單（MP 必定、單機多數）即拋
+  「Object tried to call nil」，pyramid 掛載鏈中斷、全部退回原版地圖
+  （Steam 玩家 gwinnblayd 與自營伺服器實測回報）。42.19.0 反編譯查證：
+  Kahlua BaseLib 僅註冊 18 個全域，`next`/`assert` 皆不存在。兩處 `next()`
+  （`getLoadedMapDirs` 與 `navShareGateTick` 的隱性地雷——伺服器關閉
+  AllowNavShare 時會每 tick 炸）改為 `pairs` 探測空表，語意等價、
+  fail-open 路徑不變。
+- **一次性重新開啟「圖片化地圖」總開關**：故障期間部分玩家排查時可能把總開關
+  關掉，修復後仍看原版樣式且不知要開回。比照快捷鍵遷移：主選單一次性強制設回
+  預設 true＋寫 marker（Zomboid/Lua/MinidoracatMiniMap_imageryForcedV1.txt）；
+  之後玩家再關閉即屬刻意選擇，永不再干預。離線測試 V1-V5。
+
+### 內部
+
+- **Kahlua 缺失全域守衛測試**：新增 `scripts/tests/test_kahlua_globals.py`，掃描
+  全 MOD 執行期 Lua 的 `next(`/`assert(` 裸呼叫——這類「實機才炸、離線測試
+  （標準 Lua）全綠」的雷改由靜態守衛在離線階段攔下。
+
 ## [42.19.0-0.10.0] - 2026-07-20
 
 ### 修正

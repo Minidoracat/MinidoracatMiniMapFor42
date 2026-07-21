@@ -318,6 +318,89 @@ assert(z5.value == nil, "M5: 超界檔位不應寫值")
 assert(sm.state().saveCalls == 1, "M5: 消耗訊號後未落盤重寫")
 
 --------------------------------------------------------------------------------
+-- 一次性強制開啟圖片化（0.10.1）：marker 冪等、值 false 才寫、選項缺失重試
+--------------------------------------------------------------------------------
+local ifBody = assert(source:match(
+    "%-%- test:imagery%-force:start\n(.-)\n%-%- test:imagery%-force:end"),
+    "找不到 imagery-force 測試區段")
+local ifPrelude = [=[
+local files = {}
+local saveCalls = 0
+local logs = {}
+local options = {}
+local modOptions = { getOption = function(_, id) return options[id] end }
+local PZAPI = { ModOptions = { save = function() saveCalls = saveCalls + 1 end } }
+local function getFileReader(name, _)
+    if files[name] then return { close = function() end } end
+    return nil
+end
+local function getFileWriter(name, _, _)
+    return {
+        write = function(_, s) files[name] = s end,
+        close = function() end,
+    }
+end
+local function log(msg) logs[#logs + 1] = msg end
+]=]
+local ifSuffix = [=[
+return {
+    run = forceImageryOnOnce,
+    marker = "MinidoracatMiniMap_imageryForcedV1.txt",
+    setup = function(opts)
+        files = opts.files or {}
+        options = opts.options or {}
+        saveCalls = 0
+        logs = {}
+        if opts.noModOptions then modOptions = nil end
+    end,
+    state = function() return { files = files, saveCalls = saveCalls, logs = logs } end,
+}
+]=]
+local ifChunk, ifErr = compile(ifPrelude .. "\n" .. ifBody .. "\n" .. ifSuffix)
+assert(ifChunk, ifErr)
+local imf = ifChunk()
+
+local function mkTick(v)
+    return {
+        value = v,
+        getValue = function(self) return self.value end,
+        setValue = function(self, nv) self.value = nv end,
+    }
+end
+
+-- V1. marker 已存在 → 完全不動
+local t1 = mkTick(false)
+imf.setup({ files = { [imf.marker] = "v1" }, options = { MapImagery = t1 } })
+imf.run()
+assert(t1.value == false and imf.state().saveCalls == 0, "V1: marker 存在仍有動作")
+
+-- V2. 值為 false → 強制 true、save 一次、log 一筆、寫 marker
+local t2 = mkTick(false)
+imf.setup({ options = { MapImagery = t2 } })
+imf.run()
+assert(t2.value == true, "V2: 未強制開啟")
+assert(imf.state().saveCalls == 1, "V2: save 應恰一次，實得 " .. imf.state().saveCalls)
+assert(#imf.state().logs == 1, "V2: 應 log 一筆")
+assert(imf.state().files[imf.marker] == "v1", "V2: 未寫 marker")
+
+-- V3. 值已是 true → 不寫值不 save，仍寫 marker（已解析）
+local t3 = mkTick(true)
+imf.setup({ options = { MapImagery = t3 } })
+imf.run()
+assert(imf.state().saveCalls == 0, "V3: 已開啟不應 save")
+assert(imf.state().files[imf.marker] == "v1", "V3: 已解析卻未寫 marker")
+
+-- V4. 選項缺失 → 不寫 marker（下次重試）、不炸
+imf.setup({ options = {} })
+imf.run()
+assert(imf.state().files[imf.marker] == nil, "V4: 選項缺失仍寫了 marker（強制被永久跳過）")
+
+-- V5. modOptions nil（無 PZAPI）→ 不寫 marker、不炸
+imf.setup({ noModOptions = true })
+imf.run()
+assert(imf.state().files[imf.marker] == nil, "V5: 無 PZAPI 仍寫了 marker")
+
+--------------------------------------------------------------------------------
 -- 圖片化開關 apply 決策矩陣（computeApplyPlan，主檔）：世界地圖/小地圖分側動作
 --------------------------------------------------------------------------------
 local mainPath = arg[3]
@@ -382,4 +465,4 @@ assert(p.live and not p.recreate and not p.reapplyWorldMap and not p.clearCustom
 p = plan(planSnap({ worldImagery = false, imagery = false }), planCur())
 assert(p.reapplyWorldMap and p.recreate, "P9")
 
-print("[OK] scripts/test_key_migration.lua 全部通過（快捷鍵遷移 A-G、拖曳 H-K、選項遷移 M1-M5、apply 決策 P1-P9）")
+print("[OK] scripts/test_key_migration.lua 全部通過（快捷鍵遷移 A-G、拖曳 H-K、選項遷移 M1-M5、強制圖片化 V1-V5、apply 決策 P1-P9）")

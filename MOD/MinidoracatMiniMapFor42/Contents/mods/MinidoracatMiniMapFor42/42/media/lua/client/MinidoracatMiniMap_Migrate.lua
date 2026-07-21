@@ -133,3 +133,33 @@ local function migrateSliderOptions()
 end
 -- test:slider-migration:end
 Events.OnMainMenuEnter.Add(migrateSliderOptions) -- load() 之後最早的穩定時機；冪等，重回選單重跑無害
+
+-- ═══ 一次性強制開啟：圖片化地圖總開關（0.10.1） ═══
+-- 0.10.0 的 getLoadedMapDirs 用了 PZ Kahlua 不存在的 next()（BaseLib 未註冊），
+-- 掛載鏈全炸、圖片地圖退回原版樣式。故障期間部分玩家排查時把 MapImagery 關掉——
+-- 修復後他們仍看原版、且不知道要開回來。比照快捷鍵遷移：一次性強制開回預設 true
+-- ＋寫 marker；之後玩家再關掉即是刻意選擇，不再干預。
+-- test:imagery-force:start
+local function forceImageryOnOnce()
+    if not modOptions then return end -- 無 PZAPI＝無此選項，無事可做（不寫 marker，重試便宜）
+    local MARKER = "MinidoracatMiniMap_imageryForcedV1.txt"
+    local reader = getFileReader(MARKER, false)
+    if reader then
+        reader:close()
+        return -- 已處理過
+    end
+    local opt = modOptions:getOption("MapImagery")
+    if not opt then return end -- 選項未註冊（不應發生）：不寫 marker、下次進選單重試
+    if opt:getValue() ~= true then
+        opt:setValue(true)
+        PZAPI.ModOptions:save()
+        log("已一次性重新開啟「圖片化地圖」（0.10.0 掛載故障修復）；不需要可於選項自行關閉")
+    end
+    local writer = getFileWriter(MARKER, true, false)
+    if writer then
+        writer:write("v1")
+        writer:close()
+    end
+end
+-- test:imagery-force:end
+Events.OnMainMenuEnter.Add(forceImageryOnOnce) -- 同 slider 遷移時機：load() 之後、值已就緒
