@@ -70,7 +70,7 @@
 [h2]📋 MOD 資訊[/h2]
 [list]
 [*] [b]Mod ID:[/b] MinidoracatMiniMapFor42
-[*] [b]支援版本:[/b] Build 42.19.0+
+[*] [b]支援版本:[/b] Build 42.20.0+
 [*] 單機 / 多人皆可用（多人需伺服器啟用本 MOD）
 [/list]
 

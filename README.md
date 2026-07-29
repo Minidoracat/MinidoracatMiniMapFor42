@@ -197,7 +197,7 @@ MinidoracatMiniMapAPI.registerAnimalGroup(
 | 項目 | 值 |
 |------|-----|
 | **Mod ID** | `MinidoracatMiniMapFor42` |
-| **支援版本** | Build 42.19.0+ |
+| **支援版本** | Build 42.20.0+ |
 
 ## 專案結構
 

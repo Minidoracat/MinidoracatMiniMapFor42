@@ -78,7 +78,7 @@ This is the series' [b]main MOD[/b] and works fully on its own; the addons below
 [h2]📋 MOD info[/h2]
 [list]
 [*] [b]Mod ID:[/b] MinidoracatMiniMapFor42
-[*] [b]Supported version:[/b] Build 42.19.0+
+[*] [b]Supported version:[/b] Build 42.20.0+
 [*] Works in singleplayer / multiplayer (MP requires the server to enable the mod)
 [/list]
 

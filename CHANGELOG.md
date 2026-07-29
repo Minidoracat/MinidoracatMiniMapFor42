@@ -1,5 +1,22 @@
 # Changelog
 
+## [42.20.0-0.10.2] - 2026-07-29
+
+### 更新
+
+- **遊戲 42.20 基底全圖重渲**：42.20 更新主世界 950 個 cell（Muldraugh／
+  Rosewood／Riverside／West Point 城區）並新增 JUMBOXL/JUMBOXXL 巨樹
+  （JumboTreesBigs2x.pack）；以完成 42.20 修正（巨樹 pack 補載＋anchor 分層＋
+  畫布邊界）的 MapRendering 重渲 `Muldraugh_KY.pyramid.zip`（bounds 不變
+  0 0 19968 16128，Lua 掛載鏈零改動）。
+- **POI 資料 42.20 重生**：`pzmap poi` 重擷 poi_raw.json（建築 8541→9254 棟）
+  → `gen_poi_data.py` 重生 POIData（499→606 筆，14 類全數有值，luac -p 通過）。
+- **Lua 相容性查證（42.19→42.20 反編譯逐檔 diff）**：掛載鏈依賴的
+  WorldMap／ImagePyramid／WorldMapImages／MapDefinitions／UIWorldMapV1-V3
+  位元組相同；被 hook 的原版 `ISWorldMap`／`ISMiniMap` 等 Maps/ Lua 42.20
+  未更動——功能面免改，僅版本元資料 bump（modversion=42.20.0-0.10.2、
+  versionMin=42.20.0、三語描述 42.20.0+、workshop.txt 重生成）。
+
 ## [42.19.0-0.10.1] - 2026-07-21
 
 ### 修正

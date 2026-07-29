@@ -76,7 +76,7 @@
 [h2]📋 MOD 情報[/h2]
 [list]
 [*] [b]Mod ID:[/b] MinidoracatMiniMapFor42
-[*] [b]対応バージョン:[/b] Build 42.19.0+
+[*] [b]対応バージョン:[/b] Build 42.20.0+
 [*] シングル / マルチ両対応（マルチはサーバー側での有効化が必要）
 [/list]
 
