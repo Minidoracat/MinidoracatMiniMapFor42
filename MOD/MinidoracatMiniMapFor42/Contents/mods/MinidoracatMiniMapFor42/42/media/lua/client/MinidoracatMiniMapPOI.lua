@@ -1,5 +1,5 @@
 -- MinidoracatMiniMapPOI.lua
--- 主 MOD 內建 POI 的 client 層：把 MinidoracatMiniMapPOIData（499 筆 14 類）轉成
+-- 主 MOD 內建 POI 的 client 層：把 MinidoracatMiniMapPOIData（636 筆 14 類）轉成
 -- 主 MOD zone renderer 的 schema，並以「內部 provider」註冊
 -- （registerZoneProvider("MinidoracatMiniMapFor42.POI", fn, nil, internal=true)——POI 有自己的
 -- PoiIcons/PoiBlocks/類別勾選，不走 per-provider 母開關，且 internal 使其不受 ZoneLayer 總閘連坐）。
@@ -11,7 +11,7 @@
 --   PoiIcons（預設開）→ zone 帶 icon = { tex, r, g, b }（圖標即識別，主檔 iconPass 繪）
 --   PoiBlocks（預設關）→ zone 帶 fillAlpha/borderAlpha（類別色）＋ name（getText(nameKey)）
 --   兩者皆關 or 該類別未勾 → 該 zone 不納入
--- 圖標模式不帶 name：499 個標籤會爆地圖。fillAlpha/borderAlpha 於非區塊模式為 0，
+-- 圖標模式不帶 name：636 個標籤會爆地圖。fillAlpha/borderAlpha 於非區塊模式為 0，
 -- 主檔 fill/line pass 對 alpha==0 早退。
 --
 -- 快取契約（沿主檔 zone provider C2）：providerFn 只回快取參照、絕不重建；快取僅在

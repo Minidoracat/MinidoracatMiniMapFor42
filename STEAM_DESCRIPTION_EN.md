@@ -48,7 +48,7 @@ named [b]minidoracat_minimap.pyramid.zip[/b] and put it in [b]media/minimap/[/b]
 drawn above the base map).
 
 [h2]🗺️ Built-in resource points (POI, 0.8.0+) + Zone layer API (0.7.0+)[/h2]
-[b]Resource points ship with the mod[/b]: 499 built-in vanilla-map resource points across
+[b]Resource points ship with the mod[/b]: 636 built-in vanilla-map resource points across
 14 categories (military, police, gun store, medical, pharmacy, fire, library, school,
 grocery, gas, tools, outdoor, prison, storage — each with a distinct color). The
 default "icon mode" draws a tinted silhouette icon at every point (no label clutter), with

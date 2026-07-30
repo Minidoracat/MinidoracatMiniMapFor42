@@ -73,6 +73,8 @@ def parse_categories(categories_lua_path):
 # 監獄的圖書室不是書店、學校的保健室(medical)不是診所。越「專屬/稀有」的身分
 # 越優先；school 排在 medical 前（學校常含保健室，醫院不會含教室）、police 排在
 # prison 前（拘留室在警局內；真監獄無 police 房間，仍歸 prison）。
+# 已知取捨：優先級只去重「同棟內的多類房間」，不跨棟去重——同園區的母樓與
+# 獨立附屬棟（如監獄園區、校園）各自成 entry，bbox 巢狀/鄰近時圖標會近距重疊。
 CATEGORY_PRIORITY = [
     "military", "police", "prison", "fire", "school", "pharmacy", "medical",
     "gunstore", "grocery", "gas", "outdoor", "tools", "books", "storage",
