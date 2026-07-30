@@ -1,5 +1,23 @@
 # Changelog
 
+## [42.20.0-0.10.3] - 2026-07-30
+
+### 更新
+
+- **內建資源點（POI）分類補洞：606→636 筆**：42.20 相容性稽核發現分類表涵蓋
+  不一致——police/fire/gas/grocery/sport/army 的 storage 變體都收了，唯
+  medical/pharmacy/school/prison/outdoor 系缺漏，約 30 棟高價值建築在地圖上
+  隱形。補齊 15 個 room key：medicalstorage/hospitalstorage/pharmacystorage/
+  campingstorage/schoolstorage/schoolgymstorage/policelocker/policearchive/
+  prisonstorage/prisonlaundry/gymstorage/universitystorage（Distributions
+  頂層 loot key）＋gunstorage/bookstorage/universityclassroom（非 loot key，
+  依 bunker「位置存在」前例收錄，含大學園區三棟大樓）。部分建築主身分隨之
+  修正（如藥局倉庫建築 grocery→pharmacy、大學園區 medical→school），屬
+  語意修正非資料遺失。ranger 護林站（42.20 新圖 1 棟）維持併入 medical 顯示
+  （全圖僅 1 棟，獨立類別不划算，查核註記已記錄）。
+- 雙邊 review-plus（Claude／codex 獨立 lane）皆 COMMENT 無 blocking；
+  gen 決定性重跑一致、離線測試全綠。
+
 ## [42.20.0-0.10.2] - 2026-07-29
 
 ### 更新
