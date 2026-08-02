@@ -339,6 +339,120 @@ local function removeMiniMapPyramidLayers(mapUI)
     end
 end
 
+-- 純決策（離線測試 scripts/test_layer_tail.lua）：本 MOD 各圖層現值 index 陣列
+-- （依註冊順序；-1＝缺層）是否「以原順序連續佔據樣式尾端」；否＝需拆掉重掛。
+-- 引擎按 index 由下往上畫（WorldMapRenderer.renderCellFeatures 0→N、後建在上），
+-- 圖層存在但被壓在向量層之下時，water/forest 多邊形會畫在影像上（如 AnruisiTown
+-- 城南向量湖泊蓋過倉庫區影像＝玩家所見「一大片藍色遮蓋」，2026-08-03 地圖包
+-- 許願串 #4——該狀態的成因尚待自癒證據行從 console.txt 佐證：原版重建路徑
+-- 全是 initDefaultStyleV1 的 styleAPI:clear() 起手、全有全無，單靠原版走不到
+-- 「壓下」，只有第三方加層或未定位路徑會）。穩態基準＝V3+overlayPaper 重建後
+-- 本 MOD 補掛在最後，故「連續尾端」判定與正常流程一致、穩態零動作。
+-- test:layer-tail:start
+local function layersNeedRebuild(indices, layerCount)
+    for i = 1, #indices do
+        -- -1 哨兵不可進算式：layerCount == #indices - i 時期望值恰為 -1，
+        -- 缺層會被誤判就位（實務上 apply 恆在原版鋪 ~10 層後，防禦性守衛）
+        if indices[i] == -1 then
+            return true
+        end
+        if indices[i] ~= layerCount - #indices + i - 1 then
+            return true
+        end
+    end
+    return false
+end
+-- test:layer-tail:end
+
+-- 樣式層掛載/自癒執行段（離線整合測試 scripts/test_layer_tail.lua 以 fake
+-- styleAPI 打樁）：去重→stale 清掃→尾端檢查→必要時拆掉按序重掛。
+-- 本 MOD 圖層恆佔樣式最上層是產品契約：層是全縮放不透明底圖，語意上必須蓋過
+-- 向量層；代價＝第三方 MOD 若晚於本 MOD append style layer，會在本 MOD 覆蓋
+-- 範圍內被壓下（兩個都做尾端守恆的 MOD 會互搶，非每幀、拆掛廉價，可接受）。
+-- 刻意用拆掛而非 moveLayer（原版用例 ISMapDefinitions.lua:347）：pyramid 層只持
+-- fileName+fill、圖資在 WorldMap images 側（WorldMapPyramidStyleLayer.java:10-11）
+-- 不隨層拆建卸載，重建趨近零成本；moveLayer 得逐層搬＋自算位移 index。
+-- test:layer-mount:start
+local function mountPyramidLayers(styleAPI, entries)
+    -- 每個「檔名」一層（引擎一層只綁一個檔名）——先以 layerId 去重：registry 有
+    -- 同 zip 的 alias 條目（Chinatown 互斥變體）、legacy 約定名多 addon 同檔名。
+    -- 重複 id 不會拋錯（WorldMapStyle.java:40-44 的 addLayer 無唯一性檢查；
+    -- V1/V2 簽名的 throws IllegalArgumentException 是裝飾性宣告、整包無 throw
+    -- 點）——後果更陰險：同 id 幽靈層讓 indexOfLayer/removeLayerById 只認第一
+    -- 筆，尾端檢查永不成立＝每次呼叫全拆全掛＋log 刷屏。去重是「無條件重掛」
+    -- 設計的必要前提（舊碼靠 indexOfLayer 跳過取得隱式去重，本函式必須顯式化）
+    local uniqEntries, layerIds, seen = {}, {}, {}
+    for _, e in ipairs(entries) do
+        local layerId = "minidoracat_" .. (e.zip:gsub("%.pyramid%.zip$", ""))
+        if not seen[layerId] then
+            seen[layerId] = true
+            uniqEntries[#uniqEntries + 1] = e
+            layerIds[#layerIds + 1] = layerId
+            mountedLayerIds[layerId] = true -- 記錄本 MOD 圖層 id（卸載用；重複記錄無妨）
+        end
+    end
+
+    -- stale 清掃：上次掛過、本次不在集內的本 MOD 層（MapPackLayers 關閉、MP
+    -- mapDir 閘門收緊）從「這個」style 移除——修掉世界地圖不重建就殘留舊圖層
+    -- 的既有缺口。只動 styleAPI、不動共用 registry：mountedLayerIds 由世界地圖
+    -- 與小地圖兩個 style 共用，刪 key 會讓另一側 removeMiniMapPyramidLayers 漏卸
+    for id in pairs(mountedLayerIds) do
+        if not seen[id] and styleAPI:indexOfLayer(id) ~= -1 then
+            styleAPI:removeLayerById(id)
+        end
+    end
+
+    -- 尾端守恆檢查（快照必須在清掃後：清掃會位移 index）。
+    -- log 只在真正動層時輸出——本函式被開圖/樣式重建冪等重跑，無條件 log 會刷屏
+    local indices, existed = {}, 0
+    for i = 1, #layerIds do
+        indices[i] = styleAPI:indexOfLayer(layerIds[i])
+        if indices[i] ~= -1 then existed = existed + 1 end
+    end
+    if not layersNeedRebuild(indices, styleAPI:getLayerCount()) then return end
+
+    if existed > 0 then
+        -- 自癒證據行「先印再動手」（中途失敗仍留診斷）＋指認當前最上層（壓層
+        -- 兇手或亂序訊號）：玩家回報「藍色遮蓋」類問題時，console.txt 有此行
+        -- ＝命中圖層順序窗口，最上層 id 直接指出來源
+        local top = styleAPI:getLayerByIndex(styleAPI:getLayerCount() - 1)
+        log("圖層自癒：本 MOD 圖層未連續佔據樣式尾端（現存 " .. existed .. "／應有 "
+            .. #layerIds .. "；當前最上層 id=" .. tostring(top and top:getID()) .. "），全數重掛")
+    end
+    for i = 1, #layerIds do
+        if indices[i] ~= -1 then
+            styleAPI:removeLayerById(layerIds[i]) -- 原版用例：initDefaultStyleV3 移除 "forest"
+        end
+    end
+    local okBuild, buildErr = pcall(function()
+        for i, e in ipairs(uniqEntries) do
+            local layer = styleAPI:newPyramidLayer(layerIds[i])
+            layer:setPyramidFileName(e.zip)
+            layer:addFill(0.0, 255.0, 255.0, 255.0, 255.0)
+            if indices[i] == -1 then
+                log("已掛載 pyramid: " .. e.path)
+            end
+        end
+    end)
+    if not okBuild then
+        -- 建層中途失敗：newPyramidLayer 先 append 才設 filename（WorldMapStyleV2
+        -- .java:21-25），殘層 id 齊全會讓下次尾端檢查誤判穩態（codex review 抓出）
+        -- ——best-effort 全拆保證下次看到缺層必重試，再 rethrow 給呼叫點 pcall
+        -- 記 log。最壞狀態＝本次全層消失、下一個掛載觸發點自癒
+        for i = 1, #layerIds do
+            if styleAPI:indexOfLayer(layerIds[i]) ~= -1 then
+                styleAPI:removeLayerById(layerIds[i])
+            end
+        end
+        error(buildErr, 0)
+    end
+    local added = #layerIds - existed
+    if added > 0 then
+        log("圖層就緒（新增 " .. added .. "／共 " .. #layerIds .. " 個 pyramid 圖層）")
+    end
+end
+-- test:layer-mount:end
+
 local function applyMiniMapPyramids(mapUI)
     -- 框線資料重建先於圖片化閘門：框線是 Lua 自繪、與圖片化無關（codex review）
     rebuildMapOverlays()
@@ -365,26 +479,11 @@ local function applyMiniMapPyramids(mapUI)
         mapAPI:addImagePyramid(e.path)
     end
 
-    -- 樣式層：疊在原版樣式之上，不清空原版（刻意不學 showTerrainImage 的 styleAPI:clear()）。
-    -- 每個「檔名」一層（引擎一層只綁一個檔名）；防重複註冊：圖層已存在就不重加。
-    -- log 只在真正新增圖層時輸出——本函式會被開圖/樣式重建冪等重跑，無條件 log 會刷屏
-    local added = 0
-    for _, e in ipairs(entries) do
-        local layerId = "minidoracat_" .. (e.zip:gsub("%.pyramid%.zip$", ""))
-        mountedLayerIds[layerId] = true -- 記錄本 MOD 圖層 id（卸載用；重複記錄無妨）
-        if styleAPI:indexOfLayer(layerId) == -1 then
-            local layer = styleAPI:newPyramidLayer(layerId)
-            layer:setPyramidFileName(e.zip)
-            layer:addFill(0.0, 255.0, 255.0, 255.0, 255.0)
-            added = added + 1
-            log("已掛載 pyramid: " .. e.path)
-        end
-    end
+    -- 樣式層：疊在原版樣式之上，不清空原版（刻意不學 showTerrainImage 的
+    -- styleAPI:clear()）。掛載/自癒細節見 mountPyramidLayers
+    mountPyramidLayers(styleAPI, entries)
 
     mapAPI:setBoolean("ImagePyramid", true)
-    if added > 0 then
-        log("圖層就緒（新增 " .. added .. "／共 " .. #entries .. " 個 pyramid zip）")
-    end
 end
 
 -- 純決策（離線測試矩陣覆蓋，見 scripts/test_key_migration.lua）：比對快照與現值
