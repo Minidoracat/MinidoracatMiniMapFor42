@@ -29,6 +29,8 @@ engine's native ImagePyramid mechanism:
 [*] [b]Street names[/b]: on the corner mini-map too (vanilla only shows them on the world map)
 [*] [b]Safehouse outlines[/b]: yours in green, others in red
 [*] [b]Free look[/b]: drag to pan and stay, click once to snap back to the player; a recenter hint appears while panned away (like navigation apps)
+[*] [b]Player coordinates & one-click copy[/b]: your current x, y, z centered at the bottom of the mini-map (toggleable); the XY button copies them to the clipboard and the right-click menu copies any spot you point at — paste straight into /teleportto and friends
+[*] [b]Ghost mode (click-through)[/b]: clicks, scroll wheel and right-clicks pass through the mini-map to the game world while the map body turns semi-transparent (opacity slider) — enlarge the map into a permanent overlay that never blocks play; toggle via the ' hotkey, right-clicking the floating icon, or settings
 [*] [b]Server sandbox controls[/b]: disable zombie dots / heatmap / animal / vehicle icons; limit zombie / animal / vehicle / safehouse-outline display distance; configure safehouse display, four livestock visibility modes and faction sharing — admin changes apply live
 [*] [b]Singleplayer & multiplayer[/b]: works out of the box in SP; in MP the server enables the mod (PZ servers dictate the mod list — players can't sideload it), and admins stay in control via the sandbox options above — the mod only visualizes data the client already receives, no extra intel
 [*] [b]Languages[/b]: Traditional Chinese / Simplified Chinese / English / Japanese
