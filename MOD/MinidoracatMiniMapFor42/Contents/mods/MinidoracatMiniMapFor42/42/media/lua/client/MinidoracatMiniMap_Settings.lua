@@ -125,6 +125,7 @@ local UNIFIED_APPEAR_COMBOS = {
 }
 local UNIFIED_APPEAR_TICKS = {
     { id = "FreeLook", label = "UI_MinidoracatMiniMap_FreeLook", default = true },
+    { id = "ShowPlayerCoords", label = "UI_MinidoracatMiniMap_ShowPlayerCoords", default = true },
     { id = "ClickOpenWorldMap", label = "UI_MinidoracatMiniMap_ClickOpenWorldMap", default = false },
     { id = "TextAnnotations", label = "UI_MinidoracatMiniMap_TextAnnotations", default = false },
     { id = "LockPosition", label = "UI_MinidoracatMiniMap_LockPosition", default = false },

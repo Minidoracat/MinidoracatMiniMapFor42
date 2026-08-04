@@ -686,6 +686,16 @@ local function resizeMax(playerNum)
     return math.floor(math.min(getPlayerScreenWidth(playerNum), getPlayerScreenHeight(playerNum)) * RESIZE_MAX_RATIO)
 end
 
+-- 7 顆按鈕（M - + C XY ⚙ X）的最小可容寬度抬高 RESIZE_MIN：必須在 InitPlayer 讀
+-- CustomSize 夾限「之前」呼叫——installMinidoracatButtons 的同款回寫發生在視窗建立
+-- 之後，救不到舊存小尺寸（如 180x180）的本 session 首次建立（X 鈕會溢出右緣）。
+-- 字級在 InitPlayer 時已就緒：鈕寬同原版 BUTTON_HGT 公式 getFontHeight(Small)+6
+local function raiseResizeMinForButtons()
+    local bw = getTextManager():getFontHeight(UIFont.Small) + 6
+    local minW = 7 * bw + 6 * 2 + 2 * 2 + 4 -- 7 鈕＋6×2px 間距＋外框 2×2＋4
+    if minW > RESIZE_MIN then RESIZE_MIN = minW end
+end
+
 -- 讀自訂尺寸欄位原始字串（apply()/InitPlayer 判斷欄位是否變動用）
 local function getCustomSizeRaw()
     if not modOptions then return "" end
@@ -770,6 +780,10 @@ if PZAPI and PZAPI.ModOptions then
     -- ISMiniMap.lua:214-225 prerenderHack 每幀回中）
     modOptions:addTickBox("FreeLook", "UI_MinidoracatMiniMap_FreeLook", true,
         "UI_MinidoracatMiniMap_FreeLook_tooltip")
+    -- 玩家座標列（預設開）：小地圖底部置中顯示 x, y, z；繪製端每幀讀值即時生效。
+    -- 複製功能（XY 鈕/右鍵選單）不受此開關影響
+    modOptions:addTickBox("ShowPlayerCoords", "UI_MinidoracatMiniMap_ShowPlayerCoords", true,
+        "UI_MinidoracatMiniMap_ShowPlayerCoords_tooltip")
     -- 精準殭屍點位（預設關）；齒輪面板另以自訂 ISTickBox 注入同步開關
     -- （它原生只列引擎選項物件，這是純 Lua 自繪——見下方「齒輪面板」一節）
     modOptions:addTickBox("ZombieDots", "UI_MinidoracatMiniMap_ZombieDots", false,
@@ -1004,6 +1018,7 @@ if ISMiniMap and ISMiniMap.InitPlayer then
         -- ISMiniMapOuter.new 放大寬高」——原版自己用新尺寸排版，零版面補丁。
         local sizeIndex = getSizeIndex()
         local scale = SIZE_SCALES[sizeIndex]
+        raiseResizeMinForButtons() -- 先抬下限再夾 CustomSize（見該函式註解）
         -- 自訂尺寸（邊緣拖曳縮放寫入）存在時優先於下拉倍率
         local customW, customH = getCustomSize(playerNum)
         local minimap
@@ -1434,11 +1449,11 @@ end
 -- locvar 上限 200 對策）；主檔僅留按鈕列與開窗入口，呼叫時查
 -- Core.toggleSettingsWindow＋nil 防呆（模組檔載入序在本檔之後）。
 --------------------------------------------------------------------------------
--- 按鈕列重排：6 顆（M - + C ⚙ X）以動態間距塞進 inner 寬度
--- （原版置中排版只按 5 顆算，ISMiniMap.lua:417；最小寬 180 時縮間距到 2px 仍可容納）
+-- 按鈕列重排：7 顆（M - + C XY ⚙ X）以動態間距塞進 inner 寬度
+-- （原版置中排版只按 5 顆算，ISMiniMap.lua:417）
 local function relayoutBottomButtons(mm)
     local order = { mm.button1, mm.button2, mm.button3, mm._minidoracatCenterBtn,
-        mm.button4, mm.button6 }
+        mm._minidoracatCopyBtn, mm.button4, mm.button6 }
     local btns = {}
     for i = 1, #order do
         if order[i] then btns[#btns + 1] = order[i] end
@@ -1455,6 +1470,25 @@ local function relayoutBottomButtons(mm)
         btns[i]:setX(x)
         x = x + bw + spacing
     end
+    return n
+end
+
+-- 寫入系統剪貼簿＋座標列 1.5 秒琥珀「已複製」回饋（回饋獨立於 ShowPlayerCoords
+-- 開關，見 drawPlayerCoords）。失敗記 log：點擊觸發非每幀路徑不會洗版，剪貼簿被
+-- 其他程序鎖定/平台異常時可診斷（同 drawAnimalDots 的可診斷慣例）。Clipboard＝
+-- 引擎全域（zombie.core.Clipboard static，LuaManager Exposer 無條件曝露；vanilla
+-- 非 debug 用例 ISVersionWaterMark.lua:72）
+local function copyCoordsText(inner, text)
+    if not (Clipboard and Clipboard.setClipboard) then
+        log("複製座標失敗: Clipboard 全域不可用")
+        return
+    end
+    local ok, err = pcall(Clipboard.setClipboard, text)
+    if not ok then
+        log("複製座標失敗: " .. tostring(err))
+    elseif inner then
+        inner._minidoracatCopiedUntil = getTimestampMs() + 1500
+    end
 end
 
 installMinidoracatButtons = function(mm)
@@ -1469,6 +1503,21 @@ installMinidoracatButtons = function(mm)
     cBtn.tooltip = getText("UI_MinidoracatMiniMap_BtnCenter") -- ISButton 內建 tooltip（ISButton.lua:317-321）
     mm.bottomPanel:addChild(cBtn)
     mm._minidoracatCenterBtn = cBtn
+    -- 「XY」複製玩家座標：格式 x,y,z（原版 /teleportto x,y,0 相容；vanilla 貼上端
+    -- ISTeleportDebugUI 解析吃任意分隔符——但負號也被當分隔符，地下室負 z 貼回
+    -- 原版傳送 UI 會解析失敗；此處保留真實 z 不謊報 0，限制註記於此）
+    local copyBtn = ISButton:new(0, ref.y, ref.width, ref.height, "XY", mm, function(target)
+        local playerObj = getSpecificPlayer(target.playerNum or 0)
+        if not playerObj then return end
+        copyCoordsText(target.inner, string.format("%d,%d,%d",
+            math.floor(playerObj:getX()), math.floor(playerObj:getY()),
+            math.floor(playerObj:getZ())))
+    end)
+    copyBtn:initialise()
+    copyBtn.borderColor = { r = 0.4, g = 0.4, b = 0.4, a = 1 }
+    copyBtn.tooltip = getText("UI_MinidoracatMiniMap_BtnCopyCoords")
+    mm.bottomPanel:addChild(copyBtn)
+    mm._minidoracatCopyBtn = copyBtn
     -- 「=」圖層面板鈕已退役：引擎原生三項移入統一視窗「圖層顯示」區。
     -- 原版面板機制（getVisibleOptions/onTickBox wrap 等）保留不拆——
     -- 面板已無入口，但第三方 MOD 若開啟它，注入與回寫仍正確
@@ -1478,14 +1527,16 @@ installMinidoracatButtons = function(mm)
     if mm.button2 then mm.button2.tooltip = getText("UI_MinidoracatMiniMap_BtnZoomOut") end
     if mm.button3 then mm.button3.tooltip = getText("UI_MinidoracatMiniMap_BtnZoomIn") end
     if mm.button6 then mm.button6.tooltip = getText("UI_MinidoracatMiniMap_BtnClose") end
-    relayoutBottomButtons(mm)
-    -- 6 顆按鈕的最小可容寬度回寫尺寸下限：UI 字型放大時 BUTTON_HGT 跟著變大，
-    -- 固定 180 會塞不下（6 鈕＋5×2px 間距＋外框），動態墊高避免縮到溢出
-    local minW = 6 * ref.width + 5 * 2 + (mm.borderSize or 2) * 2 + 4
+    local n = relayoutBottomButtons(mm) or 7
+    -- n 顆按鈕的最小可容寬度回寫尺寸下限（n＝order 表實際數量，單一來源）：UI 字型
+    -- 放大時 BUTTON_HGT 跟著變大，動態墊高避免縮到溢出。InitPlayer 另以
+    -- raiseResizeMinForButtons 在 CustomSize 夾限前先抬——本回寫發生在視窗建立後，
+    -- 只服務「本 session 後續拖曳」的下限
+    local minW = n * ref.width + (n - 1) * 2 + (mm.borderSize or 2) * 2 + 4
     if minW > RESIZE_MIN then RESIZE_MIN = minW end
-    -- ponytail: 新鈕未登記手把導航列（原版 insertNewLineOfButtons 於 createChildren
-    -- 一次性登記，事後補列會亂序）；手把用戶走 ESC 選項頁（PZAPI ModOptions
-    -- 已列全部開關），需要時再補登記
+    -- ponytail: C/XY 兩顆新鈕都未登記手把導航列（原版 insertNewLineOfButtons 於
+    -- createChildren 一次性登記，事後補列會亂序）——手把用戶可從 ESC 選項頁控制
+    -- 顯示開關，但複製功能手把不可達（滑鼠限定）；需要時再補登記
 end
 
 -- 齒輪改開設定視窗（本體拆至 MinidoracatMiniMap_Settings.lua，呼叫時查命名空間）；
@@ -2858,6 +2909,42 @@ local function drawNavTargets(inner)
         1.0, 0.85, 0.2, nil, dist) -- 自己＝金旗＋距離
 end
 
+-- 玩家座標列（底部置中膠囊，freelook 提示同款樣式）：一律顯示 x, y, z（與複製值
+-- 一致——顯示帶空格、剪貼簿無空格，值相同；上下樓層不跳版面）；剛複製 1.5 秒內改
+-- 琥珀「已複製」回饋——回饋獨立於 ShowPlayerCoords 開關（關列後 XY 鈕/右鍵複製
+-- 仍看得到成功提示，否則像按鈕壞掉）；freelook 膠囊佔底行時上移一行避讓。
+-- 呼叫點在 drawNavTargets 之前＝導航距離標籤畫在其上（正南目標讀數不被膠囊吃掉）
+local function drawPlayerCoords(inner)
+    local copied = inner._minidoracatCopiedUntil
+        and getTimestampMs() < inner._minidoracatCopiedUntil
+    if not (copied or getBoolOption("ShowPlayerCoords", true)) then return end
+    local playerObj = getSpecificPlayer(inner.playerNum or 0)
+    if not playerObj then return end
+    local txt = copied and getText("UI_MinidoracatMiniMap_Copied")
+        or string.format("%d, %d, %d", math.floor(playerObj:getX()),
+            math.floor(playerObj:getY()), math.floor(playerObj:getZ()))
+    local tm = getTextManager()
+    local cw = tm:MeasureStringX(UIFont.Small, txt)
+    local ch = tm:getFontHeight(UIFont.Small)
+    local cx = math.max(0, math.floor((inner.width - cw) / 2))
+    local cy = inner.height - ch - 10
+    if inner._minidoracatFreelook and getBoolOption("FreeLook", true) then
+        cy = cy - ch - 10
+    end
+    inner:drawRect(cx - 8, cy - 3, cw + 16, ch + 6, 0.6, 0, 0, 0)
+    if copied then
+        inner:drawText(txt, cx, cy, 1, 0.85, 0.4, 1, UIFont.Small)
+    else
+        inner:drawText(txt, cx, cy, 1, 1, 1, 0.95, UIFont.Small)
+    end
+end
+
+-- 複製選定點座標到剪貼簿（右鍵選單回呼）。z 固定 0＝地面層：小地圖是平面俯視、
+-- 點擊格無樓層資訊，同原版 debug 傳送 /teleportto x,y,0 慣例。回饋沿用座標列琥珀提示
+function ISMiniMapInner:onMinidoracatCopyCoords(wx, wy)
+    copyCoordsText(self, string.format("%d,%d,0", wx, wy))
+end
+
 -- 右鍵選單追加導航選項：原版 onRightMouseUp 以 ISContextMenu.get 建選單
 -- （ISMiniMap.lua:280-298），get 會 clear（ISContextMenu.lua:1166-1170）——
 -- 故以 getPlayerContextMenu 取同一單例追加（用例 ISContextMenu.lua:1167），
@@ -2879,6 +2966,10 @@ if ISMiniMapInner and ISMiniMapInner.onRightMouseUp then
         local worldY = self.mapAPI:uiToWorldY(x, y)
         context:addOption(getText("UI_MinidoracatMiniMap_SetTarget"), self,
             self.onMinidoracatSetTarget, worldX, worldY)
+        -- 複製此處座標：選項文字即時帶座標（先看到再決定點不點）
+        local cwx, cwy = math.floor(worldX), math.floor(worldY)
+        context:addOption(getText("UI_MinidoracatMiniMap_CopyHere",
+            string.format("%d, %d, 0", cwx, cwy)), self, self.onMinidoracatCopyCoords, cwx, cwy)
         if navTargets[pn] then
             context:addOption(getText("UI_MinidoracatMiniMap_ClearTarget"), self,
                 self.onMinidoracatClearTarget)
@@ -2931,6 +3022,7 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         pcall(drawMapBounds, self)
         safeDrawZone(self, drawZoneLines, "_minidoracatZoneLineErrLogged") -- 與 MapBounds 同層
         safeDrawZone(self, drawZoneIcons, "_minidoracatZoneIconErrLogged") -- POI 圖標，同層
+        pcall(drawPlayerCoords, self) -- 在導航目標之前畫（距離標籤蓋膠囊，見函式註解）
         pcall(drawNavTargets, self)
         -- 動物圖標（畫在殭屍點位之下：殭屍小點蓋大圖標可辨）。持久錯誤首次記 log
         -- 免全靜默（API 漂移/第三方動物資料異常可診斷；既有三個 pcall 沿舊慣例不動）
