@@ -636,6 +636,9 @@ end
 local CHROME_FACTORS = { 1.0, 0.5, 0.15 }
 local function applyChromeOpacity(mm)
     local f = CHROME_FACTORS[getComboIndex("Opacity", 1)] or 1.0
+    -- 穿透模式：外框強制取最淡檔（「看得到摸不到＝變淡」單一心智模型），
+    -- 退出時本函式重跑即還原玩家原檔位（_minidoracatBgA 快照）
+    if getBoolOption("GhostMode", false) then f = math.min(f, CHROME_FACTORS[3]) end
     -- titleBar 不在此列：它的背景是 prerender 直繪材質、不吃 backgroundColor
     -- （ISMiniMap.lua:354-357），由下方 prerender wrap 以因子重畫
     local parts = { mm, mm.bottomPanel }
@@ -655,6 +658,7 @@ if ISMiniMapTitleBar and ISMiniMapTitleBar.prerender then
     local originalTitleBarPrerender = ISMiniMapTitleBar.prerender
     function ISMiniMapTitleBar:prerender()
         local f = CHROME_FACTORS[getComboIndex("Opacity", 1)] or 1.0
+        if getBoolOption("GhostMode", false) then f = math.min(f, CHROME_FACTORS[3]) end
         if f >= 1.0 then return originalTitleBarPrerender(self) end
         local th = self:titleBarHeight()
         self:drawTextureScaled(self.titlebarbkg, 1, 1, self:getWidth() - 2, th - 2, f, 1, 1, 1)
@@ -868,8 +872,10 @@ if PZAPI and PZAPI.ModOptions then
             if def then modOptions:addTickBox("Cat_" .. key, def.nameKey, true) end
         end
     end
-    -- 外框底色不透明度：只影響外框/按鈕列的黑底與其上的視覺重量；
-    -- 地圖本體是 GPU 直繪（pyramid/圖磚不透明），引擎無整體 alpha 可調
+    -- 外框底色不透明度：只影響外框/按鈕列的黑底與其上的視覺重量。
+    -- 地圖本體無「整體 element alpha」，但 style layer fill alpha＋背景 quad 可調
+    -- ——該機制已由 _Ghost.lua 的 dimMapBody 完整實作並實機驗證（穿透模式限定）；
+    -- 此處若要做「非穿透常駐半透明檔位」可複用同一套，目前未出貨
     local opacityCombo = modOptions:addComboBox("Opacity", "UI_MinidoracatMiniMap_Opacity")
     opacityCombo:addItem("UI_MinidoracatMiniMap_Opacity_Full", true) -- 預設原版
     opacityCombo:addItem("UI_MinidoracatMiniMap_Opacity_Half", false)
@@ -877,6 +883,13 @@ if PZAPI and PZAPI.ModOptions then
     -- 鎖定位置：擋標題列拖曳與邊緣縮放（hitResizeEdge 與 titleBar wrap 各自讀值）
     modOptions:addTickBox("LockPosition", "UI_MinidoracatMiniMap_LockPosition", false,
         "UI_MinidoracatMiniMap_LockPosition_tooltip")
+    -- 穿透模式（預設關）：點擊/滾輪/右鍵穿透到遊戲世界＋外框強制變淡＋琥珀邊框。
+    -- 事件 gate 與套用本體在 MinidoracatMiniMap_Ghost.lua；熱鍵 ' 與 FloatIcon
+    -- 右鍵亦可切換（三處設定面＋熱鍵讀寫同一選項值）
+    modOptions:addTickBox("GhostMode", "UI_MinidoracatMiniMap_GhostMode", false,
+        "UI_MinidoracatMiniMap_GhostMode_tooltip")
+    -- 穿透模式地圖不透明度（%）：_Ghost.lua dimMapBody 依值壓暗；改動經 apply 即時重壓
+    modOptions:addSlider("GhostAlpha", "UI_MinidoracatMiniMap_GhostAlpha", 10, 90, 5, 40)
     -- 浮動開關圖標（預設開）：常駐畫面小圖標，點擊開關小地圖、拖曳移動（見檔尾一節）
     modOptions:addTickBox("FloatIcon", "UI_MinidoracatMiniMap_FloatIcon", true,
         "UI_MinidoracatMiniMap_FloatIcon_tooltip")
@@ -937,6 +950,10 @@ if PZAPI and PZAPI.ModOptions then
             applyChromeOpacity(mm) -- 外框不透明度亦即時生效
         end
         -- ZombieDots 免處理：繪製端每幀讀選項值，存檔即生效
+        -- 穿透模式：ESC 勾選改動即時生效（事件 gate 每次讀值；此處套非事件面）。
+        -- 不帶參數＝套所有現存小地圖：事件 gate 是 class 層全玩家生效，
+        -- 非事件面也要全玩家收斂（分割畫面 P2+ 才不會旗標/視覺半套）
+        if Core.applyGhost then pcall(Core.applyGhost) end
     end
 end
 
@@ -1079,6 +1096,8 @@ if ISMiniMap and ISMiniMap.InitPlayer then
             end
             -- 按鈕列擴充（C＝回中、=＝圖層、齒輪＝設定視窗；見設定視窗一節）
             if installMinidoracatButtons then pcall(installMinidoracatButtons, minimap) end
+            -- 穿透模式非事件面（consume 旗標/外框變淡）重建後重套（狀態跨重啟持久）
+            if Core.applyGhost then pcall(Core.applyGhost, minimap) end
         end
         return minimap
     end
@@ -1094,7 +1113,13 @@ end
 if ISMiniMapOuter and ISMiniMapOuter.setAdornmentsVisible then
     local originalSetAdornmentsVisible = ISMiniMapOuter.setAdornmentsVisible
     function ISMiniMapOuter:setAdornmentsVisible(visible)
-        if isAdornAlways() then visible = true end
+        if getBoolOption("GhostMode", false) then
+            -- 穿透：標題列＋按鈕列強制收合（Ghost > AdornMode「永遠顯示」）——
+            -- invisible 的按鈕群不吃事件，也是穿透覆蓋面的一環
+            visible = false
+        elseif isAdornAlways() then
+            visible = true
+        end
         originalSetAdornmentsVisible(self, visible)
     end
 end
@@ -1189,6 +1214,10 @@ if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.createChildren
             end },
         { id = "Safehouses", label = "UI_MinidoracatMiniMap_Safehouses", default = true },
         { id = "LockPosition", label = "UI_MinidoracatMiniMap_LockPosition", default = false },
+        { id = "GhostMode", label = "UI_MinidoracatMiniMap_GhostMode", default = false,
+            -- 三處設定面等價：此面也必須收斂到 applyGhost（漏掉＝旗標/變淡半套，
+            -- 且 freelook 拖離中開穿透會卡在拖離處點不回中）
+            apply = function() if Core.applyGhost then pcall(Core.applyGhost) end end },
     }
 
     -- 地圖包 addon 專屬齒輪項（有註冊才加；OnGameBoot＝所有 MOD lua 載完，
@@ -3372,9 +3401,14 @@ if ISMiniMapOuter and ISMiniMapOuter.prerender and ISMiniMapOuter.render then
     -- 維持原版 OLED 深色高對比風格。
     local originalOuterPrerender = ISMiniMapOuter.prerender
     function ISMiniMapOuter:prerender()
-        local hover = self:isMouseOver() or (resizeState ~= nil and resizeState.outer == self)
-        local v = hover and 0.55 or 0.4
-        self.borderColor.r, self.borderColor.g, self.borderColor.b = v, v, v
+        if getBoolOption("GhostMode", false) then
+            -- 穿透中：琥珀邊框＝「看得到摸不到」主提示（mod 琥珀慣例），不做 hover 變化
+            self.borderColor.r, self.borderColor.g, self.borderColor.b = 1, 0.85, 0.4
+        else
+            local hover = self:isMouseOver() or (resizeState ~= nil and resizeState.outer == self)
+            local v = hover and 0.55 or 0.4
+            self.borderColor.r, self.borderColor.g, self.borderColor.b = v, v, v
+        end
         originalOuterPrerender(self)
     end
 
@@ -3441,6 +3475,11 @@ end
 local function initBinds()
     table.insert(keyBinding, { value = "[MinidoracatMiniMap]" })
     table.insert(keyBinding, { value = "MinidoracatMiniMap_Toggle", key = Keyboard.KEY_SLASH })
+    -- 穿透模式預設 '（APOSTROPHE）：同規格四關驗證全空閒——引擎 Java 硬編碼
+    -- （KEY_APOSTROPHE 僅常數定義、裸 40 之 isKeyDown 系 0 命中）、本機 275 個
+    -- Workshop MOD 6773 個 lua 零綁定、keysB42.ini 無 key:40/altCode:40、
+    -- vanilla Lua 全樹零使用；glfwGetKeyName 顯示「'」無歧義
+    table.insert(keyBinding, { value = "MinidoracatMiniMap_Ghost", key = Keyboard.KEY_APOSTROPHE })
 end
 Events.OnGameBoot.Add(initBinds)
 
@@ -3466,8 +3505,12 @@ local function togglePlayerMiniMap()
 end
 
 local function onKeyPressed(key)
-    if key ~= getCore():getKey("MinidoracatMiniMap_Toggle") then return end
-    togglePlayerMiniMap()
+    if key == getCore():getKey("MinidoracatMiniMap_Toggle") then
+        togglePlayerMiniMap()
+    elseif key ~= 0 and key == getCore():getKey("MinidoracatMiniMap_Ghost")
+        and Core.toggleGhost then -- 本體在 _Ghost.lua（載入序在後），事件時查表
+        Core.toggleGhost()
+    end
 end
 Events.OnKeyPressed.Add(onKeyPressed)
 
@@ -3511,6 +3554,8 @@ Core.hasExternalZoneProvider = hasExternalZoneProvider
 Core.registeredZoneActions = registeredZoneActions
 Core.togglePlayerMiniMap = togglePlayerMiniMap
 Core.debugWarn = debugWarn
+Core.applyChromeOpacity = applyChromeOpacity -- _Ghost.lua 切換穿透時重套外框透明度
+Core.cancelResize = cancelResize -- _Ghost.lua 進穿透時取消進行中的邊緣縮放
 Core.ready = true -- 模組檔載入閘門：最後設定＝主檔完整走完才放行
 
 log("已載入（hook ISWorldMap:initDataAndStyle + ISMiniMap.InitPlayer + 按鈕列模式 + 齒輪面板 + 快捷鍵 + MOD 選項 + 殭屍點位 + 邊緣縮放）")

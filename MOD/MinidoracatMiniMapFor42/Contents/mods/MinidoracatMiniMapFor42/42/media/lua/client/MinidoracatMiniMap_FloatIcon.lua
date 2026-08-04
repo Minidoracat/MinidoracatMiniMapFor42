@@ -65,19 +65,20 @@ local function floatIconApplyPos(el)
     el:setY(y)
 end
 
--- 目前開關綁定的顯示文字（含修飾鍵前綴）：優先讀選項畫面 keyText（結構同遷移一節），
+-- 指定綁定的目前顯示文字（含修飾鍵前綴）：優先讀選項畫面 keyText（結構同遷移一節），
 -- 未就緒時退 Core 基本鍵名。hover 時現算——玩家改鍵後 tip 即時反映
-local function currentToggleKeyText()
+local function currentBindKeyText(bindName)
     if MainOptions and type(MainOptions.keyText) == "table" then
         for _, v in ipairs(MainOptions.keyText) do
-            if not v.value and v.txt and v.txt:getName() == "MinidoracatMiniMap_Toggle" then
+            if not v.value and v.txt and v.txt:getName() == bindName then
                 local prefix = MainOptions.getKeyPrefix and MainOptions.getKeyPrefix(v) or ""
                 return prefix .. getKeyName(v.keyCode)
             end
         end
     end
-    return getKeyName(getCore():getKey("MinidoracatMiniMap_Toggle"))
+    return getKeyName(getCore():getKey(bindName))
 end
+local function currentToggleKeyText() return currentBindKeyText("MinidoracatMiniMap_Toggle") end
 
 local function ensureFloatIcon()
     if floatIcon then return floatIcon end
@@ -103,6 +104,11 @@ local function ensureFloatIcon()
                 self.tooltipUI:setVisible(true)
             end
             local desc = getText("UI_MinidoracatMiniMap_FloatIcon_tip", currentToggleKeyText())
+            if Core.toggleGhost then -- 穿透模式入口標註（_Ghost.lua 載入才顯示）；
+                -- 帶目前熱鍵名（玩家回饋：不顯示按鍵不知道怎麼按）
+                desc = desc .. " \n" .. getText("UI_MinidoracatMiniMap_FloatIcon_ghost_tip",
+                    currentBindKeyText("MinidoracatMiniMap_Ghost"))
+            end
             local mode = debugWarn.renderMode() -- -debug 限定：目前渲染管線狀態
             if mode then desc = desc .. " \n" .. mode end
             local warn = debugWarn.text()
@@ -133,8 +139,17 @@ local function ensureFloatIcon()
         floatIconClamp(self)
         self:updateFloatTooltip()
         local a = self:isMouseOver() and 1.0 or 0.75
+        -- 穿透模式中：邊框＋圖標染琥珀（小地圖琥珀邊框的次要提示，同 C 鈕雙件套慣例）
+        local ghost = Core.isGhost and Core.isGhost()
+        local bc = self.borderColor
+        if ghost then
+            bc.r, bc.g, bc.b = 1, 0.85, 0.4
+        else
+            bc.r, bc.g, bc.b = 1, 1, 1
+        end
         if self.tex then
-            self:drawTextureScaled(self.tex, 3, 3, self.width - 6, self.height - 6, a, 1, 1, 1)
+            self:drawTextureScaled(self.tex, 3, 3, self.width - 6, self.height - 6, a,
+                1, ghost and 0.85 or 1, ghost and 0.4 or 1)
         else
             -- 材質缺漏 nil-safe（同 POI 圖標慣例）：畫「M」替代
             local fh = getTextManager():getFontHeight(UIFont.Small)
@@ -183,6 +198,31 @@ local function ensureFloatIcon()
     function ui:onMouseMoveOutside(dx, dy) return moveIcon(self) end
     function ui:onMouseUp(px, py) return releaseIcon(self) end
     function ui:onMouseUpOutside(px, py) return releaseIcon(self) end
+    -- 右鍵＝穿透模式開關（本體在 _Ghost.lua，載入序在後——事件時查表）。
+    -- FloatIcon 是 UIManager 頂層獨立元件、不隨小地圖穿透失效＝穿透中保證存在的
+    -- 滑鼠回頭路（防鎖死鏈第二層；第一層熱鍵、第三層 ESC 選項頁——統一設定視窗
+    -- 的入口齒輪在穿透中已收合，僅穿透前開著才可用；FloatIcon 本身可被選項關閉，
+    -- 故 ESC 是恆在的保底）。down/up 配對：Java right-up 依放開位置派送、不追蹤
+    -- press owner——無配對會讓「別處按住右鍵移入圖標放開」誤切換（原版 inner 以
+    -- rightMouseDown 旗標防的同型問題）；左鍵拖曳中（_down）不接右鍵
+    -- 時限守衛：UIManager 釋放派送「消費即中斷」，z-order 較高元件先吃掉右鍵
+    -- 放開時本圖標收不到 Outside、旗標會殘留——800ms 內未配對即視為過期
+    function ui:onRightMouseDown(px, py)
+        if not self._down then
+            self._rDown = true
+            self._rDownAt = getTimestampMs()
+        end
+        return true
+    end
+    function ui:onRightMouseUp(px, py)
+        if self._rDown and getTimestampMs() - (self._rDownAt or 0) < 800 then
+            self._rDown = nil
+            if Core.toggleGhost then Core.toggleGhost() end
+        end
+        self._rDown = nil
+        return true
+    end
+    function ui:onRightMouseUpOutside(px, py) self._rDown = nil end
     floatIconApplyPos(ui)
     ui:addToUIManager()
     floatIcon = ui

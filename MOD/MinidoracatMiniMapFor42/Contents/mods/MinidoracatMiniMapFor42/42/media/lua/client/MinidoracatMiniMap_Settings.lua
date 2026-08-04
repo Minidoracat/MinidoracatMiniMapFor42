@@ -112,6 +112,10 @@ local UNIFIED_SLIDERS = {
         { id = "PoiIconAlpha", label = "UI_MinidoracatMiniMap_IconAlpha",
             default = 100, min = 10, max = 100, step = 5, fmt = "%d%%" },
     },
+    appearance = {
+        { id = "GhostAlpha", label = "UI_MinidoracatMiniMap_GhostAlpha",
+            default = 40, min = 10, max = 90, step = 5, fmt = "%d%%" },
+    },
 }
 local UNIFIED_APPEAR_COMBOS = {
     { id = "MapSize", label = "UI_MinidoracatMiniMap_Size", default = 2,
@@ -129,6 +133,7 @@ local UNIFIED_APPEAR_TICKS = {
     { id = "ClickOpenWorldMap", label = "UI_MinidoracatMiniMap_ClickOpenWorldMap", default = false },
     { id = "TextAnnotations", label = "UI_MinidoracatMiniMap_TextAnnotations", default = false },
     { id = "LockPosition", label = "UI_MinidoracatMiniMap_LockPosition", default = false },
+    { id = "GhostMode", label = "UI_MinidoracatMiniMap_GhostMode", default = false },
     -- 勾選經 settingsApply → modOptions:apply()，浮動圖標顯示更新掛在該處
     { id = "FloatIcon", label = "UI_MinidoracatMiniMap_FloatIcon", default = true },
 }
@@ -159,8 +164,9 @@ local UNIFIED_SECTIONS = {
     { id = "worldmap", label = "UI_MinidoracatMiniMap_SecWorldMap" },
     { id = "appearance", label = "UI_MinidoracatMiniMap_SecAppearance" },
 }
--- ponytail: 展開狀態 session 記憶即可，跨場記憶（存 ModOptions）是升級路徑
-local unifiedExpand = { layers = true }
+-- ponytail: 展開狀態 session 記憶即可，跨場記憶（存 ModOptions）是升級路徑。
+-- 預設全部收合（實測回饋：每次開窗都先展開圖層顯示很煩）
+local unifiedExpand = {}
 -- 固定分欄（實測回饋：貪婪平衡會讓區塊隨展開狀態在左右欄跳動，破壞空間記憶）：
 -- 左欄＝圖層顯示/資源點/外觀與行為，右欄＝殭屍點位/動物圖標/載具圖標/世界地圖圖標。
 -- worldmap 置右欄：與同為「點位顯示」的殭屍/動物/載具同群（世界地圖圖標亦是這三類點位），
@@ -669,6 +675,7 @@ local function unifiedBuildAppearance(ctx)
         if col == ctx.cols2 then col = 0; ctx.curY = ctx.curY + ctx.rowH end
     end
     if col ~= 0 then ctx.curY = ctx.curY + ctx.rowH end
+    unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.appearance) -- 穿透模式地圖不透明度
     -- 恢復預設尺寸：清 CustomSize 回下拉正方形（apply→save 順序同 settingsApply）
     unifiedAddBtn(ctx, ctx.curX + 4, ctx.curY + 2, ctx.laneW - 6, getText("UI_MinidoracatMiniMap_ResetSize"),
         function()
@@ -740,7 +747,8 @@ local function unifiedMeasureLayout()
     local comboGroups = { UNIFIED_ZOMBIE_COMBOS, UNIFIED_ANIMAL_COMBOS,
         UNIFIED_VEHICLE_COMBOS, UNIFIED_APPEAR_COMBOS,
         UNIFIED_SLIDERS.zombie, UNIFIED_SLIDERS.animals,
-        UNIFIED_SLIDERS.vehicles, UNIFIED_SLIDERS.poi }
+        UNIFIED_SLIDERS.vehicles, UNIFIED_SLIDERS.poi,
+        UNIFIED_SLIDERS.appearance } -- 漏列＝CJK 標籤被滑條軌道壓住（欄寬量測）
     for g = 1, #comboGroups do
         for i = 1, #comboGroups[g] do
             comboLabelW = math.max(comboLabelW, tw(getText(comboGroups[g][i].label)))
