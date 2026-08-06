@@ -226,8 +226,8 @@ do
     zone.fill(mid)
     assert(mid.polyCount == 1, "A6 中距檔應只畫聯集框（得 " .. mid.polyCount .. "）")
     zone.resetEdgeCount(); zone.lines(mid)
-    assert(zone.edgeCount() == 4 and mid.textCount == 0,
-        "A6 中距檔框線應 4 邊且無名稱（edges=" .. zone.edgeCount() .. " text=" .. mid.textCount .. "）")
+    assert(zone.edgeCount() == 0 and mid.textCount == 0,
+        "A6 中距檔應純填色（無框線無名稱；edges=" .. zone.edgeCount() .. " text=" .. mid.textCount .. "）")
     zone.clearProviders()
     -- 拉遠檔（scale<1.5）：lodRect zone 整區不畫；無 lodRect 的 addon zone 照畫
     zone.addProvider("lod3", lodZone, true)
@@ -271,16 +271,22 @@ do
         "A6c lodSingle 殘留：第二框沿用前一框座標（x=" .. tostring(two.polyXs[2]) .. "）")
     zone.clearProviders()
 
-    -- A6d 圖標不參與 LOD：帶 lodRect 的 zone 圖標照畫（icons pass 不讀 scale——
-    -- 誤加 gate 會因 makeIconInner 無 getWorldScale 直接爆錯，雙重防護）
+    -- A6d 圖標不被 LOD hide 檔隱藏：拉遠檔（區塊全隱）孤立圖標照畫——
+    -- 去重疊只合併同格、不會讓孤立圖標消失
     zone.addProvider("lod8", function()
         return { { icon = { tex = "T", r = 1, g = 1, b = 1 }, iconOnce = true,
             rects = { { x1 = 40, y1 = 40, x2 = 50, y2 = 50 } },
             lodRect = { x1 = 40, y1 = 40, x2 = 50, y2 = 50 } } }
     end, true)
-    local farIcon = makeIconInner()
+    local farIcon = { width = 100, height = 100, draws = 0 }
+    farIcon.drawTextureScaled = function(self) self.draws = self.draws + 1 end
+    farIcon.mapAPI = {
+        worldToUIX = function(_, x) return x end,
+        worldToUIY = function(_, _, y) return y end,
+        getWorldScale = function() return 1 end,
+    }
     zone.icons(farIcon); zone.clearProviders()
-    assert(farIcon.draws == 1, "A6d 圖標不得被 LOD gate（得 " .. farIcon.draws .. "）")
+    assert(farIcon.draws == 1, "A6d 拉遠檔孤立圖標仍應畫（得 " .. farIcon.draws .. "）")
     zone.resetLogs()
 end
 
@@ -353,12 +359,13 @@ end
 -- A5：drawZoneIcons 視野預裁——框外零投影、預裁不取代螢幕裁切、逐 rect 獨立、
 -- 隨機不變式（中心在窗內者永不被預裁）。預設 AABB [0,100]²＝恆等投影下的視窗。
 do
-    local function makeIconInner()
+    local function makeIconInner(scale)
         local inner = { width = 100, height = 100, draws = 0, projs = 0 }
         inner.drawTextureScaled = function(self) self.draws = self.draws + 1 end
         inner.mapAPI = {
             worldToUIX = function(_, x) inner.projs = inner.projs + 1; return x end,
             worldToUIY = function(_, _, y) inner.projs = inner.projs + 1; return y end,
+            getWorldScale = function() return scale or 10 end,
         }
         return inner
     end
@@ -422,6 +429,27 @@ do
     zone.addProvider("icon7", iconZoneOf({ 40, 40, 50, 50 }, { 60, 60, 70, 70 }), true)
     local g2 = makeIconInner(); zone.icons(g2); zone.clearProviders()
     assert(g2.draws == 2, "A5-6 無旗標的多矩形 zone 應每 rect 一顆（draws=" .. g2.draws .. "）")
+
+    -- A7 圖標去重疊：中/遠距（scale<6）lodRect zone 同一圖標尺寸格只畫第一顆、
+    -- 不同格照畫；細節檔（scale>=6）全畫（疊圖時眼睛只看得到最上面那顆——
+    -- 拉遠時數百顆互疊圖標的 drawTextureScaled 是遠距檔最大殘餘成本）
+    local function lodIconZone(x1, y1)
+        return { icon = { tex = "T", r = 1, g = 1, b = 1 }, iconOnce = true,
+            rects = { { x1 = x1, y1 = y1, x2 = x1 + 4, y2 = y1 + 4 } },
+            lodRect = { x1 = x1, y1 = y1, x2 = x1 + 4, y2 = y1 + 4 } }
+    end
+    zone.addProvider("icon8", function()
+        return { lodIconZone(40, 40), lodIconZone(44, 42), lodIconZone(80, 80) }
+    end, true)
+    local dc = makeIconInner(3)
+    zone.icons(dc); zone.clearProviders()
+    assert(dc.draws == 2, "A7 同格應去重疊、異格照畫（得 " .. dc.draws .. "）")
+    zone.addProvider("icon9", function()
+        return { lodIconZone(40, 40), lodIconZone(44, 42) }
+    end, true)
+    local dcd = makeIconInner(10)
+    zone.icons(dcd); zone.clearProviders()
+    assert(dcd.draws == 2, "A7 細節檔不去重疊（得 " .. dcd.draws .. "）")
 end
 
 print("zone render: clipped-edge alpha + A1 stencil + A2 isolation + A3 AABB + A5 icon-cull cases passed")

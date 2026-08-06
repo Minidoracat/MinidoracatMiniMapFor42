@@ -98,10 +98,11 @@ end
 --     iconOnce=true|nil(選配；true 時圖標只畫在 rects[1]——provider 應把主要
 --       矩形排在首位；名稱本就恆只錨定 rects[1]、與此旗標無關。未設維持
 --       每 rect 一圖標，既有 addon 行為不變),
---     lodRect={ x1=, y1=, x2=, y2= }|nil(選配；有給＝區塊參與縮放 LOD——
---       worldScale < ZONE_LOD_HIDE 時 fill/line 整區不畫（圖標不受影響）、
---       < ZONE_LOD_DETAIL 時只畫此聯集框、名稱僅於細節檔顯示。
---       未設＝一律畫全部 rects，既有 addon 行為不變),
+--     lodRect={ x1=, y1=, x2=, y2= }|nil(選配；有給＝參與縮放 LOD——
+--       worldScale < ZONE_LOD_HIDE 時 fill 整區不畫、< ZONE_LOD_DETAIL 時
+--       fill 只畫此聯集框（純填色，框線與名稱僅細節檔）、圖標於 < DETAIL 時
+--       做同格去重疊（同一「圖標尺寸」螢幕格只畫第一顆，細節檔全畫）。
+--       未設＝一律畫全部 rects、圖標不去重疊，既有 addon 行為不變),
 --     category=string|nil }
 -- 選配第三參 optionLabelKey：有給時本 MOD 於統一視窗動態追加一顆 per-provider 母開關
 -- （如「顯示伺服器區域」），關＝渲染時整個跳過該 provider。
@@ -2465,6 +2466,11 @@ end
 local ZONE_LOD_HIDE = 1.5
 local ZONE_LOD_DETAIL = 6
 local lodSingle = {} -- 中距離檔重用的單元素 rect 清單（避免每 zone 每幀配置）
+-- 圖標去重疊格（generation 標記免清表）：中/遠距下 lodRect zone 的圖標在同一
+-- 「圖標尺寸」螢幕格內只畫第一顆——拉遠時數百顆互疊的圖標是遠距檔最大殘餘
+-- 成本（每顆 1 次 drawTextureScaled Java 呼叫），疊在同格的視覺上也不可分辨
+local iconGrid = {}
+local iconGridGen = 0
 
 -- 仿射投影快取：worldToUI 已由反編譯證明是純仿射（見 visibleWorldAABB 的版本
 -- 假設——calcMatrices 為正交＋旋轉、無透視項），每 pass 只在視野中心採樣三點
@@ -2591,9 +2597,10 @@ local function drawZoneLines(inner)
                 local z = zones[zi]
                 local border, rects = z.border, z.rects
                 local lod = z.lodRect
-                -- borderAlpha==0（如 POI 圖標模式）早退；LOD 拉遠檔整區不畫
+                -- borderAlpha==0（如 POI 圖標模式）早退；LOD zone 的框線僅細節檔畫
+                -- （中距的聯集框純填色——該縮放下框線只是雜訊，且省 4 條線/棟）
                 if border and rects and z.borderAlpha ~= 0
-                    and not (lod and scale < ZONE_LOD_HIDE) then
+                    and not (lod and scale < ZONE_LOD_DETAIL) then
                     local r, g, b, a = border.r, border.g, border.b, z.borderAlpha
                     local zoneVisible = false
                     local rn = #rects
@@ -2673,6 +2680,9 @@ local function drawZoneIcons(inner)
     local s = getSliderValue("PoiIconSize", 18, 8, 48)
     local ia = getSliderValue("PoiIconAlpha", 100, 10, 100) / 100
     local half = s / 2
+    -- 中/遠距（<細節檔）對 lodRect zone 啟用圖標去重疊；細節檔全畫
+    local declutter = mapAPI:getWorldScale() < ZONE_LOD_DETAIL
+    iconGridGen = iconGridGen + 1
     -- 視野預裁（POI 擴至 ~1700 筆後，逐 rect 先投影再裁會付 ~3.4k 次/幀的
     -- Kahlua→Java worldToUI 呼叫）：先取一次可視世界外接框，rect 與框不相交者
     -- 直接跳過。框是視窗四邊形的超集，被裁者其 rect 中心必在窗外，而下方螢幕
@@ -2717,8 +2727,21 @@ local function drawZoneIcons(inner)
                             -- 圖標半寬溢出地圖框（codex review 抓出）
                             local ix, iy = cx - half, cy - half
                             if ix >= 1 and iy >= 1 and ix + s <= w - 1 and iy + s <= h - 1 then
-                                inner:drawTextureScaled(icon.tex, ix, iy, s, s,
-                                    ia, icon.r, icon.g, icon.b)
+                                local ok = true
+                                if declutter and z.lodRect then
+                                    -- 同格已有圖標＝視覺不可分辨，跳過繪製；gen 標記
+                                    -- 免逐幀清表。細節檔（declutter=false）全畫
+                                    local gkey = math.floor(cx / s) * 100000 + math.floor(cy / s)
+                                    if iconGrid[gkey] == iconGridGen then
+                                        ok = false
+                                    else
+                                        iconGrid[gkey] = iconGridGen
+                                    end
+                                end
+                                if ok then
+                                    inner:drawTextureScaled(icon.tex, ix, iy, s, s,
+                                        ia, icon.r, icon.g, icon.b)
+                                end
                             end
                         end
                     end
