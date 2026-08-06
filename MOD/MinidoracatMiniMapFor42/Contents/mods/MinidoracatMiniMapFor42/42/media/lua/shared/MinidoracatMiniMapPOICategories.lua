@@ -159,7 +159,10 @@
 --   大→小排序，圖標/名稱經 iconOnce 旗標只錨定 r[1]（最大房間），防大建築
 --   疊數百顆圖標——實測異類圖標近距對數不增反微降（≤5 格 7→6 對）。
 --   配套：fill/line/icons 三 pass 皆有世界座標視野預裁（區塊全開在城市尺度
---   曾 8 FPS，預裁＋主樓層＋合併三刀後恢復可用水位）。
+--   曾 8 FPS，預裁＋主樓層＋合併三刀後恢復可用水位）；區塊縮放 LOD 三檔
+--   （<1.5px/格只留圖標、<6px/格畫聯集框無名稱、>=6px/格逐房間平面圖＋名稱，
+--   訊號 mapAPI:getWorldScale()，原版標記同機制）——中/遠距的框線成本與
+--   名稱洗版即此治，Zones addon 無 lodRect 不參與。
 --
 -- ⚠ CATEGORIES 各 entry 內不要插註解行——scripts/gen_poi_data.py 以 regex 解析
 --   nameKey/rooms 相鄰結構，entry 內註解會使該類別解析失敗而整類消失。

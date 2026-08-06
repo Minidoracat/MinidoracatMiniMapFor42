@@ -102,13 +102,15 @@ assert(zoneChunk, zoneErr)
 local zone = zoneChunk()
 
 -- 建 inner stub：worldToUIX/Y 恆等投影（世界座標=UI 座標），繪製方法計數
-local function makeInner()
+local function makeInner(scale)
     local inner = {
         width = 100, height = 100,
         setCount = 0, clearCount = 0, polyCount = 0, rectCount = 0, textCount = 0,
         mapAPI = {
             worldToUIX = function(_, x) return x end,
             worldToUIY = function(_, _, y) return y end,
+            -- px/世界格（LOD 檔位訊號）；預設 10＝細節檔，既有測試行為不變
+            getWorldScale = function() return scale or 10 end,
         },
     }
     inner.setStencilRect = function(self) self.setCount = self.setCount + 1 end
@@ -193,6 +195,46 @@ do
     zone.clearProviders()
     zone.resetLogs()
     zone.setAABB(0, 100, 0, 100)
+end
+
+-- A6：區塊縮放 LOD——帶 lodRect 的 zone 三檔行為；無 lodRect 的 addon zone 不參與
+do
+    local function lodZone()
+        return { {
+            fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+            border = { r = 1, g = 1, b = 1 }, borderAlpha = 0.5, name = "Poi",
+            rects = { { x1 = 30, y1 = 30, x2 = 40, y2 = 40 },
+                { x1 = 40, y1 = 30, x2 = 48, y2 = 44 } },
+            lodRect = { x1 = 30, y1 = 30, x2 = 48, y2 = 44 },
+        } }
+    end
+    -- 細節檔（scale>=6）：逐房間＋名稱
+    zone.addProvider("lod1", lodZone, true)
+    local near = makeInner(10)
+    zone.fill(near)
+    assert(near.polyCount == 2, "A6 細節檔應畫全部矩形（得 " .. near.polyCount .. "）")
+    zone.resetEdgeCount(); zone.lines(near)
+    assert(zone.edgeCount() == 8 and near.textCount == 1, "A6 細節檔框線 8 邊＋名稱 1 次")
+    zone.clearProviders()
+    -- 中距檔（1.5<=scale<6）：聯集框一個、框線 4 邊、無名稱
+    zone.addProvider("lod2", lodZone, true)
+    local mid = makeInner(3)
+    zone.fill(mid)
+    assert(mid.polyCount == 1, "A6 中距檔應只畫聯集框（得 " .. mid.polyCount .. "）")
+    zone.resetEdgeCount(); zone.lines(mid)
+    assert(zone.edgeCount() == 4 and mid.textCount == 0,
+        "A6 中距檔框線應 4 邊且無名稱（edges=" .. zone.edgeCount() .. " text=" .. mid.textCount .. "）")
+    zone.clearProviders()
+    -- 拉遠檔（scale<1.5）：lodRect zone 整區不畫；無 lodRect 的 addon zone 照畫
+    zone.addProvider("lod3", lodZone, true)
+    zone.addProvider("lod4", visibleZone, true)
+    local far = makeInner(1)
+    zone.fill(far)
+    assert(far.polyCount == 1, "A6 拉遠檔應僅 addon zone 填色（得 " .. far.polyCount .. "）")
+    zone.resetEdgeCount(); zone.lines(far)
+    assert(zone.edgeCount() == 4, "A6 拉遠檔應僅 addon zone 畫框線（得 " .. zone.edgeCount() .. "）")
+    zone.clearProviders()
+    zone.resetLogs()
 end
 
 -- A3c：多矩形 zone 的名稱恰畫一次、錨定 rects[1]（v3＝最大房間，與圖標同錨）

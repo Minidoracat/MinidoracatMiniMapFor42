@@ -97,6 +97,10 @@ end
 --     icon={ tex=<Texture>, r=, g=, b= }|nil(選配；每 rect 中心畫染色圖標),
 --     iconOnce=true|nil(選配；true 時圖標/名稱只畫在 rects[1]——provider 應把
 --       主要矩形排在首位。未設維持每 rect 一圖標，既有 addon 行為不變),
+--     lodRect={ x1=, y1=, x2=, y2= }|nil(選配；有給＝區塊參與縮放 LOD——
+--       worldScale < ZONE_LOD_HIDE 時 fill/line 整區不畫（圖標不受影響）、
+--       < ZONE_LOD_DETAIL 時只畫此聯集框、名稱僅於細節檔顯示。
+--       未設＝一律畫全部 rects，既有 addon 行為不變),
 --     category=string|nil }
 -- 選配第三參 optionLabelKey：有給時本 MOD 於統一視窗動態追加一顆 per-provider 母開關
 -- （如「顯示伺服器區域」），關＝渲染時整個跳過該 provider。
@@ -2452,9 +2456,19 @@ end
 
 -- 繪製本體拆出：drawZoneFill 用 pcall(具名函式) 包起免每幀配置閉包；stencil 開啟狀態
 -- 記在 inner 實例，跨 pcall 邊界回傳給呼叫端做無條件清除（見 drawZoneFill 的 A1 保護）
+-- 區塊縮放 LOD 檔位（px/世界格，mapAPI:getWorldScale()；原版標記同機制
+-- WorldMapGridSquareMarker.java:45）：帶 lodRect 的 zone（POI）在
+-- < HIDE 整區塊不畫（此縮放下區塊已是色點，只留圖標）、< DETAIL 畫聯集框
+-- （一棟一框，2~3px/格下與逐房間視覺無異、成本 1/3）、>= DETAIL 逐房間
+-- 平面圖＋名稱。無 lodRect 的 zone（Zones addon）不參與、任何縮放照畫。
+local ZONE_LOD_HIDE = 1.5
+local ZONE_LOD_DETAIL = 6
+local lodSingle = {} -- 中距離檔重用的單元素 rect 清單（避免每 zone 每幀配置）
+
 local function drawZoneFillBody(inner)
     local mapAPI = inner.mapAPI
     local w, h = inner.width, inner.height
+    local scale = mapAPI:getWorldScale()
     -- 視野預裁（同 drawZoneIcons，v3 後區塊模式數千矩形×8 次投影/幀會壓垮
     -- FPS）：世界座標 AABB 不相交者直接跳過，連投影都不做——外接框是視窗
     -- 超集，被裁者投影後必在窗外、原本的螢幕裁切也不會畫，逐像素不變。
@@ -2477,10 +2491,17 @@ local function drawZoneFillBody(inner)
             for zi = 1, #zones do
                 local z = zones[zi]
                 local fill, rects = z.fill, z.rects
-                -- fillAlpha==0（如 POI 圖標模式）早退，連投影都省
-                if fill and rects and z.fillAlpha ~= 0 then
+                local lod = z.lodRect
+                -- fillAlpha==0（如 POI 圖標模式）早退，連投影都省；LOD 拉遠檔整區不畫
+                if fill and rects and z.fillAlpha ~= 0
+                    and not (lod and scale < ZONE_LOD_HIDE) then
                     local a = z.fillAlpha or 0.2
-                    for ri = 1, #rects do
+                    local rn = #rects
+                    if lod and scale < ZONE_LOD_DETAIL then
+                        lodSingle[1] = lod
+                        rects, rn = lodSingle, 1
+                    end
+                    for ri = 1, rn do
                         local rc = rects[ri]
                         if rc.x2 >= vMinX and rc.x1 <= vMaxX and rc.y2 >= vMinY and rc.y1 <= vMaxY then
                             local ux1, uy1 = mapAPI:worldToUIX(rc.x1, rc.y1), mapAPI:worldToUIY(rc.x1, rc.y1)
@@ -2527,6 +2548,7 @@ local function drawZoneLines(inner)
     local w, h = inner.width, inner.height
     local tm = getTextManager()
     local th = tm:getFontHeight(UIFont.Small)
+    local scale = mapAPI:getWorldScale()
     -- 視野預裁（同 drawZoneFillBody）：世界座標不相交者跳過投影
     local vMinX, vMaxX, vMinY, vMaxY = visibleWorldAABB(inner)
     for pi = 1, #registeredZoneProviders do
@@ -2544,11 +2566,18 @@ local function drawZoneLines(inner)
             for zi = 1, #zones do
                 local z = zones[zi]
                 local border, rects = z.border, z.rects
-                -- borderAlpha==0（如 POI 圖標模式）早退
-                if border and rects and z.borderAlpha ~= 0 then
+                local lod = z.lodRect
+                -- borderAlpha==0（如 POI 圖標模式）早退；LOD 拉遠檔整區不畫
+                if border and rects and z.borderAlpha ~= 0
+                    and not (lod and scale < ZONE_LOD_HIDE) then
                     local r, g, b, a = border.r, border.g, border.b, z.borderAlpha
                     local zoneVisible = false
-                    for ri = 1, #rects do
+                    local rn = #rects
+                    if lod and scale < ZONE_LOD_DETAIL then
+                        lodSingle[1] = lod
+                        rects, rn = lodSingle, 1
+                    end
+                    for ri = 1, rn do
                         local rc = rects[ri]
                         -- 世界座標預裁（被裁者投影後必在窗外，zoneVisible 語意不變）
                         if rc.x2 >= vMinX and rc.x1 <= vMaxX and rc.y2 >= vMinY and rc.y1 <= vMaxY then
@@ -2576,7 +2605,9 @@ local function drawZoneLines(inner)
                     -- rect AABB 與視窗相交，故 zoneVisible 為真，不影響應畫的名稱
                     local name = z.name
                     local rc = rects[1]
-                    if name and rc and zoneVisible then
+                    -- 名稱僅細節檔顯示（lodRect zone；20 類全開時中/遠距的名稱洗版即此治）
+                    if name and rc and zoneVisible
+                        and (not lod or scale >= ZONE_LOD_DETAIL) then
                         local tw = tm:MeasureStringX(UIFont.Small, name)
                         local cxw, cyw = (rc.x1 + rc.x2) / 2, (rc.y1 + rc.y2) / 2
                         local cx = mapAPI:worldToUIX(cxw, cyw) - tw / 2

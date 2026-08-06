@@ -131,9 +131,21 @@ local function buildPoiConverted()
                                 end
                             end
                             if rects[1] then
+                                -- 聯集框：縮放 LOD 的中距離檔位用（一棟一框取代
+                                -- 逐房間矩形——2~3px/格下兩者視覺無異、成本 1/3）
+                                local ux1, uy1 = rects[1].x1, rects[1].y1
+                                local ux2, uy2 = rects[1].x2, rects[1].y2
+                                for k = 2, #rects do
+                                    local rc = rects[k]
+                                    if rc.x1 < ux1 then ux1 = rc.x1 end
+                                    if rc.y1 < uy1 then uy1 = rc.y1 end
+                                    if rc.x2 > ux2 then ux2 = rc.x2 end
+                                    if rc.y2 > uy2 then uy2 = rc.y2 end
+                                end
                                 built[#built + 1] = {
                                     id = "poi:" .. cat .. ":" .. i,
                                     rects = rects,
+                                    lodRect = { x1 = ux1, y1 = uy1, x2 = ux2, y2 = uy2 },
                                     -- 圖標/名稱只錨定 rects[1]（烘焙端保證是最大房間）；
                                     -- 無此旗標的 zone（Zones addon）維持每 rect 一圖標
                                     iconOnce = true,
