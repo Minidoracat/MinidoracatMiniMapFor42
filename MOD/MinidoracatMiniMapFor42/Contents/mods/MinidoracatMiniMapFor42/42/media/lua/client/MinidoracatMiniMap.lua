@@ -90,7 +90,8 @@ end
 -- provider 契約（C2）：providerFn 每幀被呼叫（世界＋小地圖），必須回傳「快取 table」、
 -- 勿每幀重建/過濾/合併；本 MOD 對回傳只讀不改。zone schema（provider 產、繪製端讀）：
 --   { id=string, name=string|nil(已翻譯顯示名；nil＝不畫名稱),
---     rects={ { x1=, y1=, x2=, y2= }, ... }(世界 square 座標),
+--     rects={ { x1=, y1=, x2=, y2= }, ... }(世界 square 座標；硬性要求 x1<x2、y1<y2——
+--       圖標 pass 的視野預裁假設此序，反向 rect 會被過嚴裁掉而 fill/line 照畫),
 --     fill={ r=, g=, b= }(0-1), fillAlpha=number(0＝不填),
 --     border={ r=, g=, b= }(0-1), borderAlpha=number(0＝不畫框),
 --     icon={ tex=<Texture>, r=, g=, b= }|nil(選配；每 rect 中心畫染色圖標),
@@ -1644,7 +1645,16 @@ end
 
 -- 小地圖可視範圍的世界座標外接框：視窗四角 uiToWorld（2 參數版用例
 -- ISMiniMap.lua:234-235）取 min/max——等軸測下視窗是世界座標裡的旋轉四邊形，
--- 外接框是超集，夠用；±2 格邊距容住取樣間隔內的移動。殭屍與動物取樣共用。
+-- 外接框是超集，夠用；±2 格邊距容住取樣間隔內的移動。殭屍/動物取樣與
+-- POI 圖標預裁共用。
+-- 版本假設（42.20.2 反編譯查證）：WorldMapRenderer.calcMatrices 不吃 center 參數，
+-- world↔UI 是純仿射、互為反函數，超集性質才恆成立；且原版 2 參 uiToWorldY
+-- （UIWorldMapV1.java:295）把 centerWorldY 誤傳進 centerWorldX 位——現因 center
+-- 不參與矩陣、Y 路徑不用 centerWorldX 而無害，上游若改（如加透視）本函式
+-- Y 範圍會靜默失效。uiToWorld 與 worldToUI 兩方向都經
+-- UIWorldMapV1:218-223/298-309 取 getModelViewProjectionMatrix() 同一份快取矩陣
+-- （非 WorldMapRenderer 自身 calcMatrices 現算的 overload），故等軸測開關的
+-- 175ms slerp 轉場期間互逆性照樣成立，無轉場閃爍問題。
 local function visibleWorldAABB(inner)
     local mapAPI = inner.mapAPI
     local w, h = inner.width, inner.height
@@ -2591,6 +2601,16 @@ local function drawZoneIcons(inner)
     local s = getSliderValue("PoiIconSize", 18, 8, 48)
     local ia = getSliderValue("PoiIconAlpha", 100, 10, 100) / 100
     local half = s / 2
+    -- 視野預裁（POI 636→1720 筆後，逐 rect 先投影再裁會付 ~3.4k 次/幀的
+    -- Kahlua→Java worldToUI 呼叫）：先取一次可視世界外接框，rect 與框不相交者
+    -- 直接跳過。框是視窗四邊形的超集，被裁者其 rect 中心必在窗外，而下方螢幕
+    -- 裁切要求中心深入視窗 half+1px 才畫——預裁純省投影、不改變畫面；此論證
+    -- 依賴「繪製 ⇒ 中心在窗內」，若日後放寬成「圖標矩形相交即畫」預裁即失效。
+    -- 兩表面相容依據：ISWorldMap.lua:268 與 ISMiniMap.lua:192 同走 getAPIv3()，
+    -- V3⊂V2⊂V1，2 參 uiToWorldX/Y 是 UIWorldMapV1.java:286-296 同一份繼承實作；
+    -- 資料未就緒時回 0.0F 不丟例外（與 worldToUI 同守衛），退化為全裁＝與舊碼
+    -- 的全裁行為一致。回歸測試見 scripts/test_zone_render.lua A5。
+    local vMinX, vMaxX, vMinY, vMaxY = visibleWorldAABB(inner)
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
         -- 閘門（同 drawZoneFill）：外部受 ZoneLayer 總閘＋per-provider 母開關；internal 不受
@@ -2608,15 +2628,17 @@ local function drawZoneIcons(inner)
                 if icon and icon.tex and rects then
                     for ri = 1, #rects do
                         local rc = rects[ri]
-                        local cxw, cyw = (rc.x1 + rc.x2) / 2, (rc.y1 + rc.y2) / 2
-                        local cx = mapAPI:worldToUIX(cxw, cyw)
-                        local cy = mapAPI:worldToUIY(cxw, cyw)
-                        -- 整矩形裁切（同動物圖標 :2670 手法，留 1px 邊）：只查中心會讓
-                        -- 圖標半寬溢出地圖框（codex review 抓出）
-                        local ix, iy = cx - half, cy - half
-                        if ix >= 1 and iy >= 1 and ix + s <= w - 1 and iy + s <= h - 1 then
-                            inner:drawTextureScaled(icon.tex, ix, iy, s, s,
-                                ia, icon.r, icon.g, icon.b)
+                        if rc.x2 >= vMinX and rc.x1 <= vMaxX and rc.y2 >= vMinY and rc.y1 <= vMaxY then
+                            local cxw, cyw = (rc.x1 + rc.x2) / 2, (rc.y1 + rc.y2) / 2
+                            local cx = mapAPI:worldToUIX(cxw, cyw)
+                            local cy = mapAPI:worldToUIY(cxw, cyw)
+                            -- 整矩形裁切（同動物圖標 :2670 手法，留 1px 邊）：只查中心會讓
+                            -- 圖標半寬溢出地圖框（codex review 抓出）
+                            local ix, iy = cx - half, cy - half
+                            if ix >= 1 and iy >= 1 and ix + s <= w - 1 and iy + s <= h - 1 then
+                                inner:drawTextureScaled(icon.tex, ix, iy, s, s,
+                                    ia, icon.r, icon.g, icon.b)
+                            end
                         end
                     end
                 end

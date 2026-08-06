@@ -66,12 +66,20 @@ end
 -- drawClippedEdge 用 stub 計數（真實版另在 clipped-edge 區段測 alpha 契約）
 local drawClippedEdgeCount = 0
 local function drawClippedEdge() drawClippedEdgeCount = drawClippedEdgeCount + 1 end
+-- drawZoneIcons 的兩個標記區段外相依（抽段後是全域）：滑條與可視外接框 stub
+local iconSize = 18
+local function getSliderValue(id) return id == "PoiIconAlpha" and 100 or iconSize end
+local zoneAABB = { 0, 100, 0, 100 }
+local function visibleWorldAABB() return zoneAABB[1], zoneAABB[2], zoneAABB[3], zoneAABB[4] end
 ]=]
 local zoneSuffix = [=[
 return {
     fill = drawZoneFill,
     lines = drawZoneLines,
+    icons = drawZoneIcons,
     safe = safeDrawZone,
+    setAABB = function(a, b, c, d) zoneAABB = { a, b, c, d } end,
+    setIconSize = function(s) iconSize = s end,
     addProvider = function(owner, fn, internal)
         registeredZoneProviders[#registeredZoneProviders + 1] = { owner = owner, fn = fn, internal = internal }
     end,
@@ -213,7 +221,66 @@ do
     zone.resetLogs()
 end
 
-print("zone render: clipped-edge alpha + A1 stencil + A2 isolation + A3 AABB cases passed")
+-- A5：drawZoneIcons 視野預裁——框外零投影、預裁不取代螢幕裁切、逐 rect 獨立、
+-- 隨機不變式（中心在窗內者永不被預裁）。預設 AABB [0,100]²＝恆等投影下的視窗。
+do
+    local function makeIconInner()
+        local inner = { width = 100, height = 100, draws = 0, projs = 0 }
+        inner.drawTextureScaled = function(self) self.draws = self.draws + 1 end
+        inner.mapAPI = {
+            worldToUIX = function(_, x) inner.projs = inner.projs + 1; return x end,
+            worldToUIY = function(_, _, y) inner.projs = inner.projs + 1; return y end,
+        }
+        return inner
+    end
+    local function iconZoneOf(...)
+        local rs = {}
+        for _, r in ipairs({ ... }) do rs[#rs + 1] = { x1 = r[1], y1 = r[2], x2 = r[3], y2 = r[4] } end
+        return function() return { { icon = { tex = "T", r = 1, g = 1, b = 1 }, rects = rs } } end
+    end
+
+    -- A5-1 框內 rect：照畫，且有付投影
+    zone.addProvider("icon1", iconZoneOf({ 40, 40, 50, 50 }), true)
+    local a = makeIconInner(); zone.icons(a); zone.clearProviders()
+    assert(a.draws == 1 and a.projs == 2, "A5-1 框內 rect 應照畫（draws=" .. a.draws .. "）")
+
+    -- A5-2 框外 rect：不畫且零投影＝預裁真的省下 Kahlua→Java 呼叫
+    zone.addProvider("icon2", iconZoneOf({ 500, 500, 510, 510 }), true)
+    local b = makeIconInner(); zone.icons(b); zone.clearProviders()
+    assert(b.draws == 0 and b.projs == 0, "A5-2 框外 rect 應零投影零繪製（projs=" .. b.projs .. "）")
+
+    -- A5-3 rect 與框相交但圖標中心在窗外：預裁放行、螢幕裁切仍須擋下
+    -- （預裁的安全論證依賴「繪製 ⇒ 中心在窗內」——見主檔 drawZoneIcons 註解）
+    zone.addProvider("icon3", iconZoneOf({ 95, 40, 300, 50 }), true)
+    local c = makeIconInner(); zone.icons(c); zone.clearProviders()
+    assert(c.projs == 2 and c.draws == 0, "A5-3 中心出窗仍被畫出（螢幕裁切失效）")
+
+    -- A5-4 多 rect zone：逐 rect 獨立裁切，框內那顆照畫
+    zone.addProvider("icon4", iconZoneOf({ 40, 40, 50, 50 }, { 500, 500, 510, 510 }), true)
+    local d = makeIconInner(); zone.icons(d); zone.clearProviders()
+    assert(d.draws == 1 and d.projs == 2, "A5-4 多 rect zone 逐 rect 裁切語意改變")
+
+    -- A5-5 隨機不變式（300 例 × 滑條 8/18/48）：預裁前後畫面必須逐筆一致
+    math.randomseed(42)
+    for _, s in ipairs({ 8, 18, 48 }) do
+        zone.setIconSize(s)
+        for _ = 1, 300 do
+            local cx, cy = math.random() * 140 - 20, math.random() * 140 - 20
+            local hw, hh = math.random() * 80, math.random() * 80
+            zone.addProvider("icon5", iconZoneOf({ cx - hw, cy - hh, cx + hw, cy + hh }), true)
+            local e = makeIconInner(); zone.icons(e); zone.clearProviders()
+            local half = s / 2
+            local shouldDraw = cx - half >= 1 and cy - half >= 1
+                and cx + half <= 99 and cy + half <= 99
+            assert(e.draws == (shouldDraw and 1 or 0), string.format(
+                "A5-5 預裁改變畫面：size=%d center=(%.1f,%.1f) draws=%d 期望=%d",
+                s, cx, cy, e.draws, shouldDraw and 1 or 0))
+        end
+    end
+    zone.setIconSize(18)
+end
+
+print("zone render: clipped-edge alpha + A1 stencil + A2 isolation + A3 AABB + A5 icon-cull cases passed")
 
 --------------------------------------------------------------------------------
 -- registerZoneAction API：參數驗證 / dormant / options 正規化 / onTrigger callback
