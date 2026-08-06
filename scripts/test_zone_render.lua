@@ -115,7 +115,11 @@ local function makeInner(scale)
     }
     inner.setStencilRect = function(self) self.setCount = self.setCount + 1 end
     inner.clearStencilRect = function(self) self.clearCount = self.clearCount + 1 end
-    inner.drawPolygon = function(self) self.polyCount = self.polyCount + 1 end
+    inner.polyXs = {}
+    inner.drawPolygon = function(self, _, x1)
+        self.polyCount = self.polyCount + 1
+        self.polyXs[#self.polyXs + 1] = x1
+    end
     inner.drawRect = function(self) self.rectCount = self.rectCount + 1 end
     inner.drawText = function(self) self.textCount = self.textCount + 1 end
     return inner
@@ -234,6 +238,49 @@ do
     zone.resetEdgeCount(); zone.lines(far)
     assert(zone.edgeCount() == 4, "A6 拉遠檔應僅 addon zone 畫框線（得 " .. zone.edgeCount() .. "）")
     zone.clearProviders()
+
+    -- A6b 檔位邊界：恰 1.5 進中距（聯集框）、恰 6 進細節（逐房間＋名稱）
+    zone.addProvider("lod5", lodZone, true)
+    local at15 = makeInner(1.5)
+    zone.fill(at15)
+    assert(at15.polyCount == 1, "A6b scale=1.5 應為中距檔（得 " .. at15.polyCount .. "）")
+    zone.clearProviders()
+    zone.addProvider("lod6", lodZone, true)
+    local at6 = makeInner(6)
+    zone.fill(at6)
+    assert(at6.polyCount == 2, "A6b scale=6 應為細節檔（得 " .. at6.polyCount .. "）")
+    zone.resetEdgeCount(); zone.lines(at6)
+    assert(at6.textCount == 1, "A6b scale=6 名稱應顯示")
+    zone.clearProviders()
+
+    -- A6c 兩個不同 lodRect 的 zone 中距檔各畫各的座標——lodSingle 重用表不得殘留
+    zone.addProvider("lod7", function()
+        return {
+            { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+              rects = { { x1 = 10, y1 = 10, x2 = 20, y2 = 20 } },
+              lodRect = { x1 = 10, y1 = 10, x2 = 20, y2 = 20 } },
+            { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+              rects = { { x1 = 60, y1 = 60, x2 = 70, y2 = 70 } },
+              lodRect = { x1 = 60, y1 = 60, x2 = 70, y2 = 70 } },
+        }
+    end, true)
+    local two = makeInner(3)
+    zone.fill(two)
+    assert(two.polyCount == 2, "A6c 兩 zone 應各一框")
+    assert(two.polyXs[1] == 10 and two.polyXs[2] == 60,
+        "A6c lodSingle 殘留：第二框沿用前一框座標（x=" .. tostring(two.polyXs[2]) .. "）")
+    zone.clearProviders()
+
+    -- A6d 圖標不參與 LOD：帶 lodRect 的 zone 圖標照畫（icons pass 不讀 scale——
+    -- 誤加 gate 會因 makeIconInner 無 getWorldScale 直接爆錯，雙重防護）
+    zone.addProvider("lod8", function()
+        return { { icon = { tex = "T", r = 1, g = 1, b = 1 }, iconOnce = true,
+            rects = { { x1 = 40, y1 = 40, x2 = 50, y2 = 50 } },
+            lodRect = { x1 = 40, y1 = 40, x2 = 50, y2 = 50 } } }
+    end, true)
+    local farIcon = makeIconInner()
+    zone.icons(farIcon); zone.clearProviders()
+    assert(farIcon.draws == 1, "A6d 圖標不得被 LOD gate（得 " .. farIcon.draws .. "）")
     zone.resetLogs()
 end
 
