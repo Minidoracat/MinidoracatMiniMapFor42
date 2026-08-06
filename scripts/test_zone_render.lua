@@ -173,6 +173,46 @@ do
     zone.resetLogs()
 end
 
+-- A3b：世界預裁與投影後 AABB 早退是兩層獨立防線——把世界框放大到涵蓋離屏
+-- rect，使其通過世界預裁，仍須被投影後早退擋下（守住 A3 的原始保護對象）
+do
+    zone.setAABB(-1000, 1000, -1000, 1000)
+    zone.addProvider("addonOffWide", function()
+        return { {
+            fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+            border = { r = 1, g = 1, b = 1 }, borderAlpha = 0.5,
+            rects = { { x1 = 200, y1 = 200, x2 = 210, y2 = 210 } },
+        } }
+    end)
+    local off = makeInner()
+    zone.fill(off)
+    assert(off.polyCount == 0 and off.setCount == 0, "A3b：投影後早退未擋下離屏 rect (fill)")
+    zone.resetEdgeCount()
+    zone.lines(off)
+    assert(zone.edgeCount() == 0, "A3b：投影後早退未擋下離屏 rect (lines)")
+    zone.clearProviders()
+    zone.resetLogs()
+    zone.setAABB(0, 100, 0, 100)
+end
+
+-- A3c：多矩形 zone 的名稱恰畫一次、錨定 rects[1]（v3＝最大房間，與圖標同錨）
+do
+    zone.addProvider("addonNamed", function()
+        return { {
+            fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+            border = { r = 1, g = 1, b = 1 }, borderAlpha = 0.5, name = "Zone",
+            rects = { { x1 = 30, y1 = 30, x2 = 50, y2 = 50 },
+                { x1 = 60, y1 = 60, x2 = 70, y2 = 70 } },
+        } }
+    end)
+    local named = makeInner()
+    zone.lines(named)
+    assert(named.textCount == 1,
+        "A3c：多矩形 zone 名稱應恰畫一次（得 " .. named.textCount .. "）")
+    zone.clearProviders()
+    zone.resetLogs()
+end
+
 -- A1：setStencil 後繪製出錯，clearStencil 仍執行（set==clear），錯誤經 safeDrawZone log-once
 do
     zone.addProvider("addonBoom", visibleZone)
@@ -278,6 +318,19 @@ do
         end
     end
     zone.setIconSize(18)
+
+    -- A5-6 iconOnce（POI v3 逐房間矩形）：兩個都在視窗內的矩形，帶旗標只畫
+    -- rects[1] 一顆（防一棟 200 房疊 200 圖標）；無旗標維持每 rect 一顆
+    zone.addProvider("icon6", function()
+        return { { icon = { tex = "T", r = 1, g = 1, b = 1 }, iconOnce = true,
+            rects = { { x1 = 40, y1 = 40, x2 = 50, y2 = 50 },
+                { x1 = 60, y1 = 60, x2 = 70, y2 = 70 } } } }
+    end, true)
+    local f = makeIconInner(); zone.icons(f); zone.clearProviders()
+    assert(f.draws == 1 and f.projs == 2, "A5-6 iconOnce 應只畫 rects[1]（draws=" .. f.draws .. "）")
+    zone.addProvider("icon7", iconZoneOf({ 40, 40, 50, 50 }, { 60, 60, 70, 70 }), true)
+    local g2 = makeIconInner(); zone.icons(g2); zone.clearProviders()
+    assert(g2.draws == 2, "A5-6 無旗標的多矩形 zone 應每 rect 一顆（draws=" .. g2.draws .. "）")
 end
 
 print("zone render: clipped-edge alpha + A1 stencil + A2 isolation + A3 AABB + A5 icon-cull cases passed")

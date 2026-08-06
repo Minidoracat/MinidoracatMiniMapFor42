@@ -1,6 +1,6 @@
 -- MinidoracatMiniMapPOI.lua
 -- 主 MOD 內建 POI 的 client 層：把 MinidoracatMiniMapPOIData（1704 筆 20 類，
--- bbox 為主身分房間聯集——v2 房間級錨定）轉成
+-- v3 逐房間矩形：r[1]=最大房間為圖標錨點、區塊畫主樓層各房間）轉成
 -- 主 MOD zone renderer 的 schema，並以「內部 provider」註冊
 -- （registerZoneProvider("MinidoracatMiniMapFor42.POI", fn, nil, internal=true)——POI 有自己的
 -- PoiIcons/PoiBlocks/類別勾選，不走 per-provider 母開關，且 internal 使其不受 ZoneLayer 總閘連坐）。
@@ -87,8 +87,11 @@ end
 
 --------------------------------------------------------------------------------
 -- POIData → renderer schema（OnGameStart 建一次；翻譯此時已載入，getText 可用）。
--- 消費契約：MinidoracatMiniMapPOIData 為陣列，每項 { cat, x, y, w, h }（世界 square
--- 座標，x/y 左上、w/h 尺寸）。未知類別 key 或座標非 number/尺寸非正 → 略過該項。
+-- 消費契約（v3 逐房間矩形）：MinidoracatMiniMapPOIData 為陣列，每項
+-- { cat, rn, r={ {x,y,w,h},.. } }（世界 square 座標；r 按面積大→小、r[1] 為圖標/
+-- 名稱錨點；迭代用 rn，Kahlua # 不可信）。未知類別 key、rn 非正、或某矩形欄位
+-- 非 number/尺寸非正 → 略過該矩形；整筆無合法矩形 → 略過該項。zone 帶
+-- iconOnce=true：圖標 pass 只在 rects[1] 畫一顆（區塊 fill/line 仍畫全部矩形）。
 --------------------------------------------------------------------------------
 local function buildPoiConverted()
     local built = {}
@@ -107,10 +110,8 @@ local function buildPoiConverted()
                 if type(e) == "table" then
                     local cat = e.cat
                     local def = cat and cats[cat]
-                    local x, y, w, h = e.x, e.y, e.w, e.h
-                    if def and type(x) == "number" and type(y) == "number"
-                        and type(w) == "number" and type(h) == "number"
-                        and w > 0 and h > 0
+                    local rn, r = e.rn, e.r
+                    if def and type(rn) == "number" and rn > 0 and type(r) == "table"
                         and catOn[cat] then
                         local color = def.color or { r = 0.7, g = 0.7, b = 0.7 }
                         -- 彩色模式染白（全彩不變色）；單色/回退模式染類別色。icon 契約不變。
@@ -118,20 +119,36 @@ local function buildPoiConverted()
                         if iconsOn then tex, isColor = iconTexture(cat, colorMode) end
                         -- 圖標關（或素材未齊）且區塊也關 → 這筆什麼都畫不出，不納入
                         if tex or blocksOn then
-                            built[#built + 1] = {
-                                id = "poi:" .. cat .. ":" .. i,
-                                rects = { { x1 = x, y1 = y, x2 = x + w, y2 = y + h } },
-                                fill = { r = color.r, g = color.g, b = color.b },
-                                fillAlpha = blocksOn and POI_FILL_ALPHA or 0,
-                                border = { r = color.r, g = color.g, b = color.b },
-                                borderAlpha = blocksOn and POI_BORDER_ALPHA or 0,
-                                name = blocksOn and getText(def.nameKey) or nil,
-                                icon = tex and { tex = tex,
-                                    r = isColor and 1 or color.r,
-                                    g = isColor and 1 or color.g,
-                                    b = isColor and 1 or color.b } or nil,
-                                category = cat,
-                            }
+                            local rects = {}
+                            for k = 1, rn do
+                                local rc = r[k]
+                                if type(rc) == "table"
+                                    and type(rc.x) == "number" and type(rc.y) == "number"
+                                    and type(rc.w) == "number" and type(rc.h) == "number"
+                                    and rc.w > 0 and rc.h > 0 then
+                                    rects[#rects + 1] = { x1 = rc.x, y1 = rc.y,
+                                        x2 = rc.x + rc.w, y2 = rc.y + rc.h }
+                                end
+                            end
+                            if rects[1] then
+                                built[#built + 1] = {
+                                    id = "poi:" .. cat .. ":" .. i,
+                                    rects = rects,
+                                    -- 圖標/名稱只錨定 rects[1]（烘焙端保證是最大房間）；
+                                    -- 無此旗標的 zone（Zones addon）維持每 rect 一圖標
+                                    iconOnce = true,
+                                    fill = { r = color.r, g = color.g, b = color.b },
+                                    fillAlpha = blocksOn and POI_FILL_ALPHA or 0,
+                                    border = { r = color.r, g = color.g, b = color.b },
+                                    borderAlpha = blocksOn and POI_BORDER_ALPHA or 0,
+                                    name = blocksOn and getText(def.nameKey) or nil,
+                                    icon = tex and { tex = tex,
+                                        r = isColor and 1 or color.r,
+                                        g = isColor and 1 or color.g,
+                                        b = isColor and 1 or color.b } or nil,
+                                    category = cat,
+                                }
+                            end
                         end
                     end
                 end

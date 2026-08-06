@@ -29,9 +29,9 @@ def test_category_count_matches_production_file():
     assert len(keys) == len(set(keys)), "duplicate category keys parsed"
 
 
-def _room(name, *rects):
+def _room(name, *rects, level=0):
     """v2 room instance fixture: {name, level, rects=[[x,y,w,h],...]}."""
-    return {"name": name, "level": 0, "rects": [list(r) for r in rects]}
+    return {"name": name, "level": level, "rects": [list(r) for r in rects]}
 
 
 def _bld(*rooms):
@@ -93,22 +93,57 @@ def test_build_entries_police_beats_prison():
     ]
     entries, stats, dup_count = g.build_entries(raw, categories)
     assert len(entries) == 2
-    cats = {(e["x"], e["cat"]) for e in entries}
+    cats = {(e["rects"][0][0], e["cat"]) for e in entries}
     assert cats == {(1, "police"), (9, "prison")}
 
 
-def test_entry_bbox_anchors_to_trigger_rooms():
-    """v2: the entry bbox is the union of the dominant category's trigger-room
-    rects, NOT the whole building -- a mall pharmacy pins at the pharmacy."""
+def test_entry_carries_trigger_room_rects_largest_first():
+    """v3: the entry carries the dominant category's trigger-room rects
+    individually (NOT the building bbox, NOT a union), sorted largest first
+    so rects[0] anchors the icon inside a real room."""
     categories = [("pharmacy", frozenset({"pharmacy"}))]
     raw = [_bld(
         _room("hall", (0, 0, 100, 100)),
-        _room("pharmacy", (40, 60, 8, 6), (48, 60, 4, 6)),
+        _room("pharmacy", (60, 60, 4, 6), (40, 60, 8, 6)),
     )]
     entries, _, _ = g.build_entries(raw, categories)
     assert len(entries) == 1
-    e = entries[0]
-    assert (e["x"], e["y"], e["w"], e["h"]) == (40, 60, 12, 6)
+    assert entries[0]["rects"] == [(40, 60, 8, 6), (60, 60, 4, 6)]
+
+
+def test_same_level_adjacent_rooms_coalesce():
+    """A row of exactly-adjacent same-level rooms merges into one rect --
+    fewer draw calls and no internal gridlines in block mode."""
+    categories = [("school", frozenset({"classroom"}))]
+    raw = [_bld(_room("classroom", (0, 0, 5, 8), (5, 0, 5, 8), (10, 0, 5, 8)))]
+    entries, _, _ = g.build_entries(raw, categories)
+    assert entries[0]["rects"] == [(0, 0, 15, 8)]
+
+
+def test_cross_level_rooms_keep_dominant_level_only():
+    """Rooms of the winning category on other floors are dropped from the
+    drawn rects (2D stacking double-tints block mode); the level with the
+    most category area wins, tie goes to the lowest level."""
+    categories = [("food", frozenset({"restaurantdining"}))]
+    raw = [_bld(
+        _room("restaurantdining", (10, 10, 8, 8), level=0),
+        _room("restaurantdining", (11, 11, 5, 5), level=1),
+    )]
+    entries, _, _ = g.build_entries(raw, categories)
+    assert entries[0]["rects"] == [(10, 10, 8, 8)]
+
+
+def test_entry_rects_dedup_identical_footprints():
+    """Stacked floors with identical 2D footprints must not repeat a rect --
+    block mode would double-tint it."""
+    categories = [("medical", frozenset({"medical"}))]
+    raw = [_bld(
+        _room("medical", (5, 5, 4, 4)),
+        _room("medical", (5, 5, 4, 4), (0, 0, 2, 2)),
+    )]
+    entries, _, _ = g.build_entries(raw, categories)
+    assert len(entries) == 1
+    assert entries[0]["rects"] == [(5, 5, 4, 4), (0, 0, 2, 2)]
 
 
 def test_accessory_gate_drops_parasitic_claim():
@@ -121,7 +156,7 @@ def test_accessory_gate_drops_parasitic_claim():
         _bld(_room("storageunit", (50, 0, 20, 20)), _room("hall", (70, 0, 4, 4))),
     ]
     entries, stats, _ = g.build_entries(raw, categories)
-    assert len(entries) == 1 and entries[0]["x"] == 50
+    assert len(entries) == 1 and entries[0]["rects"][0][0] == 50
     assert stats["storage"] == 1
 
 
@@ -140,7 +175,7 @@ def test_accessory_gate_falls_through_to_next_category():
     entries, stats, _ = g.build_entries(raw, categories)
     assert len(entries) == 1
     assert entries[0]["cat"] == "pharmacy"
-    assert (entries[0]["x"], entries[0]["y"]) == (10, 10)
+    assert entries[0]["rects"][0][:2] == (10, 10)
     assert stats["prison"] == 0 and stats["pharmacy"] == 1
 
 
@@ -149,17 +184,18 @@ def test_same_building_bbox_records_merge_before_classify():
     the same building bbox -- ONE physical building. Records merge BEFORE
     gate/priority/anchor (codex review: classifying separately kept an
     arbitrary first-wins anchor for same-cat pairs and emitted stacked
-    two-cat icons for mixed pairs). The anchor unions both records' rects."""
+    two-cat icons for mixed pairs); the dominant level then picks the drawn
+    rects (ground bar 8x8 beats basement bar 5x5)."""
     categories = [("food", frozenset({"bar"}))]
     raw = [
-        {"rooms": [_room("bar", (10, 10, 5, 5))],
+        {"rooms": [_room("bar", (10, 10, 5, 5), level=-1)],
          "x": 10, "y": 10, "width": 20, "height": 20},
-        {"rooms": [_room("bar", (12, 12, 8, 8))],
+        {"rooms": [_room("bar", (12, 12, 8, 8), level=0)],
          "x": 10, "y": 10, "width": 20, "height": 20},
     ]
     entries, stats, dup_count = g.build_entries(raw, categories)
     assert dup_count == 1 and len(entries) == 1
-    assert (entries[0]["x"], entries[0]["y"], entries[0]["w"], entries[0]["h"]) == (10, 10, 10, 10)
+    assert entries[0]["rects"] == [(12, 12, 8, 8)]
 
 
 def test_mixed_cat_same_bbox_records_yield_one_entry():

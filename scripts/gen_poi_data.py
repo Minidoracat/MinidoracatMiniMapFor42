@@ -5,13 +5,14 @@ Reads the flat building list in poi_raw.json v2 ({building_id, rooms:
 [{name, level, rects: [[x, y, w, h], ...]}, ...], x, y, width, height,
 level}, world square coordinates, per-room geometry) and the room->category
 mapping in MinidoracatMiniMapPOICategories.lua, then emits ONE POI entry per
-building: the dominant category per CATEGORY_PRIORITY, with the entry bbox
-anchored to the union of that category's trigger-room rects (v2 room-level
-rework, 2026-08-06) -- the icon lands on the actual pharmacy corner of a
-mall, not the mall's centroid. Buildings on any level are processed
-identically -- level is not a filter.
+building: the dominant category per CATEGORY_PRIORITY, carrying that
+category's trigger-room rects individually, largest first (v3 per-room
+rects, 2026-08-06) -- the icon anchors at the largest room (the actual
+pharmacy corner of a mall, not the mall's centroid) and block mode draws
+each room rect. Buildings on any level are processed identically -- level
+is not a filter.
 
-Output is deterministic: entries are sorted by (cat, x, y), so re-running
+Output is deterministic: entries are sorted by (cat, rects), so re-running
 with unchanged inputs produces a byte-identical file.
 
 Usage:
@@ -122,14 +123,49 @@ ACCESSORY_ROOMS = frozenset({
 ACCESSORY_MIN_SHARE = 0.10
 
 
+def _coalesce(rects):
+    """Merge exactly-adjacent same-row / same-column rects until stable.
+
+    同層樓的房間彼此不重疊，教室一整排、倉儲一整條可以無損合併成大矩形——
+    區塊模式少掉內部格線、矩形數大減（渲染每矩形 ~13 次 Kahlua→Java 呼叫）。
+    只合併「完全貼齊」的鄰接（同 y/h 且 x 相接，或同 x/w 且 y 相接），輸出
+    幾何覆蓋範圍與輸入嚴格相等。"""
+    rects = sorted(set(rects))
+    changed = True
+    while changed:
+        changed = False
+        rects.sort(key=lambda r: (r[1], r[3], r[0]))
+        out = []
+        for r in rects:
+            p = out[-1] if out else None
+            if p and p[1] == r[1] and p[3] == r[3] and p[0] + p[2] == r[0]:
+                out[-1] = (p[0], p[1], p[2] + r[2], p[3])
+                changed = True
+            else:
+                out.append(r)
+        rects = out
+        rects.sort(key=lambda r: (r[0], r[2], r[1]))
+        out = []
+        for r in rects:
+            p = out[-1] if out else None
+            if p and p[0] == r[0] and p[2] == r[2] and p[1] + p[3] == r[1]:
+                out[-1] = (p[0], p[1], p[2], p[3] + r[3])
+                changed = True
+            else:
+                out.append(r)
+        rects = out
+    return rects
+
+
 def build_entries(raw_buildings, categories):
     """Return (entries, stats, dup_count).
 
     每棟建築依 CATEGORY_PRIORITY 產出至多一個主身分條目；觸發房全屬
     ACCESSORY_ROOMS 且面積佔比低於 ACCESSORY_MIN_SHARE 的候選被跳過、
-    落給下一個命中類別。條目 bbox 錨定主身分觸發房的 rect 聯集（非整棟外框）。
+    落給下一個命中類別。條目帶主身分觸發房的逐矩形清單（主樓層過濾＋
+    相鄰合併＋面積大→小，rects[0] 為圖標錨點；非整棟外框）。
     stats maps category_key -> unique hit count (post-dedup).
-    dup_count is how many (cat, x, y, w, h) duplicates were dropped.
+    dup_count＝同外框 building 紀錄被合併數＋(cat, rects) 全等的保險去重數。
     """
     seen = {}
     stats = {key: 0 for key, _ in categories}
@@ -165,14 +201,16 @@ def build_entries(raw_buildings, categories):
                 name = room.get("name")
                 if not name:
                     continue
-                name_rects.setdefault(name, []).extend(rects)
+                lv = room.get("level", 0)
+                name_rects.setdefault(name, []).extend(
+                    (lv, tuple(r)) for r in rects)
         room_set = set(name_rects)
         if not room_set:
             continue
         matched = [key for key, rooms in categories if room_set & rooms]
         matched.sort(key=lambda k: _PRIORITY_INDEX.get(k, len(CATEGORY_PRIORITY)))
         key = None
-        rects = None
+        pairs = None
         for cand in matched:
             trig = room_set & catmap[cand]
             if trig <= ACCESSORY_ROOMS:
@@ -180,38 +218,42 @@ def build_entries(raw_buildings, categories):
                 if not total_area:
                     continue
                 cat_area = sum(
-                    w * h for n in trig for _, _, w, h in name_rects[n])
+                    r[2] * r[3] for n in trig for _, r in name_rects[n])
                 if cat_area / total_area < ACCESSORY_MIN_SHARE:
                     continue
-            cand_rects = [r for n in trig for r in name_rects[n]]
+            cand_pairs = [p for n in trig for p in name_rects[n]]
             # 觸發房無幾何＝無從錨定，同樣落給下一候選（與 gate 語意一致）
-            if not cand_rects:
+            if not cand_pairs:
                 continue
             key = cand
-            rects = cand_rects
+            pairs = cand_pairs
             break
-        if key is None or rects is None:
+        if key is None or pairs is None:
             continue
-        x0 = min(r[0] for r in rects)
-        y0 = min(r[1] for r in rects)
-        x1 = max(r[0] + r[2] for r in rects)
-        y1 = max(r[1] + r[3] for r in rects)
+        # 主樓層過濾：同類房間跨樓層在 2D 投影整片重疊（三層餐廳的二樓用餐區
+        # 疊在一樓正上方→區塊疊色、框線層疊），取該類面積最大的樓層（平手取
+        # 最低層＝偏地面）；同層房間物理上互不重疊，重疊就此消除。
+        # gate 的面積佔比仍計全樓層（上方），只有「畫什麼」取主樓層。
+        by_level = {}
+        for lv, r in pairs:
+            by_level.setdefault(lv, []).append(r)
+        best = min(by_level,
+                   key=lambda lv: (-sum(r[2] * r[3] for r in by_level[lv]), lv))
+        # 相鄰合併後按面積大→小排序（r[1] 是圖標/名稱錨點——最大房間永遠
+        # 落在實體房間裡，比聯集框中心準）
+        uniq = sorted(_coalesce(by_level[best]),
+                      key=lambda r: (-(r[2] * r[3]), r[0], r[1], r[2], r[3]))
         # 跨組保險去重：物理去重已由上方的整棟合併完成，這裡只擋「不同建物
-        # 但 (cat, 錨定框) 完全相同」的極端巧合，維持輸出唯一性
-        dedup_key = (key, x0, y0, x1 - x0, y1 - y0)
+        # 但 (cat, 矩形集) 完全相同」的極端巧合，維持輸出唯一性
+        dedup_key = (key, tuple(uniq))
         if dedup_key in seen:
             dup_count += 1
             continue
-        seen[dedup_key] = {
-            "cat": key,
-            "x": x0,
-            "y": y0,
-            "w": x1 - x0,
-            "h": y1 - y0,
-        }
+        seen[dedup_key] = {"cat": key, "rects": uniq}
         stats[key] += 1
     entries = list(seen.values())
-    entries.sort(key=lambda e: (e["cat"], e["x"], e["y"]))
+    # key 含完整矩形清單＝全序（只取 r[1] 座標有 6 筆同鍵、順序會隨 raw 列序漂移）
+    entries.sort(key=lambda e: (e["cat"], tuple(e["rects"])))
     return entries, stats, dup_count
 
 
@@ -223,16 +265,19 @@ def render_lua(entries, raw_count, gen_command):
         f"--   {gen_command}",
         "--",
         f"-- 來源：poi_raw.json（{raw_count} 筆建築原始資料，世界 square 座標）。",
-        "-- 消費契約見 MinidoracatMiniMapPOI.lua buildPoiConverted()：陣列，",
-        "-- 每項 { cat=<CATEGORIES 類別 key>, x=, y=, w=, h= }（世界 square 座標，",
-        "-- x/y 左上角、w/h 尺寸）。count 為除錯輔助欄位（Kahlua # 不可信，勿用於迭代）。",
+        "-- 消費契約見 MinidoracatMiniMapPOI.lua buildPoiConverted()（v3 逐房間矩形）：",
+        "-- 陣列，每項 { cat=<CATEGORIES 類別 key>, rn=<矩形數>, r={ {x,y,w,h},.. } }",
+        "-- （世界 square 座標，x/y 左上角、w/h 尺寸；r 按面積大→小排序，r[1] 為",
+        "-- 圖標/名稱錨點）。迭代一律用 rn（Kahlua # 不可信）；count 為除錯輔助欄位。",
         "",
         "MinidoracatMiniMapPOIData = {",
     ]
     for e in entries:
+        parts = ", ".join(
+            f"{{ x = {x}, y = {y}, w = {w}, h = {h} }}"
+            for x, y, w, h in e["rects"])
         lines.append(
-            f'    {{ cat = "{e["cat"]}", x = {e["x"]}, y = {e["y"]}, '
-            f'w = {e["w"]}, h = {e["h"]} }},'
+            f'    {{ cat = "{e["cat"]}", rn = {len(e["rects"])}, r = {{ {parts} }} }},'
         )
     lines.append("}")
     lines.append("")

@@ -91,10 +91,12 @@ end
 -- 勿每幀重建/過濾/合併；本 MOD 對回傳只讀不改。zone schema（provider 產、繪製端讀）：
 --   { id=string, name=string|nil(已翻譯顯示名；nil＝不畫名稱),
 --     rects={ { x1=, y1=, x2=, y2= }, ... }(世界 square 座標；硬性要求 x1<x2、y1<y2——
---       圖標 pass 的視野預裁假設此序，反向 rect 會被過嚴裁掉而 fill/line 照畫),
+--       三個 pass 的視野預裁都假設此序，反向 rect 會被一致地過嚴裁掉而整個消失),
 --     fill={ r=, g=, b= }(0-1), fillAlpha=number(0＝不填),
 --     border={ r=, g=, b= }(0-1), borderAlpha=number(0＝不畫框),
 --     icon={ tex=<Texture>, r=, g=, b= }|nil(選配；每 rect 中心畫染色圖標),
+--     iconOnce=true|nil(選配；true 時圖標/名稱只畫在 rects[1]——provider 應把
+--       主要矩形排在首位。未設維持每 rect 一圖標，既有 addon 行為不變),
 --     category=string|nil }
 -- 選配第三參 optionLabelKey：有給時本 MOD 於統一視窗動態追加一顆 per-provider 母開關
 -- （如「顯示伺服器區域」），關＝渲染時整個跳過該 provider。
@@ -2453,6 +2455,12 @@ end
 local function drawZoneFillBody(inner)
     local mapAPI = inner.mapAPI
     local w, h = inner.width, inner.height
+    -- 視野預裁（同 drawZoneIcons，v3 後區塊模式數千矩形×8 次投影/幀會壓垮
+    -- FPS）：世界座標 AABB 不相交者直接跳過，連投影都不做——外接框是視窗
+    -- 超集，被裁者投影後必在窗外、原本的螢幕裁切也不會畫，逐像素不變。
+    -- 退化行為：uiToWorld 未就緒回 0.0F 時外接框塌縮＝fill/line 也整幀全裁，
+    -- 與圖標 pass 同退化（舊碼該情況同樣什麼都畫不出，見 icons pass 論證）
+    local vMinX, vMaxX, vMinY, vMaxY = visibleWorldAABB(inner)
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
         -- 閘門：外部 provider 受 ZoneLayer 總閘（internal 不受）＋ per-provider 母開關
@@ -2474,21 +2482,23 @@ local function drawZoneFillBody(inner)
                     local a = z.fillAlpha or 0.2
                     for ri = 1, #rects do
                         local rc = rects[ri]
-                        local ux1, uy1 = mapAPI:worldToUIX(rc.x1, rc.y1), mapAPI:worldToUIY(rc.x1, rc.y1)
-                        local ux2, uy2 = mapAPI:worldToUIX(rc.x2, rc.y1), mapAPI:worldToUIY(rc.x2, rc.y1)
-                        local ux3, uy3 = mapAPI:worldToUIX(rc.x2, rc.y2), mapAPI:worldToUIY(rc.x2, rc.y2)
-                        local ux4, uy4 = mapAPI:worldToUIX(rc.x1, rc.y2), mapAPI:worldToUIY(rc.x1, rc.y2)
-                        local minx = math.min(ux1, ux2, ux3, ux4)
-                        local maxx = math.max(ux1, ux2, ux3, ux4)
-                        local miny = math.min(uy1, uy2, uy3, uy4)
-                        local maxy = math.max(uy1, uy2, uy3, uy4)
-                        if maxx >= 0 and minx <= w and maxy >= 0 and miny <= h then
-                            if not inner._minidoracatZoneStencilOn then
-                                inner:setStencilRect(0, 0, w, h)
-                                inner._minidoracatZoneStencilOn = true
+                        if rc.x2 >= vMinX and rc.x1 <= vMaxX and rc.y2 >= vMinY and rc.y1 <= vMaxY then
+                            local ux1, uy1 = mapAPI:worldToUIX(rc.x1, rc.y1), mapAPI:worldToUIY(rc.x1, rc.y1)
+                            local ux2, uy2 = mapAPI:worldToUIX(rc.x2, rc.y1), mapAPI:worldToUIY(rc.x2, rc.y1)
+                            local ux3, uy3 = mapAPI:worldToUIX(rc.x2, rc.y2), mapAPI:worldToUIY(rc.x2, rc.y2)
+                            local ux4, uy4 = mapAPI:worldToUIX(rc.x1, rc.y2), mapAPI:worldToUIY(rc.x1, rc.y2)
+                            local minx = math.min(ux1, ux2, ux3, ux4)
+                            local maxx = math.max(ux1, ux2, ux3, ux4)
+                            local miny = math.min(uy1, uy2, uy3, uy4)
+                            local maxy = math.max(uy1, uy2, uy3, uy4)
+                            if maxx >= 0 and minx <= w and maxy >= 0 and miny <= h then
+                                if not inner._minidoracatZoneStencilOn then
+                                    inner:setStencilRect(0, 0, w, h)
+                                    inner._minidoracatZoneStencilOn = true
+                                end
+                                inner:drawPolygon(nil, ux1, uy1, ux2, uy2, ux3, uy3, ux4, uy4,
+                                    fill.r, fill.g, fill.b, a)
                             end
-                            inner:drawPolygon(nil, ux1, uy1, ux2, uy2, ux3, uy3, ux4, uy4,
-                                fill.r, fill.g, fill.b, a)
                         end
                     end
                 end
@@ -2517,6 +2527,8 @@ local function drawZoneLines(inner)
     local w, h = inner.width, inner.height
     local tm = getTextManager()
     local th = tm:getFontHeight(UIFont.Small)
+    -- 視野預裁（同 drawZoneFillBody）：世界座標不相交者跳過投影
+    local vMinX, vMaxX, vMinY, vMaxY = visibleWorldAABB(inner)
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
         -- 閘門（同 drawZoneFill）：外部受 ZoneLayer 總閘＋per-provider 母開關；internal 不受
@@ -2538,22 +2550,25 @@ local function drawZoneLines(inner)
                     local zoneVisible = false
                     for ri = 1, #rects do
                         local rc = rects[ri]
-                        local ux1, uy1 = mapAPI:worldToUIX(rc.x1, rc.y1), mapAPI:worldToUIY(rc.x1, rc.y1)
-                        local ux2, uy2 = mapAPI:worldToUIX(rc.x2, rc.y1), mapAPI:worldToUIY(rc.x2, rc.y1)
-                        local ux3, uy3 = mapAPI:worldToUIX(rc.x2, rc.y2), mapAPI:worldToUIY(rc.x2, rc.y2)
-                        local ux4, uy4 = mapAPI:worldToUIX(rc.x1, rc.y2), mapAPI:worldToUIY(rc.x1, rc.y2)
-                        -- A3：投影後 AABB 早退（同 drawZoneFill）——略過離屏 rect 的
-                        -- clipSegment＋drawLine；zoneVisible 記住至少一 rect 落在視窗內
-                        local minx = math.min(ux1, ux2, ux3, ux4)
-                        local maxx = math.max(ux1, ux2, ux3, ux4)
-                        local miny = math.min(uy1, uy2, uy3, uy4)
-                        local maxy = math.max(uy1, uy2, uy3, uy4)
-                        if maxx >= 0 and minx <= w and maxy >= 0 and miny <= h then
-                            zoneVisible = true
-                            drawClippedEdge(inner, ux1, uy1, ux2, uy2, r, g, b, a)
-                            drawClippedEdge(inner, ux2, uy2, ux3, uy3, r, g, b, a)
-                            drawClippedEdge(inner, ux3, uy3, ux4, uy4, r, g, b, a)
-                            drawClippedEdge(inner, ux4, uy4, ux1, uy1, r, g, b, a)
+                        -- 世界座標預裁（被裁者投影後必在窗外，zoneVisible 語意不變）
+                        if rc.x2 >= vMinX and rc.x1 <= vMaxX and rc.y2 >= vMinY and rc.y1 <= vMaxY then
+                            local ux1, uy1 = mapAPI:worldToUIX(rc.x1, rc.y1), mapAPI:worldToUIY(rc.x1, rc.y1)
+                            local ux2, uy2 = mapAPI:worldToUIX(rc.x2, rc.y1), mapAPI:worldToUIY(rc.x2, rc.y1)
+                            local ux3, uy3 = mapAPI:worldToUIX(rc.x2, rc.y2), mapAPI:worldToUIY(rc.x2, rc.y2)
+                            local ux4, uy4 = mapAPI:worldToUIX(rc.x1, rc.y2), mapAPI:worldToUIY(rc.x1, rc.y2)
+                            -- A3：投影後 AABB 早退（同 drawZoneFill）——略過離屏 rect 的
+                            -- clipSegment＋drawLine；zoneVisible 記住至少一 rect 落在視窗內
+                            local minx = math.min(ux1, ux2, ux3, ux4)
+                            local maxx = math.max(ux1, ux2, ux3, ux4)
+                            local miny = math.min(uy1, uy2, uy3, uy4)
+                            local maxy = math.max(uy1, uy2, uy3, uy4)
+                            if maxx >= 0 and minx <= w and maxy >= 0 and miny <= h then
+                                zoneVisible = true
+                                drawClippedEdge(inner, ux1, uy1, ux2, uy2, r, g, b, a)
+                                drawClippedEdge(inner, ux2, uy2, ux3, uy3, r, g, b, a)
+                                drawClippedEdge(inner, ux3, uy3, ux4, uy4, r, g, b, a)
+                                drawClippedEdge(inner, ux4, uy4, ux1, uy1, r, g, b, a)
+                            end
                         end
                     end
                     -- 名稱畫在第一個 rect 的中心，僅中心落在視窗內才畫（同 drawMapBounds）；
@@ -2626,9 +2641,15 @@ local function drawZoneIcons(inner)
                 local z = zones[zi]
                 local icon, rects = z.icon, z.rects
                 if icon and icon.tex and rects then
-                    for ri = 1, #rects do
+                    -- iconOnce（POI v3 逐房間矩形）：圖標只畫在 rects[1]（provider
+                    -- 保證是最大房間），避免一棟 200+ 房間疊 200 顆圖標；預裁與
+                    -- 螢幕裁切照常作用於該矩形
+                    local rn = z.iconOnce and 1 or #rects
+                    for ri = 1, rn do
                         local rc = rects[ri]
-                        if rc.x2 >= vMinX and rc.x1 <= vMaxX and rc.y2 >= vMinY and rc.y1 <= vMaxY then
+                        -- rc 判 nil：iconOnce＋空 rects（外部 addon 可給）時 rn=1 但
+                        -- rects[1]=nil，缺守衛會 nil deref 打死整幀所有 provider 的圖標
+                        if rc and rc.x2 >= vMinX and rc.x1 <= vMaxX and rc.y2 >= vMinY and rc.y1 <= vMaxY then
                             local cxw, cyw = (rc.x1 + rc.x2) / 2, (rc.y1 + rc.y2) / 2
                             local cx = mapAPI:worldToUIX(cxw, cyw)
                             local cy = mapAPI:worldToUIY(cxw, cyw)
