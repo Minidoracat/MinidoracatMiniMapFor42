@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Bake poi_raw.json building data into MinidoracatMiniMapPOIData.lua.
 
-Reads the flat building list in poi_raw.json ({building_id, rooms, x, y,
-width, height, level}, world square coordinates) and the room->category
-mapping in MinidoracatMiniMapPOICategories.lua, then emits one POI entry per
-(building, matching category). A building whose rooms intersect more than one
-category's room set produces one entry per matching category (same bbox,
-different cat). Buildings on any level (including level > 0 upper floors)
-are processed identically -- level is not a filter.
+Reads the flat building list in poi_raw.json v2 ({building_id, rooms:
+[{name, level, rects: [[x, y, w, h], ...]}, ...], x, y, width, height,
+level}, world square coordinates, per-room geometry) and the room->category
+mapping in MinidoracatMiniMapPOICategories.lua, then emits ONE POI entry per
+building: the dominant category per CATEGORY_PRIORITY, with the entry bbox
+anchored to the union of that category's trigger-room rects (v2 room-level
+rework, 2026-08-06) -- the icon lands on the actual pharmacy corner of a
+mall, not the mall's centroid. Buildings on any level are processed
+identically -- level is not a filter.
 
 Output is deterministic: entries are sorted by (cat, x, y), so re-running
 with unchanged inputs produces a byte-identical file.
@@ -95,35 +97,117 @@ CATEGORY_PRIORITY = [
 ]
 _PRIORITY_INDEX = {key: i for i, key in enumerate(CATEGORY_PRIORITY)}
 
+# 附屬型觸發房（v2 房間級規則，2026-08-06）：這些 room 是「設施的附屬空間」，
+# 也大量出現在公寓/商場/場館等其他身分的建物裡。主身分候選的觸發房「全部」屬
+# 此清單時，其房間面積須佔建物房間總面積 >= ACCESSORY_MIN_SHARE 才成立，否則
+# 落給下一個命中類別（可能落到無 → 整棟不標）。實錘案例（poi_raw.json 實算）：
+#   (10051,12613) 公寓 64sq storageunit（0.8%）標倉儲——玩家回報；
+#   (15325,2842) Louisville 商場 130sq prisoncells（0.3%）標監獄；
+#   (12900,1244)/(12550,1511) 兩棟場館因 schoolstorage 標學校。
+# 商店型觸發房（pharmacy/gunstore/armysurplus 等）刻意不設門檻：公寓一樓的
+# 12sq 藥局是真藥局、商場裡的軍品店是真店面——房間級錨定後圖標釘在店面位置，
+# 小佔比反而是 feature。真設施不受影響（U-Store It 的 storageunit、真監獄的
+# prisoncells、真學校的 schoolstorage 佔比皆遠高於門檻）。
+ACCESSORY_ROOMS = frozenset({
+    "storageunit", "warehouse",
+    "prisoncells", "cells", "prisonstorage", "prisonlaundry",
+    "prisonerbelongings", "prisonlocker", "prisonarmory", "prisonlibrary",
+    "contraband",
+    "schoolstorage", "schoolgymstorage", "universitystorage",
+    "gymstorage", "sportstorage",
+})
+# 門檻分母＝建物全部房間面積（含 empty/hall 等未分類填充房與無名房），故門檻
+# 偏保守；敏感度實測 8%→10% 翻 2 棟、10%→12% 翻 3 棟，非過擬合魔數。已知貼線
+# 案例：(2511,14059) 住宅的 storageunit 佔 10.65%，恰在 accept 側 0.65pp。
+ACCESSORY_MIN_SHARE = 0.10
+
 
 def build_entries(raw_buildings, categories):
     """Return (entries, stats, dup_count).
 
-    每棟建築依 CATEGORY_PRIORITY 只產出一個主身分條目（見上方註解）。
+    每棟建築依 CATEGORY_PRIORITY 產出至多一個主身分條目；觸發房全屬
+    ACCESSORY_ROOMS 且面積佔比低於 ACCESSORY_MIN_SHARE 的候選被跳過、
+    落給下一個命中類別。條目 bbox 錨定主身分觸發房的 rect 聯集（非整棟外框）。
     stats maps category_key -> unique hit count (post-dedup).
     dup_count is how many (cat, x, y, w, h) duplicates were dropped.
     """
     seen = {}
-    dup_count = 0
     stats = {key: 0 for key, _ in categories}
-    for building in raw_buildings:
-        room_set = set(building.get("rooms") or ())
+    catmap = dict(categories)
+    # 先按「整棟外框」合併同 bbox 的 building 紀錄再分類（同棟地下室/地面層在
+    # .lotheader 是獨立紀錄，全圖 10 組）：分開分類會讓同類對任意保留先到的較差
+    # 錨點、異類對輸出跨樓層雙圖標（codex review 實錘一棟 12x27 掛 storage+food
+    # 兩筆），且 gate 分母只看到半棟。合併後一棟物理建築恰做一次
+    # gate/priority/anchor。無外框欄位的紀錄（測試 fixture）各自成組。
+    # dup_count＝被合併的額外紀錄數＋錨定後仍完全同 (cat,bbox) 的保險去重數。
+    groups = {}
+    group_order = []
+    for i, building in enumerate(raw_buildings):
+        if all(k in building for k in ("x", "y", "width", "height")):
+            gkey = (building["x"], building["y"], building["width"], building["height"])
+        else:
+            gkey = ("#", i)
+        if gkey not in groups:
+            groups[gkey] = []
+            group_order.append(gkey)
+        groups[gkey].append(building)
+    dup_count = sum(len(g) - 1 for g in groups.values())
+
+    for gkey in group_order:
+        name_rects = {}
+        total_area = 0
+        for building in groups[gkey]:
+            for room in building.get("rooms") or ():
+                rects = room.get("rects") or ()
+                # 面積先進分母（含無名房——「建物全部房間面積」的契約；
+                # corpus 實有 1 間 name="" 的房），名稱才決定可否參與分類
+                total_area += sum(w * h for _, _, w, h in rects)
+                name = room.get("name")
+                if not name:
+                    continue
+                name_rects.setdefault(name, []).extend(rects)
+        room_set = set(name_rects)
         if not room_set:
             continue
         matched = [key for key, rooms in categories if room_set & rooms]
-        if not matched:
+        matched.sort(key=lambda k: _PRIORITY_INDEX.get(k, len(CATEGORY_PRIORITY)))
+        key = None
+        rects = None
+        for cand in matched:
+            trig = room_set & catmap[cand]
+            if trig <= ACCESSORY_ROOMS:
+                # 無面積資訊時附屬型候選不得通過（fail closed）
+                if not total_area:
+                    continue
+                cat_area = sum(
+                    w * h for n in trig for _, _, w, h in name_rects[n])
+                if cat_area / total_area < ACCESSORY_MIN_SHARE:
+                    continue
+            cand_rects = [r for n in trig for r in name_rects[n]]
+            # 觸發房無幾何＝無從錨定，同樣落給下一候選（與 gate 語意一致）
+            if not cand_rects:
+                continue
+            key = cand
+            rects = cand_rects
+            break
+        if key is None or rects is None:
             continue
-        key = min(matched, key=lambda k: _PRIORITY_INDEX.get(k, len(CATEGORY_PRIORITY)))
-        dedup_key = (key, building["x"], building["y"], building["width"], building["height"])
+        x0 = min(r[0] for r in rects)
+        y0 = min(r[1] for r in rects)
+        x1 = max(r[0] + r[2] for r in rects)
+        y1 = max(r[1] + r[3] for r in rects)
+        # 跨組保險去重：物理去重已由上方的整棟合併完成，這裡只擋「不同建物
+        # 但 (cat, 錨定框) 完全相同」的極端巧合，維持輸出唯一性
+        dedup_key = (key, x0, y0, x1 - x0, y1 - y0)
         if dedup_key in seen:
             dup_count += 1
             continue
         seen[dedup_key] = {
             "cat": key,
-            "x": building["x"],
-            "y": building["y"],
-            "w": building["width"],
-            "h": building["height"],
+            "x": x0,
+            "y": y0,
+            "w": x1 - x0,
+            "h": y1 - y0,
         }
         stats[key] += 1
     entries = list(seen.values())

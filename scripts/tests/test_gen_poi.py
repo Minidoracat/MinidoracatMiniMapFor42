@@ -29,12 +29,21 @@ def test_category_count_matches_production_file():
     assert len(keys) == len(set(keys)), "duplicate category keys parsed"
 
 
+def _room(name, *rects):
+    """v2 room instance fixture: {name, level, rects=[[x,y,w,h],...]}."""
+    return {"name": name, "level": 0, "rects": [list(r) for r in rects]}
+
+
+def _bld(*rooms):
+    return {"rooms": list(rooms)}
+
+
 def test_build_entries_dedups_exact_duplicates():
     """Identical (cat, x, y, w, h) rows must collapse to one entry."""
     categories = [("police", frozenset({"policeoffice"}))]
     raw = [
-        {"rooms": ["policeoffice"], "x": 100, "y": 200, "width": 10, "height": 10},
-        {"rooms": ["policeoffice"], "x": 100, "y": 200, "width": 10, "height": 10},
+        _bld(_room("policeoffice", (100, 200, 10, 10))),
+        _bld(_room("policeoffice", (100, 200, 10, 10))),
     ]
     entries, stats, dup_count = g.build_entries(raw, categories)
     assert dup_count == 1, f"expected 1 duplicate dropped, got {dup_count}"
@@ -46,8 +55,8 @@ def test_build_entries_keeps_distinct_rows():
     """Two buildings with different coordinates are not duplicates."""
     categories = [("police", frozenset({"policeoffice"}))]
     raw = [
-        {"rooms": ["policeoffice"], "x": 100, "y": 200, "width": 10, "height": 10},
-        {"rooms": ["policeoffice"], "x": 999, "y": 200, "width": 10, "height": 10},
+        _bld(_room("policeoffice", (100, 200, 10, 10))),
+        _bld(_room("policeoffice", (999, 200, 10, 10))),
     ]
     entries, stats, dup_count = g.build_entries(raw, categories)
     assert dup_count == 0
@@ -63,7 +72,7 @@ def test_build_entries_multi_category_picks_dominant():
         ("medical", frozenset({"oldmedical"})),
         ("military", frozenset({"armystorage"})),
     ]
-    raw = [{"rooms": ["armystorage", "oldmedical"], "x": 1, "y": 2, "width": 3, "height": 4}]
+    raw = [_bld(_room("armystorage", (1, 2, 3, 4)), _room("oldmedical", (10, 2, 3, 4)))]
     entries, stats, dup_count = g.build_entries(raw, categories)
     assert dup_count == 0
     assert len(entries) == 1
@@ -79,13 +88,155 @@ def test_build_entries_police_beats_prison():
         ("prison", frozenset({"prisoncells"})),
     ]
     raw = [
-        {"rooms": ["policeoffice", "prisoncells"], "x": 1, "y": 2, "width": 3, "height": 4},
-        {"rooms": ["prisoncells", "security"], "x": 9, "y": 9, "width": 5, "height": 5},
+        _bld(_room("policeoffice", (1, 2, 3, 4)), _room("prisoncells", (5, 2, 3, 4))),
+        _bld(_room("prisoncells", (9, 9, 5, 5)), _room("security", (14, 9, 2, 2))),
     ]
     entries, stats, dup_count = g.build_entries(raw, categories)
     assert len(entries) == 2
     cats = {(e["x"], e["cat"]) for e in entries}
     assert cats == {(1, "police"), (9, "prison")}
+
+
+def test_entry_bbox_anchors_to_trigger_rooms():
+    """v2: the entry bbox is the union of the dominant category's trigger-room
+    rects, NOT the whole building -- a mall pharmacy pins at the pharmacy."""
+    categories = [("pharmacy", frozenset({"pharmacy"}))]
+    raw = [_bld(
+        _room("hall", (0, 0, 100, 100)),
+        _room("pharmacy", (40, 60, 8, 6), (48, 60, 4, 6)),
+    )]
+    entries, _, _ = g.build_entries(raw, categories)
+    assert len(entries) == 1
+    e = entries[0]
+    assert (e["x"], e["y"], e["w"], e["h"]) == (40, 60, 12, 6)
+
+
+def test_accessory_gate_drops_parasitic_claim():
+    """A tenant storageunit inside an apartment (share < 10%) must not brand
+    the building storage (player report (10051,12613)); a real self-storage
+    facility (storageunit dominant) still does."""
+    categories = [("storage", frozenset({"storageunit", "warehouse"}))]
+    raw = [
+        _bld(_room("livingroom", (0, 0, 30, 30)), _room("storageunit", (30, 0, 4, 4))),
+        _bld(_room("storageunit", (50, 0, 20, 20)), _room("hall", (70, 0, 4, 4))),
+    ]
+    entries, stats, _ = g.build_entries(raw, categories)
+    assert len(entries) == 1 and entries[0]["x"] == 50
+    assert stats["storage"] == 1
+
+
+def test_accessory_gate_falls_through_to_next_category():
+    """A mall whose prisoncells are parasitic (share < 10%) falls through to
+    its next matched category (the real pharmacy inside), not to nothing."""
+    categories = [
+        ("prison", frozenset({"prisoncells"})),
+        ("pharmacy", frozenset({"pharmacy"})),
+    ]
+    raw = [_bld(
+        _room("hall", (0, 0, 60, 60)),
+        _room("prisoncells", (0, 0, 5, 5)),
+        _room("pharmacy", (10, 10, 8, 8)),
+    )]
+    entries, stats, _ = g.build_entries(raw, categories)
+    assert len(entries) == 1
+    assert entries[0]["cat"] == "pharmacy"
+    assert (entries[0]["x"], entries[0]["y"]) == (10, 10)
+    assert stats["prison"] == 0 and stats["pharmacy"] == 1
+
+
+def test_same_building_bbox_records_merge_before_classify():
+    """A basement and its ground floor are two lotheader building records with
+    the same building bbox -- ONE physical building. Records merge BEFORE
+    gate/priority/anchor (codex review: classifying separately kept an
+    arbitrary first-wins anchor for same-cat pairs and emitted stacked
+    two-cat icons for mixed pairs). The anchor unions both records' rects."""
+    categories = [("food", frozenset({"bar"}))]
+    raw = [
+        {"rooms": [_room("bar", (10, 10, 5, 5))],
+         "x": 10, "y": 10, "width": 20, "height": 20},
+        {"rooms": [_room("bar", (12, 12, 8, 8))],
+         "x": 10, "y": 10, "width": 20, "height": 20},
+    ]
+    entries, stats, dup_count = g.build_entries(raw, categories)
+    assert dup_count == 1 and len(entries) == 1
+    assert (entries[0]["x"], entries[0]["y"], entries[0]["w"], entries[0]["h"]) == (10, 10, 10, 10)
+
+
+def test_mixed_cat_same_bbox_records_yield_one_entry():
+    """A basement storage record + ground-floor food record of the SAME
+    building must produce one dominant-category entry, not two stacked
+    icons (codex review caught a 12x27 building emitting storage+food)."""
+    categories = [
+        ("food", frozenset({"bar"})),
+        ("storage", frozenset({"storageunit"})),
+    ]
+    raw = [
+        {"rooms": [_room("storageunit", (10, 10, 8, 8))],
+         "x": 10, "y": 10, "width": 20, "height": 20},
+        {"rooms": [_room("bar", (12, 12, 8, 8))],
+         "x": 10, "y": 10, "width": 20, "height": 20},
+    ]
+    entries, stats, dup_count = g.build_entries(raw, categories)
+    assert len(entries) == 1 and dup_count == 1
+    assert entries[0]["cat"] == "food"
+    assert stats["storage"] == 0
+
+
+def test_mixed_accessory_and_shop_trigger_skips_gate():
+    """A category whose trigger set contains ANY non-accessory room is exempt
+    from the share gate, even at a tiny share."""
+    categories = [("outdoor", frozenset({"gymstorage", "sportstore"}))]
+    raw = [_bld(
+        _room("hall", (0, 0, 100, 100)),
+        _room("gymstorage", (100, 0, 2, 2)),
+        _room("sportstore", (102, 0, 2, 2)),
+    )]
+    entries, _, _ = g.build_entries(raw, categories)
+    assert len(entries) == 1 and entries[0]["cat"] == "outdoor"
+
+
+def test_accessory_gate_accepts_exactly_at_threshold():
+    """share == ACCESSORY_MIN_SHARE (exactly 10%) must be accepted -- the
+    reject condition is strict less-than."""
+    categories = [("storage", frozenset({"storageunit"}))]
+    raw = [_bld(
+        _room("livingroom", (0, 0, 90, 1)),
+        _room("storageunit", (90, 0, 10, 1)),
+    )]
+    entries, _, _ = g.build_entries(raw, categories)
+    assert len(entries) == 1 and entries[0]["cat"] == "storage"
+
+
+def test_accessory_gate_fails_closed_without_area():
+    """total_area == 0 (no room geometry at all) must NOT let an accessory
+    claim through."""
+    categories = [("storage", frozenset({"storageunit"}))]
+    raw = [_bld(_room("storageunit"), _room("hall"))]
+    entries, stats, _ = g.build_entries(raw, categories)
+    assert entries == [] and stats["storage"] == 0
+
+
+def test_rectless_trigger_falls_through_to_next_category():
+    """A higher-priority category whose trigger rooms carry no rects cannot
+    anchor an entry; the building falls through to the next matched category
+    instead of vanishing."""
+    categories = [
+        ("military", frozenset({"armystorage"})),
+        ("medical", frozenset({"medical"})),
+    ]
+    raw = [_bld(_room("armystorage"), _room("medical", (5, 5, 4, 4)))]
+    entries, stats, _ = g.build_entries(raw, categories)
+    assert len(entries) == 1 and entries[0]["cat"] == "medical"
+    assert stats["military"] == 0
+
+
+def test_shop_trigger_has_no_share_gate():
+    """Shop-type trigger rooms (not in ACCESSORY_ROOMS) claim the building at
+    any share -- a tiny ground-floor pharmacy in an apartment block is real."""
+    categories = [("pharmacy", frozenset({"pharmacy"}))]
+    raw = [_bld(_room("livingroom", (0, 0, 40, 40)), _room("pharmacy", (40, 0, 3, 4)))]
+    entries, _, _ = g.build_entries(raw, categories)
+    assert len(entries) == 1 and entries[0]["cat"] == "pharmacy"
 
 
 def test_order_matches_categories():
@@ -179,6 +330,7 @@ def test_room_count_snapshot():
         "prison": 9, "storage": 2, "electronics": 3, "church": 3,
         "farm": 15, "industry": 52, "retail": 67, "food": 103,
     }
+    expected["school"] = 10
     actual = {key: len(rooms) for key, rooms in g.parse_categories(g.DEFAULT_CATEGORIES_LUA)}
     assert actual == expected, (
         f"room-key counts drifted: "
@@ -208,6 +360,10 @@ def test_default_raw_schema_if_present():
     sample = raw_buildings[0]
     missing = required - sample.keys()
     assert not missing, f"poi_raw.json entries missing fields: {missing}"
+    # v2 (2026-08-06): rooms are per-instance objects with their own geometry.
+    room = sample["rooms"][0]
+    assert {"name", "level", "rects"} <= room.keys(), f"v2 room shape missing: {room.keys()}"
+    assert room["rects"] and len(room["rects"][0]) == 4, "room rects must be [x,y,w,h]"
 
 
 def main():

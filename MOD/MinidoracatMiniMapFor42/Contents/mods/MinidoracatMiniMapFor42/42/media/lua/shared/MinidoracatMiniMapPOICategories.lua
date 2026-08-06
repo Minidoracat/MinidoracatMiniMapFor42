@@ -129,6 +129,29 @@
 --   合計 728→1720 筆（+378 farm +163 industry +126 retail +325 food ±10 位移，
 --     3 筆 bbox 全等 dup 壓掉）。
 --
+-- v2 房間級重做（2026-08-06，玩家回報 (10051,12613) 公寓被標倉儲後的根本修）：
+--   poi_raw.json 改由 pzmap poi v2 產出——每棟建築帶逐房間幾何
+--   （rooms: [{name, level, rects:[[x,y,w,h],…]}]，.lotheader rooms 段原始座標）。
+--   烘焙兩個新行為：(1) 條目 bbox 錨定主身分觸發房的 rect 聯集（圖標釘在商場
+--   裡的藥局、公寓一樓的店面，不再是整棟外框中心）；(2) 附屬型觸發房門檻——
+--   觸發房全屬 ACCESSORY_ROOMS（storage/prison/school 附屬家族，清單與實錘
+--   案例見 gen_poi_data.py）時面積佔比須 ≥10%，否則落給下一命中類別。
+--   同外框 building 紀錄「先合併再分類」（同棟地下室/地面層在 .lotheader 是
+--   獨立紀錄，全圖 10 組——分開分類會任意保留較差錨點、甚至一棟輸出
+--   storage+food 雙圖標，codex review 實錘）：合併後一棟物理建築恰做一次
+--   gate/priority/anchor。
+--   本波同時補 school 三鍵 secondaryclassroom/secondaryhall/schoollab（review
+--   抓出：中學根本沒有 classroom 房，v1 靠 schoolstorage 拐杖誤中副車，門檻
+--   拆掉拐杖後 3 棟高中曾落到保健室的 medical——補鍵後翻回，含 1 棟 v1 時代
+--   就誤判 medical 的 (8321,11595)；secondaryhall/schoollab 現圖冪等）。
+--   全圖 23 棟歸屬變更（14 棟退場：7 公寓倉儲、5 場館戶外、監獄外圍場地棟、
+--   1 辦公樓；9 棟改判到真實身分：商場→藥局、保齡球館/俱樂部→餐飲、儲物樓
+--   →圖書、高中→學校等），真設施零誤殺（真學校有 classroom/secondaryclassroom
+--   觸發、真監獄佔比 ≥17%、U-Store It ≥11%、真槍店/藥局等店面型不設門檻）。
+--   位移（對 0.12.0 發布基準）：pharmacy 27→28、books 22→24、school 36→32、
+--   grocery 95→96、prison 8→6、storage 71→62、outdoor 49→41、food 325→328、
+--   medical/retail 等其餘不變。合計 1720→1704 筆（10 筆同外框紀錄合併）。
+--
 -- ⚠ CATEGORIES 各 entry 內不要插註解行——scripts/gen_poi_data.py 以 regex 解析
 --   nameKey/rooms 相鄰結構，entry 內註解會使該類別解析失敗而整類消失。
 
@@ -172,7 +195,7 @@ MinidoracatMiniMapPOICategories.CATEGORIES = {
     },
     school = {
         nameKey = "UI_MinidoracatMiniMap_Cat_School",
-        rooms = { "classroom", "elementaryschool", "elementaryhall", "schoolstorage", "schoolgymstorage", "universitystorage", "universityclassroom" },
+        rooms = { "classroom", "elementaryschool", "elementaryhall", "secondaryclassroom", "secondaryhall", "schoollab", "schoolstorage", "schoolgymstorage", "universitystorage", "universityclassroom" },
         color = { r = 0.92, g = 0.76, b = 0.18 },
     },
     grocery = {

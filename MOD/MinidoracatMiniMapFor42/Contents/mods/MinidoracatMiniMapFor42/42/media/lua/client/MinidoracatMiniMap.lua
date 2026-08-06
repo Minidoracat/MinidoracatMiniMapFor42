@@ -2601,7 +2601,7 @@ local function drawZoneIcons(inner)
     local s = getSliderValue("PoiIconSize", 18, 8, 48)
     local ia = getSliderValue("PoiIconAlpha", 100, 10, 100) / 100
     local half = s / 2
-    -- 視野預裁（POI 636→1720 筆後，逐 rect 先投影再裁會付 ~3.4k 次/幀的
+    -- 視野預裁（POI 擴至 ~1700 筆後，逐 rect 先投影再裁會付 ~3.4k 次/幀的
     -- Kahlua→Java worldToUI 呼叫）：先取一次可視世界外接框，rect 與框不相交者
     -- 直接跳過。框是視窗四邊形的超集，被裁者其 rect 中心必在窗外，而下方螢幕
     -- 裁切要求中心深入視窗 half+1px 才畫——預裁純省投影、不改變畫面；此論證
