@@ -1,5 +1,34 @@
 # Changelog
 
+## [42.20.0-0.12.0] - 2026-08-06
+
+### 新功能
+
+- **資源點（POI）14 類→20 類、636→1720 筆**：新增電器行(52)／教堂(31)／
+  農場(378)／工業(163)／零售(126)／餐飲(325) 六類，各配可辨識色＋單色/全彩
+  圖標；既有類別補鍵——medical +8 鍵（+9 棟淨新增、2 棟含牙醫的複合樓自
+  超市歸屬修正）、軍警 +19 鍵（現圖冪等防未來缺口）、戶外補 fishingstorage
+  （+10 棟）；storage −10 主身分修正（咖啡店／工廠／郵局街區原掛倉儲圖標）。
+  全部依 poi_raw.json 9254 棟逐鍵實算：否決會誤傷的 baggagesearch（Louisville
+  商場變軍事）／killbox（豬屠宰場變監獄）／shed（99 棟中 83 棟是後院工具棚），
+  armory 改歸警察（警局軍械室非軍事基地）。
+
+### 效能
+
+- **POI 圖標渲染視野預裁**：1720 筆逐幀投影前先以世界座標 AABB 早退——
+  小地圖典型視野省 >99% 的 Kahlua→Java 投影呼叫、全圖拉遠最差僅 +0.2%；
+  畫面逐位元不變（外接框超集形式證明＋差分/隨機/mutation 測試 0 誤殺）。
+- POI 快取重建時逐類預取類別勾選（~5k 次 ModOptions 查找→20 次）。
+
+> 技術要點：CATEGORY_PRIORITY 尾端順序逐棟實測定案（church<food 保自助餐教堂、
+> electronics<retail 保百貨、industry<retail 工廠直售店 6:1、retail<food 餐飲
+> 寄生 41 棟、storage 墊底）；四語翻譯新增 8 鍵並修 tooltip stale「15 類」；
+> 三語 Steam 描述同步（6555/6965/7777 bytes 皆 <8000）。守衛測試 8→14
+> （ORDER parity／圖標存在性／烘焙 byte-compare／優先級尾端鎖定／rooms 兩兩
+> 互斥／鍵數快照）＋ test_zone_render.lua A5 視野預裁區塊（900 例隨機不變式）。
+> 逐鍵查核與取捨依據見 MinidoracatMiniMapPOICategories.lua 檔頭；
+> 雙邊（Claude＋codex）review-plus 三輪、發現全數落地。
+
 ## [42.20.0-0.11.0] - 2026-08-04
 
 ### 新功能
