@@ -6,6 +6,7 @@ Pure stdlib, no pytest dependency required -- but plain `assert` in
     python scripts/tests/test_gen_poi.py
     pytest scripts/tests/test_gen_poi.py
 """
+import re
 import sys
 from pathlib import Path
 
@@ -87,11 +88,102 @@ def test_build_entries_police_beats_prison():
     assert cats == {(1, "police"), (9, "prison")}
 
 
+def test_order_matches_categories():
+    """The production generator never reads ORDER, so this test is its only
+    guard: a category missing from ORDER still renders (Cat_ defaults true)
+    but gets no checkbox anywhere -- players can never turn it off, zero
+    errors. Lock set(ORDER) == set(CATEGORIES keys)."""
+    text = g.DEFAULT_CATEGORIES_LUA.read_text(encoding="utf-8")
+    m = re.search(r"\.ORDER\s*=\s*\{([^}]*)\}", text)
+    assert m, "ORDER block not found in Categories lua"
+    order = re.findall(r'"([^"]+)"', m.group(1))
+    keys = {key for key, _ in g.parse_categories(g.DEFAULT_CATEGORIES_LUA)}
+    assert len(order) == len(set(order)), "duplicate keys in ORDER"
+    assert set(order) == keys, (
+        f"ORDER/CATEGORIES mismatch: only-in-ORDER={sorted(set(order) - keys)}, "
+        f"only-in-CATEGORIES={sorted(keys - set(order))}"
+    )
+
+
+def test_every_category_has_mono_icon():
+    """A category without media/ui/poi_icons/poi_<key>.png is silently
+    invisible under default settings (icon mode on, block mode off) -- no log,
+    no test failure anywhere else. Color icons are optional (logged fallback)."""
+    icons_dir = g.SHARED_LUA_DIR.parent.parent / "ui" / "poi_icons"
+    missing = [key for key, _ in g.parse_categories(g.DEFAULT_CATEGORIES_LUA)
+               if not (icons_dir / f"poi_{key}.png").exists()]
+    assert not missing, f"missing mono icons (category invisible by default): {missing}"
+
+
 def test_priority_covers_all_categories():
     """Every parsed category key must appear in CATEGORY_PRIORITY."""
     categories = g.parse_categories(g.DEFAULT_CATEGORIES_LUA)
     missing = {key for key, _ in categories} - set(g.CATEGORY_PRIORITY)
     assert not missing, f"CATEGORY_PRIORITY missing: {missing}"
+
+
+def test_new_categories_priority_tail_locked():
+    """The 2026-08-06 categories sit between books and storage in a measured
+    order (church<food keeps 2 cafeteria churches; electronics<retail keeps 9
+    department stores; retail<food because dining parasites retail buildings;
+    storage last is the identity-correction design). Reordering changes
+    building ownership silently -- see gen_poi_data.py priority comment."""
+    assert g.CATEGORY_PRIORITY[-7:] == [
+        "electronics", "church", "farm", "industry", "retail", "food", "storage"
+    ]
+
+
+def test_baked_output_matches_fresh_bake_if_raw_present():
+    """Committed MinidoracatMiniMapPOIData.lua must be byte-identical to a
+    fresh bake -- catches 'edited Categories.lua but forgot to re-run
+    gen_poi_data.py' and hand-edited output. Skipped when poi_raw.json is
+    absent (optional file, see test_default_raw_schema_if_present)."""
+    if not g.DEFAULT_RAW.exists():
+        print(f"SKIP: {g.DEFAULT_RAW} not present in this checkout")
+        return
+    import json
+
+    raw = json.loads(g.DEFAULT_RAW.read_text(encoding="utf-8"))
+    categories = g.parse_categories(g.DEFAULT_CATEGORIES_LUA)
+    entries, _, _ = g.build_entries(raw, categories)
+    expected = g.render_lua(entries, len(raw), "python scripts/gen_poi_data.py")
+    actual = g.DEFAULT_OUT.read_text(encoding="utf-8")
+    assert actual == expected, (
+        "MinidoracatMiniMapPOIData.lua is stale -- re-run scripts/gen_poi_data.py"
+    )
+
+
+def test_room_sets_pairwise_disjoint():
+    """A room name listed in two categories is a semantic conflict: priority
+    silently picks one and the other category's claim becomes dead data."""
+    categories = g.parse_categories(g.DEFAULT_CATEGORIES_LUA)
+    seen = {}
+    dupes = []
+    for key, rooms in categories:
+        for room in rooms:
+            if room in seen:
+                dupes.append((room, seen[room], key))
+            seen[room] = key
+    assert not dupes, f"rooms listed in multiple categories: {dupes}"
+
+
+def test_room_count_snapshot():
+    """Pin per-category room-key counts. Multi-line rooms arrays make silent
+    edit slips (a key dropped on rewrap, a key pasted into the wrong category)
+    invisible to every other test -- a count change must be deliberate and
+    updated here alongside the Categories lua header."""
+    expected = {
+        "military": 6, "police": 17, "gunstore": 3, "medical": 16,
+        "pharmacy": 2, "fire": 2, "books": 3, "school": 7,
+        "grocery": 4, "gas": 4, "tools": 5, "outdoor": 8,
+        "prison": 9, "storage": 2, "electronics": 3, "church": 3,
+        "farm": 15, "industry": 52, "retail": 67, "food": 103,
+    }
+    actual = {key: len(rooms) for key, rooms in g.parse_categories(g.DEFAULT_CATEGORIES_LUA)}
+    assert actual == expected, (
+        f"room-key counts drifted: "
+        f"{ {k: (expected.get(k), actual.get(k)) for k in expected.keys() | actual.keys() if expected.get(k) != actual.get(k)} }"
+    )
 
 
 def test_build_entries_skips_buildings_without_rooms():

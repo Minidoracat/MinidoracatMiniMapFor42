@@ -169,7 +169,7 @@
     "UI_MinidoracatMiniMap_ZoneLayer": "カスタムゾーンレイヤーを表示",
     "UI_MinidoracatMiniMap_ZoneLayer_tooltip": "カスタムゾーンレイヤーアドオン（サーバー区域など）が提供するゾーンを、ミニマップとワールドマップに半透明の塗り・枠線・名称で表示します。カスタム／サーバー区域のみに影響し、資源ポイントには影響しません。オフにするとこれらのカスタムゾーンを描画しません。",
     "UI_MinidoracatMiniMap_PoiIcons": "資源ポイントを表示",
-    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "バニラマップの資源ポイント（軍事・警察・銃砲店など全 15 種）をミニマップとワールドマップにアイコンで表示します。既定はオン。下の「資源カテゴリー」で各カテゴリーを個別に切り替えられます。",
+    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "バニラマップの資源ポイント（軍事・警察・銃砲店など全 20 種）をミニマップとワールドマップにアイコンで表示します。既定はオン。下の「資源カテゴリー」で各カテゴリーを個別に切り替えられます。",
     "UI_MinidoracatMiniMap_PoiBlocks": "資源ブロックを表示",
     "UI_MinidoracatMiniMap_PoiBlocks_tooltip": "資源ポイントの範囲を半透明のブロックと名称で追加表示します（既定はオフ）。アイコンとは独立しており、同時にオンにできます。",
     "UI_MinidoracatMiniMap_PoiColorIcons": "フルカラー資源ポイントアイコン",
@@ -188,5 +188,11 @@
     "UI_MinidoracatMiniMap_Cat_Tools": "工具／整備",
     "UI_MinidoracatMiniMap_Cat_Outdoor": "アウトドア／狩猟",
     "UI_MinidoracatMiniMap_Cat_Prison": "刑務所",
-    "UI_MinidoracatMiniMap_Cat_Storage": "倉庫"
+    "UI_MinidoracatMiniMap_Cat_Storage": "倉庫",
+    "UI_MinidoracatMiniMap_Cat_Electronics": "電器店",
+    "UI_MinidoracatMiniMap_Cat_Church": "教会",
+    "UI_MinidoracatMiniMap_Cat_Farm": "農場",
+    "UI_MinidoracatMiniMap_Cat_Industry": "工業",
+    "UI_MinidoracatMiniMap_Cat_Retail": "小売店",
+    "UI_MinidoracatMiniMap_Cat_Food": "飲食店"
 }

@@ -169,7 +169,7 @@
     "UI_MinidoracatMiniMap_ZoneLayer": "显示自定义区域图层",
     "UI_MinidoracatMiniMap_ZoneLayer_tooltip": "在小地图与世界地图上以半透明色块、框线与名称标出自定义区域图层 addon 提供的区域（如服务器区域）。只影响自定义／服务器区域，不影响资源点；关闭后这些自定义区域都不绘制。",
     "UI_MinidoracatMiniMap_PoiIcons": "显示资源点",
-    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "在小地图与世界地图上以图标标出原版地图资源点（军事、警察、枪店等 15 类）。默认开启；可用下方“资源点类别”单独开关各类别。",
+    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "在小地图与世界地图上以图标标出原版地图资源点（军事、警察、枪店等 20 类）。默认开启；可用下方“资源点类别”单独开关各类别。",
     "UI_MinidoracatMiniMap_PoiBlocks": "显示资源点区块",
     "UI_MinidoracatMiniMap_PoiBlocks_tooltip": "额外以半透明色块与名称标出资源点范围（默认关闭）。与图标互相独立，可同时开启。",
     "UI_MinidoracatMiniMap_PoiColorIcons": "彩色资源点图标",
@@ -188,5 +188,11 @@
     "UI_MinidoracatMiniMap_Cat_Tools": "五金／修车",
     "UI_MinidoracatMiniMap_Cat_Outdoor": "户外／打猎",
     "UI_MinidoracatMiniMap_Cat_Prison": "监狱",
-    "UI_MinidoracatMiniMap_Cat_Storage": "仓储"
+    "UI_MinidoracatMiniMap_Cat_Storage": "仓储",
+    "UI_MinidoracatMiniMap_Cat_Electronics": "电器店",
+    "UI_MinidoracatMiniMap_Cat_Church": "教堂",
+    "UI_MinidoracatMiniMap_Cat_Farm": "农场",
+    "UI_MinidoracatMiniMap_Cat_Industry": "工业",
+    "UI_MinidoracatMiniMap_Cat_Retail": "零售",
+    "UI_MinidoracatMiniMap_Cat_Food": "餐饮"
 }

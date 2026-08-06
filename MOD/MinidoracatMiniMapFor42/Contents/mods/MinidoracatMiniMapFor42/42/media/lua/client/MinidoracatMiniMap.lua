@@ -849,7 +849,7 @@ if PZAPI and PZAPI.ModOptions then
         "UI_MinidoracatMiniMap_WM_tooltip")
     modOptions:addTickBox("WMVehicleDots", "UI_MinidoracatMiniMap_WMVehicleDots", false,
         "UI_MinidoracatMiniMap_WM_tooltip")
-    -- 內建 POI（原版地圖資源點，15 類）：圖標為主（預設開）、區塊選配（預設關）。
+    -- 內建 POI（原版地圖資源點，20 類）：圖標為主（預設開）、區塊選配（預設關）。
     -- 繪製與 provider 都在 MinidoracatMiniMapPOI.lua（讀本命名空間的 PoiIcons/PoiBlocks/Cat_*）。
     modOptions:addTickBox("PoiIcons", "UI_MinidoracatMiniMap_PoiIcons", true,
         "UI_MinidoracatMiniMap_PoiIcons_tooltip")
@@ -862,7 +862,7 @@ if PZAPI and PZAPI.ModOptions then
     -- （POI 為主；Zones addon 帶圖標的區域一併受控）
     modOptions:addSlider("PoiIconSize", "UI_MinidoracatMiniMap_PoiIconSize", 8, 48, 1, 18)
     modOptions:addSlider("PoiIconAlpha", "UI_MinidoracatMiniMap_PoiIconAlphaOpt", 10, 100, 5, 100)
-    -- 15 類別勾選（預設全開）：ORDER 定順序，逐鍵到 CATEGORIES 取 nameKey，缺鍵略過。
+    -- 20 類別勾選（預設全開）：ORDER 定順序，逐鍵到 CATEGORIES 取 nameKey，缺鍵略過。
     local poiCats = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.CATEGORIES
     local poiOrder = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.ORDER
     if type(poiCats) == "table" and type(poiOrder) == "table" then

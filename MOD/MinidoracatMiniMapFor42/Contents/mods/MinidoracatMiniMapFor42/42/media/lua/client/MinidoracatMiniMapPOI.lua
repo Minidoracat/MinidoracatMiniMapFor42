@@ -1,5 +1,5 @@
 -- MinidoracatMiniMapPOI.lua
--- 主 MOD 內建 POI 的 client 層：把 MinidoracatMiniMapPOIData（636 筆 14 類）轉成
+-- 主 MOD 內建 POI 的 client 層：把 MinidoracatMiniMapPOIData（1720 筆 20 類）轉成
 -- 主 MOD zone renderer 的 schema，並以「內部 provider」註冊
 -- （registerZoneProvider("MinidoracatMiniMapFor42.POI", fn, nil, internal=true)——POI 有自己的
 -- PoiIcons/PoiBlocks/類別勾選，不走 per-provider 母開關，且 internal 使其不受 ZoneLayer 總閘連坐）。
@@ -11,7 +11,7 @@
 --   PoiIcons（預設開）→ zone 帶 icon = { tex, r, g, b }（圖標即識別，主檔 iconPass 繪）
 --   PoiBlocks（預設關）→ zone 帶 fillAlpha/borderAlpha（類別色）＋ name（getText(nameKey)）
 --   兩者皆關 or 該類別未勾 → 該 zone 不納入
--- 圖標模式不帶 name：636 個標籤會爆地圖。fillAlpha/borderAlpha 於非區塊模式為 0，
+-- 圖標模式不帶 name：1720 個標籤會爆地圖。fillAlpha/borderAlpha 於非區塊模式為 0，
 -- 主檔 fill/line pass 對 alpha==0 早退。
 --
 -- 快取契約（沿主檔 zone provider C2）：providerFn 只回快取參照、絕不重建；快取僅在
@@ -98,6 +98,9 @@ local function buildPoiConverted()
         local blocksOn = getBoolOption("PoiBlocks", false)
         local colorMode = getBoolOption("PoiColorIcons", false)
         if iconsOn or blocksOn then
+            -- 逐類別預取 Cat_ 勾選：1720 筆逐筆查 ModOptions 是 ~5k 次三層查找，類別僅 20 個
+            local catOn = {}
+            for key in pairs(cats) do catOn[key] = getBoolOption("Cat_" .. key, true) end
             for i = 1, #data do
                 local e = data[i]
                 if type(e) == "table" then
@@ -107,7 +110,7 @@ local function buildPoiConverted()
                     if def and type(x) == "number" and type(y) == "number"
                         and type(w) == "number" and type(h) == "number"
                         and w > 0 and h > 0
-                        and getBoolOption("Cat_" .. cat, true) then
+                        and catOn[cat] then
                         local color = def.color or { r = 0.7, g = 0.7, b = 0.7 }
                         -- 彩色模式染白（全彩不變色）；單色/回退模式染類別色。icon 契約不變。
                         local tex, isColor
@@ -137,8 +140,8 @@ local function buildPoiConverted()
     poiZones = built -- 原子替換（provider 回此新參照）
 end
 
--- 開關/類別勾選簽章：PoiIcons、PoiBlocks、PoiColorIcons 與 14 類 Cat_ 的當前值串接
--- （3＋ORDER 類別數，現 14 類共 17 值）。變動即重建（樣式切換走此路，下一 tick 重載對應材質集）。
+-- 開關/類別勾選簽章：PoiIcons、PoiBlocks、PoiColorIcons 與 20 類 Cat_ 的當前值串接
+-- （3＋ORDER 類別數，現 20 類共 23 值）。變動即重建（樣式切換走此路，下一 tick 重載對應材質集）。
 local function currentSig()
     local parts = { getBoolOption("PoiIcons", true) and "1" or "0",
         getBoolOption("PoiBlocks", false) and "1" or "0",

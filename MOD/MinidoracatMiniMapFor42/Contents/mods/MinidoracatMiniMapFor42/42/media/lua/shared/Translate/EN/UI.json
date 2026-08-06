@@ -169,7 +169,7 @@
     "UI_MinidoracatMiniMap_ZoneLayer": "Show custom zone layer",
     "UI_MinidoracatMiniMap_ZoneLayer_tooltip": "Highlight custom zones supplied by a zone-layer add-on (such as server regions) with a translucent fill, border and name on both the minimap and the world map. Affects only custom/server zones, not resource points; turn off to hide these custom zones.",
     "UI_MinidoracatMiniMap_PoiIcons": "Show resource points",
-    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "Mark vanilla map resource points (military, police, gun store and 15 categories in total) with icons on both the minimap and world map. On by default; toggle individual categories under \"Resource categories\" below.",
+    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "Mark vanilla map resource points (military, police, gun store and 20 categories in total) with icons on both the minimap and world map. On by default; toggle individual categories under \"Resource categories\" below.",
     "UI_MinidoracatMiniMap_PoiBlocks": "Show resource blocks",
     "UI_MinidoracatMiniMap_PoiBlocks_tooltip": "Additionally outline resource point areas with a translucent block and name (off by default). Independent from icons; both can be on at once.",
     "UI_MinidoracatMiniMap_PoiColorIcons": "Full-color POI icons",
@@ -188,5 +188,11 @@
     "UI_MinidoracatMiniMap_Cat_Tools": "Tools / Mechanic",
     "UI_MinidoracatMiniMap_Cat_Outdoor": "Outdoor / Hunting",
     "UI_MinidoracatMiniMap_Cat_Prison": "Prison",
-    "UI_MinidoracatMiniMap_Cat_Storage": "Storage"
+    "UI_MinidoracatMiniMap_Cat_Storage": "Storage",
+    "UI_MinidoracatMiniMap_Cat_Electronics": "Electronics",
+    "UI_MinidoracatMiniMap_Cat_Church": "Church",
+    "UI_MinidoracatMiniMap_Cat_Farm": "Farm",
+    "UI_MinidoracatMiniMap_Cat_Industry": "Industry / Worksite",
+    "UI_MinidoracatMiniMap_Cat_Retail": "Retail",
+    "UI_MinidoracatMiniMap_Cat_Food": "Food / Dining"
 }

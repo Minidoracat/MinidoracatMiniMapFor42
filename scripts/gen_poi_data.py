@@ -38,11 +38,12 @@ CATEGORY_BLOCK_RE = re.compile(
 )
 ROOM_LITERAL_RE = re.compile(r'"([^"]+)"')
 
-# MinidoracatMiniMapPOICategories.lua 定義 14 類（原 15，ranger 因全圖 0 筆資料於
-# 0.8.0 移除）。CATEGORY_BLOCK_RE 對 entry 內註解很脆弱（曾在 military/medical 整類
-# 靜默消失），數量對不上時硬性失敗好過生出漏類別的資料。未來合法新增/移除類別時，
-# 改這個常數即可。
-EXPECTED_CATEGORY_COUNT = 14
+# MinidoracatMiniMapPOICategories.lua 定義 20 類（原 15，ranger 因全圖 0 筆資料於
+# 0.8.0 移除；2026-08-06 新增 electronics/church 與 farm/industry/retail/food，見
+# .omc/research/2026-08-05-poi-category-gap-from-reset-tool.md）。CATEGORY_BLOCK_RE
+# 對 entry 內註解很脆弱（曾在 military/medical 整類靜默消失），數量對不上時硬性失敗
+# 好過生出漏類別的資料。未來合法新增/移除類別時，改這個常數即可。
+EXPECTED_CATEGORY_COUNT = 20
 
 
 def parse_categories(categories_lua_path):
@@ -75,9 +76,22 @@ def parse_categories(categories_lua_path):
 # prison 前（拘留室在警局內；真監獄無 police 房間，仍歸 prison）。
 # 已知取捨：優先級只去重「同棟內的多類房間」，不跨棟去重——同園區的母樓與
 # 獨立附屬棟（如監獄園區、校園）各自成 entry，bbox 巢狀/鄰近時圖標會近距重疊。
+# 尾端七項的順序是實測約束（poi_raw.json 逐棟 counterfactual：把該類降到對手之後，
+# 數 dominant 歸屬改變的棟數；2026-08-06 量測，2026-08-06 依 review 校正口徑）：
+#   electronics/church 在六新類最前——不從原 14 類接手建物（與 storage 的交疊
+#     實測 2/0 棟且皆被 military/medical 更早接走，零位移）；
+#   church 在 food 前（降級後 1 棟含 cafeteriakitchen 的教堂會錯標為 food）；
+#   electronics 在 retail 前（交集 9 棟，其中 5 棟靠此順序維持 electronics、
+#     餘 4 棟本就由更早類別接走；沿既有出貨行為）；
+#   industry 在 retail 前（7 棟工廠附設直售店爭議 6:1 定案）；
+#   retail 在 food 前（降級後 41 棟因餐飲寄生錯標為 food——超市熟食櫃、
+#     書店咖啡廳同理；兩類 room 交集共 86 棟）；
+#   storage 墊到最後——warehouse/storageunit 建物含 farm/food/industry/retail
+#     房間時屬主身分修正（研究文件情境 A/D 的既定設計，實測 10 棟）。
 CATEGORY_PRIORITY = [
     "military", "police", "prison", "fire", "school", "pharmacy", "medical",
-    "gunstore", "grocery", "gas", "outdoor", "tools", "books", "storage",
+    "gunstore", "grocery", "gas", "outdoor", "tools", "books",
+    "electronics", "church", "farm", "industry", "retail", "food", "storage",
 ]
 _PRIORITY_INDEX = {key: i for i, key in enumerate(CATEGORY_PRIORITY)}
 

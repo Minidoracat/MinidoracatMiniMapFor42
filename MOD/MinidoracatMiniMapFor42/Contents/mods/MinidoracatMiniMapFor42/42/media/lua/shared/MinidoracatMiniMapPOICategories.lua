@@ -1,9 +1,9 @@
 -- MinidoracatMiniMapPOICategories.lua
--- room name → 14 類 POI 分類 + 每類調色盤，純資料表（主 MOD 內建 POI）。
+-- room name → 20 類 POI 分類 + 每類調色盤，純資料表（主 MOD 內建 POI）。
 -- 分類邏輯留在本檔（Rust 渲染端只出 raw geometry）；重新分類＝改本檔，改完重跑
 -- scripts/gen_poi_data.py 重新烘焙 MinidoracatMiniMapPOIData.lua。
 --
--- color = { r, g, b }（0-1）：14 色可辨識調色盤，同時用於圖標上色與區塊填色/框線。
+-- color = { r, g, b }（0-1）：20 色可辨識調色盤，同時用於圖標上色與區塊填色/框線。
 -- ORDER：ModOptions 類別勾選與統一視窗類別格的穩定顯示順序（CATEGORIES 是 hash）。
 --
 -- 資料來源：D:/SteamLibrary/steamapps/common/ProjectZomboid/media/lua/server/Items/
@@ -66,6 +66,69 @@
 --   注意：新 key 落在較高優先級類別時會從既有類別「接手」建物（本波 medical
 --     53→48、grocery 101→97、storage 82→81），屬主身分修正而非資料遺失；
 --     總數 606→636 淨增 30 筆。
+-- POI 分類缺口補洞＋electronics/church 新類別（2026-08-06，依據 .omc/research/
+-- 2026-08-05-poi-category-gap-from-reset-tool.md，數字皆 poi_raw.json 9254 棟實算）：
+--   medical 補 8 鍵：morgue/dentist/dentiststorage/optometrist/optometriststorage/
+--     vet/coroneroffice/hospitalhallway——淨新增 9 棟，另 2 棟含 dentist 的複合商業樓
+--     從 grocery 接手（歸屬修正）。medical 48→59、grocery 97→95。
+--   police 補 12 鍵：evidenceroom/interrogationroom/policehall/policelibrary/
+--     policegarage/detectiveoffice/captainoffice/policeoutfitstorage/policeswat/
+--     decontamination/armory/swatlocker。armory 依研究文件原建議放 military，實測
+--     唯一淨效果是 (6078,5233) 警局被 military 搶走——警局的軍械室不是軍事基地，
+--     故改歸 police（軍事基地的 armory 因同棟必有 armystorage 等鍵仍歸 military，
+--     冪等——此歸屬依賴當前圖的共現性，非不變量）。swatlocker 依 SWAT 屬警政
+--     語意與 policeswat 同家族（唯一命中 (12944,1365) 本就落 police，零行為差異）。
+--   prison 補 5 鍵：prisonerbelongings/prisonlocker/prisonarmory/prisonlibrary/
+--     contraband。military 補 1 鍵：firearmtraining。軍警群組全數現圖冪等（防未來
+--     缺口）；medical 8 鍵中 optometriststorage/vet/coroneroffice/hospitalhallway
+--     亦冪等（vet 唯一命中 (12566,1980) 因同棟 pharmacystorage 被 pharmacy 優先接走）。
+--   ⚠ 依實測「否決」的研究文件建議鍵：baggagesearch（唯一淨效果＝Louisville 商場
+--     (15325,2842) 變軍事）、killbox（唯一淨效果＝兩棟豬屠宰場 (3720/3766,14646)
+--     變監獄——killbox 在本圖是屠宰間不是 SWAT 擊殺區）。gunstore ← hunting 亦不採
+--     （hunting 既有於 outdoor，跨類雙掛徒增歸屬爭議）。故軍警補鍵全數冪等、
+--     military 71/police 18/prison 8 維持不變，此為刻意結果非漏做。
+--   electronics 新類別：electronicsstore（.lotheader 雙 s 拼法，勿「修正」）＋
+--     electronicstore（Distributions.lua 頂層單 s 拼法，實掃 1 棟獨立命中
+--     (11856,6807) 影帶/電器複合行）＋electronicsstorage。52 棟（其中 3 棟店住
+--     混合含臥室 ≈5.8%、1 棟為含電器行的購物中心 (6182,5340)；研究文件的
+--     「+47/雜訊 0%」以本 repo poi_raw.json 重算不出來，以實測為準）。
+--   church 新類別：church/officechurch/lobbychurch（lobbychurch 實掃有 1 棟獨立
+--     附屬棟 (12571,3307)）。31 棟；另 6/37 含 church 房間的建物被較高優先級接走
+--     （含 2 棟殯儀館 (12600,3352)/(13138,1510) 因本波 morgue 鍵歸 medical），
+--     屬既定優先級語意。兩新類於 CATEGORY_PRIORITY 刻意墊底，不從既有 14 類
+--     接手建物。合計 636→728 筆（+9 medical +52 electronics +31 church）。
+--
+-- 第三梯次：farm/industry/retail/food 四新類（2026-08-06，同一研究文件的判斷題章節；
+-- 鍵清單依 poi_raw.json 逐鍵實算＋Distributions.lua/SuburbsDistributions.lua loot
+-- 佐證推導，重置工具 room_names.py 家族分節為語意底稿。家族層級記錄如下，
+-- 逐鍵數字見當日量測（總命中/淨新增/住宅雜訊三欄全數過目））：
+--   farm 15 鍵（研究文件 _FARM_MISC 16 鍵剔 shed）：378 棟、住宅雜訊 3/378=0.8%。
+--     shed 剔除依 2026-08-06 review 實測：單鍵 99 棟中 83 棟是單房間後院工具棚
+--     （bbox 中位 12 格、無 barn/farmstorage 共現）——主效果是誤標，同 killbox/
+--     baggagesearch 判準；且「臥室共現」指標對單房建物盲視（收 shed 時帳面 2.5%
+--     實為系統性低估）。woodshed(4 棟) 保留。含 8 個無 loot 表的專屬身分鍵
+--     （stable/pigsty 等，沿 bunker「位置存在」前例）。
+--   industry 52 鍵（工廠/工坊/工地家族）：163 棟、住宅雜訊 3.1%。刻意剔除
+--     workshop（11 淨新增中 8 棟是住家工作間）、machinery/carupholsteryworkshop
+--     （無 loot 且零效果）、carpenter（raw 實際拼法是大寫 Carpenter，唯一命中棟
+--     已由 tools 接手，死鍵）。construction 是最大鍵（77 淨新增，工地建材有導航
+--     價值，佔本類 48%，故 EN 標籤用 Industry / Worksite）。
+--   retail 67 鍵（服飾/家具/禮品/郵局/當舖等零售家族）：126 棟、住宅雜訊 31%
+--     （主街店住混合為常態，clothesstore 單鍵 16/29 含臥室，沿研究文件判斷收錄）。
+--     fishingstorage 改歸 outdoor（釣具屬戶外家族，+10 棟）；gardeningstorage
+--     不收（研究文件無 loot 黑名單，7 棟純幾何）；fishing 不收（4 棟中 2 棟住宅）。
+--   food 103 鍵（餐廳/廚房/酒吧/食品工廠家族）：325 棟、住宅雜訊 12%。刻意剔除
+--     emptykitchen/pantry/coldroom（住宅噪音）與 coldstorage/bottlestorage/
+--     cannedstorage/foodcourt/groceryfreezer（無 loot 泛用倉儲或零效果）。
+--   優先級尾端 [electronics, church, farm, industry, retail, food, storage] 是
+--     實測約束，理由與逐項數字見 gen_poi_data.py CATEGORY_PRIORITY 註解；
+--     industry<retail 由 7 棟爭議建築 6:1 定案（工廠附設直售店為主流，唯一反例
+--     (13412,1279) 裝修中商店街因 construction 歸 industry，屬已知取捨）。
+--   storage 81→71（−10 主身分修正：咖啡店/工廠/郵局街區原掛倉儲圖標）、
+--     outdoor 39→49（+10 fishingstorage）、其餘 14 類含 electronics/church 不動。
+--   合計 728→1720 筆（+378 farm +163 industry +126 retail +325 food ±10 位移，
+--     3 筆 bbox 全等 dup 壓掉）。
+--
 -- ⚠ CATEGORIES 各 entry 內不要插註解行——scripts/gen_poi_data.py 以 regex 解析
 --   nameKey/rooms 相鄰結構，entry 內註解會使該類別解析失敗而整類消失。
 
@@ -74,12 +137,12 @@ MinidoracatMiniMapPOICategories = MinidoracatMiniMapPOICategories or {}
 MinidoracatMiniMapPOICategories.CATEGORIES = {
     military = {
         nameKey = "UI_MinidoracatMiniMap_Cat_Military",
-        rooms = { "armystorage", "armysurplus", "armytent", "oldarmy", "bunker" },
+        rooms = { "armystorage", "armysurplus", "armytent", "oldarmy", "bunker", "firearmtraining" },
         color = { r = 0.42, g = 0.45, b = 0.20 },
     },
     police = {
         nameKey = "UI_MinidoracatMiniMap_Cat_Police",
-        rooms = { "policeoffice", "policestorage", "policegunstorage", "policelocker", "policearchive" },
+        rooms = { "policeoffice", "policestorage", "policegunstorage", "policelocker", "policearchive", "evidenceroom", "interrogationroom", "policehall", "policelibrary", "policegarage", "detectiveoffice", "captainoffice", "policeoutfitstorage", "policeswat", "decontamination", "armory", "swatlocker" },
         color = { r = 0.20, g = 0.42, b = 0.85 },
     },
     gunstore = {
@@ -89,7 +152,7 @@ MinidoracatMiniMapPOICategories.CATEGORIES = {
     },
     medical = {
         nameKey = "UI_MinidoracatMiniMap_Cat_Medical",
-        rooms = { "hospitalroom", "medical", "medicaloffice", "clinic", "medclinic", "oldmedical", "medicalstorage", "hospitalstorage" },
+        rooms = { "hospitalroom", "medical", "medicaloffice", "clinic", "medclinic", "oldmedical", "medicalstorage", "hospitalstorage", "morgue", "dentist", "dentiststorage", "optometrist", "optometriststorage", "vet", "coroneroffice", "hospitalhallway" },
         color = { r = 0.90, g = 0.22, b = 0.28 },
     },
     pharmacy = {
@@ -129,18 +192,94 @@ MinidoracatMiniMapPOICategories.CATEGORIES = {
     },
     outdoor = {
         nameKey = "UI_MinidoracatMiniMap_Cat_Outdoor",
-        rooms = { "outdoorsupply", "camping", "hunting", "sportstore", "sportstorage", "campingstorage", "gymstorage" },
+        rooms = { "outdoorsupply", "camping", "hunting", "sportstore", "sportstorage", "campingstorage", "gymstorage", "fishingstorage" },
         color = { r = 0.16, g = 0.46, b = 0.24 },
     },
     prison = {
         nameKey = "UI_MinidoracatMiniMap_Cat_Prison",
-        rooms = { "prisoncells", "cells", "prisonstorage", "prisonlaundry" },
+        rooms = { "prisoncells", "cells", "prisonstorage", "prisonlaundry", "prisonerbelongings", "prisonlocker", "prisonarmory", "prisonlibrary", "contraband" },
         color = { r = 0.50, g = 0.52, b = 0.58 },
     },
     storage = {
         nameKey = "UI_MinidoracatMiniMap_Cat_Storage",
         rooms = { "warehouse", "storageunit" },
         color = { r = 0.32, g = 0.48, b = 0.66 },
+    },
+    electronics = {
+        nameKey = "UI_MinidoracatMiniMap_Cat_Electronics",
+        rooms = { "electronicsstore", "electronicstore", "electronicsstorage" },
+        color = { r = 0.20, g = 0.85, b = 0.90 },
+    },
+    church = {
+        nameKey = "UI_MinidoracatMiniMap_Cat_Church",
+        rooms = { "church", "officechurch", "lobbychurch" },
+        color = { r = 0.90, g = 0.45, b = 0.65 },
+    },
+    farm = {
+        nameKey = "UI_MinidoracatMiniMap_Cat_Farm",
+        rooms = { "barn", "cattleauction", "chickencoop", "eggstorage", "farmstorage", "greenhouse",
+            "haystorage", "horsebox", "horsewashingstation", "kennels", "pigsty", "potatostorage",
+            "producestorage", "stable", "woodshed" },
+        color = { r = 0.93, g = 0.87, b = 0.60 },
+    },
+    industry = {
+        nameKey = "UI_MinidoracatMiniMap_Cat_Industry",
+        rooms = { "batfactory", "batteryfactory", "batterystorage", "blacksmith", "cabinetfactory",
+            "cabinetshipping", "cardfactory", "carpentryworkshop", "construction",
+            "derelict_steelfactory", "derelict_steelfactorystorage", "factory", "factorystorage",
+            "furnitureworkshop", "glassmakingworkshop", "golffactory", "golfshipping", "guitarfactory",
+            "guitarshipping", "handlefactory", "hingefactory", "hingeshipping", "hingestorage",
+            "industry", "knifefactory", "knifeshipping", "leatherworkshop", "loggingfactory",
+            "loggingwarehouse", "mannequinfactory", "mannequinpainting", "mapfactory", "metalclassroom",
+            "metalfabrication", "metalshipping", "metalshop", "paintershop", "plumber",
+            "potteryworkshop", "radiofactory", "radioshipping", "railroadrepair", "tablefactory",
+            "tableshipping", "tailoringworkshop", "tailorworkshop", "weldingbooth", "weldingstorage",
+            "weldingworkshop", "whittlerworkshop", "wirefactory", "woodcraftset" },
+        color = { r = 0.68, g = 0.56, b = 0.04 },
+    },
+    retail = {
+        nameKey = "UI_MinidoracatMiniMap_Cat_Retail",
+        rooms = { "aesthetic", "aestheticstorage", "antique", "artstore", "barbequestore",
+            "baseballgiftstorage", "baseballgiftstore", "baseballstorage", "baseballstore",
+            "camerastore", "cdstore", "clothesestorage", "clothesstorage", "clothesstore",
+            "clothesstorestorage", "clothingstorage", "clothingstore", "comicstorage", "comicstore",
+            "departmentstorage", "departmentstore", "florist", "furnitureshowroom", "furniturestorage",
+            "furniturestore", "furniturestorestorage", "gardenstore", "giftstorage", "giftstore",
+            "giftstorestorage", "glassesstore", "golfstore", "hairdresser", "housewarestorage",
+            "housewarestore", "jewelrystorage", "jewelrystore", "kitchenwares", "knifestore",
+            "leatherclothesstore", "lightingstorage", "lightingstore", "masonrystore", "movierental",
+            "musicstorage", "musicstore", "pawnshop", "pawnshopoffice", "pawnshopstorage", "petstore",
+            "post", "poststorage", "sewingstorage", "sewingstore", "shoestorage", "shoestore",
+            "tailorstorage", "tobaccostorage", "tobaccostore", "toystorage", "toystore",
+            "toystorestorage", "walletshop", "weddingstoredress", "weddingstoresuit",
+            "weddingstorestorage", "windowsstore" },
+        color = { r = 0.78, g = 0.16, b = 0.52 },
+    },
+    food = {
+        nameKey = "UI_MinidoracatMiniMap_Cat_Food",
+        rooms = { "arenakitchen", "bakery", "bakeryfactorykitchen", "bakeryfactoryshipping",
+            "bakeryfactorystorage", "bakerykitchen", "bandkitchen", "bar", "barcountertwiggy",
+            "barkitchen", "barstorage", "beergarden", "brewery", "brewerystorage", "burgerdining",
+            "burgerkitchen", "burgerstorage", "butcher", "butchery", "cafe", "cafekitchen",
+            "cafeteria", "cafeteriakitchen", "candystore", "catfish_dining", "catfish_kitchen",
+            "chili_dining", "chilikitchen", "chinesekitchen", "chineserestaurant", "cornerstore",
+            "cornerstorestorage", "deepfry_dining", "deepfry_kitchen", "diner", "dinerbackroom",
+            "dinercounter", "dinerkitchen", "dining_crepe", "distillerystorage", "distilleryworkshop",
+            "dogfoodfactory", "dogfoodshipping", "dogfoodstorage", "donut_dining", "donut_kitchen",
+            "fishchipskitchen", "fryshipping", "generalstore", "generalstorestorage", "gigamartkitchen",
+            "hotdogstand", "icecream", "icecreamkitchen", "icecreamstand", "italiankitchen",
+            "italianrestaurant", "jayschicken_dining", "jayschicken_kitchen", "jerkycoldroom",
+            "jerkyfactory", "jerkyshipping", "jerkysmoker", "juicestand", "kitchen_crepe",
+            "knoxbutcher", "liquorstore", "mexicandining", "mexicankitchen", "pizzakitchen",
+            "pizzawhirled", "pizzawhirledcounter", "porkshipping", "restaurant", "restaurantdining",
+            "restaurantdining_fancy", "restaurantkitchen", "restaurantkitchen_fancy",
+            "restaurantstorage", "seafooddining", "seafoodkitchen", "slaughterhousepork",
+            "sodabottling", "sodashipping", "sodastorage", "sodatruck", "spiffo_dining",
+            "spiffoskitchen", "spiffosstorage", "sushidining", "sushikitchen", "tacokitchen",
+            "theatrekitchen", "tofufactory", "tofushipping", "tofustorage", "westerndining",
+            "westernkitchen", "whiskeybottling", "whiskeyshipping", "whiskystorage", "zippeestorage",
+            "zippeestore" },
+        color = { r = 0.99, g = 0.60, b = 0.48 },
     },
 }
 
@@ -149,5 +288,6 @@ MinidoracatMiniMapPOICategories.CATEGORIES = {
 MinidoracatMiniMapPOICategories.ORDER = {
     "military", "police", "gunstore", "medical", "pharmacy",
     "fire", "books", "school", "grocery", "gas",
-    "tools", "outdoor", "prison", "storage",
+    "tools", "outdoor", "prison", "storage", "electronics",
+    "church", "farm", "industry", "retail", "food",
 }
