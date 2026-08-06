@@ -95,8 +95,9 @@ end
 --     fill={ r=, g=, b= }(0-1), fillAlpha=number(0＝不填),
 --     border={ r=, g=, b= }(0-1), borderAlpha=number(0＝不畫框),
 --     icon={ tex=<Texture>, r=, g=, b= }|nil(選配；每 rect 中心畫染色圖標),
---     iconOnce=true|nil(選配；true 時圖標/名稱只畫在 rects[1]——provider 應把
---       主要矩形排在首位。未設維持每 rect 一圖標，既有 addon 行為不變),
+--     iconOnce=true|nil(選配；true 時圖標只畫在 rects[1]——provider 應把主要
+--       矩形排在首位；名稱本就恆只錨定 rects[1]、與此旗標無關。未設維持
+--       每 rect 一圖標，既有 addon 行為不變),
 --     lodRect={ x1=, y1=, x2=, y2= }|nil(選配；有給＝區塊參與縮放 LOD——
 --       worldScale < ZONE_LOD_HIDE 時 fill/line 整區不畫（圖標不受影響）、
 --       < ZONE_LOD_DETAIL 時只畫此聯集框、名稱僅於細節檔顯示。
@@ -2465,6 +2466,21 @@ local ZONE_LOD_HIDE = 1.5
 local ZONE_LOD_DETAIL = 6
 local lodSingle = {} -- 中距離檔重用的單元素 rect 清單（避免每 zone 每幀配置）
 
+-- 仿射投影快取：worldToUI 已由反編譯證明是純仿射（見 visibleWorldAABB 的版本
+-- 假設——calcMatrices 為正交＋旋轉、無透視項），每 pass 只在視野中心採樣三點
+-- 導出係數，其後所有矩形角用純 Lua 乘加取代逐點 2 次 Kahlua→Java 呼叫——
+-- 區塊全開時視野內數百棟×8 次投影/棟是最大單一 CPU 成本。
+-- 錨點取視野中心而非世界原點：引擎座標是 float32，錨距視野太遠會災難性消去。
+local function deriveAffine(mapAPI, acx, acy)
+    local p0x = mapAPI:worldToUIX(acx, acy)
+    local p0y = mapAPI:worldToUIY(acx, acy)
+    return p0x, p0y,
+        mapAPI:worldToUIX(acx + 1, acy) - p0x,
+        mapAPI:worldToUIY(acx + 1, acy) - p0y,
+        mapAPI:worldToUIX(acx, acy + 1) - p0x,
+        mapAPI:worldToUIY(acx, acy + 1) - p0y
+end
+
 local function drawZoneFillBody(inner)
     local mapAPI = inner.mapAPI
     local w, h = inner.width, inner.height
@@ -2475,6 +2491,9 @@ local function drawZoneFillBody(inner)
     -- 退化行為：uiToWorld 未就緒回 0.0F 時外接框塌縮＝fill/line 也整幀全裁，
     -- 與圖標 pass 同退化（舊碼該情況同樣什麼都畫不出，見 icons pass 論證）
     local vMinX, vMaxX, vMinY, vMaxY = visibleWorldAABB(inner)
+    local acx = math.floor((vMinX + vMaxX) / 2)
+    local acy = math.floor((vMinY + vMaxY) / 2)
+    local p0x, p0y, sxx, sxy, syx, syy = deriveAffine(mapAPI, acx, acy)
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
         -- 閘門：外部 provider 受 ZoneLayer 總閘（internal 不受）＋ per-provider 母開關
@@ -2504,10 +2523,12 @@ local function drawZoneFillBody(inner)
                     for ri = 1, rn do
                         local rc = rects[ri]
                         if rc.x2 >= vMinX and rc.x1 <= vMaxX and rc.y2 >= vMinY and rc.y1 <= vMaxY then
-                            local ux1, uy1 = mapAPI:worldToUIX(rc.x1, rc.y1), mapAPI:worldToUIY(rc.x1, rc.y1)
-                            local ux2, uy2 = mapAPI:worldToUIX(rc.x2, rc.y1), mapAPI:worldToUIY(rc.x2, rc.y1)
-                            local ux3, uy3 = mapAPI:worldToUIX(rc.x2, rc.y2), mapAPI:worldToUIY(rc.x2, rc.y2)
-                            local ux4, uy4 = mapAPI:worldToUIX(rc.x1, rc.y2), mapAPI:worldToUIY(rc.x1, rc.y2)
+                            local dx1, dy1 = rc.x1 - acx, rc.y1 - acy
+                            local dx2, dy2 = rc.x2 - acx, rc.y2 - acy
+                            local ux1, uy1 = p0x + dx1 * sxx + dy1 * syx, p0y + dx1 * sxy + dy1 * syy
+                            local ux2, uy2 = p0x + dx2 * sxx + dy1 * syx, p0y + dx2 * sxy + dy1 * syy
+                            local ux3, uy3 = p0x + dx2 * sxx + dy2 * syx, p0y + dx2 * sxy + dy2 * syy
+                            local ux4, uy4 = p0x + dx1 * sxx + dy2 * syx, p0y + dx1 * sxy + dy2 * syy
                             local minx = math.min(ux1, ux2, ux3, ux4)
                             local maxx = math.max(ux1, ux2, ux3, ux4)
                             local miny = math.min(uy1, uy2, uy3, uy4)
@@ -2551,6 +2572,9 @@ local function drawZoneLines(inner)
     local scale = mapAPI:getWorldScale()
     -- 視野預裁（同 drawZoneFillBody）：世界座標不相交者跳過投影
     local vMinX, vMaxX, vMinY, vMaxY = visibleWorldAABB(inner)
+    local acx = math.floor((vMinX + vMaxX) / 2)
+    local acy = math.floor((vMinY + vMaxY) / 2)
+    local p0x, p0y, sxx, sxy, syx, syy = deriveAffine(mapAPI, acx, acy)
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
         -- 閘門（同 drawZoneFill）：外部受 ZoneLayer 總閘＋per-provider 母開關；internal 不受
@@ -2581,10 +2605,12 @@ local function drawZoneLines(inner)
                         local rc = rects[ri]
                         -- 世界座標預裁（被裁者投影後必在窗外，zoneVisible 語意不變）
                         if rc.x2 >= vMinX and rc.x1 <= vMaxX and rc.y2 >= vMinY and rc.y1 <= vMaxY then
-                            local ux1, uy1 = mapAPI:worldToUIX(rc.x1, rc.y1), mapAPI:worldToUIY(rc.x1, rc.y1)
-                            local ux2, uy2 = mapAPI:worldToUIX(rc.x2, rc.y1), mapAPI:worldToUIY(rc.x2, rc.y1)
-                            local ux3, uy3 = mapAPI:worldToUIX(rc.x2, rc.y2), mapAPI:worldToUIY(rc.x2, rc.y2)
-                            local ux4, uy4 = mapAPI:worldToUIX(rc.x1, rc.y2), mapAPI:worldToUIY(rc.x1, rc.y2)
+                            local dx1, dy1 = rc.x1 - acx, rc.y1 - acy
+                            local dx2, dy2 = rc.x2 - acx, rc.y2 - acy
+                            local ux1, uy1 = p0x + dx1 * sxx + dy1 * syx, p0y + dx1 * sxy + dy1 * syy
+                            local ux2, uy2 = p0x + dx2 * sxx + dy1 * syx, p0y + dx2 * sxy + dy1 * syy
+                            local ux3, uy3 = p0x + dx2 * sxx + dy2 * syx, p0y + dx2 * sxy + dy2 * syy
+                            local ux4, uy4 = p0x + dx1 * sxx + dy2 * syx, p0y + dx1 * sxy + dy2 * syy
                             -- A3：投影後 AABB 早退（同 drawZoneFill）——略過離屏 rect 的
                             -- clipSegment＋drawLine；zoneVisible 記住至少一 rect 落在視窗內
                             local minx = math.min(ux1, ux2, ux3, ux4)
@@ -2610,8 +2636,8 @@ local function drawZoneLines(inner)
                         and (not lod or scale >= ZONE_LOD_DETAIL) then
                         local tw = tm:MeasureStringX(UIFont.Small, name)
                         local cxw, cyw = (rc.x1 + rc.x2) / 2, (rc.y1 + rc.y2) / 2
-                        local cx = mapAPI:worldToUIX(cxw, cyw) - tw / 2
-                        local cy = mapAPI:worldToUIY(cxw, cyw) - th / 2
+                        local cx = p0x + (cxw - acx) * sxx + (cyw - acy) * syx - tw / 2
+                        local cy = p0y + (cxw - acx) * sxy + (cyw - acy) * syy - th / 2
                         if cx >= 2 and cy >= 2 and cx + tw <= inner.width - 2 and cy + th <= inner.height - 2 then
                             inner:drawRect(cx - 3, cy - 1, tw + 6, th + 2, 0.6, 0, 0, 0)
                             inner:drawText(name, cx, cy, 1, 1, 1, 0.95, UIFont.Small)
@@ -2657,6 +2683,9 @@ local function drawZoneIcons(inner)
     -- 資料未就緒時回 0.0F 不丟例外（與 worldToUI 同守衛），退化為全裁＝與舊碼
     -- 的全裁行為一致。回歸測試見 scripts/test_zone_render.lua A5。
     local vMinX, vMaxX, vMinY, vMaxY = visibleWorldAABB(inner)
+    local acx = math.floor((vMinX + vMaxX) / 2)
+    local acy = math.floor((vMinY + vMaxY) / 2)
+    local p0x, p0y, sxx, sxy, syx, syy = deriveAffine(mapAPI, acx, acy)
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
         -- 閘門（同 drawZoneFill）：外部受 ZoneLayer 總閘＋per-provider 母開關；internal 不受
@@ -2682,8 +2711,8 @@ local function drawZoneIcons(inner)
                         -- rects[1]=nil，缺守衛會 nil deref 打死整幀所有 provider 的圖標
                         if rc and rc.x2 >= vMinX and rc.x1 <= vMaxX and rc.y2 >= vMinY and rc.y1 <= vMaxY then
                             local cxw, cyw = (rc.x1 + rc.x2) / 2, (rc.y1 + rc.y2) / 2
-                            local cx = mapAPI:worldToUIX(cxw, cyw)
-                            local cy = mapAPI:worldToUIY(cxw, cyw)
+                            local cx = p0x + (cxw - acx) * sxx + (cyw - acy) * syx
+                            local cy = p0y + (cxw - acx) * sxy + (cyw - acy) * syy
                             -- 整矩形裁切（同動物圖標 :2670 手法，留 1px 邊）：只查中心會讓
                             -- 圖標半寬溢出地圖框（codex review 抓出）
                             local ix, iy = cx - half, cy - half

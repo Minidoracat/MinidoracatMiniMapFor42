@@ -321,26 +321,28 @@ do
         return function() return { { icon = { tex = "T", r = 1, g = 1, b = 1 }, rects = rs } } end
     end
 
-    -- A5-1 框內 rect：照畫，且有付投影
+    -- 仿射化後投影呼叫＝pass 固定 3 點採樣（6 次 worldToUI），每圖標 0 次——
+    -- 以下 projs==6 同時鎖住「無逐圖標 Java 投影」這個優化本身
+    -- A5-1 框內 rect：照畫
     zone.addProvider("icon1", iconZoneOf({ 40, 40, 50, 50 }), true)
     local a = makeIconInner(); zone.icons(a); zone.clearProviders()
-    assert(a.draws == 1 and a.projs == 2, "A5-1 框內 rect 應照畫（draws=" .. a.draws .. "）")
+    assert(a.draws == 1 and a.projs == 6, "A5-1 框內 rect 應照畫且零逐圖標投影（projs=" .. a.projs .. "）")
 
-    -- A5-2 框外 rect：不畫且零投影＝預裁真的省下 Kahlua→Java 呼叫
+    -- A5-2 框外 rect：不畫、無逐圖標投影
     zone.addProvider("icon2", iconZoneOf({ 500, 500, 510, 510 }), true)
     local b = makeIconInner(); zone.icons(b); zone.clearProviders()
-    assert(b.draws == 0 and b.projs == 0, "A5-2 框外 rect 應零投影零繪製（projs=" .. b.projs .. "）")
+    assert(b.draws == 0 and b.projs == 6, "A5-2 框外 rect 應零繪製零逐圖標投影（projs=" .. b.projs .. "）")
 
     -- A5-3 rect 與框相交但圖標中心在窗外：預裁放行、螢幕裁切仍須擋下
     -- （預裁的安全論證依賴「繪製 ⇒ 中心在窗內」——見主檔 drawZoneIcons 註解）
     zone.addProvider("icon3", iconZoneOf({ 95, 40, 300, 50 }), true)
     local c = makeIconInner(); zone.icons(c); zone.clearProviders()
-    assert(c.projs == 2 and c.draws == 0, "A5-3 中心出窗仍被畫出（螢幕裁切失效）")
+    assert(c.projs == 6 and c.draws == 0, "A5-3 中心出窗仍被畫出（螢幕裁切失效）")
 
     -- A5-4 多 rect zone：逐 rect 獨立裁切，框內那顆照畫
     zone.addProvider("icon4", iconZoneOf({ 40, 40, 50, 50 }, { 500, 500, 510, 510 }), true)
     local d = makeIconInner(); zone.icons(d); zone.clearProviders()
-    assert(d.draws == 1 and d.projs == 2, "A5-4 多 rect zone 逐 rect 裁切語意改變")
+    assert(d.draws == 1 and d.projs == 6, "A5-4 多 rect zone 逐 rect 裁切語意改變")
 
     -- A5-5 隨機不變式（300 例 × 滑條 8/18/48）：預裁前後畫面必須逐筆一致
     math.randomseed(42)
@@ -369,7 +371,7 @@ do
                 { x1 = 60, y1 = 60, x2 = 70, y2 = 70 } } } }
     end, true)
     local f = makeIconInner(); zone.icons(f); zone.clearProviders()
-    assert(f.draws == 1 and f.projs == 2, "A5-6 iconOnce 應只畫 rects[1]（draws=" .. f.draws .. "）")
+    assert(f.draws == 1 and f.projs == 6, "A5-6 iconOnce 應只畫 rects[1]（draws=" .. f.draws .. "）")
     zone.addProvider("icon7", iconZoneOf({ 40, 40, 50, 50 }, { 60, 60, 70, 70 }), true)
     local g2 = makeIconInner(); zone.icons(g2); zone.clearProviders()
     assert(g2.draws == 2, "A5-6 無旗標的多矩形 zone 應每 rect 一顆（draws=" .. g2.draws .. "）")
@@ -501,3 +503,77 @@ do
 end
 
 print("poi icon: mono/color/fallback/log-once cases passed")
+
+--------------------------------------------------------------------------------
+-- POIData → zone 消費契約（buildPoiConverted，v3 rn/r）：座標轉換、iconOnce、
+-- lodRect 聯集、無效矩形/整筆/未知類別略過、開關 gate
+--（codex 終審抓出的 consumer 零覆蓋缺口——producer 與渲染端之間這一層若把
+-- x2=x+w 算錯或漏 iconOnce，其餘測試全綠但 1704 筆 POI 全滅）
+--------------------------------------------------------------------------------
+local convBody = assert(poiSource:match(
+    "%-%- test:poi%-convert:start\n(.-)\n%-%- test:poi%-convert:end"),
+    "找不到 poi-convert 測試區段")
+local convPrelude = [=[
+local opts = { PoiIcons = true, PoiBlocks = true, PoiColorIcons = false }
+local function getBoolOption(id, default)
+    local v = opts[id]
+    if v == nil then return default end
+    return v
+end
+local function iconTexture(cat, colorMode) return "TEX_" .. cat, colorMode end
+local function getText(key) return "T_" .. key end
+local POI_FILL_ALPHA = 0.28
+local POI_BORDER_ALPHA = 0.9
+]=]
+local convSuffix = [=[
+return {
+    build = buildPoiConverted,
+    zones = function() return poiZones end,
+    setOpt = function(k, v) opts[k] = v end,
+}
+]=]
+local convChunk, convErr = compile(convPrelude .. "\n" .. convBody .. "\n" .. convSuffix)
+assert(convChunk, convErr)
+local conv = convChunk()
+
+MinidoracatMiniMapPOICategories = { CATEGORIES = {
+    police = { nameKey = "K_Police", color = { r = 0.2, g = 0.4, b = 0.8 } },
+} }
+MinidoracatMiniMapPOIData = {
+    { cat = "police", rn = 3, r = {
+        { x = 10, y = 20, w = 5, h = 4 },
+        { x = 30, y = 20, w = 2, h = 2 },
+        { x = 1, y = 1, w = 0, h = 3 },
+    } },
+    { cat = "police", rn = 1, r = { { x = 1, y = 1, w = 0, h = 1 } } },
+    { cat = "nope", rn = 1, r = { { x = 1, y = 1, w = 1, h = 1 } } },
+}
+conv.build()
+local zs = conv.zones()
+assert(#zs == 1, "poi-convert：應恰 1 個 zone（無效整筆/未知類別須略過，得 " .. #zs .. "）")
+local pz = zs[1]
+assert(pz.iconOnce == true, "poi-convert：iconOnce 未設")
+assert(#pz.rects == 2, "poi-convert：合法矩形應 2 個（w<=0 須略過）")
+assert(pz.rects[1].x1 == 10 and pz.rects[1].y1 == 20 and pz.rects[1].x2 == 15 and pz.rects[1].y2 == 24,
+    "poi-convert：rects[1] 座標轉換錯（x2 必須是 x+w）")
+assert(pz.rects[2].x1 == 30 and pz.rects[2].x2 == 32 and pz.rects[2].y2 == 22,
+    "poi-convert：rects[2] 轉換錯")
+assert(pz.lodRect and pz.lodRect.x1 == 10 and pz.lodRect.y1 == 20
+    and pz.lodRect.x2 == 32 and pz.lodRect.y2 == 24, "poi-convert：lodRect 聯集框錯")
+assert(pz.name == "T_K_Police" and pz.icon and pz.icon.tex == "TEX_police",
+    "poi-convert：name/icon 欄位錯")
+assert(pz.fillAlpha == 0.28 and pz.borderAlpha == 0.9, "poi-convert：blocks 開時 alpha 應取常數")
+assert(pz.icon.r == 0.2 and pz.category == "police", "poi-convert：單色染色/類別欄位錯")
+
+conv.setOpt("Cat_police", false)
+conv.build()
+assert(#conv.zones() == 0, "poi-convert：Cat_ off 應整批略過")
+conv.setOpt("Cat_police", nil)
+conv.setOpt("PoiIcons", false)
+conv.setOpt("PoiBlocks", false)
+conv.build()
+assert(#conv.zones() == 0, "poi-convert：icons+blocks 全關應為空")
+MinidoracatMiniMapPOIData = nil
+MinidoracatMiniMapPOICategories = nil
+
+print("poi convert: rn/r 契約 / x2=x+w / iconOnce / lodRect / 略過與 gate cases passed")

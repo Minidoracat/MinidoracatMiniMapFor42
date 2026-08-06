@@ -7,10 +7,11 @@ level}, world square coordinates, per-room geometry) and the room->category
 mapping in MinidoracatMiniMapPOICategories.lua, then emits ONE POI entry per
 building: the dominant category per CATEGORY_PRIORITY, carrying that
 category's trigger-room rects individually, largest first (v3 per-room
-rects, 2026-08-06) -- the icon anchors at the largest room (the actual
-pharmacy corner of a mall, not the mall's centroid) and block mode draws
-each room rect. Buildings on any level are processed identically -- level
-is not a filter.
+rects, 2026-08-06) -- the icon anchors at the largest coalesced rect (the
+actual pharmacy corner of a mall, not the mall's centroid) and block mode draws
+each room rect. Level does not gate CLASSIFICATION (gate math counts all
+floors' area), but the drawn rects keep only the dominant level -- see
+build_entries.
 
 Output is deterministic: entries are sorted by (cat, rects), so re-running
 with unchanged inputs produces a byte-identical file.

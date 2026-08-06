@@ -1,6 +1,6 @@
 -- MinidoracatMiniMapPOI.lua
 -- 主 MOD 內建 POI 的 client 層：把 MinidoracatMiniMapPOIData（1704 筆 20 類，
--- v3 逐房間矩形：r[1]=最大房間為圖標錨點、區塊畫主樓層各房間）轉成
+-- v3 逐房間矩形：r[1]=最大合併矩形為圖標錨點、區塊畫主樓層各房間）轉成
 -- 主 MOD zone renderer 的 schema，並以「內部 provider」註冊
 -- （registerZoneProvider("MinidoracatMiniMapFor42.POI", fn, nil, internal=true)——POI 有自己的
 -- PoiIcons/PoiBlocks/類別勾選，不走 per-provider 母開關，且 internal 使其不受 ZoneLayer 總閘連坐）。
@@ -89,10 +89,12 @@ end
 -- POIData → renderer schema（OnGameStart 建一次；翻譯此時已載入，getText 可用）。
 -- 消費契約（v3 逐房間矩形）：MinidoracatMiniMapPOIData 為陣列，每項
 -- { cat, rn, r={ {x,y,w,h},.. } }（世界 square 座標；r 按面積大→小、r[1] 為圖標/
--- 名稱錨點；迭代用 rn，Kahlua # 不可信）。未知類別 key、rn 非正、或某矩形欄位
+-- 名稱錨點——注意是「最大合併後矩形」，相鄰房間已在烘焙端併塊；迭代用 rn，
+-- Kahlua # 不可信）。未知類別 key、rn 非正、或某矩形欄位
 -- 非 number/尺寸非正 → 略過該矩形；整筆無合法矩形 → 略過該項。zone 帶
 -- iconOnce=true：圖標 pass 只在 rects[1] 畫一顆（區塊 fill/line 仍畫全部矩形）。
 --------------------------------------------------------------------------------
+-- test:poi-convert:start
 local function buildPoiConverted()
     local built = {}
     local data = MinidoracatMiniMapPOIData
@@ -146,7 +148,7 @@ local function buildPoiConverted()
                                     id = "poi:" .. cat .. ":" .. i,
                                     rects = rects,
                                     lodRect = { x1 = ux1, y1 = uy1, x2 = ux2, y2 = uy2 },
-                                    -- 圖標/名稱只錨定 rects[1]（烘焙端保證是最大房間）；
+                                    -- 圖標/名稱只錨定 rects[1]（烘焙端保證是最大合併矩形）；
                                     -- 無此旗標的 zone（Zones addon）維持每 rect 一圖標
                                     iconOnce = true,
                                     fill = { r = color.r, g = color.g, b = color.b },
@@ -169,6 +171,7 @@ local function buildPoiConverted()
     end
     poiZones = built -- 原子替換（provider 回此新參照）
 end
+-- test:poi-convert:end
 
 -- 開關/類別勾選簽章：PoiIcons、PoiBlocks、PoiColorIcons 與 20 類 Cat_ 的當前值串接
 -- （3＋ORDER 類別數，現 20 類共 23 值）。變動即重建（樣式切換走此路，下一 tick 重載對應材質集）。
