@@ -31,7 +31,7 @@ engine's native ImagePyramid mechanism:
 [*] [b]Free look[/b]: drag to pan and stay, click once to snap back; a recenter hint appears while panned away
 [*] [b]Player coordinates & one-click copy[/b]: current x, y, z at the bottom of the mini-map (toggleable); the XY button copies them and right-click copies any spot you point at — paste straight into /teleportto
 [*] [b]Ghost mode (click-through)[/b]: clicks, wheel and right-clicks pass through to the game world while the map turns semi-transparent (opacity slider) — enlarge it into a permanent overlay that never blocks play; toggle via the ' hotkey, the floating icon's right-click, or settings
-[*] [b]Server sandbox controls[/b]: disable dots/heatmap/animal/vehicle icons, limit display distances, configure safehouse display, livestock visibility and faction sharing — admin changes apply live
+[*] [b]Server sandbox controls[/b]: disable dots/heatmap/animal/vehicle icons, limit display distances (POI included, plus a global cap), configure safehouse display, livestock visibility and faction sharing — admin changes apply live; players see the server cap in the settings window and can tighten further
 [*] [b]Singleplayer & multiplayer[/b]: works out of the box in SP; in MP the server enables the mod and admins stay in control via the sandbox options — it only visualizes data the client already receives, no extra intel
 [*] [b]Languages[/b]: Traditional Chinese / Simplified Chinese / English / Japanese
 [/list]
