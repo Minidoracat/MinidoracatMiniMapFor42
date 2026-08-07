@@ -1,5 +1,7 @@
 {
     "Sandbox_MinidoracatMiniMap": "Minidoracat ミニマップ",
+    "Sandbox_MinidoracatMiniMapAllInfoDistance": "【全体】全情報表示距離の上限（マス）",
+    "Sandbox_MinidoracatMiniMapAllInfoDistance_tooltip": "0＝距離制限なし（デフォルト）。\\nN＞0＝ゾンビ位置・動物・車両・セーフハウス範囲・\\n資源ポイント（POI）の表示距離のグローバル上限。\\n最優先で適用：個別の距離オプションはこの上限より\\n厳しくのみ設定可能（小さい方が有効）、緩めることはできません。\\nプレイヤーは設定ウィンドウの「表示距離」でさらに\\n自分の表示距離を狭められます。\\n1 マスは約 1 メートル。距離は2次元で、階層は考慮しません。\\n管理者が「適用」を押すと即時反映されます。",
     "Sandbox_MinidoracatMiniMapAllowZombieDots": "リアルタイムゾンビ表示を許可",
     "Sandbox_MinidoracatMiniMapAllowZombieDots_tooltip": "プレイヤーがミニマップの表示範囲内のゾンビ位置をリアルタイム表示することを許可します。無効にすると全プレイヤーで機能がオフになります（管理者の変更は即時反映）。",
     "Sandbox_MinidoracatMiniMapZombieDotDistance": "ゾンビ位置表示距離（マス）",
@@ -28,5 +30,7 @@
     "Sandbox_MinidoracatMiniMapAllowVehicleDots": "車両アイコンを許可",
     "Sandbox_MinidoracatMiniMapAllowVehicleDots_tooltip": "プレイヤーがミニマップに周囲の車両アイコンを表示することを許可します。無効にすると全プレイヤーで機能がオフになります（管理者の変更は即時反映）。",
     "Sandbox_MinidoracatMiniMapVehicleIconDistance": "車両アイコン表示距離（マス）",
-    "Sandbox_MinidoracatMiniMapVehicleIconDistance_tooltip": "0＝距離制限なし。\\nN＞0＝プレイヤーから N マス以内の項目のみ表示します。\\n1 マスは約 1 メートル。距離は2次元で、階層は考慮しません。\\n管理者が「適用」を押すと即時反映されます。"
+    "Sandbox_MinidoracatMiniMapVehicleIconDistance_tooltip": "0＝距離制限なし。\\nN＞0＝プレイヤーから N マス以内の項目のみ表示します。\\n1 マスは約 1 メートル。距離は2次元で、階層は考慮しません。\\n管理者が「適用」を押すと即時反映されます。",
+    "Sandbox_MinidoracatMiniMapPoiDisplayDistance": "資源ポイント（POI）表示距離（マス）",
+    "Sandbox_MinidoracatMiniMapPoiDisplayDistance_tooltip": "0＝距離制限なし（デフォルト）。\\nN＞0＝資源ポイント領域（表示中の分類部屋）の最寄り点が\\nプレイヤーから N マス以内の場合のみ表示します\\n（ブロック・枠線・アイコンを一括で非表示）。\\n1 マスは約 1 メートル。推奨値は 300（約1街区群）で、\\n探索の楽しみを保てます。\\n内蔵資源ポイントのみに影響し、マップパックの範囲枠など\\n他のレイヤーには影響しません。\\n距離は2次元で、階層は考慮しません。\\n管理者が「適用」を押すと即時反映されます。"
 }

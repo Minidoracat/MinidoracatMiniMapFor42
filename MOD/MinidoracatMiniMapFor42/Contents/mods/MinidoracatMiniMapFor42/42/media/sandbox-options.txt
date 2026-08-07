@@ -1,5 +1,8 @@
 VERSION = 1,
 
+option MinidoracatMiniMap.AllInfoDistance
+{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllInfoDistance,}
+
 option MinidoracatMiniMap.AllowZombieDots
 {type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowZombieDots,}
 
@@ -8,15 +11,6 @@ option MinidoracatMiniMap.ZombieDotDistance
 
 option MinidoracatMiniMap.AllowZombieIntensity
 {type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowZombieIntensity,}
-
-option MinidoracatMiniMap.SafehouseDisplay
-{type = enum, numValues = 3, default = 3, page = MinidoracatMiniMap, translation = MinidoracatMiniMapSafehouseDisplay,}
-
-option MinidoracatMiniMap.SafehouseDisplayDistance
-{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMap, translation = MinidoracatMiniMapSafehouseDisplayDistance,}
-
-option MinidoracatMiniMap.AllowNavShare
-{type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowNavShare,}
 
 option MinidoracatMiniMap.AllowAnimalDots
 {type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowAnimalDots,}
@@ -32,3 +26,15 @@ option MinidoracatMiniMap.AllowVehicleDots
 
 option MinidoracatMiniMap.VehicleIconDistance
 {type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMap, translation = MinidoracatMiniMapVehicleIconDistance,}
+
+option MinidoracatMiniMap.PoiDisplayDistance
+{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMap, translation = MinidoracatMiniMapPoiDisplayDistance,}
+
+option MinidoracatMiniMap.SafehouseDisplay
+{type = enum, numValues = 3, default = 3, page = MinidoracatMiniMap, translation = MinidoracatMiniMapSafehouseDisplay,}
+
+option MinidoracatMiniMap.SafehouseDisplayDistance
+{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMap, translation = MinidoracatMiniMapSafehouseDisplayDistance,}
+
+option MinidoracatMiniMap.AllowNavShare
+{type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowNavShare,}

@@ -21,6 +21,8 @@ local getBoolOption = Core.getBoolOption
 local getComboIndex = Core.getComboIndex
 local getSliderValue = Core.getSliderValue
 local sandboxGate = Core.sandboxGate
+local sandboxDist = Core.sandboxDist
+local displayDist = Core.displayDist
 local livestockVisibilityMode = Core.livestockVisibilityMode
 local unifiedCsvSet = Core.unifiedCsvSet
 local adotsTexture = Core.adotsTexture
@@ -116,6 +118,27 @@ local UNIFIED_SLIDERS = {
         { id = "GhostAlpha", label = "UI_MinidoracatMiniMap_GhostAlpha",
             default = 40, min = 10, max = 90, step = 5, fmt = "%d%%" },
     },
+    -- 顯示距離（格；0＝不限制）：與伺服器沙盒距離經 displayDist 取較小者生效。
+    -- capBy＝對應沙盒選項名——重建時滑條上限動態縮到伺服器有效上限（sandboxDist
+    -- 已併全域上限 AllInfoDistance），玩家由此「看得到」伺服器允許範圍；
+    -- zeroLabel＝0 值的數值標顯示字（不限），避免被誤讀成「0 格＝看不到」
+    distance = {
+        { id = "ClientZombieDotDistance", label = "UI_MinidoracatMiniMap_DistZombie",
+            default = 0, min = 0, max = 2000, step = 1, fmt = "%d",
+            zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited", capBy = "ZombieDotDistance" },
+        { id = "ClientAnimalIconDistance", label = "UI_MinidoracatMiniMap_DistAnimal",
+            default = 0, min = 0, max = 2000, step = 1, fmt = "%d",
+            zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited", capBy = "AnimalIconDistance" },
+        { id = "ClientVehicleIconDistance", label = "UI_MinidoracatMiniMap_DistVehicle",
+            default = 0, min = 0, max = 2000, step = 1, fmt = "%d",
+            zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited", capBy = "VehicleIconDistance" },
+        { id = "ClientSafehouseDisplayDistance", label = "UI_MinidoracatMiniMap_DistSafehouse",
+            default = 0, min = 0, max = 2000, step = 1, fmt = "%d",
+            zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited", capBy = "SafehouseDisplayDistance" },
+        { id = "ClientPoiDisplayDistance", label = "UI_MinidoracatMiniMap_DistPoi",
+            default = 0, min = 0, max = 2000, step = 1, fmt = "%d",
+            zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited", capBy = "PoiDisplayDistance" },
+    },
 }
 local UNIFIED_APPEAR_COMBOS = {
     { id = "MapSize", label = "UI_MinidoracatMiniMap_Size", default = 2,
@@ -158,6 +181,7 @@ end
 local UNIFIED_SECTIONS = {
     { id = "layers", label = "UI_MinidoracatMiniMap_SecLayers" },
     { id = "poicat", label = "UI_MinidoracatMiniMap_SecPOI" },
+    { id = "distance", label = "UI_MinidoracatMiniMap_SecDistance" },
     { id = "zombie", label = "UI_MinidoracatMiniMap_SecZombie", gate = "AllowZombieDots" },
     { id = "animals", label = "UI_MinidoracatMiniMap_SecAnimals", gate = "AllowAnimalDots" },
     { id = "vehicles", label = "UI_MinidoracatMiniMap_SecVehicles", gate = "AllowVehicleDots" },
@@ -171,7 +195,7 @@ local unifiedExpand = {}
 -- 左欄＝圖層顯示/資源點/外觀與行為，右欄＝殭屍點位/動物圖標/載具圖標/世界地圖圖標。
 -- worldmap 置右欄：與同為「點位顯示」的殭屍/動物/載具同群（世界地圖圖標亦是這三類點位），
 -- 且平衡兩欄全展開高度（資源點併入左欄後左重，右移 worldmap 後左右列數約略持平）
-local UNIFIED_LANE = { layers = 1, poicat = 1, appearance = 1,
+local UNIFIED_LANE = { layers = 1, poicat = 1, distance = 1, appearance = 1,
     zombie = 2, animals = 2, vehicles = 2, worldmap = 2 }
 local settingsUI -- 單例；獨立頂層視窗，不隨小地圖 Recreate 消失（apply 自行重抓 mm）
 
@@ -337,6 +361,15 @@ local function unifiedHeaderSummary(sec, pn)
             if getBoolOption("Cat_" .. order[i], true) then on = on + 1 end
         end
         return on .. "/" .. #order
+    elseif sec.id == "distance" then
+        -- 有距離限制生效（伺服器或玩家任一）之項目數；0/5＝全不限
+        if not displayDist then return nil end
+        local on = 0
+        for i = 1, #UNIFIED_SLIDERS.distance do
+            local capBy = UNIFIED_SLIDERS.distance[i].capBy
+            if capBy and displayDist(capBy) then on = on + 1 end
+        end
+        return on .. "/" .. #UNIFIED_SLIDERS.distance
     end
     return nil
 end
@@ -414,16 +447,77 @@ end
 -- onValueChange 拖曳中連續觸發：只寫記憶體值（繪製端每幀讀值＝即時預覽），
 -- 放開滑鼠才 save 落盤（避免拖曳中高頻檔案 IO）；初值 setCurrentValue 帶
 -- ignoreOnChange=true 免建構時誤觸發（ISSliderPanel.lua:181）
+-- 滑條數值標文字：0 值可用 zeroLabel 顯示「不限」等字（顯示距離用），其餘走 fmt。
+-- cap（伺服器上限）有值時附「/上限」＝玩家直接看到自己還能拉到多少，不必從
+-- 軌道長度反推——存值超上限時軌道會讓位（unifiedSliderRange），反推會得到錯的數。
+-- test:slider-text:start
+local function unifiedSliderText(entry, value, cap)
+    local s
+    if value == 0 and entry.zeroLabel then
+        s = getText(entry.zeroLabel)
+    else
+        s = string.format(entry.fmt, value)
+    end
+    if cap then s = s .. "/" .. cap end
+    return s
+end
+-- test:slider-text:end
+-- 距離滑條的可拉上限：min(entry.max=2000, 伺服器上限)，但存值更大時以存值為準。
+--   · 向下縮到伺服器現值：玩家由可拉範圍看到伺服器允許值（數字另由數值標直出）
+--   · 向上讓位給既有存值：ESC 頁是全值域、可寫入較大值，若硬縮 max，玩家在本
+--     視窗第一次點擊軌道就會把存值永久截斷（ISSliderPanel 的 setCurrentValue
+--     一律夾到 maxValue；Claude review 抓出）。讓位後兩表面顯示一致、不毀偏好，
+--     且 displayDist 讀取端仍強制伺服器上限——放寬的只有 UI，不是實際可見範圍。
+-- 僅於重建時計算（開窗／展開即刷新），不追蹤視窗開著期間的沙盒變動：與數值標
+-- 的 cap 同步刷新，避免數字與軌道長度互相矛盾。
+-- test:slider-range:start
+local function unifiedSliderRange(entry, cap, stored)
+    local maxV = entry.max
+    if cap and cap < maxV then maxV = cap end
+    if type(stored) == "number" and stored > maxV then maxV = stored end
+    return maxV
+end
+-- test:slider-range:end
 local function unifiedAddSliderRows(ctx, list)
     for i = 1, #list do
         local entry = list[i]
         unifiedAdd(ctx, ISLabel:new(ctx.curX, ctx.curY + 3, ctx.fontH, getText(entry.label), 1, 1, 1, 1, UIFont.Small, true))
-        local valW = utw("100%") + 10
+        -- capBy＝伺服器沙盒距離選項名：cap 供數值標顯示「/上限」，上限經
+        -- unifiedSliderRange 動態計算（含全域上限 AllInfoDistance；存值超上限時
+        -- 讓位不截斷）。兩者都在重建時現算——開窗/展開即反映現值；視窗開著時
+        -- 管理員改沙盒須重開才更新（刻意與軌道長度同步：只更新數字會讓數字與
+        -- 軌道互相矛盾），讀取端 displayDist 每幀即時，不會因此放寬實際限制
+        local cap
+        local maxV = entry.max
+        if entry.capBy and sandboxDist then
+            cap = sandboxDist(entry.capBy)
+            maxV = unifiedSliderRange(entry, cap,
+                getSliderValue(entry.id, entry.default, entry.min, entry.max))
+        end
+        -- 值標欄寬＝本列可能出現的最寬字串（含 zeroLabel 與 /上限 後綴）
+        local valW = utw("100%")
+        local widest = utw(unifiedSliderText(entry, maxV, cap))
+        if widest > valW then valW = widest end
+        if entry.zeroLabel then
+            local zw = utw(unifiedSliderText(entry, 0, cap))
+            if zw > valW then valW = zw end
+        end
+        valW = valW + 10
         local valLabel = ISLabel:new(ctx.curX + ctx.laneW - valW, ctx.curY + 3, ctx.fontH, "", 1, 1, 1, 1, UIFont.Small, true)
+        -- 軌道寬下限（不得 <= 30）：laneW 的 420 上限是硬常數、不隨 PZ「字型大小」
+        -- 六檔（16/19/26/33/38/隨視窗）縮放，而 comboLabelW/valW 是縮放後的量測值
+        -- ——大字型下相減會逼近 0 甚至倒轉，而 ISSliderPanel 的 sliderBarDim.w
+        -- ＝寬-30（左右箭頭），onMouseDown 拿它當除數（ISSliderPanel.lua:55/80）：
+        -- 0 會得 nan 並經 setCurrentValue 把 nan 寫進選項落盤 ini。寧可該列右側與
+        -- 數值標重疊，也不能讓寬度倒轉——ponytail: 90＝bar 60，夠拖曳即可。
+        -- 上游根治是把 420 改成字型相對，但那會連動全視窗八個區塊的欄寬與視窗
+        -- 總寬（雙欄），風險高於本次變更本身，留給獨立的版面改版。
+        local sliderW = ctx.laneW - ctx.comboLabelW - valW - 14
+        if sliderW < 90 then sliderW = 90 end
         local slider = ISSliderPanel:new(ctx.curX + ctx.comboLabelW + 8, ctx.curY + 1,
-            ctx.laneW - ctx.comboLabelW - valW - 14, ctx.fontH + 4, ctx.win,
+            sliderW, ctx.fontH + 4, ctx.win,
             function(target, value)
-                valLabel:setName(string.format(entry.fmt, value))
+                valLabel:setName(unifiedSliderText(entry, value, cap))
                 if not modOptions then return end
                 local opt = modOptions:getOption(entry.id)
                 if opt then opt:setValue(value) end -- 同步 ESC 頁元件（ModOptions.lua slider setValue）
@@ -434,9 +528,11 @@ local function unifiedAddSliderRows(ctx, list)
         -- currentValue（50）」觸發 onValueChange → 回呼把 50 夾限值寫進選項，
         -- 污染存檔（實測：殭屍/動物大小開窗即變 16/48、透明度變 50——
         -- 原版 MainOptions 沒中是因為它先 setValues 後掛回呼）
-        slider:setValues(entry.min, entry.max, entry.step, entry.step * 5, true)
-        slider:setCurrentValue(getSliderValue(entry.id, entry.default, entry.min, entry.max), true)
-        valLabel:setName(string.format(entry.fmt, slider:getCurrentValue()))
+        slider:setValues(entry.min, maxV, entry.step, entry.step * 5, true)
+        slider:setCurrentValue(getSliderValue(entry.id, entry.default, entry.min, maxV), true)
+        -- ⚠ cap 必須與 onValueChange 內同樣傳入：漏傳會讓開窗時顯示「200」、
+        -- 動過滑條才變「200/300」（codex review 抓出；守衛見 test_livestock_visibility）
+        valLabel:setName(unifiedSliderText(entry, slider:getCurrentValue(), cap))
         -- 放開才落盤（拖曳結束/點軌道/箭頭按鈕皆經 onMouseUp；拖出元件外走 Outside）
         local origUp = slider.onMouseUp
         function slider:onMouseUp(mx, my)
@@ -690,9 +786,16 @@ local function unifiedBuildAppearance(ctx)
 end
 
 -- builder 分派表（骨架見 UNIFIED_SECTIONS）
+-- 顯示距離區：說明列＋5 類距離滑條（0＝不限；滑條上限＝伺服器允許範圍）
+local function unifiedBuildDistance(ctx)
+    unifiedAdd(ctx, ISLabel:new(ctx.curX, ctx.curY + 3, ctx.fontH,
+        getText("UI_MinidoracatMiniMap_DistNote"), 0.75, 0.75, 0.75, 1, UIFont.Small, true))
+    ctx.curY = ctx.curY + ctx.rowH
+    unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.distance)
+end
 local UNIFIED_BUILDERS = {
     layers = unifiedBuildLayers, poicat = unifiedBuildPoicat, zombie = unifiedBuildZombie,
-    animals = unifiedBuildAnimals, vehicles = unifiedBuildVehicles,
+    animals = unifiedBuildAnimals, vehicles = unifiedBuildVehicles, distance = unifiedBuildDistance,
     worldmap = unifiedBuildWorldmap, appearance = unifiedBuildAppearance,
 }
 
@@ -748,7 +851,8 @@ local function unifiedMeasureLayout()
         UNIFIED_VEHICLE_COMBOS, UNIFIED_APPEAR_COMBOS,
         UNIFIED_SLIDERS.zombie, UNIFIED_SLIDERS.animals,
         UNIFIED_SLIDERS.vehicles, UNIFIED_SLIDERS.poi,
-        UNIFIED_SLIDERS.appearance } -- 漏列＝CJK 標籤被滑條軌道壓住（欄寬量測）
+        UNIFIED_SLIDERS.appearance,
+        UNIFIED_SLIDERS.distance } -- 漏列＝CJK 標籤被滑條軌道壓住（欄寬量測）
     for g = 1, #comboGroups do
         for i = 1, #comboGroups[g] do
             comboLabelW = math.max(comboLabelW, tw(getText(comboGroups[g][i].label)))

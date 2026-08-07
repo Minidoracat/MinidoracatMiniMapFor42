@@ -68,19 +68,63 @@ local effectiveMode = modeChunk()
 local distanceBody = assert(source:match(
     "%-%- test:sandbox%-distance:start\n(.-)\n%-%- test:sandbox%-distance:end"),
     "找不到 sandboxDist 測試區段")
+-- name-aware stub：sandboxDist 現會另查 AllInfoDistance（全域上限），
+-- 第二參可注入全域值；缺鍵回 default＝與正式 sandboxGate 同語意
 local distanceChunk, distanceErr = compile([[
-local rawDistance
-local function sandboxGate(_, default)
-    if rawDistance == nil then return default end
-    return rawDistance
+local values = {}
+local function sandboxGate(name, default)
+    local v = values[name]
+    if v == nil then return default end
+    return v
 end
-]] .. distanceBody .. "\n" .. [[return function(value)
-    rawDistance = value
+]] .. distanceBody .. "\n" .. [[return function(value, global)
+    values = { TestDistance = value, AllInfoDistance = global }
     return sandboxDist("TestDistance")
 end
 ]])
 assert(distanceChunk, distanceErr)
 local normalizeDistance = distanceChunk()
+
+-- displayDist 合成（伺服器沙盒值×玩家自訂值取較小正值）：sandboxDist/getSliderValue
+-- 皆為標記區段外相依，stub 注入；getSliderValue 依正式版語意夾 min/max
+local displayBody = assert(source:match(
+    "%-%- test:display%-distance:start\n(.-)\n%-%- test:display%-distance:end"),
+    "找不到 displayDist 測試區段")
+local displayChunk, displayErr = compile([[
+local serverDist, clientVal
+local function sandboxDist(name) return serverDist end
+local function getSliderValue(id, default, min, max)
+    if id ~= "ClientTestDistance" then return default end
+    if type(clientVal) ~= "number" then return default end
+    if clientVal < min then return min end
+    if clientVal > max then return max end
+    return clientVal
+end
+]] .. displayBody .. "\n" .. [[return function(server, client)
+    serverDist, clientVal = server, client
+    return displayDist("TestDistance")
+end
+]])
+assert(displayChunk, displayErr)
+local mergeDist = displayChunk()
+
+-- 距離滑條動態上限（Settings.lua）：cap 向下縮、既有存值向上讓位不截斷
+local rangeBody = assert(settingsSource:match(
+    "%-%- test:slider%-range:start\n(.-)\n%-%- test:slider%-range:end"),
+    "找不到 unifiedSliderRange 測試區段")
+local rangeChunk, rangeErr = compile(rangeBody .. "\nreturn unifiedSliderRange")
+assert(rangeChunk, rangeErr)
+local sliderRange = rangeChunk()
+
+-- 距離滑條數值標（Settings.lua）：0＝zeroLabel、有伺服器上限時附「/上限」
+local textBody = assert(settingsSource:match(
+    "%-%- test:slider%-text:start\n(.-)\n%-%- test:slider%-text:end"),
+    "找不到 unifiedSliderText 測試區段")
+local textChunk, textErr = compile([[
+local function getText(key) return key == "ZERO" and "不限" or key end
+]] .. textBody .. "\nreturn unifiedSliderText")
+assert(textChunk, textErr)
+local sliderText = textChunk()
 
 local worldMapBody = assert(settingsSource:match(
     "%-%- test:worldmap%-effective%-tick:start\n(.-)\n%-%- test:worldmap%-effective%-tick:end"),
@@ -116,7 +160,7 @@ local now, mode, username = 1000, 1, "A"
 local rectsByUser, animals, vehicles, distances = {}, {}, {}, {}
 local disabledAnimalGroups, animalGroup = nil, "cow"
 local function getTimestampMs() return now end
-local function sandboxDist(name) return distances[name] end
+local function displayDist(name) return distances[name] end
 local function livestockVisibilityMode() return mode end
 local defaultPlayer = {
     getX = function() return 0 end,
@@ -206,7 +250,7 @@ local zombies = {}
 local ZDOTS_INTERVAL_MS, ZDOTS_MAX, ZDOTS_SCAN_MAX = 300, 10, 100
 local ZDOTS_NEAR, ZDOTS_MID, ZDOTS_MAXES = 20, 50, { 10 }
 local function getTimestampMs() return now end
-local function sandboxDist() return distance end
+local function displayDist() return distance end
 local function getComboIndex() return 1 end
 local function visibleWorldAABB() return -100, 100, -100, 100 end
 local function zdotsStateFor(inner)
@@ -255,7 +299,7 @@ local function javaList(values)
 end
 SafeHouse = { getSafehouseList = function() return javaList(houses) end }
 local function getBoolOption() return true end
-local function sandboxDist() return distance end
+local function displayDist() return distance end
 local function sandboxGate() return 3 end
 local defaultPlayer = {
     getX = function() return px end,
@@ -362,6 +406,81 @@ assert(normalizeDistance(0) == nil, "距離 0 應視為不限制")
 assert(normalizeDistance(-1) == nil, "負距離應視為不限制")
 assert(normalizeDistance("10") == nil, "非數字距離應視為不限制")
 assert(normalizeDistance(10) == 10, "正數距離未保留")
+
+-- 全域上限 AllInfoDistance（最優先、取較小正值）
+assert(normalizeDistance(0, 40) == 40, "只設全域上限時應對個別項目生效")
+assert(normalizeDistance(100, 40) == 40, "全域上限應壓過較鬆的個別值")
+assert(normalizeDistance(30, 40) == 30, "較嚴的個別值不應被全域上限放寬")
+assert(normalizeDistance(40, 40) == 40, "全域＝個別時應保留該值")
+assert(normalizeDistance(nil, 0) == nil, "全域 0 應視為不限制")
+assert(normalizeDistance(nil, -5) == nil, "負全域上限應忽略")
+assert(normalizeDistance(nil, "50") == nil, "非數字全域上限應忽略")
+
+-- displayDist：伺服器（含全域上限）×玩家自訂取較小正值；玩家只能收緊
+assert(mergeDist(nil, nil) == nil, "皆未設應不限制")
+assert(mergeDist(nil, 0) == nil, "玩家 0 應不限制")
+assert(mergeDist(300, nil) == 300, "僅伺服器值應透傳")
+assert(mergeDist(nil, 150) == 150, "僅玩家值應生效")
+assert(mergeDist(300, 150) == 150, "玩家較嚴應勝出")
+assert(mergeDist(100, 500) == 100, "玩家不得放寬伺服器上限")
+assert(mergeDist(100, 100) == 100, "同值應保留")
+assert(mergeDist(nil, 99999) == 2000, "玩家值應被 CLIENT_DIST_MAX 夾住")
+assert(mergeDist(nil, "80") == nil, "非數字玩家值應視為不限制")
+
+-- unifiedSliderRange：伺服器上限縮短滑條可拉範圍、既有存值讓位不截斷
+local rentry = { max = 2000 }
+assert(sliderRange(rentry, nil, 0) == 2000, "無伺服器上限應維持全值域")
+assert(sliderRange(rentry, 300, 0) == 300, "伺服器上限應縮短滑條上限")
+assert(sliderRange(rentry, 15, 0) == 15, "任意整數上限（非 step 倍數）應原樣採用")
+assert(sliderRange(rentry, 5000, 0) == 2000, "伺服器上限超過全值域應夾在 entry.max")
+assert(sliderRange(rentry, 300, 1500) == 1500, "存值超上限時滑條應讓位、不截斷偏好")
+assert(sliderRange(rentry, 300, 200) == 300, "存值在上限內應維持伺服器上限")
+assert(sliderRange(rentry, nil, 1500) == 2000, "無上限時存值不擴張全值域")
+assert(sliderRange(rentry, 300, "x") == 300, "非數字存值應忽略")
+
+-- unifiedSliderText：伺服器上限必須現形（玩家要知道還能拉到多少），且無上限時
+-- 不留多餘後綴；非距離滑條（無 zeroLabel）的既有格式不得受影響
+local dist0 = { fmt = "%d", zeroLabel = "ZERO" }
+assert(sliderText(dist0, 200, nil) == "200", "無伺服器上限應只顯示自己的值")
+assert(sliderText(dist0, 0, nil) == "不限", "0 應顯示 zeroLabel")
+assert(sliderText(dist0, 200, 300) == "200/300", "有上限應附「/上限」")
+assert(sliderText(dist0, 0, 300) == "不限/300", "0＋上限應為「不限/上限」")
+assert(sliderText(dist0, 500, 300) == "500/300", "存值超上限仍須顯示伺服器上限")
+local px = { fmt = "%dpx" }
+assert(sliderText(px, 0, nil) == "0px", "無 zeroLabel 的滑條 0 值應照 fmt")
+assert(sliderText(px, 18, nil) == "18px", "既有尺寸滑條格式不得受影響")
+
+-- wiring 守衛：unifiedSliderText 每個呼叫點都必須帶第三參 cap。漏傳不會報錯、
+-- 只是少顯示「/上限」（開窗顯示 200、動過滑條才變 200/300），helper 單測完全
+-- 抓不到——codex review 實際在初始 setName 抓到這個缺口，故改以原始碼守衛釘住
+local callTotal = select(2, settingsSource:gsub("unifiedSliderText%(entry,", ""))
+local callWithCap = select(2, settingsSource:gsub("unifiedSliderText%(entry,[^\n]-, cap%)", ""))
+assert(callTotal > 0 and callTotal == callWithCap, string.format(
+    "unifiedSliderText 有呼叫點漏傳 cap（帶 cap %d／全部 %d）", callWithCap, callTotal))
+
+-- 版面守衛：滑條軌道寬必須有下限。ISSliderPanel 的 sliderBarDim.w＝元件寬-30 且
+-- 被 onMouseDown 當除數，而 laneW 的 420 上限是硬常數、不隨 PZ 字型大小縮放——
+-- 大字型下 laneW-comboLabelW-valW 會逼近 0 甚至倒轉，nan 會被寫進選項並落盤 ini
+-- （Claude review 以遊戲點陣字 xadvance 實算出臨界點：26px JP、33px EN 均已中招）
+assert(settingsSource:find("if sliderW < %d+ then sliderW = %d+ end"),
+    "滑條軌道寬下限守衛消失：大字型下寬度會倒轉，nan 會被寫進 ini")
+
+-- 命名契約守衛："Client"..沙盒名 三方對齊（displayDist 串接 ↔ ESC 註冊 step=1 ↔
+-- 統一視窗 capBy/id）——日後新增距離沙盒選項漏註冊 Client 滑條時這裡會紅
+local DIST_NAMES = { "ZombieDotDistance", "AnimalIconDistance", "VehicleIconDistance",
+    "SafehouseDisplayDistance", "PoiDisplayDistance" }
+for _, n in ipairs(DIST_NAMES) do
+    assert(source:find('displayDist%("' .. n .. '"%)'),
+        "主檔缺 displayDist(\"" .. n .. "\") 呼叫點")
+    assert(source:find('addSlider%("Client' .. n .. '", "UI_MinidoracatMiniMap_Dist%w+", 0, CLIENT_DIST_MAX, 1, 0%)'),
+        "ESC 頁缺 Client" .. n .. " 滑條註冊（或 step 不為 1）")
+    assert(settingsSource:find('capBy = "' .. n .. '"'),
+        "統一視窗 distance 區缺 capBy=" .. n)
+    assert(settingsSource:find('id = "Client' .. n .. '"'),
+        "統一視窗 distance 區缺 id=Client" .. n)
+end
+local stepOneCount = select(2, settingsSource:gsub('step = 1, fmt = "%%d"', ""))
+assert(stepOneCount == 5, "統一視窗 distance 滑條 step 應全為 1（得 " .. stepOneCount .. "）")
 
 local worldMapMappings = {
     { "WMZombieDots", "AllowZombieDots" },

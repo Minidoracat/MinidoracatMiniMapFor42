@@ -194,5 +194,14 @@
     "UI_MinidoracatMiniMap_Cat_Farm": "農場",
     "UI_MinidoracatMiniMap_Cat_Industry": "工業",
     "UI_MinidoracatMiniMap_Cat_Retail": "小売店",
-    "UI_MinidoracatMiniMap_Cat_Food": "飲食店"
+    "UI_MinidoracatMiniMap_Cat_Food": "飲食店",
+    "UI_MinidoracatMiniMap_SecDistance": "表示距離",
+    "UI_MinidoracatMiniMap_SecDistanceEsc": "表示距離（0＝無制限。サーバー上限も適用されます）",
+    "UI_MinidoracatMiniMap_DistNote": "数値＝自分の設定／サーバー上限。小さい方が適用。0＝無制限",
+    "UI_MinidoracatMiniMap_DistZombie": "ゾンビ位置の表示距離",
+    "UI_MinidoracatMiniMap_DistAnimal": "動物アイコンの表示距離",
+    "UI_MinidoracatMiniMap_DistVehicle": "車両アイコンの表示距離",
+    "UI_MinidoracatMiniMap_DistSafehouse": "セーフハウス範囲の表示距離",
+    "UI_MinidoracatMiniMap_DistPoi": "資源ポイント（POI）の表示距離",
+    "UI_MinidoracatMiniMap_DistUnlimited": "無制限"
 }

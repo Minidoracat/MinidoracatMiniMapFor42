@@ -1,5 +1,7 @@
 {
     "Sandbox_MinidoracatMiniMap": "Minidoracat 小地圖",
+    "Sandbox_MinidoracatMiniMapAllInfoDistance": "【全域】全部資訊顯示距離上限（格）",
+    "Sandbox_MinidoracatMiniMapAllInfoDistance_tooltip": "0＝無距離限制（預設）。\\nN＞0＝殭屍點位、動物、載具、安全屋範圍、資源點（POI）的顯示距離全域上限。\\n最優先生效：個別距離選項只能設得更嚴（兩者取較小），不能放寬此上限。\\n玩家還可在設定視窗「顯示距離」區把自己的顯示距離收得更緊。\\n1 格約 1 公尺；採二維直線距離，不計樓層。\\n管理員按「套用」後立即生效。",
     "Sandbox_MinidoracatMiniMapAllowZombieDots": "允許即時殭屍點位",
     "Sandbox_MinidoracatMiniMapAllowZombieDots_tooltip": "允許玩家在小地圖上顯示可視範圍內殭屍的即時位置。關閉後所有玩家的殭屍點位功能失效（管理員改動即時生效）。",
     "Sandbox_MinidoracatMiniMapZombieDotDistance": "殭屍點位顯示距離（格）",
@@ -28,5 +30,7 @@
     "Sandbox_MinidoracatMiniMapAllowVehicleDots": "允許載具圖標",
     "Sandbox_MinidoracatMiniMapAllowVehicleDots_tooltip": "允許玩家在小地圖上顯示附近載具圖標。關閉後所有玩家的載具圖標功能失效（管理員改動即時生效）。",
     "Sandbox_MinidoracatMiniMapVehicleIconDistance": "載具圖標顯示距離（格）",
-    "Sandbox_MinidoracatMiniMapVehicleIconDistance_tooltip": "0＝無距離限制。\\nN＞0＝僅顯示距玩家 N 格內的項目。\\n1 格約 1 公尺；採二維直線距離，不計樓層。\\n管理員按「套用」後立即生效。"
+    "Sandbox_MinidoracatMiniMapVehicleIconDistance_tooltip": "0＝無距離限制。\\nN＞0＝僅顯示距玩家 N 格內的項目。\\n1 格約 1 公尺；採二維直線距離，不計樓層。\\n管理員按「套用」後立即生效。",
+    "Sandbox_MinidoracatMiniMapPoiDisplayDistance": "資源點（POI）顯示距離（格）",
+    "Sandbox_MinidoracatMiniMapPoiDisplayDistance_tooltip": "0＝無距離限制（預設）。\\nN＞0＝資源點區域（顯示中的分類房間）最近點距玩家 N 格內才顯示（區塊、框線、圖標一併隱藏）。\\n1 格約 1 公尺；建議 300＝約一個街區群，保留探索感。\\n僅影響內建資源點；地圖包範圍框線等其他圖層不受影響。\\n採二維直線距離，不計樓層。\\n管理員按「套用」後立即生效。"
 }

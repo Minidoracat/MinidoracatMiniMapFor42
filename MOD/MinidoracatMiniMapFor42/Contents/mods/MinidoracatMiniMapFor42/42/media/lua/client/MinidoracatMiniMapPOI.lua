@@ -193,7 +193,9 @@ local function zoneProvider()
     return poiZones
 end
 
--- internal=true：本體內部 provider，不受主檔 ZoneLayer 總閘連坐，只由自家開關控制。
+-- internal=true：本體內部 provider，不受主檔 ZoneLayer 總閘連坐，由自家開關控制；
+-- 另受主檔的 POI 顯示距離閘連坐（沙盒 PoiDisplayDistance／全域上限 AllInfoDistance
+-- ＋玩家自訂距離，取最小正值）——距離啟用時 zone 依玩家距離被裁，非本檔可見的邏輯。
 MinidoracatMiniMapAPI.registerZoneProvider(OWN_PROVIDER_ID, zoneProvider, nil, true)
 
 Events.OnGameStart.Add(function()

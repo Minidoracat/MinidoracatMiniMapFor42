@@ -1,5 +1,7 @@
 {
     "Sandbox_MinidoracatMiniMap": "Minidoracat 小地图",
+    "Sandbox_MinidoracatMiniMapAllInfoDistance": "【全局】全部信息显示距离上限（格）",
+    "Sandbox_MinidoracatMiniMapAllInfoDistance_tooltip": "0＝无距离限制（默认）。\\nN＞0＝丧尸点位、动物、载具、安全屋范围、资源点（POI）的显示距离全局上限。\\n最优先生效：单项距离选项只能设得更严（两者取较小），不能放宽此上限。\\n玩家还可在设置窗口“显示距离”区把自己的显示距离收得更紧。\\n1 格约 1 米；采用二维直线距离，不计楼层。\\n管理员点击“应用”后立即生效。",
     "Sandbox_MinidoracatMiniMapAllowZombieDots": "允许实时丧尸点位",
     "Sandbox_MinidoracatMiniMapAllowZombieDots_tooltip": "允许玩家在小地图上显示可视范围内丧尸的实时位置。关闭后所有玩家的丧尸点位功能失效（管理员改动即时生效）。",
     "Sandbox_MinidoracatMiniMapZombieDotDistance": "丧尸点位显示距离（格）",
@@ -28,5 +30,7 @@
     "Sandbox_MinidoracatMiniMapAllowVehicleDots": "允许载具图标",
     "Sandbox_MinidoracatMiniMapAllowVehicleDots_tooltip": "允许玩家在小地图上显示附近载具图标。关闭后所有玩家的载具图标功能失效（管理员改动即时生效）。",
     "Sandbox_MinidoracatMiniMapVehicleIconDistance": "载具图标显示距离（格）",
-    "Sandbox_MinidoracatMiniMapVehicleIconDistance_tooltip": "0＝无距离限制。\\nN＞0＝仅显示距玩家 N 格内的项目。\\n1 格约 1 米；采用二维直线距离，不计楼层。\\n管理员点击“应用”后立即生效。"
+    "Sandbox_MinidoracatMiniMapVehicleIconDistance_tooltip": "0＝无距离限制。\\nN＞0＝仅显示距玩家 N 格内的项目。\\n1 格约 1 米；采用二维直线距离，不计楼层。\\n管理员点击“应用”后立即生效。",
+    "Sandbox_MinidoracatMiniMapPoiDisplayDistance": "资源点（POI）显示距离（格）",
+    "Sandbox_MinidoracatMiniMapPoiDisplayDistance_tooltip": "0＝无距离限制（默认）。\\nN＞0＝资源点区域（显示中的分类房间）最近点距玩家 N 格内才显示（区块、框线、图标一并隐藏）。\\n1 格约 1 米；建议 300＝约一个街区群，保留探索感。\\n仅影响内置资源点；地图包范围框线等其他图层不受影响。\\n采用二维直线距离，不计楼层。\\n管理员点击“应用”后立即生效。"
 }

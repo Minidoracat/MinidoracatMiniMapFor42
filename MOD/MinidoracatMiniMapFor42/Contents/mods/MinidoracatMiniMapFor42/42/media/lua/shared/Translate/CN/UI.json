@@ -194,5 +194,14 @@
     "UI_MinidoracatMiniMap_Cat_Farm": "农场",
     "UI_MinidoracatMiniMap_Cat_Industry": "工业",
     "UI_MinidoracatMiniMap_Cat_Retail": "零售",
-    "UI_MinidoracatMiniMap_Cat_Food": "餐饮"
+    "UI_MinidoracatMiniMap_Cat_Food": "餐饮",
+    "UI_MinidoracatMiniMap_SecDistance": "显示距离",
+    "UI_MinidoracatMiniMap_SecDistanceEsc": "显示距离（0＝不限；实际显示另受服务器上限限制）",
+    "UI_MinidoracatMiniMap_DistNote": "数值＝你的设置／服务器上限，取较小生效；0＝不限",
+    "UI_MinidoracatMiniMap_DistZombie": "丧尸点位显示距离",
+    "UI_MinidoracatMiniMap_DistAnimal": "动物图标显示距离",
+    "UI_MinidoracatMiniMap_DistVehicle": "载具图标显示距离",
+    "UI_MinidoracatMiniMap_DistSafehouse": "安全屋范围显示距离",
+    "UI_MinidoracatMiniMap_DistPoi": "资源点（POI）显示距离",
+    "UI_MinidoracatMiniMap_DistUnlimited": "不限"
 }

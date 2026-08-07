@@ -1,5 +1,7 @@
 {
     "Sandbox_MinidoracatMiniMap": "Minidoracat MiniMap",
+    "Sandbox_MinidoracatMiniMapAllInfoDistance": "[GLOBAL] Info display distance cap (tiles)",
+    "Sandbox_MinidoracatMiniMapAllInfoDistance_tooltip": "0 = no distance limit (default).\\nN > 0 = global display-distance cap for zombie dots, animals,\\nvehicles, safehouse outlines and resource points (POI).\\nHighest priority: per-type distance options can only tighten it\\n(the smaller value wins), never loosen it.\\nPlayers can further tighten their own distances in the\\nsettings window's Display distance section.\\nOne tile is about one metre; distance is 2D and ignores floors.\\nAdmin changes take effect immediately after Apply.",
     "Sandbox_MinidoracatMiniMapAllowZombieDots": "Allow live zombie dots",
     "Sandbox_MinidoracatMiniMapAllowZombieDots_tooltip": "Allow players to show real-time zombie positions within the mini-map view. When disabled, the feature is turned off for every player (admin changes apply live).",
     "Sandbox_MinidoracatMiniMapZombieDotDistance": "Zombie dot display distance (tiles)",
@@ -28,5 +30,7 @@
     "Sandbox_MinidoracatMiniMapAllowVehicleDots": "Allow vehicle icons",
     "Sandbox_MinidoracatMiniMapAllowVehicleDots_tooltip": "Allow players to show nearby vehicle icons on the mini-map. When disabled, the feature is turned off for every player (admin changes apply live).",
     "Sandbox_MinidoracatMiniMapVehicleIconDistance": "Vehicle icon display distance (tiles)",
-    "Sandbox_MinidoracatMiniMapVehicleIconDistance_tooltip": "0 = no distance limit.\\nN > 0 = show only items within N tiles of the player.\\nOne tile is about one metre; distance is 2D and ignores floors.\\nAdmin changes take effect immediately after Apply."
+    "Sandbox_MinidoracatMiniMapVehicleIconDistance_tooltip": "0 = no distance limit.\\nN > 0 = show only items within N tiles of the player.\\nOne tile is about one metre; distance is 2D and ignores floors.\\nAdmin changes take effect immediately after Apply.",
+    "Sandbox_MinidoracatMiniMapPoiDisplayDistance": "Resource point (POI) display distance (tiles)",
+    "Sandbox_MinidoracatMiniMapPoiDisplayDistance_tooltip": "0 = no distance limit (default).\\nN > 0 = a resource point (blocks, outlines and icon) is shown only\\nwhen the nearest point of its displayed rooms is within N tiles\\nof the player.\\nOne tile is about one metre; 300 is a good starting value\\n(roughly a city block cluster) that preserves exploration.\\nOnly affects built-in resource points; map-pack outlines\\nand other layers are unaffected.\\nDistance is 2D and ignores floors.\\nAdmin changes take effect immediately after Apply."
 }

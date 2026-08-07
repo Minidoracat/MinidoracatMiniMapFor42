@@ -71,6 +71,24 @@ local iconSize = 18
 local function getSliderValue(id) return id == "PoiIconAlpha" and 100 or iconSize end
 local zoneAABB = { 0, 100, 0, 100 }
 local function visibleWorldAABB() return zoneAABB[1], zoneAABB[2], zoneAABB[3], zoneAABB[4] end
+-- POI 距離閘的區段外相依：displayDist（鎖定選項名；沙盒×玩家合成另在
+-- test_livestock_visibility.lua 的 display-distance 區段測）與玩家 stub
+-- （記錄收到的 playerNum——防 inner.playerNum 被硬編碼 0 的回歸）
+local poiDist = nil          -- nil＝未啟用（displayDist 對 0/缺值回 nil 的語意）
+local playerPos = { 50, 50 } -- nil＝缺玩家（fail closed 分支）
+local lastPlayerNum = nil
+local function displayDist(name)
+    if name == "PoiDisplayDistance" then return poiDist end
+    return nil
+end
+local function getSpecificPlayer(pn)
+    lastPlayerNum = pn
+    if not playerPos then return nil end
+    return {
+        getX = function() return playerPos[1] end,
+        getY = function() return playerPos[2] end,
+    }
+end
 ]=]
 local zoneSuffix = [=[
 return {
@@ -87,6 +105,9 @@ return {
         for i = #registeredZoneProviders, 1, -1 do registeredZoneProviders[i] = nil end
     end,
     setZoneLayer = function(v) zoneLayerOn = v end,
+    setPoiDist = function(d) poiDist = d end,
+    setPlayerPos = function(x, y) playerPos = x and { x, y } or nil end,
+    lastPn = function() return lastPlayerNum end,
     logCount = function()
         local n = 0
         for _ in ipairs(logs) do n = n + 1 end
@@ -452,7 +473,137 @@ do
     assert(dcd.draws == 2, "A7 細節檔不去重疊（得 " .. dcd.draws .. "）")
 end
 
-print("zone render: clipped-edge alpha + A1 stencil + A2 isolation + A3 AABB + A5 icon-cull cases passed")
+-- A8 POI 顯示距離沙盒閘（PoiDisplayDistance）：僅 internal provider 受距離限制，
+-- 三 pass（fill/lines/icons）同一判定；最近點語意含邊界（<=）；距離啟用但缺
+-- 玩家時 fail closed（內部 provider 連呼叫都不發生）；外部 addon zone 不受影響
+do
+    local function distZone(x1, y1, x2, y2)
+        return { {
+            fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+            border = { r = 1, g = 1, b = 1 }, borderAlpha = 0.5, name = "Z",
+            icon = { tex = "T", r = 1, g = 1, b = 1 }, iconOnce = true,
+            rects = { { x1 = x1, y1 = y1, x2 = x2, y2 = y2 } },
+            lodRect = { x1 = x1, y1 = y1, x2 = x2, y2 = y2 },
+        } }
+    end
+    local function makeDistInner()
+        local inner = makeInner(10) -- 細節檔：LOD 不干擾距離閘
+        inner.draws = 0
+        inner.drawTextureScaled = function(self) self.draws = self.draws + 1 end
+        return inner
+    end
+
+    -- A8-1 基本閘：近 zone（最近點 ~14 格）畫、遠 zone（~71 格）隱；三 pass 一致
+    zone.setPoiDist(30)
+    zone.setPlayerPos(10, 10)
+    zone.addProvider("poiNear", function() return distZone(20, 20, 30, 30) end, true)
+    zone.addProvider("poiFar", function() return distZone(60, 60, 70, 70) end, true)
+    local a8 = makeDistInner()
+    zone.fill(a8)
+    assert(a8.polyCount == 1, "A8-1 fill 應只畫近 zone（得 " .. a8.polyCount .. "）")
+    zone.resetEdgeCount(); zone.lines(a8)
+    assert(zone.edgeCount() == 4, "A8-1 lines 應只畫近 zone 四邊（得 " .. zone.edgeCount() .. "）")
+    -- 名稱與框線同段：遠 zone 的名稱必須一併被距離閘藏掉（近 zone 恰畫一次）
+    assert(a8.textCount == 1, "A8-1 名稱應只畫近 zone 一次（得 " .. a8.textCount .. "）")
+    zone.icons(a8)
+    assert(a8.draws == 1, "A8-1 icons 應只畫近 zone 圖標（得 " .. a8.draws .. "）")
+    -- playerNum 透傳：預設 inner 無 playerNum → fallback 0；帶 playerNum=1 的
+    -- inner（分屏 P2）必須把 1 傳給 getSpecificPlayer，不得硬編碼 0
+    assert(zone.lastPn() == 0, "A8-1 預設 inner 應以 playerNum 0 取玩家（得 " .. tostring(zone.lastPn()) .. "）")
+    local p2 = makeDistInner()
+    p2.playerNum = 1
+    zone.addProvider("poiP2", function() return distZone(20, 20, 30, 30) end, true)
+    zone.fill(p2)
+    assert(zone.lastPn() == 1, "A8-1 分屏 inner 的 playerNum 未透傳（得 " .. tostring(zone.lastPn()) .. "）")
+    zone.clearProviders()
+
+    -- A8-2 邊界含等號：最近點恰 N 格＝顯示；N 縮 1 格＝隱藏
+    zone.setPlayerPos(10, 40)
+    zone.addProvider("poiEdge", function() return distZone(40, 40, 50, 50) end, true) -- 最近點 (40,40)，距 30
+    local at = makeDistInner(); zone.fill(at)
+    assert(at.polyCount == 1, "A8-2 恰在距離上（<=）應顯示")
+    zone.setPoiDist(29)
+    local under = makeDistInner(); zone.fill(under)
+    assert(under.polyCount == 0, "A8-2 超出距離應隱藏")
+    zone.clearProviders()
+
+    -- A8-3 外部 addon zone 不受距離閘影響（同一顆遠 zone 改外部註冊）
+    zone.setPoiDist(30)
+    zone.setPlayerPos(10, 10)
+    zone.addProvider("addonFarExt", function() return distZone(60, 60, 70, 70) end)
+    local ext = makeDistInner()
+    zone.fill(ext)
+    assert(ext.polyCount == 1, "A8-3 外部 zone 不應被距離閘裁掉")
+    zone.icons(ext)
+    assert(ext.draws == 1, "A8-3 外部 zone 圖標不應被距離閘裁掉")
+    zone.clearProviders()
+
+    -- A8-4 fail closed：距離啟用但缺玩家→內部 provider 整段不畫（連 fn 都不呼叫）；
+    -- 外部 provider 照常
+    zone.setPlayerPos(nil)
+    local intCalled = 0
+    zone.addProvider("poiNoPlayer", function()
+        intCalled = intCalled + 1
+        return distZone(20, 20, 30, 30)
+    end, true)
+    zone.addProvider("addonNoPlayer", function() return distZone(20, 20, 30, 30) end)
+    local nop = makeDistInner()
+    zone.fill(nop); zone.icons(nop)
+    assert(intCalled == 0, "A8-4 缺玩家時內部 provider 不應被呼叫（fail closed）")
+    assert(nop.polyCount == 1 and nop.draws == 1, "A8-4 缺玩家時外部 provider 應照常繪製")
+    zone.clearProviders()
+
+    -- A8-5 閘未啟用（nil＝沙盒 0/缺值）：遠 zone 恢復顯示；此時缺玩家也不影響
+    zone.setPoiDist(nil)
+    zone.addProvider("poiFarOff", function() return distZone(60, 60, 70, 70) end, true)
+    local off = makeDistInner()
+    zone.fill(off)
+    assert(off.polyCount == 1, "A8-5 閘未啟用時遠 zone 應照畫")
+    zone.clearProviders()
+    zone.setPlayerPos(50, 50)
+
+    -- A8-6 逐房間判距（codex review：lodRect＝分類房間聯集 AABB，非整棟建築
+    -- bbox；大型建物的分類房間可能只佔一角、AABB 含空白區）：production 形狀
+    -- ＝lodRect ⊋ 各 rects。玩家在 AABB 內但距所有房間 >N → 必須隱藏（AABB
+    -- 僅快速排除、不得當命中）；任一房間在 N 內 → 整 zone 顯示（三 pass 一致）
+    local function compositeZone()
+        return { {
+            fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+            border = { r = 1, g = 1, b = 1 }, borderAlpha = 0.5, name = "Z",
+            icon = { tex = "T", r = 1, g = 1, b = 1 }, iconOnce = true,
+            rects = { { x1 = 10, y1 = 10, x2 = 20, y2 = 20 },
+                { x1 = 70, y1 = 10, x2 = 80, y2 = 20 } },
+            lodRect = { x1 = 10, y1 = 10, x2 = 80, y2 = 20 },
+        } }
+    end
+    zone.setPoiDist(15)
+    zone.setPlayerPos(45, 15) -- AABB 內（距 AABB 0 格），距兩房各 25 格
+    zone.addProvider("poiComposite", compositeZone, true)
+    local comp = makeDistInner()
+    zone.fill(comp)
+    zone.resetEdgeCount(); zone.lines(comp)
+    zone.icons(comp)
+    assert(comp.polyCount == 0 and zone.edgeCount() == 0 and comp.draws == 0,
+        "A8-6 AABB 內但距所有房間 >N 應隱藏（poly=" .. comp.polyCount
+        .. " edges=" .. zone.edgeCount() .. " draws=" .. comp.draws .. "）")
+    zone.clearProviders()
+    zone.addProvider("poiComposite2", compositeZone, true)
+    zone.setPlayerPos(85, 15) -- 距第二房 5 格、第一房 65 格：任一房命中即整 zone 顯示
+    local comp2 = makeDistInner()
+    zone.fill(comp2)
+    assert(comp2.polyCount == 2, "A8-6 任一房間在距離內應整 zone 顯示（得 " .. comp2.polyCount .. "）")
+    zone.resetEdgeCount(); zone.lines(comp2)
+    assert(zone.edgeCount() == 8 and comp2.textCount == 1,
+        "A8-6 lines 應畫兩房 8 邊＋名稱一次（edges=" .. zone.edgeCount() .. " text=" .. comp2.textCount .. "）")
+    zone.icons(comp2)
+    assert(comp2.draws == 1, "A8-6 iconOnce 圖標應畫一顆（得 " .. comp2.draws .. "）")
+    zone.clearProviders()
+    zone.setPoiDist(nil)
+    zone.setPlayerPos(50, 50)
+    zone.resetLogs()
+end
+
+print("zone render: clipped-edge alpha + A1 stencil + A2 isolation + A3 AABB + A5 icon-cull + A8 poi-distance cases passed")
 
 --------------------------------------------------------------------------------
 -- registerZoneAction API：參數驗證 / dormant / options 正規化 / onTrigger callback
