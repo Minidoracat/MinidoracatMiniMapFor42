@@ -1,5 +1,6 @@
 {
     "IGUI_MapOption_Isometric": "Isometric",
+    "IGUI_MapOption_PlaceNames": "Place Names",
     "IGUI_MapOption_RemoteSymbols": "Remote Symbols",
     "IGUI_MapOption_ZombieIntensity": "Zombie Heatmap",
     "IGUI_MapOption_ZombieDots": "Live Zombie Dots"
