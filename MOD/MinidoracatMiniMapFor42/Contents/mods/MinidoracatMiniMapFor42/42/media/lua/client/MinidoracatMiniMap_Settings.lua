@@ -808,6 +808,46 @@ local function unifiedBuildDistance(ctx)
     ctx.curY = ctx.curY + ctx.rowH
     unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.distance)
 end
+-- 長提示句斷行（ISLabel 無自動換行，長句會溢出 lane——實測「無類別提示」
+-- 四語皆超寬）：貪婪斷行，CJK 逐字可斷、拉丁以最後空白優先；UTF-8 逐碼點
+-- 步進，絕不切壞多位元組字元。僅設定視窗重建時執行，量測成本無妨
+local function unifiedAddWrappedNote(ctx, text)
+    local tm = getTextManager()
+    local maxW = ctx.laneW - 10
+    local s = tostring(text or "")
+    local n = #s
+    local lineStart = 1
+    local lastSpaceEnd = nil -- 行內最後一個空白之後的 byte 位置（拉丁斷點）
+    local function emit(seg)
+        unifiedAdd(ctx, ISLabel:new(ctx.curX + 4, ctx.curY + 3, ctx.fontH,
+            seg, 0.75, 0.75, 0.75, 1, UIFont.Small, true))
+        ctx.curY = ctx.curY + ctx.rowH
+    end
+    local i = 1
+    while i <= n do
+        local b = string.byte(s, i)
+        local cl = (b >= 240 and 4) or (b >= 224 and 3) or (b >= 192 and 2) or 1
+        local j = i + cl - 1
+        if tm:MeasureStringX(UIFont.Small, string.sub(s, lineStart, j)) > maxW
+            and lineStart < i then
+            local brk = lastSpaceEnd
+            if brk and brk > lineStart then
+                emit(string.sub(s, lineStart, brk - 1))
+                lineStart = brk
+            else
+                emit(string.sub(s, lineStart, i - 1))
+                lineStart = i
+            end
+            lastSpaceEnd = nil
+            -- 不前進 i：同一字元以新行基準重新量測
+        else
+            if b == 32 then lastSpaceEnd = j + 1 end
+            i = j + 1
+        end
+    end
+    if lineStart <= n then emit(string.sub(s, lineStart, n)) end
+end
+
 -- 伺服器區域區（有外部 zone provider 才插入，見上方 OnGameBoot）：名稱遠距開關
 -- ＋動態類別勾選。類別是 zones.json 選配欄位——伺服器定義什麼列什麼；MP 區域
 -- 非同步到貨，重開視窗即刷新清單。已知取捨：CSV 依「當前可見類別」序列化，
@@ -820,9 +860,7 @@ local function unifiedBuildZones(ctx)
     ctx.curY = ctx.curY + ctx.rowH
     local cats = Core.zoneExternalCategories and Core.zoneExternalCategories() or {}
     if #cats == 0 then
-        unifiedAdd(ctx, ISLabel:new(ctx.curX + 4, ctx.curY + 3, ctx.fontH,
-            getText("UI_MinidoracatMiniMap_ZoneNoCats"), 0.75, 0.75, 0.75, 1, UIFont.Small, true))
-        ctx.curY = ctx.curY + ctx.rowH
+        unifiedAddWrappedNote(ctx, getText("UI_MinidoracatMiniMap_ZoneNoCats"))
         return
     end
     local defs = {}
