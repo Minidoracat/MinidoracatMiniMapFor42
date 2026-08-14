@@ -52,7 +52,13 @@ local zoneBody = assert(source:match(
 local affineBody = assert(source:match(
     "%-%- test:derive%-affine:start\n(.-)\n%-%- test:derive%-affine:end"),
     "找不到 deriveAffine 測試區段")
-zoneBody = affineBody .. "\n" .. zoneBody
+local csvBody = assert(source:match(
+    "%-%- test:csv%-set:start\n(.-)\n%-%- test:csv%-set:end"),
+    "找不到 unifiedCsvSet 測試區段")
+local zcatBody = assert(source:match(
+    "%-%- test:zone%-categories:start\n(.-)\n%-%- test:zone%-categories:end"),
+    "找不到 zoneExternalCategories 測試區段")
+zoneBody = csvBody .. "\n" .. affineBody .. "\n" .. zoneBody .. "\n" .. zcatBody
 local zonePrelude = [=[
 local registeredZoneProviders = {}
 local zoneLayerOn = true
@@ -75,15 +81,10 @@ local modOptions = {
         return nil
     end,
 }
-local function unifiedCsvSet(raw)
-    local set = {}
-    if type(raw) ~= "string" then return set end
-    for token in raw:gmatch("[^,]+") do
-        local k = token:match("^%s*(.-)%s*$")
-        if k ~= "" and k ~= "-" then set[k] = true end
-    end
-    return set
-end
+-- unifiedCsvSet 不做 stub：production 版經 test:csv-set 標記抽取（單一事實
+-- 來源，防 stub 語意分歧——codex review 抓出 stub trim 與 production 不一致）
+local Core = {}
+local zoneCatErrLogged = {}
 local function log(msg) logs[#logs + 1] = msg end
 local UIFont = { Small = "small" }
 local function getTextManager()
@@ -136,6 +137,7 @@ return {
     setZoneLayer = function(v) zoneLayerOn = v end,
     setBoolOverride = function(id, v) boolOverrides[id] = v end,
     setCatFilter = function(v) catFilterValue = v end,
+    zoneCategories = function() return Core.zoneExternalCategories() end,
     setPoiDist = function(d) poiDist = d end,
     setPlayerPos = function(x, y) playerPos = x and { x, y } or nil end,
     lastPn = function() return lastPlayerNum end,
@@ -389,7 +391,56 @@ do
     zone.fill(a12b)
     assert(a12b.polyCount == 1, "A12 內部 zone 不受類別清單影響（得 " .. a12b.polyCount .. "）")
     zone.clearProviders()
+    -- icons pass 同判定（codex review：原測試漏 icons，移除 icons 的 disCats 仍會綠）
+    local function catIconZones()
+        return { { icon = { tex = "T", r = 1, g = 1, b = 1 }, iconOnce = true, category = "shop",
+                rects = { { x1 = 10, y1 = 10, x2 = 20, y2 = 20 } } },
+            { icon = { tex = "T", r = 1, g = 1, b = 1 }, iconOnce = true, category = "pvp",
+                rects = { { x1 = 60, y1 = 60, x2 = 70, y2 = 70 } } } }
+    end
+    zone.addProvider("catExtIcons", catIconZones)
+    local a12i = makeInner()
+    a12i.draws = 0
+    a12i.drawTextureScaled = function(self) self.draws = self.draws + 1 end
+    zone.icons(a12i)
+    assert(a12i.draws == 1, "A12 icons pass 停用 shop 應只畫 1 顆（得 " .. a12i.draws .. "）")
+    zone.clearProviders()
+    zone.addProvider("catIntIcons", catIconZones, true) -- 內部：icons 亦免疫
+    local a12j = makeInner()
+    a12j.draws = 0
+    a12j.drawTextureScaled = function(self) self.draws = self.draws + 1 end
+    zone.icons(a12j)
+    assert(a12j.draws == 2, "A12 內部 zone 的 icons 不受類別清單影響（得 " .. a12j.draws .. "）")
+    zone.clearProviders()
+    -- raw 比對快取失效：換停用值即刻生效（shop 恢復、pvp 隱藏）
+    zone.setCatFilter("pvp")
+    zone.addProvider("catExt2", catZones)
+    local a12c = makeInner()
+    zone.fill(a12c)
+    assert(a12c.polyCount == 2, "A12 換停用值後 fill 應為 shop+plain（得 " .. a12c.polyCount .. "）")
+    zone.resetEdgeCount(); zone.lines(a12c)
+    assert(a12c.textCount == 2, "A12 換停用值後名稱應為 2（得 " .. a12c.textCount .. "）")
+    zone.clearProviders()
     zone.setCatFilter(nil)
+    zone.resetLogs()
+
+    -- A13 Core.zoneExternalCategories：可編碼過濾（含逗號/sentinel 不進清單——
+    -- 停用「a,b」會誤傷類別 a 與 b）、排序、去重、internal 排除、壞 provider log-once
+    zone.addProvider("zcExt", function()
+        return { { category = "shop" }, { category = "a,b" }, { category = "-" },
+            { category = "nil" }, { category = "bar" }, { category = "shop" }, {} }
+    end)
+    zone.addProvider("zcInt", function() return { { category = "internalcat" } } end, true)
+    local zc = zone.zoneCategories()
+    assert(#zc == 2 and zc[1] == "bar" and zc[2] == "shop",
+        "A13 應僅列可編碼外部類別且排序（得 " .. table.concat(zc, "|") .. "）")
+    zone.clearProviders()
+    zone.resetLogs()
+    zone.addProvider("zcBad", function() error("boom") end)
+    zone.zoneCategories()
+    zone.zoneCategories()
+    assert(zone.logCount() == 1, "A13 壞 provider 應 log-once（得 " .. zone.logCount() .. "）")
+    zone.clearProviders()
     zone.resetLogs()
 
     -- A9 底襯（haloAlpha）：細節檔每 rect 先畫外擴暗色 quad 再畫填色（2 poly/rect，

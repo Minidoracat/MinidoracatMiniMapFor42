@@ -109,6 +109,10 @@ end
 --     distRects={ {x1=,y1=,x2=,y2=},.. }|nil(選配；覆寫 POI 顯示距離閘的量測
 --       對象，預設量 rects。整棟外框模式用：畫整棟框但距離仍由分類房間決定，
 --       使該開關純屬外觀、不改變可見距離。僅 internal provider 受距離閘),
+--   ⚠ 註冊時機：provider 應於 OnGameBoot 前註冊（檔案載入期，family addon 慣例）
+--     ——ZoneLayer/ZoneNamesFar/ZoneCategoryFilter 選項與統一視窗「伺服器區域」
+--     區塊都在 OnGameBoot 依「有無外部 provider」一次性建立。之後才註冊者仍會
+--     被渲染（fail-visible：名稱遠距依預設值生效），但本場沒有對應 UI 可調。
 --   zones「表本身」可帶選配聚合旗標 hasFill/hasLine/hasIcon（ZR-1）：false＝
 --     provider 聲明該 pass 無任何可畫內容，renderer 整段跳過迴圈（內建 POI 預設
 --     純圖標模式靠此免去 fill/lines 每幀空掃全部 zone）；nil＝未聲明，照舊逐
@@ -1957,6 +1961,7 @@ local ADOTS_VEHCAT_UI = {
 -- 空集合以 "-" sentinel 儲存：PZAPI 存讀管線會把空 textentry 讀成 nil 再存成
 -- 字串 "nil"（load 用 luautils.split 丟尾端空欄，ModOptions.lua:304），
 -- 空字串走一輪就變髒——讀取端把 "-"/"nil" 一律視為空
+-- test:csv-set:start
 local function unifiedCsvSet(raw)
     local set = {}
     for w in string.gmatch(tostring(raw or ""), "[^,]+") do
@@ -1964,6 +1969,7 @@ local function unifiedCsvSet(raw)
     end
     return set
 end
+-- test:csv-set:end
 
 -- 篩選讀取（sampler 每輪呼叫；以原始字串為 key 快取解析結果）。
 -- 回傳「停用 group 集合」與原始字串（原始字串併入取樣 cache key）
@@ -2872,8 +2878,9 @@ local function drawZoneLines(inner)
                 -- borderAlpha=0 而其 name 是必填欄位。本段兩件事各自的條件：
                 --   框線 → drawEdges（有 border 且 alpha 非 0）
                 --   名稱 → z.name（下方另有細節檔與螢幕裁切判定）
-                -- 兩者皆無則整段跳過。LOD zone 的框線與名稱都僅細節檔畫（中距的
-                -- 聯集框純填色——該縮放下框線是雜訊、名稱會洗版）；內部 provider
+                -- 兩者皆無則整段跳過。LOD zone 的框線僅細節檔畫（中距的聯集框
+                -- 純填色——該縮放下框線是雜訊）；名稱對內部（POI）僅細節檔防洗版，
+                -- 外部 zone 依 nameFar（見上）可於任何縮放顯示；內部 provider
                 -- 另過 POI 距離閘（not pdist2 先行短路，閘未啟用不付逐 zone 呼叫）
                 -- 中/遠距檔（lodRect zone）：框線恆不畫；名稱僅 nameFar 時放行
                 local midFar = lod ~= nil and scale < ZONE_LOD_DETAIL
@@ -2935,7 +2942,8 @@ local function drawZoneLines(inner)
                     -- rect AABB 與視窗相交，故 zoneVisible 為真，不影響應畫的名稱
                     local name = z.name
                     local rc = rects[1]
-                    -- 名稱僅細節檔顯示（lodRect zone；20 類全開時中/遠距的名稱洗版即此治）
+                    -- 名稱檔位閘：內部（POI）僅細節檔（20 類全開時中/遠距洗版即此治）；
+                    -- 外部 zone 由 nameFar 放行任何縮放（找區域的主要手段）
                     if name and rc and zoneVisible
                         and (not lod or scale >= ZONE_LOD_DETAIL or nameFar) then
                         -- 量測惰性快取（ZR-4）：renderer 自有、以名稱字串為 key——
@@ -4059,20 +4067,33 @@ Core.sandboxDist = sandboxDist
 Core.displayDist = displayDist
 Core.livestockVisibilityMode = livestockVisibilityMode
 Core.unifiedCsvSet = unifiedCsvSet
+local zoneCatErrLogged = {} -- zoneExternalCategories 的 provider 失敗 log-once（依 owner）
 -- 統一視窗「伺服器區域」區塊用：收集外部 provider 當前 zone 的 distinct category
 -- （排序穩定；無 category 的 zone 不列——類別是伺服器 zones.json 選配欄位）。
--- 視窗開啟時才呼叫，pcall 防外部 provider 拋錯
+-- 視窗開啟時才呼叫，pcall 防外部 provider 拋錯（失敗依 owner log-once，
+-- 不得靜默呈現成「沒有分類」——codex review）。
+-- 可編碼過濾：類別是自由字串，含逗號或恰為 CSV sentinel（-/nil）者無法在
+-- ZoneCategoryFilter 停用清單可逆表示——停用「a,b」會誤傷類別 a 與 b。判定
+-- 用單鍵 round-trip（unifiedCsvSet(c)[c]），對 parser 語意零假設；不可編碼者
+-- 不進清單＝永遠顯示、永不落 CSV（fail-visible）
+-- test:zone-categories:start
 Core.zoneExternalCategories = function()
     local seen, list = {}, {}
     for i = 1, #registeredZoneProviders do
         local p = registeredZoneProviders[i]
         if not p.internal then
             local ok, zones = pcall(p.fn)
-            if ok and type(zones) == "table" then
+            if not ok then
+                if not zoneCatErrLogged[p.owner or "?"] then
+                    zoneCatErrLogged[p.owner or "?"] = true
+                    log("zone category scan failed (" .. tostring(p.owner) .. "): " .. tostring(zones))
+                end
+            elseif type(zones) == "table" then
                 for zi = 1, #zones do
                     local z = zones[zi]
                     local c = z and z.category
-                    if type(c) == "string" and c ~= "" and not seen[c] then
+                    if type(c) == "string" and c ~= "" and not seen[c]
+                        and unifiedCsvSet(c)[c] == true then
                         seen[c] = true
                         -- 插入排序取代 table.sort（家規：Kahlua 禁用，見 verify_mod）；
                         -- 類別數極小（伺服器自訂、通常個位數），O(n²) 無妨
@@ -4089,6 +4110,7 @@ Core.zoneExternalCategories = function()
     end
     return list
 end
+-- test:zone-categories:end
 Core.ADOTS_COLOR_ITEMS = ADOTS_COLOR_ITEMS
 Core.ADOTS_SPECIES_UI = ADOTS_SPECIES_UI
 Core.ADOTS_VEHCAT_UI = ADOTS_VEHCAT_UI

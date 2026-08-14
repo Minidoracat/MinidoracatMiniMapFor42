@@ -887,6 +887,11 @@ local function unifiedMeasureLayout()
     for i = 1, #ADOTS_VEHCAT_UI do
         max2 = math.max(max2, tw(getText(ADOTS_VEHCAT_UI[i].label)))
     end
+    -- 動態區域類別標籤（zones 區塊插入時才有；長類別名不納量測會跨欄裁切）
+    if UNIFIED_LANE.zones and Core.zoneExternalCategories then
+        local zcats = Core.zoneExternalCategories()
+        for i = 1, #zcats do max2 = math.max(max2, tw(zcats[i])) end
+    end
     for i = 1, #UNIFIED_WM_TICKS do
         max2 = math.max(max2, tw(getText(UNIFIED_WM_TICKS[i].label)))
     end
