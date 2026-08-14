@@ -604,7 +604,7 @@ local function unifiedBuildPoicat(ctx)
     -- 圖標位置不變（POI provider 於整棟模式帶 iconRect 釘住最大房間）
     unifiedAddTick(ctx, ctx.curX + 4, ctx.curY, ctx.laneW - 6,
         getTextOrNull("UI_MinidoracatMiniMap_PoiWholeBuilding") or "PoiWholeBuilding",
-        getBoolOption("PoiWholeBuilding", false), unifiedOnModTick, { id = "PoiWholeBuilding" })
+        getBoolOption("PoiWholeBuilding", true), unifiedOnModTick, { id = "PoiWholeBuilding" })
     ctx.curY = ctx.curY + ctx.rowH
     -- 20 類別勾選格（poiCols 欄，短標籤預設 3 欄，欄距 8px）＋全選/全不選。
     -- 每格獨立 Cat_<key> 布林選項；勾選經 settingsApply 落地，POI provider

@@ -50,7 +50,7 @@ local registeredPacks = {} -- { { owner = <地圖包 mod ID>, entries = {...} },
 MinidoracatMiniMapAPI = MinidoracatMiniMapAPI or {}
 function MinidoracatMiniMapAPI.registerMaps(ownerModId, entries)
     if type(ownerModId) ~= "string" or ownerModId == "" or type(entries) ~= "table" then
-        print("[MinidoracatMiniMap] registerMaps 參數錯誤（需 ownerModId, entries）")
+        print("[MinidoracatMiniMap] registerMaps: bad arguments (need ownerModId, entries)")
         return
     end
     -- 逐條驗證、壞條目跳過並 log：掛載/繪製端信任這裡的把關，
@@ -75,7 +75,7 @@ function MinidoracatMiniMapAPI.registerMaps(ownerModId, entries)
         if ok then
             table.insert(valid, e)
         else
-            print("[MinidoracatMiniMap] registerMaps: 略過無效條目 #" .. i .. "（來源 " .. ownerModId .. "）")
+            print("[MinidoracatMiniMap] registerMaps: skipping invalid entry #" .. i .. " (from " .. ownerModId .. ")")
         end
     end
     if #valid > 0 then -- 空包不註冊：地圖包選項不該因空資料出現
@@ -308,14 +308,14 @@ local function collectPyramids()
                 if path then
                     table.insert(list, { path = path, zip = entry.zip })
                 elseif not entry.mapMod then
-                    log("基底圖檔缺失: " .. entry.zip .. "（尚未渲染？應位於 42/media/minimap/，見 scripts/build_pyramids.ps1）")
+                    log("base map zip missing: " .. entry.zip .. " (not rendered yet? expected under 42/media/minimap/, see scripts/build_pyramids.ps1)")
                 else
-                    log("地圖 MOD " .. entry.mapMod .. " 已啟用，但集合包缺 " .. entry.zip .. "（漏渲染或漏打包？）")
+                    log("map mod " .. entry.mapMod .. " is enabled but the pack is missing " .. entry.zip .. " (not rendered or not packaged?)")
                 end
             end
         end
     else
-        log("getModInfoByID(\"" .. OWN_MOD_ID .. "\") 回 nil——OWN_MOD_ID 與 mod.info 的 id 不符？manifest 圖層全數停用")
+        log("getModInfoByID(\"" .. OWN_MOD_ID .. "\") returned nil -- OWN_MOD_ID mismatch with mod.info id? all manifest layers disabled")
     end
 
     -- (1b) 已註冊地圖包：zip 在地圖包自己的 media/minimap/。
@@ -331,12 +331,12 @@ local function collectPyramids()
                         if path then
                             table.insert(list, { path = path, zip = entry.zip })
                         else
-                            log("地圖包 " .. pack.owner .. " 缺 " .. entry.zip .. "（漏渲染或漏打包？）")
+                            log("map pack " .. pack.owner .. " missing " .. entry.zip .. " (not rendered or not packaged?)")
                         end
                     end
                 end
             else
-                log("地圖包 mod ID 無效: " .. tostring(pack.owner) .. "（registerMaps 第一參數需為地圖包自身 mod ID）")
+                log("invalid map pack mod ID: " .. tostring(pack.owner) .. " (registerMaps first argument must be the pack own mod ID)")
             end
         end
     end
@@ -449,8 +449,8 @@ local function mountPyramidLayers(styleAPI, entries)
         -- 兇手或亂序訊號）：玩家回報「藍色遮蓋」類問題時，console.txt 有此行
         -- ＝命中圖層順序窗口，最上層 id 直接指出來源
         local top = styleAPI:getLayerByIndex(styleAPI:getLayerCount() - 1)
-        log("圖層自癒：本 MOD 圖層未連續佔據樣式尾端（現存 " .. existed .. "／應有 "
-            .. #layerIds .. "；當前最上層 id=" .. tostring(top and top:getID()) .. "），全數重掛")
+        log("layer self-heal: our layers no longer occupy the style tail contiguously (found " .. existed .. " / expected "
+            .. #layerIds .. "; current top layer id=" .. tostring(top and top:getID()) .. "), remounting all")
     end
     for i = 1, #layerIds do
         if indices[i] ~= -1 then
@@ -463,7 +463,7 @@ local function mountPyramidLayers(styleAPI, entries)
             layer:setPyramidFileName(e.zip)
             layer:addFill(0.0, 255.0, 255.0, 255.0, 255.0)
             if indices[i] == -1 then
-                log("已掛載 pyramid: " .. e.path)
+                log("mounted pyramid: " .. e.path)
             end
         end
     end)
@@ -481,7 +481,7 @@ local function mountPyramidLayers(styleAPI, entries)
     end
     local added = #layerIds - existed
     if added > 0 then
-        log("圖層就緒（新增 " .. added .. "／共 " .. #layerIds .. " 個 pyramid 圖層）")
+        log("layers ready (added " .. added .. " / " .. #layerIds .. " pyramid layers total)")
     end
 end
 -- test:layer-mount:end
@@ -503,7 +503,7 @@ local function applyMiniMapPyramids(mapUI)
 
     local entries = collectPyramids()
     if #entries == 0 then
-        log("未找到任何 pyramid zip，不加圖層")
+        log("no pyramid zip found, no layers added")
         return
     end
 
@@ -911,9 +911,12 @@ if PZAPI and PZAPI.ModOptions then
         "UI_MinidoracatMiniMap_PoiIcons_tooltip")
     modOptions:addTickBox("PoiBlocks", "UI_MinidoracatMiniMap_PoiBlocks", false,
         "UI_MinidoracatMiniMap_PoiBlocks_tooltip")
-    -- 區塊形狀（預設關＝逐房間；開＝整棟一框）。只作用於區塊模式的填色/框線/名稱，
-    -- 圖標錨點不變（POI provider 於整棟模式帶 iconRect 釘住最大房間）
-    modOptions:addTickBox("PoiWholeBuilding", "UI_MinidoracatMiniMap_PoiWholeBuilding", false,
+    -- 區塊形狀（預設開＝整棟一框，0.14.2 起；關＝逐房間）。只作用於區塊模式的
+    -- 填色/框線/名稱，圖標錨點不變（POI provider 於整棟模式帶 iconRect 釘住最大
+    -- 房間）。⚠ 預設值四點同步：此處、POI.lua 讀取與簽章 fallback、統一視窗
+    -- 初始值——不一致的風險在降級/晚註冊路徑（fallback 實際被讀到時）：讀取與
+    -- 簽章分歧會漏掉必要重建或多做一次重建，統一視窗則顯示與實際不符
+    modOptions:addTickBox("PoiWholeBuilding", "UI_MinidoracatMiniMap_PoiWholeBuilding", true,
         "UI_MinidoracatMiniMap_PoiWholeBuilding_tooltip")
     -- 圖標樣式（預設關＝單色類別色剪影；開＝彩色全彩圖標）。POI provider 依此選材質集。
     modOptions:addTickBox("PoiColorIcons", "UI_MinidoracatMiniMap_PoiColorIcons", false,
@@ -1037,7 +1040,7 @@ if PZAPI and PZAPI.ModOptions then
 end
 
 if not (ISWorldMap and ISWorldMap.initDataAndStyle) then
-    log("找不到 ISWorldMap.initDataAndStyle，MOD 未啟用（遊戲版本不符？）")
+    log("ISWorldMap.initDataAndStyle not found, mod disabled (game version mismatch?)")
     return
 end
 
@@ -1051,7 +1054,7 @@ function ISWorldMap:initDataAndStyle()
     originalInitDataAndStyle(self)
     local ok, err = pcall(applyMiniMapPyramids, self)
     if not ok then
-        log("初始化失敗: " .. tostring(err))
+        log("init failed: " .. tostring(err))
     end
 end
 
@@ -1075,7 +1078,7 @@ if MapUtils and MapUtils.overlayPaper then
         if ISWorldMap_instance and mapUI == ISWorldMap_instance then
             local ok, err = pcall(applyMiniMapPyramids, mapUI)
             if not ok then
-                log("世界地圖樣式重建後補掛失敗: " .. tostring(err))
+                log("remount after world map style rebuild failed: " .. tostring(err))
             end
         end
     end
@@ -1095,7 +1098,7 @@ if ISWorldMap and ISWorldMap.ShowWorldMap then
         if ISWorldMap_instance then
             local ok, err = pcall(applyMiniMapPyramids, ISWorldMap_instance)
             if not ok then
-                log("開圖補掛失敗: " .. tostring(err))
+                log("remount on map open failed: " .. tostring(err))
             end
         end
     end
@@ -1153,7 +1156,7 @@ if ISMiniMap and ISMiniMap.InitPlayer then
             if minimap.inner and minimap.inner.mapAPI then
                 local ok, err = pcall(applyMiniMapPyramids, minimap.inner)
                 if not ok then
-                    log("小地圖初始化失敗: " .. tostring(err))
+                    log("minimap init failed: " .. tostring(err))
                 end
                 pcall(applyToggleOptions, minimap.inner.mapAPI)
                 -- 街道資料補載：原版小地圖不載 streets.xml（只有世界地圖載，
@@ -1588,12 +1591,12 @@ end
 -- 非 debug 用例 ISVersionWaterMark.lua:72）
 local function copyCoordsText(inner, text)
     if not (Clipboard and Clipboard.setClipboard) then
-        log("複製座標失敗: Clipboard 全域不可用")
+        log("copy coords failed: Clipboard global unavailable")
         return
     end
     local ok, err = pcall(Clipboard.setClipboard, text)
     if not ok then
-        log("複製座標失敗: " .. tostring(err))
+        log("copy coords failed: " .. tostring(err))
     elseif inner then
         inner._minidoracatCopiedUntil = getTimestampMs() + 1500
     end
@@ -1855,7 +1858,7 @@ local function sampleZombieDots(inner)
         -- 不能全靜默——每表面 log 一次留診斷線索（同動物取樣 failOnce 慣例）
         if not st.failOnce then
             st.failOnce = true
-            log("殭屍取樣失敗（本表面僅記錄一次）: " .. tostring(err))
+            log("zombie sampling failed (logged once per surface): " .. tostring(err))
         end
     end
     return st
@@ -2030,8 +2033,8 @@ function MinidoracatMiniMapAPI.registerAnimalGroup(ownerModId, group, labelKey, 
         and group ~= "-" and group ~= "nil"
         and string.find(group, ",", 1, true) == nil
     if not valid then
-        print("[MinidoracatMiniMap] registerAnimalGroup 參數錯誤"
-            .. "（需 ownerModId, group, labelKey；素材路徑可省略但不可為空；group 不可含逗號或使用保留值）")
+        print("[MinidoracatMiniMap] registerAnimalGroup: bad arguments"
+            .. " (need ownerModId, group, labelKey; art paths optional but not empty; group must not contain commas or reserved values)")
         return false
     end
 
@@ -2047,7 +2050,7 @@ function MinidoracatMiniMapAPI.registerAnimalGroup(ownerModId, group, labelKey, 
                     return true
                 end
                 print("[MinidoracatMiniMap] registerAnimalGroup: group '" .. group
-                    .. "' 已被其他物種定義使用（來源 " .. ownerModId .. "）")
+                    .. "' is already used by another species definition (from " .. ownerModId .. ")")
                 return false
             end
         end
@@ -2236,7 +2239,7 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
     local function failOnce(err)
         if not st.errLogged then
             st.errLogged = true
-            log("動物/載具取樣失敗: " .. tostring(err))
+            log("animal/vehicle sampling failed: " .. tostring(err))
         end
     end
     if (wantWild or (wantLive and livestockMode ~= 4)) and (not da or playerObj ~= nil) then
@@ -3113,12 +3116,12 @@ if ISWorldMap and ISWorldMap.prerender then
         local adOk, adErr = pcall(drawAnimalDots, self, "WMAnimalWild", "WMAnimalLivestock", "WMVehicleDots")
         if not adOk and not self._minidoracatWMADotsErrLogged then
             self._minidoracatWMADotsErrLogged = true
-            log("世界地圖動物圖標繪製失敗: " .. tostring(adErr))
+            log("world map animal icons draw failed: " .. tostring(adErr))
         end
         local zdOk, zdErr = pcall(drawZombieDotsOn, self, "WMZombieDots")
         if not zdOk and not self._minidoracatWMZDotsErrLogged then
             self._minidoracatWMZDotsErrLogged = true
-            log("世界地圖殭屍點繪製失敗: " .. tostring(zdErr))
+            log("world map zombie dots draw failed: " .. tostring(zdErr))
         end
         originalWorldMapPrerender(self)
         pcall(drawMapBounds, self)
@@ -3164,7 +3167,7 @@ if ISWorldMap and ISWorldMap.createChildren then
             -- 原版世界地圖選項面板本就可及），需要時再補登記
         end)
         if not ok then
-            log("世界地圖爪印鈕安裝失敗: " .. tostring(err))
+            log("world map paw button install failed: " .. tostring(err))
         end
     end
 end
@@ -3224,7 +3227,7 @@ if WorldMapOptions and WorldMapOptions.createChildren then
             self:setHeight(h + self:resizeWidgetHeight())
         end)
         if not ok then
-            log("世界地圖選項面板注入圖片化開關失敗: " .. tostring(err))
+            log("world map options panel imagery toggle injection failed: " .. tostring(err))
         end
     end
 end
@@ -3589,7 +3592,7 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         local adOk, adErr = pcall(drawAnimalDots, self, "AnimalWild", "AnimalLivestock", "VehicleDots")
         if not adOk and not self._minidoracatADotsErrLogged then
             self._minidoracatADotsErrLogged = true
-            log("動物圖標繪製失敗: " .. tostring(adErr))
+            log("animal icons draw failed: " .. tostring(adErr))
         end
         -- 自由查看「已離開跟隨」提示（導航軟體回中提示的同款模式）：拖離後地圖
         -- 底部浮出琥珀色膠囊＋C 鈕同步高亮——點地圖本就會回中（onMouseUp 清旗標），
@@ -4025,7 +4028,7 @@ local function togglePlayerMiniMap()
             getPlayerData(0).miniMap = ISMiniMap.InitPlayer(0)
         end)
         if not ok then
-            log("小地圖建立失敗: " .. tostring(err))
+            log("minimap creation failed: " .. tostring(err))
             return
         end
         -- InitPlayer 在 MiniMap.StartVisible=true 時已直接顯示，此時再 toggle 會關掉
@@ -4135,4 +4138,4 @@ Core.applyChromeOpacity = applyChromeOpacity -- _Ghost.lua 切換穿透時重套
 Core.cancelResize = cancelResize -- _Ghost.lua 進穿透時取消進行中的邊緣縮放
 Core.ready = true -- 模組檔載入閘門：最後設定＝主檔完整走完才放行
 
-log("已載入（hook ISWorldMap:initDataAndStyle + ISMiniMap.InitPlayer + 按鈕列模式 + 齒輪面板 + 快捷鍵 + MOD 選項 + 殭屍點位 + 邊緣縮放）")
+log("loaded (hooks: ISWorldMap:initDataAndStyle + ISMiniMap.InitPlayer + button bar + gear panel + hotkey + mod options + zombie dots + edge zoom)")

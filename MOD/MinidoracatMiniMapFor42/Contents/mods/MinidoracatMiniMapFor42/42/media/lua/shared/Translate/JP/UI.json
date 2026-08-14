@@ -181,7 +181,7 @@
     "UI_MinidoracatMiniMap_PoiColorIcons": "フルカラー資源ポイントアイコン",
     "UI_MinidoracatMiniMap_PoiColorIcons_tooltip": "資源ポイントのアイコンをフルカラーで描画します。オン：フルカラーアイコン。オフ（既定）：カテゴリー色で染めた単色シルエット。アイコンのみに影響します。",
     "UI_MinidoracatMiniMap_PoiWholeBuilding": "資源ポイントを建物全体のブロックで表示",
-    "UI_MinidoracatMiniMap_PoiWholeBuilding_tooltip": "オン：建物全体を1つのブロックとして描画します。オフ（既定）：該当カテゴリーの部屋のみを描画します。「資源ブロックを表示」がオンのときのみ機能し、アイコンの位置と表示距離はどちらも影響を受けません。大型建築（モールなど）では建物全体の範囲が実際の店舗範囲よりはるかに大きくなることがあります。",
+    "UI_MinidoracatMiniMap_PoiWholeBuilding_tooltip": "オン（既定）：建物全体を1つのブロックとして描画します。オフ：該当カテゴリーの部屋のみを描画します。「資源ブロックを表示」がオンのときのみ機能し、アイコンの位置と表示距離はどちらも影響を受けません。大型建築（モールなど）では建物全体の範囲が実際の店舗範囲よりはるかに大きくなることがあります。",
     "UI_MinidoracatMiniMap_SecPOI": "資源ポイント（POI）",
     "UI_MinidoracatMiniMap_Cat_Military": "軍事",
     "UI_MinidoracatMiniMap_Cat_Police": "警察",

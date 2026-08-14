@@ -62,7 +62,7 @@ local function migrateToggleKeyOnce()
                     -- saveKeys 內部 reinitKeyMaps 後逐條 writeKey→addKeyBinding
                     -- 回填 Core（MainOptions.lua:3733-3771），無需另呼叫 addKeyBinding
                     MainOptions.saveKeys()
-                    log("快捷鍵已自動遷移 HOME→/（舊預設在 -debug 下與引擎渲染除錯熱鍵衝突）")
+                    log("hotkey auto-migrated HOME -> / (old default clashes with an engine render-debug key under -debug)")
                 end
                 resolved = true -- 找到條目並完成判定（已遷移，或帶修飾鍵＝刻意設定不動）
                 break
@@ -70,11 +70,11 @@ local function migrateToggleKeyOnce()
         end
     end)
     if not ok then
-        log("快捷鍵遷移失敗（下次進遊戲重試）: " .. tostring(err))
+        log("hotkey migration failed (will retry next game start): " .. tostring(err))
         return -- 不寫 marker，保留重試機會
     end
     if not resolved then
-        log("快捷鍵遷移未解析（選項畫面資料未就緒或條目缺失），下次進遊戲重試")
+        log("hotkey migration unresolved (options screen not ready or entry missing), will retry next game start")
         return
     end
     local writer = getFileWriter(MIGRATE_MARKER, true, false)
@@ -128,7 +128,7 @@ local function migrateSliderOptions()
     end
     if changed then
         PZAPI.ModOptions:save()
-        log("圖標大小選項已由舊檔位換算為滑條數值")
+        log("icon size options converted from old presets to slider values")
     end
 end
 -- test:slider-migration:end
@@ -153,7 +153,7 @@ local function forceImageryOnOnce()
     if opt:getValue() ~= true then
         opt:setValue(true)
         PZAPI.ModOptions:save()
-        log("已一次性重新開啟「圖片化地圖」（0.10.0 掛載故障修復）；不需要可於選項自行關閉")
+        log("one-time re-enable of map imagery (0.10.0 mount failure fix); turn it off in options if unwanted")
     end
     local writer = getFileWriter(MARKER, true, false)
     if writer then
@@ -163,3 +163,54 @@ local function forceImageryOnOnce()
 end
 -- test:imagery-force:end
 Events.OnMainMenuEnter.Add(forceImageryOnOnce) -- 同 slider 遷移時機：load() 之後、值已就緒
+
+-- ═══ 一次性預設翻轉：資源點區塊整棟範圍（0.14.2） ═══
+-- 0.14.0/0.14.1 預設關；PZAPI save() 是整檔全寫（ModOptions.lua:259）——玩家改過
+-- 任何選項就把沒碰過的 false 一併落檔、load 時存值優先於預設，只改註冊預設救不了
+-- 既有安裝。存檔裡的 false 幾乎全是「沒動過」而非刻意選擇（選項上線僅一天），
+-- 比照 MapImagery 前例一次性翻成新預設＋寫 marker；之後玩家再關掉即是刻意選擇，
+-- 不再干預。marker 自本次起集中放 MOD 子資料夾（Lua/MinidoracatMiniMap/，與
+-- poi_blocks.json 同處；getFileWriter 相對子路徑自動建目錄——POIExport 實機
+-- 驗證）；既有兩個根目錄 marker 屬歷史產物、原地不動（搬遷需雙路徑相容碼，
+-- 不值得為一次性檔案做）。
+-- test:pwb-default:start
+local function forceWholeBuildingOnOnce()
+    if not modOptions then return end -- 無 PZAPI＝無此選項（不寫 marker，重試便宜）
+    local MARKER = "MinidoracatMiniMap/wholeBuildingDefaultV1.txt"
+    local reader = getFileReader(MARKER, false)
+    if reader then
+        reader:close()
+        return -- 已處理過（存在即已處理——與下方驗證同一判準）
+    end
+    local opt = modOptions:getOption("PoiWholeBuilding")
+    if not opt then return end -- 選項未註冊（不應發生）：不寫 marker、下次進選單重試
+    -- 順序刻意與 imagery 前例相反：先寫 marker、讀回驗證落地，通過才翻值。
+    -- 子資料夾 marker 是新失敗面，且 LuaFileWriter 走 PrintWriter 吞 IO 例外
+    -- （pcall 接不到，讀回是唯一證據——POIExport 前例）；若翻值在先而 marker
+    -- 沒落地，下次啟動會重翻、覆蓋玩家事後的刻意關閉——違反「取消後不再干預」
+    -- 承諾（codex review 反例）。寧可漏翻（fail closed：本次不動、下次重試），
+    -- 不可重複干預。驗證判準＝存在性，與上方「已處理過」判準一致：marker
+    -- 存在（即使內容殘缺）下次必早退，翻值即安全。
+    local writer = getFileWriter(MARKER, true, false)
+    if writer then
+        -- pcall 只防 Java wrapper 例外炸掉選單事件；IO 失敗本就不拋、靠下方讀回
+        local wok = pcall(function()
+            writer:write("v1")
+            writer:close()
+        end)
+        if not wok then pcall(function() writer:close() end) end
+    end
+    local back = getFileReader(MARKER, false)
+    if not back then
+        log("whole-building default marker not persisted; skipping flip (will retry next session)")
+        return
+    end
+    back:close()
+    if opt:getValue() ~= true then
+        opt:setValue(true)
+        PZAPI.ModOptions:save()
+        log("one-time apply of new default whole-building POI blocks (default on since 0.14.2); uncheck in options if you prefer per-room")
+    end
+end
+-- test:pwb-default:end
+Events.OnMainMenuEnter.Add(forceWholeBuildingOnOnce) -- 同上：load() 之後、值已就緒

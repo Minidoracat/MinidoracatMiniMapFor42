@@ -1325,6 +1325,13 @@ conv.build()
 local lb = conv.zones()
 assert(lb[2].lodRect ~= nil,
     "poi-convert 地標：整棟模式關閉後 lodRect 應重新附回（不得殘留 nil）")
+-- 預設值契約（0.14.2 起預設開）：選項未設時帶 b 的條目應畫整棟框——
+-- 鎖 getBoolOption("PoiWholeBuilding", true) 的 fallback，預設翻回 false 此處炸
+conv.setOpt("PoiWholeBuilding", nil)
+conv.build()
+local ld = conv.zones()
+assert(#ld[2].rects == 1 and ld[2].rects[1].x2 == 377,
+    "poi-convert 預設：PoiWholeBuilding 未設時應預設整棟框（0.14.2 契約）")
 print("poi landmark LOD exemption cases passed")
 
 MinidoracatMiniMapPOIData = nil

@@ -181,7 +181,7 @@
     "UI_MinidoracatMiniMap_PoiColorIcons": "彩色资源点图标",
     "UI_MinidoracatMiniMap_PoiColorIcons_tooltip": "以全彩绘制资源点图标。勾选：全彩图标。不勾（默认）：以类别色染色的单色剪影。只影响图标。",
     "UI_MinidoracatMiniMap_PoiWholeBuilding": "资源点区块用整栋范围",
-    "UI_MinidoracatMiniMap_PoiWholeBuilding_tooltip": "勾选：整栋建筑画成一个区块。不勾（默认）：只画该类别的房间。需先开启「显示资源点区块」才有作用；图标位置与显示距离皆不受影响。大型建筑（商场等）的整栋范围可能远大于实际店面范围。",
+    "UI_MinidoracatMiniMap_PoiWholeBuilding_tooltip": "勾选（默认）：整栋建筑画成一个区块。不勾：只画该类别的房间。需先开启「显示资源点区块」才有作用；图标位置与显示距离皆不受影响。大型建筑（商场等）的整栋范围可能远大于实际店面范围。",
     "UI_MinidoracatMiniMap_SecPOI": "资源点（POI）",
     "UI_MinidoracatMiniMap_Cat_Military": "军事",
     "UI_MinidoracatMiniMap_Cat_Police": "警察",

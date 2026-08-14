@@ -401,6 +401,100 @@ imf.run()
 assert(imf.state().files[imf.marker] == nil, "V5: 無 PZAPI 仍寫了 marker")
 
 --------------------------------------------------------------------------------
+-- 一次性預設翻轉：資源點區塊整棟範圍（0.14.2，同 imagery-force 五案例；
+-- marker 集中放 MOD 子資料夾 Lua/MinidoracatMiniMap/）
+--------------------------------------------------------------------------------
+local pwbBody = assert(source:match(
+    "%-%- test:pwb%-default:start\n(.-)\n%-%- test:pwb%-default:end"),
+    "找不到 pwb-default 測試區段")
+-- 自有 prelude（不共用 ifPrelude）：多 failWrite 開關模擬 marker 寫入失敗
+-- ——marker-first＋讀回驗證的 fail-closed 語意（codex review 反例）需要此路徑
+local pwbPrelude = [=[
+local files = {}
+local saveCalls = 0
+local logs = {}
+local options = {}
+local failWrite = false
+local modOptions = { getOption = function(_, id) return options[id] end }
+local PZAPI = { ModOptions = { save = function() saveCalls = saveCalls + 1 end } }
+local function getFileReader(name, _)
+    if files[name] then return { close = function() end } end
+    return nil
+end
+local function getFileWriter(name, _, _)
+    if failWrite then return nil end
+    return {
+        write = function(_, s) files[name] = s end,
+        close = function() end,
+    }
+end
+local function log(msg) logs[#logs + 1] = msg end
+]=]
+local pwbSuffix = [=[
+return {
+    run = forceWholeBuildingOnOnce,
+    marker = "MinidoracatMiniMap/wholeBuildingDefaultV1.txt",
+    setup = function(opts)
+        files = opts.files or {}
+        options = opts.options or {}
+        saveCalls = 0
+        logs = {}
+        failWrite = opts.failWrite or false
+        -- 每次重建（而非只在 noModOptions 時設 nil）：nil 會殘留到下一個案例
+        modOptions = opts.noModOptions and nil
+            or { getOption = function(_, id) return options[id] end }
+    end,
+    state = function() return { files = files, saveCalls = saveCalls, logs = logs } end,
+}
+]=]
+local pwbChunk, pwbErr = compile(pwbPrelude .. "\n" .. pwbBody .. "\n" .. pwbSuffix)
+assert(pwbChunk, pwbErr)
+local pwb = pwbChunk()
+
+-- W1. marker 已存在 → 完全不動
+local w1 = mkTick(false)
+pwb.setup({ files = { [pwb.marker] = "v1" }, options = { PoiWholeBuilding = w1 } })
+pwb.run()
+assert(w1.value == false and pwb.state().saveCalls == 0, "W1: marker 存在仍有動作")
+
+-- W2. 存值 false（0.14.x 舊預設落檔）→ 翻 true、save 一次、log 一筆、寫 marker
+local w2 = mkTick(false)
+pwb.setup({ options = { PoiWholeBuilding = w2 } })
+pwb.run()
+assert(w2.value == true, "W2: 未翻成新預設")
+assert(pwb.state().saveCalls == 1, "W2: save 應恰一次，實得 " .. pwb.state().saveCalls)
+assert(#pwb.state().logs == 1, "W2: 應 log 一筆")
+assert(pwb.state().files[pwb.marker] == "v1", "W2: 未寫 marker（子資料夾路徑）")
+
+-- W3. 值已是 true（玩家自己開過）→ 不寫值不 save，仍寫 marker
+local w3 = mkTick(true)
+pwb.setup({ options = { PoiWholeBuilding = w3 } })
+pwb.run()
+assert(pwb.state().saveCalls == 0, "W3: 已開啟不應 save")
+assert(pwb.state().files[pwb.marker] == "v1", "W3: 已解析卻未寫 marker")
+
+-- W4. 選項缺失 → 不寫 marker（下次重試）、不炸
+pwb.setup({ options = {} })
+pwb.run()
+assert(pwb.state().files[pwb.marker] == nil, "W4: 選項缺失仍寫了 marker（翻轉被永久跳過）")
+
+-- W5. modOptions nil（無 PZAPI）→ 不寫 marker、不炸
+pwb.setup({ noModOptions = true })
+pwb.run()
+assert(pwb.state().files[pwb.marker] == nil, "W5: 無 PZAPI 仍寫了 marker")
+
+-- W6. marker 寫入失敗（getFileWriter 回 nil）→ 讀回驗證擋下：不翻值、不 save、
+-- log 一筆 skip；下次重試。fail closed 的核心案例：翻值在先會在 marker 永遠
+-- 寫不進去時每次啟動重翻、覆蓋玩家的刻意關閉（codex review 反例）
+local w6 = mkTick(false)
+pwb.setup({ options = { PoiWholeBuilding = w6 }, failWrite = true })
+pwb.run()
+assert(w6.value == false, "W6: marker 未落地仍翻了值（重複干預風險）")
+assert(pwb.state().saveCalls == 0, "W6: marker 未落地不應 save")
+assert(pwb.state().files[pwb.marker] == nil, "W6: failWrite 下不應有 marker")
+assert(#pwb.state().logs == 1, "W6: 應 log 一筆 skip 訊息")
+
+--------------------------------------------------------------------------------
 -- 圖片化開關 apply 決策矩陣（computeApplyPlan，主檔）：世界地圖/小地圖分側動作
 --------------------------------------------------------------------------------
 local mainPath = arg[3]
@@ -465,4 +559,4 @@ assert(p.live and not p.recreate and not p.reapplyWorldMap and not p.clearCustom
 p = plan(planSnap({ worldImagery = false, imagery = false }), planCur())
 assert(p.reapplyWorldMap and p.recreate, "P9")
 
-print("[OK] scripts/test_key_migration.lua 全部通過（快捷鍵遷移 A-G、拖曳 H-K、選項遷移 M1-M5、強制圖片化 V1-V5、apply 決策 P1-P9）")
+print("[OK] scripts/test_key_migration.lua 全部通過（快捷鍵遷移 A-G、拖曳 H-K、選項遷移 M1-M5、強制圖片化 V1-V5、整棟預設翻轉 W1-W6、apply 決策 P1-P9）")

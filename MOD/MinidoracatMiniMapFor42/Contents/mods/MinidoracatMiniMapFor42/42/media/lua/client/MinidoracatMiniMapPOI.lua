@@ -13,7 +13,7 @@
 --   PoiBlocks（預設關）→ zone 帶 fillAlpha（類別色半透明填色，無框線）＋
 --     name（getText(nameKey)）
 --   兩者皆關 or 該類別未勾 → 該 zone 不納入
--- 區塊形狀（PoiWholeBuilding，預設關）：關＝逐房間矩形（現行）、開＝整棟一框（資料
+-- 區塊形狀（PoiWholeBuilding，預設開，0.14.2 起）：關＝逐房間矩形、開＝整棟一框（資料
 -- 的 e.b）。缺 b 或 b 尺寸非正的條目自動退回逐房間。
 -- 嚴格限定為「區塊模式的外觀選項」，三個隔離缺一即違反 UI 承諾：
 --   1. 需 blocksOn 才換幾何——區塊沒畫時（alpha=0 早退）換幾何是零視覺效果卻連帶
@@ -141,7 +141,7 @@ local function buildPoiConverted()
     local blocksOn = getBoolOption("PoiBlocks", false)
     if type(data) == "table" and type(cats) == "table" then
         local colorMode = getBoolOption("PoiColorIcons", false)
-        local wholeOn = getBoolOption("PoiWholeBuilding", false)
+        local wholeOn = getBoolOption("PoiWholeBuilding", true)
         if iconsOn or blocksOn then
             -- 逐類別預取 Cat_ 勾選：1669 筆逐筆查 ModOptions 是 ~5k 次三層查找，類別僅 20 個
             local catOn = {}
@@ -261,7 +261,7 @@ local function currentSig()
     local parts = { getBoolOption("PoiIcons", true) and "1" or "0",
         getBoolOption("PoiBlocks", false) and "1" or "0",
         getBoolOption("PoiColorIcons", false) and "1" or "0",
-        getBoolOption("PoiWholeBuilding", false) and "1" or "0" }
+        getBoolOption("PoiWholeBuilding", true) and "1" or "0" }
     local order = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.ORDER
     if type(order) == "table" then
         for i = 1, #order do

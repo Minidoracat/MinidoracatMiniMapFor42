@@ -181,7 +181,7 @@
     "UI_MinidoracatMiniMap_PoiColorIcons": "Full-color POI icons",
     "UI_MinidoracatMiniMap_PoiColorIcons_tooltip": "Draw resource point icons in full color. Checked: full-color icons. Unchecked (default): a monochrome silhouette tinted by the category color. Affects icons only.",
     "UI_MinidoracatMiniMap_PoiWholeBuilding": "Whole-building block",
-    "UI_MinidoracatMiniMap_PoiWholeBuilding_tooltip": "Checked: the whole building is drawn as one block. Unchecked (default): only the category's own rooms. Requires \"Show resource blocks\"; icon placement and display distance are both unaffected. On large buildings (malls) the whole-building area can be far larger than the actual shop area.",
+    "UI_MinidoracatMiniMap_PoiWholeBuilding_tooltip": "Checked (default): the whole building is drawn as one block. Unchecked: only the category's own rooms. Requires \"Show resource blocks\"; icon placement and display distance are both unaffected. On large buildings (malls) the whole-building area can be far larger than the actual shop area.",
     "UI_MinidoracatMiniMap_SecPOI": "Resource points (POI)",
     "UI_MinidoracatMiniMap_Cat_Military": "Military",
     "UI_MinidoracatMiniMap_Cat_Police": "Police",
