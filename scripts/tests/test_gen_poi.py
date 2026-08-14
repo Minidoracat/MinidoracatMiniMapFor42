@@ -252,6 +252,90 @@ def test_accessory_gate_fails_closed_without_area():
     assert entries == [] and stats["storage"] == 0
 
 
+def _house(*extra_rooms):
+    """獨棟民宅 fixture：總 350sq、臥室 100sq（28.6%），在住宅門檻的 reject 側。"""
+    return _bld(
+        _room("livingroom", (0, 0, 20, 10)),
+        _room("bedroom", (0, 10, 10, 10)),
+        _room("kitchen", (10, 10, 10, 5)),
+        *extra_rooms,
+    )
+
+
+def test_house_gate_blocks_tiny_shop_room_in_a_home():
+    """民宅角落的小型設施房不定義整棟身分——玩家回報 (6714,5446) 民宅裡
+    2sq grocerystorage 標超市。落給下一候選（此處無 → 整棟不標）。"""
+    categories = [("grocery", frozenset({"grocerystorage"}))]
+    entries, stats, _ = g.build_entries(
+        [_house(_room("grocerystorage", (10, 15, 2, 1)))], categories)
+    assert entries == [] and stats["grocery"] == 0
+
+
+def test_house_gate_falls_through_to_the_real_identity():
+    """擋掉小房間後落給下一命中類別，而非整棟消失——實錘 (426,9816)：
+    181sq 服飾店原被 14sq toolstore 搶標 tools，門檻擋掉後翻回 retail。"""
+    categories = [
+        ("tools", frozenset({"toolstore"})),
+        ("retail", frozenset({"clothesstore"})),
+    ]
+    entries, _, _ = g.build_entries([_bld(
+        _room("clothesstore", (0, 0, 20, 10)),
+        _room("bedroom", (0, 10, 10, 5)),
+        _room("toolstore", (10, 10, 3, 2)),
+    )], categories)
+    assert len(entries) == 1 and entries[0]["cat"] == "retail"
+
+
+def test_house_gate_exempts_large_institutions():
+    """總面積 > HOUSE_MAX_ROOM_AREA 時不套用——機構型建物的臥室是宿舍不是
+    民宅。實錘 (5522,12407) March Ridge 地下地堡：bedroom 750sq 是軍營寢室，
+    armystorage 91sq（0.8%）仍須標軍事。"""
+    categories = [("military", frozenset({"armystorage"}))]
+    entries, _, _ = g.build_entries([_bld(
+        _room("hall", (0, 0, 100, 8)),
+        _room("bedroom", (0, 8, 100, 2)),
+        _room("armystorage", (0, 10, 5, 1)),
+    )], categories)
+    assert len(entries) == 1 and entries[0]["cat"] == "military"
+
+
+def test_house_gate_exempts_buildings_without_bedrooms():
+    """無臥室＝不是住家，小佔比店面房仍成立（原商店型豁免的核心情境：
+    商場一角的藥局）。實錘：拿掉臥室條件會誤殺 7 棟店住混合的真槍店/藥局。"""
+    categories = [("pharmacy", frozenset({"pharmacy"}))]
+    entries, _, _ = g.build_entries([_bld(
+        _room("lobby", (0, 0, 20, 10)),
+        _room("pharmacy", (0, 10, 3, 2)),
+    )], categories)
+    assert len(entries) == 1 and entries[0]["cat"] == "pharmacy"
+
+
+def test_house_gate_boundaries_are_inclusive_on_the_house_side():
+    """總面積 == HOUSE_MAX_ROOM_AREA 且臥室佔比 == HOUSE_MIN_BEDROOM_SHARE 時
+    仍算住家（兩者皆為 <= / >=）。800 是 761sq 民宅與 815sq 真書店之間的實測
+    斷點，方向弄反會讓貼線的民宅漏網。"""
+    # 700 + 80 + 20 = 800sq 恰好貼線，臥室 80/800 = 10% 恰好貼線
+    entries, _, _ = g.build_entries([_bld(
+        _room("livingroom", (0, 0, 100, 7)),
+        _room("bedroom", (0, 7, 80, 1)),
+        _room("grocerystorage", (80, 7, 20, 1)),
+    )], [("grocery", frozenset({"grocerystorage"}))])
+    assert entries == []
+
+
+def test_house_gate_exempts_share_at_or_above_threshold():
+    """佔比 >= ACCESSORY_MIN_SHARE 的店面房不受住宅門檻影響——小坪數店住
+    混合（實錘 (1978,8581)：53sq 建物裡 24sq 餐飲＝45%，是路邊小吃不是民宅
+    廚房）。reject 條件為嚴格小於，與 accessory gate 同水位。"""
+    categories = [("food", frozenset({"diner"}))]
+    entries, _, _ = g.build_entries([_bld(
+        _room("livingroom", (0, 0, 10, 6)),
+        _room("bedroom", (0, 6, 10, 3)),
+        _room("diner", (0, 9, 10, 1)),
+    )], categories)
+    assert len(entries) == 1 and entries[0]["cat"] == "food"
+
+
 def test_rectless_trigger_falls_through_to_next_category():
     """A higher-priority category whose trigger rooms carry no rects cannot
     anchor an entry; the building falls through to the next matched category
@@ -318,6 +402,48 @@ def test_new_categories_priority_tail_locked():
     assert g.CATEGORY_PRIORITY[-7:] == [
         "electronics", "church", "farm", "industry", "retail", "food", "storage"
     ]
+
+
+def test_house_gate_real_corpus_decisions_if_raw_present():
+    """住宅門檻在真實 corpus 上的決策錨點。
+
+    合成 fixture 鎖不住 corpus-derived 參數——codex review 的 mutation 實測：
+    HOUSE_MAX_ROOM_AREA 800→900 或臥室條件放寬成「有臥室即可」時，其餘住宅
+    門檻測試全數仍綠，但真實 corpus 分別改判 815sq 真書店與 7 棟店住混合真
+    店面。上方 staleness 測試也擋不住（generator 與烘焙產物會一起漂移）。
+    故逐案鎖住三個門檻條件各自的兩側，每組都是實測選出的貼線案例。
+    """
+    if not g.DEFAULT_RAW.exists():
+        print(f"SKIP: {g.DEFAULT_RAW} not present in this checkout")
+        return
+    import json
+
+    raw = json.loads(g.DEFAULT_RAW.read_text(encoding="utf-8"))
+    entries, _, _ = g.build_entries(raw, g.parse_categories(g.DEFAULT_CATEGORIES_LUA))
+    by_bbox = {(e["bbox"][0], e["bbox"][1]): e["cat"] for e in entries if e.get("bbox")}
+
+    # 退場：民宅角落的小型設施房不定義整棟身分（前三筆為玩家實地回報）
+    for xy, was in [((6714, 5446), "grocery"), ((6665, 5416), "medical"),
+                    ((10078, 8252), "food"), ((13610, 2833), "retail")]:
+        assert xy not in by_bbox, f"{xy} 應被住宅門檻擋下（先前誤標 {was}）"
+
+    # 保留：三個條件各自的另一側，任一條件放寬/收緊都會在此炸開
+    for xy, cat, why in [
+            ((11891, 6872), "books", "815sq 真書店——總面積斷點上側，800→900 會誤殺"),
+            ((5522, 12407), "military", "地下軍事地堡——臥室是軍營寢室不是民宅"),
+            ((2168, 5737), "pharmacy", "療養院——機構型，臥室佔比高但非住家"),
+            ((13054, 1993), "medical", "醫療大樓——同上"),
+            ((7235, 8162), "gunstore", "店住混合真槍店——臥室 <10%，放寬臥室條件會誤殺"),
+            ((12301, 1325), "gunstore", "同上"),
+    ]:
+        assert by_bbox.get(xy) == cat, f"{xy} 應維持 {cat}：{why}"
+
+    # 主身分修正：門檻擋掉搶標的小房間後翻回真身分
+    for xy, cat, why in [
+            ((5894, 5374), "food", "182sq generalstore 原被 30sq clothesstore 搶標 retail"),
+            ((426, 9816), "retail", "181sq 服飾店原被 14sq toolstore 搶標 tools"),
+    ]:
+        assert by_bbox.get(xy) == cat, f"{xy} 應翻回 {cat}：{why}"
 
 
 def test_baked_output_matches_fresh_bake_if_raw_present():

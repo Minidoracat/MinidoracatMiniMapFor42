@@ -179,6 +179,17 @@
 --   books 24→23、grocery 96→95、school 32→31、food 328→327，其餘不變；
 --   合計 1704→1692 筆、4735 個矩形。
 --
+-- 2026-08-14 住宅門檻（玩家回報 (6724,5447) 民宅標超市、(10091,8257) 民宅標餐飲）：
+--   官方在獨棟民宅裡放 2-40sq 的 grocerystorage/medicaloffice/butcher/library/bar/
+--   gunstore 是「讓那個角落刷對應 loot」的刻意設計（三者在 Distributions.lua 都有
+--   完整 loot 表），本表的 room key 對照也沒錯——錯在把房間級 loot 訊號升格成整棟
+--   建築身分。修正落在 gen_poi_data.py 的 HOUSE_* 門檻而非本表（room key 本身合法，
+--   只是在住家脈絡下不足以定義主身分），三條件與逐項 counterfactual 見該檔註解。
+--   位移（對 0.14.0 發布基準）：grocery 95→88、retail 121（−5 民宅 +1 從 tools
+--   翻回）、gunstore 32→29、medical 57→54、books 23→21、food 327→326（−2 民宅
+--   +1 從 retail 翻回）、electronics 52→51、tools 85→84，其餘不變；
+--   合計 1692→1669 筆、4714 個矩形。
+--
 -- ⚠ CATEGORIES 各 entry 內不要插註解行——scripts/gen_poi_data.py 以 regex 解析
 --   nameKey/rooms 相鄰結構，entry 內註解會使該類別解析失敗而整類消失。
 

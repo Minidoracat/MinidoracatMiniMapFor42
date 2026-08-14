@@ -121,6 +121,7 @@ _PRIORITY_INDEX = {key: i for i, key in enumerate(CATEGORY_PRIORITY)}
 # 12sq 藥局是真藥局、商場裡的軍品店是真店面——房間級錨定後圖標釘在店面位置，
 # 小佔比反而是 feature。真設施不受影響（U-Store It 的 storageunit、真監獄的
 # prisoncells、真學校的 schoolstorage 佔比皆遠高於門檻）。
+# 該豁免在商業區成立，在住宅區不成立——見下方 HOUSE_* 住宅門檻。
 ACCESSORY_ROOMS = frozenset({
     "storageunit", "warehouse",
     "prisoncells", "cells", "prisonstorage", "prisonlaundry",
@@ -133,6 +134,44 @@ ACCESSORY_ROOMS = frozenset({
 # 偏保守；敏感度實測 8%→10% 翻 2 棟、10%→12% 翻 3 棟，非過擬合魔數。已知貼線
 # 案例：(2511,14059) 住宅的 storageunit 佔 10.65%，恰在 accept 側 0.65pp。
 ACCESSORY_MIN_SHARE = 0.10
+
+# 住宅門檻（2026-08-14，玩家回報 (6724,5447) 民宅標超市、(10091,8257) 民宅標
+# 餐飲後的根本修）：官方在獨棟民宅裡放 2-40sq 的 grocerystorage/medicaloffice/
+# butcher/library/bar/gunstore 是「讓那個角落刷對應 loot」的刻意設計（三者在
+# Distributions.lua 都有完整 loot 表），不是建圖失誤；但把整棟民宅升格成超市/
+# 醫療/餐飲身分對導航是誤導。故商店型觸發房的免門檻豁免在「這棟明顯是住家」
+# 時撤銷：建物房間總面積 <= HOUSE_MAX_ROOM_AREA 且臥室佔比 >=
+# HOUSE_MIN_BEDROOM_SHARE 且觸發房佔比 < ACCESSORY_MIN_SHARE → 落給下一候選。
+# 三條件缺一不可（poi_raw.json 9254 棟實算的 counterfactual）：
+#   缺總面積條件 → 誤殺 14 棟真設施，全是「臥室是宿舍不是民宅」的機構型建物：
+#     (5522,12407) March Ridge 地下軍事地堡（bedroom 1146sq 是軍營寢室，
+#     armystorage 91sq）、(2168,5737)/(13054,1993) 兩棟療養院、(8072,11522)
+#     診所+商店+住宅混合樓（medical 系 214sq）、(12767,1810) Louisville 大樓等。
+#   缺臥室條件 → 誤殺 7 棟店住混合的真店面（(7235,8162)/(7251,8183)/
+#     (12301,1325)/(3810,12303) 等槍店、(12612,1868) 藥局）。
+#   缺佔比條件 → 誤殺小坪數真店面（(1978,8581) 53sq 建物裡 24sq 餐飲＝45%
+#     佔比的路邊小吃、(2672,6311) 52sq 建物裡 16sq 服飾店）。
+# 斷點依實測落點而非猜測：總面積排序在 761sq（(13610,2833) 民宅裡 3sq
+# clothesstore）與 815sq（(11891,6872) 77sq 真書店、樓上住人）之間自然分離，
+# 取 800 居中；臥室 10% 與住宅觸發房佔比皆沿用 ACCESSORY_MIN_SHARE 同一水位，
+# 不引入第三、第四個魔數——兩道 gate 問的是同一件事「佔比太小不足以定義身分」。
+# ⚠ 代價是耦合：調 ACCESSORY_MIN_SHARE 會連動住宅政策（codex review 指出）。
+# 兩者需要分頭調整時再拆成獨立常數，屆時務必重跑下方 counterfactual。
+# 三個門檻值都是 corpus-derived heuristic，不是不變量——poi_raw.json 隨官方
+# 地圖更新後應重跑；決策錨點由 test_house_gate_real_corpus_decisions_if_raw_present
+# 鎖住（實測對 800→900、臥室條件放寬、門檻關閉等 mutation 皆會失敗）。
+# 效果：25 棟改判——23 棟民宅退場（grocery 7/retail 5/gunstore 3/medical 3/
+# books 2/food 2/electronics 1，其中 6 棟 grocery 與 5 棟 clothesstore 分別是
+# (6065..6753,5321..5473) 與 Louisville (13288..13610,1821..2833) 的同批 lot
+# 範本群聚，玩家在那兩區會連續踩到），另 2 棟是主身分修正的額外收穫：
+# (5894,5374) 182sq generalstore 雜貨行原被 30sq clothesstore 搶標 retail、
+# (426,9816) 181sq 服飾店原被 14sq toolstore 搶標 tools，門檻擋掉小房間後
+# 翻回真身分。
+# 已知取捨：退場的 23 棟裡那些小房間仍會刷 loot，玩家路過搜刮仍有收穫，只是
+# 不再值得為它專程導航——POI 是「值得專程去的地點」而非「所有有物資的櫃子」。
+HOUSE_ROOMS = frozenset({"bedroom", "kidsbedroom"})
+HOUSE_MAX_ROOM_AREA = 800
+HOUSE_MIN_BEDROOM_SHARE = 0.10
 
 
 def _coalesce(rects):
@@ -296,16 +335,25 @@ def build_entries(raw_buildings, categories):
         matched.sort(key=lambda k: _PRIORITY_INDEX.get(k, len(CATEGORY_PRIORITY)))
         key = None
         pairs = None
+        bedroom_area = sum(
+            r[2] * r[3] for n in room_set & HOUSE_ROOMS for _, r in name_rects[n])
+        is_house = bool(
+            total_area
+            and total_area <= HOUSE_MAX_ROOM_AREA
+            and bedroom_area / total_area >= HOUSE_MIN_BEDROOM_SHARE)
         for cand in matched:
             trig = room_set & catmap[cand]
+            cat_area = sum(
+                r[2] * r[3] for n in trig for _, r in name_rects[n])
             if trig <= ACCESSORY_ROOMS:
                 # 無面積資訊時附屬型候選不得通過（fail closed）
                 if not total_area:
                     continue
-                cat_area = sum(
-                    r[2] * r[3] for n in trig for _, r in name_rects[n])
                 if cat_area / total_area < ACCESSORY_MIN_SHARE:
                     continue
+            elif is_house and cat_area / total_area < ACCESSORY_MIN_SHARE:
+                # 住宅門檻：民宅角落的小型設施房不足以定義整棟身分
+                continue
             cand_pairs = [p for n in trig for p in name_rects[n]]
             # 觸發房無幾何＝無從錨定，同樣落給下一候選（與 gate 語意一致）
             if not cand_pairs:
