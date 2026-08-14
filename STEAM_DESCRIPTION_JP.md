@@ -41,7 +41,7 @@
 マップ MOD 作者は自分の地図を [b]minidoracat_minimap.pyramid.zip[/b] として [b]media/minimap/[/b] に置くだけ（[u]Lua 不要[/u]）——本 MOD が自動検出してベースマップの上に重ねます。
 
 [h2]🗺️ 内蔵資源ポイント（POI、0.8.0+）＋ ゾーンレイヤー API（0.7.0+）[/h2]
-[b]本体だけで資源ポイントが見える[/b]：バニラマップの資源ポイント 1692 件・20 カテゴリ（軍事・警察・銃砲店・医療・薬局・消防・図書・学校・スーパー・ガソリン・工具・アウトドア・刑務所・倉庫・電器店・教会・農場・工業・小売店・飲食店、各カテゴリ色分け）を内蔵。既定は染色シルエットアイコン（フルカラー切替可、サイズ・不透明度調整可）；「資源ブロック表示」で半透明ブロック＋名称（建物全体範囲へ切替可）、カテゴリ別切替は統合設定ウィンドウから。[u]データは公式マップファイルから直接抽出[/u]——誤りは公式データ由来で、公式修正後に同期します。ゾーン描画フレームワークも提供：`registerZoneProvider(ownerModId, providerFn, optionLabelKey)` で addon が矩形ゾーンを渡すと、本 MOD が両マップに塗り・枠線・名称・アイコンを描画（optionLabelKey で専用トグル付与）。[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Minidoracat MiniMap Zones[/url]（MinidoracatMiniMapZonesFor42）でサーバー定義ゾーン（`zones.json`）も表示可。addon なしでも他機能に影響なし。
+[b]本体だけで資源ポイントが見える[/b]：バニラマップの資源ポイント 1669 件・20 カテゴリ（軍事・警察・銃砲店・医療・薬局・消防・図書・学校・スーパー・ガソリン・工具・アウトドア・刑務所・倉庫・電器店・教会・農場・工業・小売店・飲食店、各カテゴリ色分け）を内蔵。既定は染色シルエットアイコン（フルカラー切替可、サイズ・不透明度調整可）；「資源ブロック表示」で半透明ブロック＋名称（建物全体範囲へ切替可）、カテゴリ別切替は統合設定ウィンドウから。[u]位置は公式マップ由来、分類は本 MOD が部屋用途で判定[/u]——誤りは報告歓迎、順次修正します。ゾーン描画フレームワークも提供：`registerZoneProvider(ownerModId, providerFn, optionLabelKey)` で addon が矩形ゾーンを渡すと、本 MOD が両マップに塗り・枠線・名称・アイコンを描画（optionLabelKey で専用トグル付与）。[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Minidoracat MiniMap Zones[/url]（MinidoracatMiniMapZonesFor42）でサーバー定義ゾーン（`zones.json`）も表示可。addon なしでも他機能に影響なし。
 
 [h2]🔗 シリーズ MOD[/h2]
 本 MOD は単体で完全動作する[b]本体[/b]です。以下の addon はお好みで（いずれも本体が必要）：
