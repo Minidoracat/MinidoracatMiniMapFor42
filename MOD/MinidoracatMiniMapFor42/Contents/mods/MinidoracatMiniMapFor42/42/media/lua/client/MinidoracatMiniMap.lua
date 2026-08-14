@@ -2607,7 +2607,9 @@ end
 -- WorldMapGridSquareMarker.java:45）：帶 lodRect 的 zone（POI）在
 -- < HIDE 整區塊不畫（此縮放下區塊已是色點，只留圖標）、< DETAIL 畫聯集框
 -- （一棟一框，2~3px/格下與逐房間視覺無異、成本 1/3）、>= DETAIL 逐房間
--- 平面圖＋名稱。無 lodRect 的 zone（Zones addon）不參與、任何縮放照畫。
+-- 平面圖＋名稱。無 lodRect 的 zone 不參與、任何縮放照畫（Zones addon 自
+-- 0.2.x 起對建物尺度區域〔聯集最長邊 ≤100 格〕自動附 lodRect 進 LOD，
+-- 大範圍區域仍不附、維持全縮放可見——見其 attachLodRect）。
 local ZONE_LOD_HIDE = 1.5
 local ZONE_LOD_DETAIL = 6
 -- 區塊底襯外擴量（螢幕 px；/scale 換算世界格後走同一仿射投影）：haloAlpha zone
