@@ -2625,6 +2625,22 @@ local iconGridGen = 0
 -- zone 名稱寬度快取（ZR-4，lines pass 用）：key＝名稱字串。renderer 自有——
 -- provider 回傳表是只讀契約，不得把快取寫進去
 local zoneNameWidth = {}
+-- 外部 zone 類別停用清單（ZoneCategoryFilter CSV；統一視窗「伺服器區域」區塊的
+-- 類別勾選寫入）：只作用於外部 provider 的 zone——內部 POI 有自己的 Cat_ 篩選，
+-- 且其 category 欄與伺服器自訂類別是不同命名空間。無選項/空值＝全開。
+-- raw 字串比對快取（同 adotsDisabledGroups 手法），選項未變不重解析
+local zoneCatCache = { raw = nil, set = nil }
+local function zoneDisabledCats()
+    if not modOptions then return nil end
+    local opt = modOptions:getOption("ZoneCategoryFilter")
+    if not opt then return nil end
+    local raw = tostring(opt:getValue() or "")
+    if zoneCatCache.raw ~= raw then
+        zoneCatCache.raw = raw
+        zoneCatCache.set = unifiedCsvSet(raw)
+    end
+    return zoneCatCache.set
+end
 
 -- POI 顯示距離閘（沙盒 PoiDisplayDistance＋全域上限＋玩家自訂，經 displayDist
 -- 合成取最小正值）：只作用於 internal provider（內建 POI），外部 addon zone
@@ -2706,6 +2722,8 @@ local function drawZoneFillBody(inner)
         -- 內容，整段跳過（預設純圖標模式下省每幀全 zone 空掃）；nil＝未聲明
         -- （外部 addon），照舊逐 zone 判斷
         elseif type(zones) == "table" and zones.hasFill ~= false then
+            -- 外部 zone 類別篩選（內部 POI 走自家 Cat_，不受此清單影響）
+            local disCats = not provider.internal and zoneDisabledCats() or nil
             for zi = 1, #zones do
                 local z = zones[zi]
                 local fill, rects = z.fill, z.rects
@@ -2714,6 +2732,7 @@ local function drawZoneFillBody(inner)
                 -- 內部 provider 的 zone 另過 POI 距離閘（not pdist2 先行短路：閘未啟用
                 -- ——絕大多數玩家的預設——不付逐 zone 函式呼叫）
                 if fill and rects and z.fillAlpha ~= 0
+                    and not (disCats and z.category and disCats[z.category])
                     and not (lod and scale < ZONE_LOD_HIDE)
                     and (not pdist2 or not provider.internal or zoneWithinDist(z, ppx, ppy, pdist2)) then
                     local a = z.fillAlpha or 0.2
@@ -2838,6 +2857,12 @@ local function drawZoneLines(inner)
         if pok == false then
             zoneProviderErrorOnce(inner, provider.owner, zones)
         elseif type(zones) == "table" and zones.hasLine ~= false then -- ZR-1（同 fill pass）
+            local disCats = not provider.internal and zoneDisabledCats() or nil
+            -- 名稱遠距顯示（ZoneNamesFar，預設開；僅外部 zone）：lodRect zone 的
+            -- 名稱不再鎖細節檔——區域數量級小（幾十筆 vs POI 1692），名稱是玩家
+            -- 「找區域」的主要手段，鎖細節檔會造成可尋性回退（實測回饋）；框線
+            -- 仍維持細節檔限定。POI（internal）不受影響，名稱照鎖細節檔防洗版
+            local nameFar = not provider.internal and getBoolOption("ZoneNamesFar", true)
             for zi = 1, #zones do
                 local z = zones[zi]
                 local border, rects = z.border, z.rects
@@ -2850,9 +2875,12 @@ local function drawZoneLines(inner)
                 -- 兩者皆無則整段跳過。LOD zone 的框線與名稱都僅細節檔畫（中距的
                 -- 聯集框純填色——該縮放下框線是雜訊、名稱會洗版）；內部 provider
                 -- 另過 POI 距離閘（not pdist2 先行短路，閘未啟用不付逐 zone 呼叫）
-                local drawEdges = border and z.borderAlpha ~= 0
+                -- 中/遠距檔（lodRect zone）：框線恆不畫；名稱僅 nameFar 時放行
+                local midFar = lod ~= nil and scale < ZONE_LOD_DETAIL
+                local drawEdges = border and z.borderAlpha ~= 0 and not midFar
                 if rects and (drawEdges or z.name)
-                    and not (lod and scale < ZONE_LOD_DETAIL)
+                    and not (disCats and z.category and disCats[z.category])
+                    and (not midFar or (nameFar and z.name ~= nil))
                     and (not pdist2 or not provider.internal or zoneWithinDist(z, ppx, ppy, pdist2)) then
                     local r, g, b, a
                     if drawEdges then r, g, b, a = border.r, border.g, border.b, z.borderAlpha end
@@ -2909,7 +2937,7 @@ local function drawZoneLines(inner)
                     local rc = rects[1]
                     -- 名稱僅細節檔顯示（lodRect zone；20 類全開時中/遠距的名稱洗版即此治）
                     if name and rc and zoneVisible
-                        and (not lod or scale >= ZONE_LOD_DETAIL) then
+                        and (not lod or scale >= ZONE_LOD_DETAIL or nameFar) then
                         -- 量測惰性快取（ZR-4）：renderer 自有、以名稱字串為 key——
                         -- 不得寫回 provider 的 zone 表（API 明定對回傳只讀不改；寫入
                         -- 會與 addon 同名欄位碰撞、對 __newindex 保護表拋錯，codex
@@ -2989,12 +3017,14 @@ local function drawZoneIcons(inner)
         if pok == false then
             zoneProviderErrorOnce(inner, provider.owner, zones)
         elseif type(zones) == "table" and zones.hasIcon ~= false then -- ZR-1（同 fill pass）
+            local disCats = not provider.internal and zoneDisabledCats() or nil
             for zi = 1, #zones do
                 local z = zones[zi]
                 local icon, rects = z.icon, z.rects
                 -- 內部 provider 的 zone 過 POI 距離閘（與 fill/lines 同判定，整棟一致
                 -- 顯隱；not pdist2 先行短路——閘未啟用不付逐 zone 呼叫）
                 if icon and icon.tex and rects
+                    and not (disCats and z.category and disCats[z.category])
                     and (not pdist2 or not provider.internal or zoneWithinDist(z, ppx, ppy, pdist2)) then
                     -- iconOnce（POI v3 逐房間矩形）：圖標只畫在 rects[1]（provider
                     -- 保證是最大房間），避免一棟 200+ 房間疊 200 顆圖標；預裁與
@@ -4029,6 +4059,36 @@ Core.sandboxDist = sandboxDist
 Core.displayDist = displayDist
 Core.livestockVisibilityMode = livestockVisibilityMode
 Core.unifiedCsvSet = unifiedCsvSet
+-- 統一視窗「伺服器區域」區塊用：收集外部 provider 當前 zone 的 distinct category
+-- （排序穩定；無 category 的 zone 不列——類別是伺服器 zones.json 選配欄位）。
+-- 視窗開啟時才呼叫，pcall 防外部 provider 拋錯
+Core.zoneExternalCategories = function()
+    local seen, list = {}, {}
+    for i = 1, #registeredZoneProviders do
+        local p = registeredZoneProviders[i]
+        if not p.internal then
+            local ok, zones = pcall(p.fn)
+            if ok and type(zones) == "table" then
+                for zi = 1, #zones do
+                    local z = zones[zi]
+                    local c = z and z.category
+                    if type(c) == "string" and c ~= "" and not seen[c] then
+                        seen[c] = true
+                        -- 插入排序取代 table.sort（家規：Kahlua 禁用，見 verify_mod）；
+                        -- 類別數極小（伺服器自訂、通常個位數），O(n²) 無妨
+                        local pos = #list + 1
+                        while pos > 1 and list[pos - 1] > c do
+                            list[pos] = list[pos - 1]
+                            pos = pos - 1
+                        end
+                        list[pos] = c
+                    end
+                end
+            end
+        end
+    end
+    return list
+end
 Core.ADOTS_COLOR_ITEMS = ADOTS_COLOR_ITEMS
 Core.ADOTS_SPECIES_UI = ADOTS_SPECIES_UI
 Core.ADOTS_VEHCAT_UI = ADOTS_VEHCAT_UI

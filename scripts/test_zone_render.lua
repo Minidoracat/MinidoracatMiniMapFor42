@@ -57,9 +57,32 @@ local zonePrelude = [=[
 local registeredZoneProviders = {}
 local zoneLayerOn = true
 local logs = {}
+local boolOverrides = {}
 local function getBoolOption(id, default)
     if id == "ZoneLayer" then return zoneLayerOn end
+    local v = boolOverrides[id]
+    if v ~= nil then return v end
     return default
+end
+-- ZoneCategoryFilter 的 modOptions/unifiedCsvSet stub（zoneDisabledCats 用）：
+-- catFilterValue=nil＝無選項（篩選停用），字串＝CSV 停用清單
+local catFilterValue = nil
+local modOptions = {
+    getOption = function(_, id)
+        if id == "ZoneCategoryFilter" and catFilterValue ~= nil then
+            return { getValue = function() return catFilterValue end }
+        end
+        return nil
+    end,
+}
+local function unifiedCsvSet(raw)
+    local set = {}
+    if type(raw) ~= "string" then return set end
+    for token in raw:gmatch("[^,]+") do
+        local k = token:match("^%s*(.-)%s*$")
+        if k ~= "" and k ~= "-" then set[k] = true end
+    end
+    return set
 end
 local function log(msg) logs[#logs + 1] = msg end
 local UIFont = { Small = "small" }
@@ -111,6 +134,8 @@ return {
         for i = #registeredZoneProviders, 1, -1 do registeredZoneProviders[i] = nil end
     end,
     setZoneLayer = function(v) zoneLayerOn = v end,
+    setBoolOverride = function(id, v) boolOverrides[id] = v end,
+    setCatFilter = function(v) catFilterValue = v end,
     setPoiDist = function(d) poiDist = d end,
     setPlayerPos = function(x, y) playerPos = x and { x, y } or nil end,
     lastPn = function() return lastPlayerNum end,
@@ -296,6 +321,75 @@ do
         "A10 三旗標 true 應照畫（poly=" .. fn2.polyCount .. " edges=" .. zone.edgeCount()
         .. " text=" .. fn2.textCount .. " icons=" .. fn2.draws .. "）")
     zone.clearProviders()
+    zone.resetLogs()
+
+    -- A11 名稱遠距顯示（ZoneNamesFar，預設開；僅外部 zone）：外部 lodRect zone
+    -- 於中距檔名稱照畫、框線仍不畫；關閉選項→名稱同 POI 鎖細節檔；內部（POI）
+    -- 不受此選項影響，名稱恆鎖細節檔防洗版
+    local function extLodNamed()
+        return { {
+            fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, name = "Zone",
+            border = { r = 1, g = 1, b = 1 }, borderAlpha = 0.5,
+            rects = { { x1 = 10, y1 = 10, x2 = 20, y2 = 20 } },
+            lodRect = { x1 = 10, y1 = 10, x2 = 20, y2 = 20 },
+        } }
+    end
+    zone.addProvider("extLodNamed", extLodNamed) -- 外部
+    local a11 = makeInner(3) -- 中距檔
+    zone.resetEdgeCount(); zone.lines(a11)
+    assert(a11.textCount == 1 and zone.edgeCount() == 0,
+        "A11 外部 lod zone 中距：名稱應畫、框線不畫（text=" .. a11.textCount
+        .. " edges=" .. zone.edgeCount() .. "）")
+    zone.setBoolOverride("ZoneNamesFar", false)
+    local a11b = makeInner(3)
+    zone.resetEdgeCount(); zone.lines(a11b)
+    assert(a11b.textCount == 0, "A11 關閉後中距不畫名稱（得 " .. a11b.textCount .. "）")
+    zone.setBoolOverride("ZoneNamesFar", nil)
+    zone.clearProviders()
+    zone.addProvider("intLodNamed", extLodNamed, true) -- 同 zone 改內部註冊
+    local a11c = makeInner(3)
+    zone.resetEdgeCount(); zone.lines(a11c)
+    assert(a11c.textCount == 0, "A11 內部（POI）zone 不受 ZoneNamesFar 影響（得 " .. a11c.textCount .. "）")
+    -- 細節檔不受影響（框線＋名稱照舊）
+    zone.clearProviders()
+    zone.addProvider("extLodNamed2", extLodNamed)
+    local a11d = makeInner(10)
+    zone.resetEdgeCount(); zone.lines(a11d)
+    assert(a11d.textCount == 1 and zone.edgeCount() == 4,
+        "A11 細節檔行為不變（text=" .. a11d.textCount .. " edges=" .. zone.edgeCount() .. "）")
+    zone.clearProviders()
+    zone.resetLogs()
+
+    -- A12 外部 zone 類別篩選（ZoneCategoryFilter CSV 停用清單）：停用類別的
+    -- zone 三 pass 全跳過；無類別/未停用照畫；內部（POI）zone 不受此清單影響
+    local function catZones()
+        return { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, name = "Shop",
+                category = "shop",
+                rects = { { x1 = 10, y1 = 10, x2 = 20, y2 = 20 } } },
+            { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, name = "Pvp",
+                category = "pvp",
+                rects = { { x1 = 30, y1 = 10, x2 = 40, y2 = 20 } } },
+            { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, name = "Plain",
+                rects = { { x1 = 50, y1 = 10, x2 = 60, y2 = 20 } } } }
+    end
+    zone.setCatFilter("shop")
+    zone.addProvider("catExt", catZones)
+    local a12 = makeInner()
+    zone.fill(a12)
+    assert(a12.polyCount == 2, "A12 停用 shop 後 fill 應剩 2（得 " .. a12.polyCount .. "）")
+    zone.resetEdgeCount(); zone.lines(a12)
+    assert(a12.textCount == 2, "A12 停用 shop 後名稱應剩 2（得 " .. a12.textCount .. "）")
+    zone.clearProviders()
+    -- 內部 zone 帶同名 category 不受影響（POI 的 category 是自家命名空間）
+    zone.addProvider("catInt", function()
+        return { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, category = "shop",
+            rects = { { x1 = 10, y1 = 10, x2 = 20, y2 = 20 } } } }
+    end, true)
+    local a12b = makeInner()
+    zone.fill(a12b)
+    assert(a12b.polyCount == 1, "A12 內部 zone 不受類別清單影響（得 " .. a12b.polyCount .. "）")
+    zone.clearProviders()
+    zone.setCatFilter(nil)
     zone.resetLogs()
 
     -- A9 底襯（haloAlpha）：細節檔每 rect 先畫外擴暗色 quad 再畫填色（2 poly/rect，

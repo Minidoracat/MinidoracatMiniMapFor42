@@ -258,6 +258,15 @@ Events.OnGameBoot.Add(function()
                 label = p.optionLabelKey, default = true })
         end
     end
+    -- 伺服器區域專屬設定（同本條件：有外部 provider 才出現）——
+    -- 名稱遠距開關＋類別篩選 CSV（統一視窗類別勾選自動寫入；空/'-'＝全開）。
+    -- 統一視窗「伺服器區域」區塊亦在此動態插入（插在資源點之後、左欄）
+    modOptions:addTickBox("ZoneNamesFar", "UI_MinidoracatMiniMap_ZoneNamesFar", true,
+        "UI_MinidoracatMiniMap_ZoneNamesFar_tooltip")
+    modOptions:addTextEntry("ZoneCategoryFilter", "UI_MinidoracatMiniMap_ZoneCategoryFilter", "",
+        "UI_MinidoracatMiniMap_ZoneCategoryFilter_tooltip")
+    table.insert(UNIFIED_SECTIONS, 3, { id = "zones", label = "UI_MinidoracatMiniMap_SecZones" })
+    UNIFIED_LANE.zones = 1
 end)
 
 local function settingsApply(entry, value)
@@ -799,8 +808,55 @@ local function unifiedBuildDistance(ctx)
     ctx.curY = ctx.curY + ctx.rowH
     unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.distance)
 end
+-- 伺服器區域區（有外部 zone provider 才插入，見上方 OnGameBoot）：名稱遠距開關
+-- ＋動態類別勾選。類別是 zones.json 選配欄位——伺服器定義什麼列什麼；MP 區域
+-- 非同步到貨，重開視窗即刷新清單。已知取捨：CSV 依「當前可見類別」序列化，
+-- 已停用但暫不在清單的類別（伺服器移除該類全部區域期間改勾選）會被序列化丟出
+-- ——影響僅「該類別回歸時恢復顯示」，可再手動關
+local function unifiedBuildZones(ctx)
+    unifiedAddTick(ctx, ctx.curX + 4, ctx.curY, ctx.laneW - 6,
+        getTextOrNull("UI_MinidoracatMiniMap_ZoneNamesFar") or "ZoneNamesFar",
+        getBoolOption("ZoneNamesFar", true), unifiedOnModTick, { id = "ZoneNamesFar" })
+    ctx.curY = ctx.curY + ctx.rowH
+    local cats = Core.zoneExternalCategories and Core.zoneExternalCategories() or {}
+    if #cats == 0 then
+        unifiedAdd(ctx, ISLabel:new(ctx.curX + 4, ctx.curY + 3, ctx.fontH,
+            getText("UI_MinidoracatMiniMap_ZoneNoCats"), 0.75, 0.75, 0.75, 1, UIFont.Small, true))
+        ctx.curY = ctx.curY + ctx.rowH
+        return
+    end
+    local defs = {}
+    for i = 1, #cats do defs[i] = { key = cats[i] } end
+    local disOpt = modOptions and modOptions:getOption("ZoneCategoryFilter")
+    local dis = unifiedCsvSet(disOpt and disOpt:getValue() or "")
+    local col = 0
+    for i = 1, #cats do
+        local key = cats[i]
+        unifiedAddTick(ctx, ctx.curX + 4 + col * ctx.colW2, ctx.curY, ctx.colW2 - 8,
+            key, not dis[key],
+            function(target, index, selected)
+                unifiedSetFilter("ZoneCategoryFilter", defs, key, selected)
+            end)
+        col = col + 1
+        if col == ctx.cols2 then col = 0; ctx.curY = ctx.curY + ctx.rowH end
+    end
+    if col ~= 0 then ctx.curY = ctx.curY + ctx.rowH end
+    ctx.curY = ctx.curY + 2
+    local halfW = math.floor((ctx.laneW - 10) / 2)
+    unifiedAddBtn(ctx, ctx.curX + 4, ctx.curY, halfW, getText("UI_MinidoracatMiniMap_SelectAll"), function()
+        unifiedSetAllFilter("ZoneCategoryFilter", defs, true)
+        unifiedRebuild(ctx.win)
+    end)
+    unifiedAddBtn(ctx, ctx.curX + 8 + halfW, ctx.curY, halfW, getText("UI_MinidoracatMiniMap_SelectNone"), function()
+        unifiedSetAllFilter("ZoneCategoryFilter", defs, false)
+        unifiedRebuild(ctx.win)
+    end)
+    ctx.curY = ctx.curY + ctx.rowH + 4
+end
+
 local UNIFIED_BUILDERS = {
-    layers = unifiedBuildLayers, poicat = unifiedBuildPoicat, zombie = unifiedBuildZombie,
+    layers = unifiedBuildLayers, poicat = unifiedBuildPoicat, zones = unifiedBuildZones,
+    zombie = unifiedBuildZombie,
     animals = unifiedBuildAnimals, vehicles = unifiedBuildVehicles, distance = unifiedBuildDistance,
     worldmap = unifiedBuildWorldmap, appearance = unifiedBuildAppearance,
 }
