@@ -155,14 +155,19 @@ enum 值域只由各自的 `numValues` 決定，`VERSION` 是 parser 格式版�
 ## 外部工具介接：poi_blocks.json
 
 啟動時（單機進世界／伺服器啟動）自動把內建資源點資料匯出成
-`Zomboid/Lua/MinidoracatMiniMap/poi_blocks.json`，供外部程式（如建築重置工具）讀取
+`Zomboid/Lua/MinidoracatMiniMap/poi_blocks.json`（需遊戲 42.20.1+，`.json` 寫入白名單
+解禁版本；`versionMin` 已同步），供外部程式（如建築重置工具）讀取
 「地圖上實際顯示的資源點區塊」——與 Zones addon 的
 `Zomboid/Lua/MinidoracatMiniMapZones/zones.json` 同根，工具端一個根目錄讀兩份。
 
-格式 v1：`{"v":1,"count":N,"categories":{"<分類>":[{"b":[x,y,w,h],"r":[[x,y,w,h],…]},…]}}`
+格式 v1：`{"v":1,"modversion":"…","count":N,"categories":{"<分類>":[{"b":[x,y,w,h],"r":[[x,y,w,h],…]},…]}}`
 ——世界 square 座標（x/y 左上、w/h 尺寸，涵蓋 tiles `[x, x+w-1]`）；`b`＝整棟建築外框、
-`r`＝該分類觸發房矩形（面積大→小，`r[1]` 為圖標錨點）。每次啟動整檔覆寫，內容隨 MOD
-版本自動同步；MP 純客戶端不寫。完整契約見
+`r`＝該分類觸發房矩形（面積大→小，`r[1]` 為圖標錨點）；`modversion`＝寫檔當下的 MOD
+版本（新鮮度標記）。每次啟動整檔覆寫，內容隨 MOD 版本自動同步；MP 純客戶端不寫。
+
+**工具端義務**（座標會被拿去刪存檔 chunk，讀壞資料＝刪錯區域）：整檔嚴格 JSON 解析
+（失敗＝視同不存在，勿逐行流式取用）；各分類條目總數須等於 `count`；破壞性操作前驗
+`modversion` 等於實際安裝版本（寫檔失敗時舊檔會殘留）；容忍檔案不存在。完整契約見
 `shared/MinidoracatMiniMapPOIExport.lua` 檔頭，離線測試 `scripts/test_poi_export.lua`。
 
 ## 架構：主 MOD + 地圖包 addon + 第三方相容路徑
