@@ -467,6 +467,29 @@ do
     zone.fill(hm)
     assert(hm.polyCount == 1, "A9 中距檔應僅聯集框填色、無底襯（得 " .. hm.polyCount .. "）")
     zone.clearProviders()
+    -- A9b 無 lodRect 的地標/大範圍 zone：底襯不受檔位限制——中距、拉遠皆
+    -- 2 底襯＋2 填色（地堡實測回饋：中距整棟同框時沒暗邊＝看不出區域）。
+    -- 刻意用「外部」provider 註冊：halo 檔位判斷無 internal 分支，此案例同時
+    -- 鎖住外部/legacy zone（無 lodRect 帶 haloAlpha）的新契約——描邊跟填色走
+    local function landmarkZone()
+        return { {
+            fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, haloAlpha = 0.5,
+            rects = { { x1 = 10, y1 = 10, x2 = 20, y2 = 20 },
+                { x1 = 30, y1 = 10, x2 = 40, y2 = 20 } },
+        } }
+    end
+    zone.addProvider("landmarkMid", landmarkZone)
+    local lmMid = makeInner(3)
+    zone.fill(lmMid)
+    assert(lmMid.polyCount == 4,
+        "A9b 無 lodRect zone 中距檔應 2 底襯＋2 填色（得 " .. lmMid.polyCount .. "）")
+    assert(lmMid.polyXs[1] < 10 and lmMid.polyXs[3] == 10,
+        "A9b 底襯仍須先於填色繪製")
+    local lmFar = makeInner(1)
+    zone.fill(lmFar)
+    assert(lmFar.polyCount == 4,
+        "A9b 無 lodRect zone 拉遠檔應照畫底襯＋填色（得 " .. lmFar.polyCount .. "）")
+    zone.clearProviders()
     zone.resetLogs()
 
     zone.addProvider("addonOff", function()
@@ -792,6 +815,18 @@ do
     local dcd = makeIconInner(10)
     zone.icons(dcd); zone.clearProviders()
     assert(dcd.draws == 2, "A7 細節檔不去重疊（得 " .. dcd.draws .. "）")
+    -- A7b 無 lodRect 的地標 zone 刻意繞過去重疊：同格兩顆也都畫（地標圖標
+    -- 不得被鄰格圖標吃掉——去重疊只作用於 lodRect zone）
+    local function landmarkIconZone(x1, y1)
+        return { icon = { tex = "T", r = 1, g = 1, b = 1 }, iconOnce = true,
+            rects = { { x1 = x1, y1 = y1, x2 = x1 + 4, y2 = y1 + 4 } } }
+    end
+    zone.addProvider("icon10", function()
+        return { landmarkIconZone(40, 40), landmarkIconZone(44, 42) }
+    end, true)
+    local dcl = makeIconInner(3)
+    zone.icons(dcl); zone.clearProviders()
+    assert(dcl.draws == 2, "A7b 無 lodRect zone 同格也應全畫（得 " .. dcl.draws .. "）")
 end
 
 -- A8 POI 顯示距離沙盒閘（PoiDisplayDistance）：僅 internal provider 受距離限制，
@@ -846,6 +881,24 @@ do
     zone.setPoiDist(29)
     local under = makeDistInner(); zone.fill(under)
     assert(under.polyCount == 0, "A8-2 超出距離應隱藏")
+    zone.clearProviders()
+
+    -- A8-2b 無 lodRect 的內部地標 zone 同受距離閘（鎖 zoneWithinDist 的
+    -- lodRect nil guard——快速排除跳過、直接逐 rects 判距）
+    zone.setPoiDist(30)
+    zone.setPlayerPos(10, 10)
+    zone.addProvider("poiLmNear", function()
+        return { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+            rects = { { x1 = 20, y1 = 20, x2 = 30, y2 = 30 } } } }
+    end, true)
+    zone.addProvider("poiLmFar", function()
+        return { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+            rects = { { x1 = 60, y1 = 60, x2 = 70, y2 = 70 } } } }
+    end, true)
+    local lmDist = makeDistInner()
+    zone.fill(lmDist)
+    assert(lmDist.polyCount == 1,
+        "A8-2b 無 lodRect 內部 zone 應同受距離閘（近畫遠隱，得 " .. lmDist.polyCount .. "）")
     zone.clearProviders()
 
     -- A8-3 外部 addon zone 不受距離閘影響（同一顆遠 zone 改外部註冊）
@@ -1104,6 +1157,7 @@ local function iconTexture(cat, colorMode) return "TEX_" .. cat, colorMode end
 local function getText(key) return "T_" .. key end
 local POI_FILL_ALPHA = 0.28
 local POI_HALO_ALPHA = 0.5
+local POI_LOD_MAX_EDGE = 100
 ]=]
 local convSuffix = [=[
 return {
@@ -1231,6 +1285,47 @@ assert(io2[1].distRects[1].x1 == 10 and io2[1].distRects[1].x2 == 15,
     "poi-convert：distRects 應是房間矩形而非整棟框")
 conv.setOpt("PoiWholeBuilding", false)
 conv.build()
+
+-- 大型地標 LOD 豁免（POI_LOD_MAX_EDGE=100，沿 Zones addon attachLodRect 同判準）：
+-- 畫的幾何聯集最長邊 >100 格 → 不附 lodRect＝任何縮放照畫；<=100 照附
+-- （上方 b=100x80 恰在門檻上、lodRect 有附，即 at-threshold 附掛側的既有覆蓋）
+MinidoracatMiniMapPOIData = {
+    -- 逐房間聯集 101 格寬（10..111）→ 豁免
+    { cat = "police", rn = 2, r = {
+        { x = 10, y = 20, w = 5, h = 4 },
+        { x = 109, y = 20, w = 2, h = 2 },
+    } },
+    -- 整棟 b 177x110（March Ridge 地堡實例尺寸）→ 豁免；房間聯集本身很小
+    { cat = "police", rn = 1, r = { { x = 210, y = 220, w = 5, h = 4 } },
+        b = { x = 200, y = 200, w = 177, h = 110 } },
+    -- 縱向 101 格（高度單邊超標）→ 同樣豁免（最長邊取 max(w,h)，勿只驗寬）
+    { cat = "police", rn = 2, r = {
+        { x = 500, y = 500, w = 4, h = 5 },
+        { x = 500, y = 597, w = 4, h = 4 },
+    } },
+}
+conv.build()
+local lm = conv.zones()
+assert(#lm == 3, "poi-convert 地標：應 3 個 zone（得 " .. #lm .. "）")
+assert(lm[1].lodRect == nil,
+    "poi-convert 地標：逐房間聯集 >100 格應豁免 LOD（lodRect 應為 nil）")
+assert(lm[2].lodRect ~= nil,
+    "poi-convert 地標：整棟模式關閉時量的是房間聯集（小）——lodRect 應照附")
+assert(lm[3].lodRect == nil,
+    "poi-convert 地標：縱向 101 格應同樣豁免（最長邊須取 max(w,h)）")
+conv.setOpt("PoiWholeBuilding", true)
+conv.build()
+local lw = conv.zones()
+assert(lw[2].lodRect == nil,
+    "poi-convert 地標：整棟模式下 b=177x110 應豁免 LOD（lodRect 應為 nil）")
+assert(lw[2].rects[1].x2 == 377, "poi-convert 地標：整棟框仍應正常換上")
+-- 開→關往返：lodRect 必須重新附回（stale nil 殘留＝地標豁免「黏住」一般建物）
+conv.setOpt("PoiWholeBuilding", false)
+conv.build()
+local lb = conv.zones()
+assert(lb[2].lodRect ~= nil,
+    "poi-convert 地標：整棟模式關閉後 lodRect 應重新附回（不得殘留 nil）")
+print("poi landmark LOD exemption cases passed")
 
 MinidoracatMiniMapPOIData = nil
 MinidoracatMiniMapPOICategories = nil

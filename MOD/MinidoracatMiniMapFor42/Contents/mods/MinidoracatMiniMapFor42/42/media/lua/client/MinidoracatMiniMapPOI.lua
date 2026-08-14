@@ -1,5 +1,5 @@
 -- MinidoracatMiniMapPOI.lua
--- 主 MOD 內建 POI 的 client 層：把 MinidoracatMiniMapPOIData（1692 筆 20 類，
+-- 主 MOD 內建 POI 的 client 層：把 MinidoracatMiniMapPOIData（1669 筆 20 類，
 -- v3 逐房間矩形：r[1]=最大合併矩形為圖標錨點、區塊畫主樓層各房間）轉成
 -- 主 MOD zone renderer 的 schema，並以「內部 provider」註冊
 -- （registerZoneProvider("MinidoracatMiniMapFor42.POI", fn, nil, internal=true)——POI 有自己的
@@ -21,7 +21,7 @@
 --   2. 圖標走 iconRect 錨在最大房間，不跑到整棟框中心（實測商場藥局房間 17x12
 --      vs 整棟 273x156，中心離實際店面可差上百格）
 --   3. 距離閘走 distRects＝原房間矩形，可見距離完全不受此開關影響
--- 圖標模式不帶 name：1692 個標籤會爆地圖。fillAlpha 於非區塊模式為 0，主檔 fill
+-- 圖標模式不帶 name：1669 個標籤會爆地圖。fillAlpha 於非區塊模式為 0，主檔 fill
 -- pass 對 alpha==0 早退；zone 一律不帶 border，line pass 只為名稱而跑。
 --
 -- 快取契約（沿主檔 zone provider C2）：providerFn 只回快取參照、絕不重建；快取僅在
@@ -37,8 +37,21 @@ local OPTIONS_NAMESPACE = "MinidoracatMiniMap" -- 主 MOD 的 ModOptions 命名�
 -- 邊界辨識改由 haloAlpha 底襯提供（實機回饋：純色塊難辨識）——主檔 fill pass 於
 -- 細節檔在每 rect 下方先畫外擴 2px 的黑色 quad，視覺即一圈描邊，成本每 rect 僅
 -- 1 次 drawPolygon（舊框線的 1/4 且零 Lua 裁線）；中距檔不畫（城市尺度熱點零新增）。
+-- 例外：無 lodRect 的地標豁免條目（見 POI_LOD_MAX_EDGE）底襯全檔位畫——中距整棟
+-- 同框時沒暗邊＝「有染色卻看不出區域」（地堡實測回饋）。
 local POI_FILL_ALPHA = 0.20
 local POI_HALO_ALPHA = 0.55
+
+-- 大型地標不參與縮放 LOD（沿 Zones addon attachLodRect 的 LOD_MAX_EDGE=100
+-- 同一判準）：畫的幾何聯集最長邊 >100 格的條目不附 lodRect、任何縮放照畫
+-- （含名稱）。均一 px/格 門檻對地標是誤傷——March Ridge 地堡 (5522,12407)
+-- 177×110 在 1px/格 仍是 177px 的可辨識色塊，卻被「已是色點」的拉遠檔藏掉；
+-- 而名稱要 >=6px/格 才畫，屆時地堡已是 1062px、超出視窗——地標從不存在
+-- 「整棟＋名稱」同框的縮放（實測回饋，2026-08-14）。影響面：整棟外框模式
+-- 20 筆、逐房間模式 5 筆（1669 筆實算），遠距多畫成本可忽略；其餘照走 LOD。
+-- 附帶：這些條目不進圖標去重疊（該機制只作用於 lodRect zone）——地標圖標
+-- 本就不該被鄰格圖標吃掉。
+local POI_LOD_MAX_EDGE = 100
 
 -- 版本守衛：同 MOD 內兩檔，理論上恆成立；仍防呆——無 registerZoneProvider 直接降級。
 if not (MinidoracatMiniMapAPI and MinidoracatMiniMapAPI.registerZoneProvider) then
@@ -130,7 +143,7 @@ local function buildPoiConverted()
         local colorMode = getBoolOption("PoiColorIcons", false)
         local wholeOn = getBoolOption("PoiWholeBuilding", false)
         if iconsOn or blocksOn then
-            -- 逐類別預取 Cat_ 勾選：1692 筆逐筆查 ModOptions 是 ~5k 次三層查找，類別僅 20 個
+            -- 逐類別預取 Cat_ 勾選：1669 筆逐筆查 ModOptions 是 ~5k 次三層查找，類別僅 20 個
             local catOn = {}
             for key in pairs(cats) do catOn[key] = getBoolOption("Cat_" .. key, true) end
             for i = 1, #data do
@@ -160,7 +173,7 @@ local function buildPoiConverted()
                             end
                             if rects[1] then
                                 -- 整棟外框模式：rects 換成單一 b（外框只會 ⊇ 房間聯集，
-                                -- 實測 1692 筆有大半兩者相同、大型建物可差兩百倍面積）。
+                                -- 實測 1669 筆有大半兩者相同、大型建物可差兩百倍面積）。
                                 -- 三個「只影響區塊」的隔離（缺一即違反 UI 承諾）：
                                 --   1. 要 blocksOn 才換——區塊沒畫時換幾何是零視覺效果卻
                                 --      改行為（codex review blocker）
@@ -188,10 +201,19 @@ local function buildPoiConverted()
                                     if rc.x2 > ux2 then ux2 = rc.x2 end
                                     if rc.y2 > uy2 then uy2 = rc.y2 end
                                 end
+                                -- 地標豁免（見 POI_LOD_MAX_EDGE）：最長邊超標不附
+                                -- lodRect＝不參與 LOD、全縮放可見。以「畫的幾何」為準
+                                -- ——整棟外框模式量整棟、逐房間模式量觸發房聯集，
+                                -- LOD 藏的是它畫的東西，量測對象一致才語意正確
+                                local lodW, lodH = ux2 - ux1, uy2 - uy1
+                                local lodRect = nil
+                                if (lodW > lodH and lodW or lodH) <= POI_LOD_MAX_EDGE then
+                                    lodRect = { x1 = ux1, y1 = uy1, x2 = ux2, y2 = uy2 }
+                                end
                                 built[#built + 1] = {
                                     id = "poi:" .. cat .. ":" .. i,
                                     rects = rects,
-                                    lodRect = { x1 = ux1, y1 = uy1, x2 = ux2, y2 = uy2 },
+                                    lodRect = lodRect,
                                     -- 圖標/名稱只錨定 rects[1]（烘焙端保證是最大合併矩形）；
                                     -- 無此旗標的 zone（Zones addon）維持每 rect 一圖標
                                     iconOnce = true,

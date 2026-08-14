@@ -95,10 +95,12 @@ end
 --     fill={ r=, g=, b= }(0-1), fillAlpha=number(0＝不填),
 --     border={ r=, g=, b= }(0-1), borderAlpha=number(0 或缺 border＝不畫框；
 --       ⚠ 不影響 name——兩者自 2026-08-13 解耦，純色塊＋名稱是合法組合),
---     haloAlpha=number|nil(選配；>0＝fill pass 於細節檔在每 rect 填色下先畫
---       外擴 2px 的黑色底襯 quad——無框線區塊的暗色描邊，每 rect 僅 1 次
---       drawPolygon（stencil 裁切、零 Lua 裁線），遠低於 4 條框線的成本；
---       中距/拉遠檔不畫。POI 區塊模式用；無此欄位行為不變),
+--     haloAlpha=number|nil(選配；>0＝fill pass 在每 rect 填色下先畫外擴 2px
+--       的黑色底襯 quad——無框線區塊的暗色描邊，每 rect 僅 1 次 drawPolygon
+--       （stencil 裁切、零 Lua 裁線），遠低於 4 條框線的成本。檔位：帶 lodRect
+--       的 zone 僅細節檔畫（中距/拉遠不畫，城市尺度熱點零新增）；無 lodRect
+--       的 zone（恆顯的大範圍區域/地標）全檔位畫——描邊跟著填色走，0.14.1 起，
+--       見 fill pass 檔位註解。POI 區塊模式用；無此欄位行為不變),
 --     icon={ tex=<Texture>, r=, g=, b= }|nil(選配；每 rect 中心畫染色圖標),
 --     iconOnce=true|nil(選配；true 時圖標只畫在 rects[1]——provider 應把主要
 --       矩形排在首位；名稱本就恆只錨定 rects[1]、與此旗標無關。未設維持
@@ -2615,7 +2617,9 @@ end
 -- （一棟一框，2~3px/格下與逐房間視覺無異、成本 1/3）、>= DETAIL 逐房間
 -- 平面圖＋名稱。無 lodRect 的 zone 不參與、任何縮放照畫（Zones addon 自
 -- 0.2.x 起對建物尺度區域〔聯集最長邊 ≤100 格〕自動附 lodRect 進 LOD，
--- 大範圍區域仍不附、維持全縮放可見——見其 attachLodRect）。
+-- 大範圍區域仍不附、維持全縮放可見——見其 attachLodRect；內建 POI 自
+-- 0.14.1 起同判準豁免大型地標——見 MinidoracatMiniMapPOI.lua 的
+-- POI_LOD_MAX_EDGE，177 格的地堡拉遠變色點前就被藏掉是誤傷）。
 local ZONE_LOD_HIDE = 1.5
 local ZONE_LOD_DETAIL = 6
 -- 區塊底襯外擴量（螢幕 px；/scale 換算世界格後走同一仿射投影）：haloAlpha zone
@@ -2663,7 +2667,7 @@ local function poiDistParams(inner)
 end
 
 -- 玩家點到矩形最近點的距離平方；夾限用純 Lua 比較而非 math.max/min——Kahlua
--- 下庫函式是 JavaFunction，每 zone 多次跨界呼叫在預裁前發生、全圖 ~1692 筆
+-- 下庫函式是 JavaFunction，每 zone 多次跨界呼叫在預裁前發生、全圖 ~1669 筆
 -- ×1~3 pass 會積成可觀成本
 local function rectDist2(rc, px, py)
     local dx = px < rc.x1 and (rc.x1 - px) or (px > rc.x2 and (px - rc.x2) or 0)
@@ -2677,7 +2681,7 @@ end
 -- 聯集的 AABB（大型建物的分類房間可能只佔一角，AABB 也含無房間的空白區——
 -- codex review 以實資料證明兩者可差數十格），故僅作快速排除：點到 AABB 的距離
 -- 是點到任一內含矩形距離的下界，AABB 超距＝全部超距，免逐矩形。此下界對
--- distRects 同樣成立（房間矩形恆在整棟框內，實測 1692 筆全數滿足）。無矩形者放行
+-- distRects 同樣成立（房間矩形恆在整棟框內，實測 1669 筆全數滿足）。無矩形者放行
 -- （後續本就無物可畫）。呼叫端以 pdist2 短路（閘未啟用零成本）；fill/lines/icons
 -- 三 pass 同一判定，整 zone 一致顯隱。
 local function zoneWithinDist(z, px, py, dist2)
@@ -2747,14 +2751,19 @@ local function drawZoneFillBody(inner)
                         lodSingle[1] = lod
                         rects, rn = lodSingle, 1
                     end
-                    -- 底襯 pass（haloAlpha，細節檔限定）：先畫全部外擴暗色 quad、再畫
+                    -- 底襯 pass（haloAlpha）：先畫全部外擴暗色 quad、再畫
                     -- 全部填色——分兩圈使同 zone 相鄰矩形（L 形建物）的內部接縫被後畫
                     -- 的填色蓋掉，暗邊只留在區塊外緣；跨 zone 的暗邊蓋在先畫的鄰棟填色
                     -- 上，正是要的分界。成本每 rect 1 次 drawPolygon（stencil 裁切、
-                    -- 零 Lua 裁線），遠低於舊框線的 4 條 drawClippedEdge；中距檔不畫
-                    -- （城市尺度 fill 是效能熱點，該檔位維持純填色零新增成本）
+                    -- 零 Lua 裁線），遠低於舊框線的 4 條 drawClippedEdge。
+                    -- 檔位：lodRect zone 細節檔限定（城市尺度 fill 是效能熱點，中距檔
+                    -- 維持純填色零新增成本）；無 lodRect 的地標/大範圍 zone 全檔位畫
+                    -- ——地堡實測回饋：橄欖綠 0.2 alpha 融進迷彩地形，中距整棟剛好
+                    -- 同框時沒有暗邊＝「有染色卻看不出區域」；拉近後框大於視窗、邊
+                    -- 又在螢幕外。此類 zone 全圖僅 20 筆地標＋少數伺服器大區域，
+                    -- 每 rect 多 1 次 drawPolygon 可忽略
                     local halo = z.haloAlpha
-                    if halo and halo > 0 and scale >= ZONE_LOD_DETAIL then
+                    if halo and halo > 0 and (lod == nil or scale >= ZONE_LOD_DETAIL) then
                         local wpad = ZONE_HALO_PX / scale
                         for ri = 1, rn do
                             local rc = rects[ri]
@@ -2865,7 +2874,7 @@ local function drawZoneLines(inner)
         elseif type(zones) == "table" and zones.hasLine ~= false then -- ZR-1（同 fill pass）
             local disCats = not provider.internal and zoneDisabledCats() or nil
             -- 名稱遠距顯示（ZoneNamesFar，預設開；僅外部 zone）：lodRect zone 的
-            -- 名稱不再鎖細節檔——區域數量級小（幾十筆 vs POI 1692），名稱是玩家
+            -- 名稱不再鎖細節檔——區域數量級小（幾十筆 vs POI 1669），名稱是玩家
             -- 「找區域」的主要手段，鎖細節檔會造成可尋性回退（實測回饋）；框線
             -- 仍維持細節檔限定。POI（internal）不受影響，名稱照鎖細節檔防洗版
             local nameFar = not provider.internal and getBoolOption("ZoneNamesFar", true)
