@@ -1110,6 +1110,33 @@ unifiedRebuild = function(win)
     end
 end
 
+-- 伺服器區域資料到貨時的視窗自動刷新（實測回饋：視窗開著按「生成範例檔」，
+-- 類別勾選不會自己長出來——重建僅在開窗/操作時觸發）。zone 快取是原子替換
+-- （C2 契約：provider 恆回快取參照、更新即換新表），參照變＝資料變：逐外部
+-- provider 比參照，變了才重建。每幀成本＝外部 provider 數次 pcall（fn 只回
+-- 參照，純 Lua）＋等值比較；provider 拋錯記為 false、恢復時同樣觸發重建
+local function unifiedZoneRefsDirty(win)
+    local refs = win._minidoracatZoneRefs
+    if not refs then
+        refs = {}
+        win._minidoracatZoneRefs = refs
+    end
+    local dirty = false
+    for i = 1, #registeredZoneProviders do
+        local p = registeredZoneProviders[i]
+        if not p.internal then
+            local ok, zones = pcall(p.fn)
+            local ref = (ok and zones) or false
+            local key = p.owner or ("#" .. i)
+            if refs[key] ~= ref then
+                refs[key] = ref
+                dirty = true
+            end
+        end
+    end
+    return dirty
+end
+
 local function buildSettingsWindow()
     local win = ISCollapsableWindow:new(0, 0, 700, 200) -- 寬高由 unifiedRebuild 重算
     win.resizable = false -- 同圖層面板做法（ISMiniMap.lua:187）
@@ -1180,11 +1207,14 @@ local function buildSettingsWindow()
     win:addChild(panel)
     win._content = panel
     unifiedRebuild(win)
+    unifiedZoneRefsDirty(win) -- 播種參照快照（避免首幀誤判 dirty 多重建一次）
     -- 視窗保持開啟時也追蹤伺服器 live sandbox 更新；只在有效模式改變時重建，
     -- 平常 prerender 不增加配置或子元件 churn。
     local originalSettingsPrerender = win.prerender
     function win:prerender()
-        if self._minidoracatLivestockMode ~= livestockVisibilityMode() then
+        -- 區域資料到貨（見 unifiedZoneRefsDirty）或 livestock 有效模式改變才重建
+        if unifiedZoneRefsDirty(self)
+            or self._minidoracatLivestockMode ~= livestockVisibilityMode() then
             unifiedRebuild(self)
         end
         originalSettingsPrerender(self)
