@@ -577,35 +577,6 @@ local function unifiedBuildLayers(ctx)
         end
     end
     if col ~= 0 then ctx.curY = ctx.curY + ctx.rowH end
-    -- 註冊的 zone 動作列（如 Zones addon 的「生成範例檔」）：伺服器區域 tick 之後
-    -- 渲染 [combo]+[按鈕] 一列（options 有給才有 combo）。無註冊＝零列（dormant）。
-    for ai = 1, #registeredZoneActions do
-        local action = registeredZoneActions[ai]
-        local btnLabel = getText(action.labelKey)
-        local btnTip = action.tooltipKey and getText(action.tooltipKey) or nil
-        if action.options then
-            local btnW = math.max(60, math.min(utw(btnLabel) + 20, ctx.laneW - 130))
-            local comboW = ctx.laneW - 6 - btnW - 4
-            local combo = ISComboBox:new(ctx.curX + 4, ctx.curY, comboW, ctx.fontH + 6, ctx.win,
-                function(target, box) action._selected = box.selected end)
-            combo:initialise()
-            for j = 1, #action.options do
-                combo:addOption(getText(action.options[j].labelKey))
-            end
-            combo.selected = action._selected or 1
-            unifiedAdd(ctx, combo)
-            unifiedAddBtn(ctx, ctx.curX + 4 + comboW + 4, ctx.curY, btnW, btnLabel, function()
-                local idx = combo.selected or 1
-                action._selected = idx
-                local opt = action.options[idx]
-                action.onTrigger(opt and opt.value)
-            end, btnTip)
-        else
-            unifiedAddBtn(ctx, ctx.curX + 4, ctx.curY, ctx.laneW - 6, btnLabel,
-                function() action.onTrigger(nil) end, btnTip)
-        end
-        ctx.curY = ctx.curY + ctx.rowH
-    end
 end
 
 local function unifiedBuildPoicat(ctx)
@@ -848,6 +819,40 @@ local function unifiedAddWrappedNote(ctx, text)
     if lineStart <= n then emit(string.sub(s, lineStart, n)) end
 end
 
+-- 註冊的 zone 動作列（registerZoneAction，如 Zones addon 的「生成範例檔」）：
+-- [combo]+[按鈕] 一列（options 有給才有 combo）。原渲染在圖層顯示區尾端，
+-- 0.14 移入「伺服器區域」區塊（實測回饋：與區域設定同區才找得到）。註冊
+-- action 的 addon 依家族契約必同時註冊 provider——區塊存在性由 provider 決定
+local function unifiedAddZoneActions(ctx)
+    for ai = 1, #registeredZoneActions do
+        local action = registeredZoneActions[ai]
+        local btnLabel = getText(action.labelKey)
+        local btnTip = action.tooltipKey and getText(action.tooltipKey) or nil
+        if action.options then
+            local btnW = math.max(60, math.min(utw(btnLabel) + 20, ctx.laneW - 130))
+            local comboW = ctx.laneW - 6 - btnW - 4
+            local combo = ISComboBox:new(ctx.curX + 4, ctx.curY, comboW, ctx.fontH + 6, ctx.win,
+                function(target, box) action._selected = box.selected end)
+            combo:initialise()
+            for j = 1, #action.options do
+                combo:addOption(getText(action.options[j].labelKey))
+            end
+            combo.selected = action._selected or 1
+            unifiedAdd(ctx, combo)
+            unifiedAddBtn(ctx, ctx.curX + 4 + comboW + 4, ctx.curY, btnW, btnLabel, function()
+                local idx = combo.selected or 1
+                action._selected = idx
+                local opt = action.options[idx]
+                action.onTrigger(opt and opt.value)
+            end, btnTip)
+        else
+            unifiedAddBtn(ctx, ctx.curX + 4, ctx.curY, ctx.laneW - 6, btnLabel,
+                function() action.onTrigger(nil) end, btnTip)
+        end
+        ctx.curY = ctx.curY + ctx.rowH
+    end
+end
+
 -- 伺服器區域區（有外部 zone provider 才插入，見上方 OnGameBoot）：名稱遠距開關
 -- ＋動態類別勾選。類別是 zones.json 選配欄位——伺服器定義什麼列什麼；MP 區域
 -- 非同步到貨，重開視窗即刷新清單。已知取捨：CSV 依「當前可見類別」序列化，
@@ -861,6 +866,7 @@ local function unifiedBuildZones(ctx)
     local cats = Core.zoneExternalCategories and Core.zoneExternalCategories() or {}
     if #cats == 0 then
         unifiedAddWrappedNote(ctx, getText("UI_MinidoracatMiniMap_ZoneNoCats"))
+        unifiedAddZoneActions(ctx) -- 生成範本列不受「無類別」影響
         return
     end
     local defs = {}
@@ -890,6 +896,7 @@ local function unifiedBuildZones(ctx)
         unifiedRebuild(ctx.win)
     end)
     ctx.curY = ctx.curY + ctx.rowH + 4
+    unifiedAddZoneActions(ctx)
 end
 
 local UNIFIED_BUILDERS = {
