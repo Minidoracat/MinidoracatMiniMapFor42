@@ -167,6 +167,17 @@
 --   改仿射快取（每 pass 3 點採樣、逐矩形純 Lua 乘加，中距檔實測 244 FPS）。
 --   Zones addon 無 lodRect 不參與任何 LOD/去重疊。
 --
+-- 2026-08-13 同棟樓層合併＋整棟外框：條目加帶 b＝整棟建築外框（供「資源點區塊用
+--   整棟外框」顯示選項），並補上分組的第二道判據——同名房間共享任一相同 rect 即
+--   同棟。原本只合併 bbox 完全相同的紀錄，而同棟的地下／地上 .lotheader bbox 常
+--   差幾格（Louisville 警局 (6078,5233,12,32) 對 (6077,5236,14,29)），漏網者畫成
+--   兩個套疊外框＋兩顆圖標，跨類別時更是同棟掛兩個身分（books+grocery、
+--   medical+pharmacy、grocery+gunstore、food+tools 共 4 例）。全 corpus 命中 17 組、
+--   每組成員皆 bbox 相交且 level 各異（-1/0、-2/0），無誤合併。
+--   位移（對 0.13.0 發布基準）：police 18→16、medical 59→57、industry 163→159、
+--   books 24→23、grocery 96→95、school 32→31、food 328→327，其餘不變；
+--   合計 1704→1692 筆、4735 個矩形。
+--
 -- ⚠ CATEGORIES 各 entry 內不要插註解行——scripts/gen_poi_data.py 以 regex 解析
 --   nameKey/rooms 相鄰結構，entry 內註解會使該類別解析失敗而整類消失。
 

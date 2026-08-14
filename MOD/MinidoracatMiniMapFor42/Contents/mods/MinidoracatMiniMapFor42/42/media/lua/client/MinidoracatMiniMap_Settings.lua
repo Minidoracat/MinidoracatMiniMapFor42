@@ -620,6 +620,12 @@ local function unifiedBuildPoicat(ctx)
         getTextOrNull("UI_MinidoracatMiniMap_PoiColorIcons") or "PoiColorIcons",
         getBoolOption("PoiColorIcons", false), unifiedOnModTick, { id = "PoiColorIcons" })
     ctx.curY = ctx.curY + ctx.rowH
+    -- 區塊形狀（整列）：勾＝整棟一框，不勾＝逐房間矩形。只影響區塊模式，
+    -- 圖標位置不變（POI provider 於整棟模式帶 iconRect 釘住最大房間）
+    unifiedAddTick(ctx, ctx.curX + 4, ctx.curY, ctx.laneW - 6,
+        getTextOrNull("UI_MinidoracatMiniMap_PoiWholeBuilding") or "PoiWholeBuilding",
+        getBoolOption("PoiWholeBuilding", false), unifiedOnModTick, { id = "PoiWholeBuilding" })
+    ctx.curY = ctx.curY + ctx.rowH
     -- 20 類別勾選格（poiCols 欄，短標籤預設 3 欄，欄距 8px）＋全選/全不選。
     -- 每格獨立 Cat_<key> 布林選項；勾選經 settingsApply 落地，POI provider
     -- 下一 tick 由簽章偵測到變動重建（沿 C2）。

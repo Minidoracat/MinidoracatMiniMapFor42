@@ -99,23 +99,33 @@ local function ensureFloatIcon()
                 self.tooltipUI:setVisible(false)
                 self.tooltipUI:setAlwaysOnTop(true)
             end
-            if not self.tooltipUI:getIsVisible() then
+            local firstShow = not self.tooltipUI:getIsVisible()
+            if firstShow then
                 self.tooltipUI:addToUIManager()
                 self.tooltipUI:setVisible(true)
             end
-            local desc = getText("UI_MinidoracatMiniMap_FloatIcon_tip", currentToggleKeyText())
-            if Core.toggleGhost then -- 穿透模式入口標註（_Ghost.lua 載入才顯示）；
-                -- 帶目前熱鍵名（玩家回饋：不顯示按鍵不知道怎麼按）
-                desc = desc .. " \n" .. getText("UI_MinidoracatMiniMap_FloatIcon_ghost_tip",
-                    currentBindKeyText("MinidoracatMiniMap_Ghost"))
+            -- description 邊緣觸發＋節流重建（perf 稽核 MISC-4）：原 hover 期間每幀
+            -- 重建——currentBindKeyText×2 各完整遍歷 MainOptions.keyText（全鍵位表
+            -- 每條一次 Java getName，~300 次跨界/幀）＋字串串接。改鍵得開選項畫面，
+            -- 屆時 tip 必已隱藏，故顯示期間 keyText 不可能變；-debug 的 renderMode/
+            -- warn 會變動，以 500ms 節流重建兼顧
+            local nowMs = getTimestampMs()
+            if firstShow or not self._tipNextMs or nowMs >= self._tipNextMs then
+                self._tipNextMs = nowMs + 500
+                local desc = getText("UI_MinidoracatMiniMap_FloatIcon_tip", currentToggleKeyText())
+                if Core.toggleGhost then -- 穿透模式入口標註（_Ghost.lua 載入才顯示）；
+                    -- 帶目前熱鍵名（玩家回饋：不顯示按鍵不知道怎麼按）
+                    desc = desc .. " \n" .. getText("UI_MinidoracatMiniMap_FloatIcon_ghost_tip",
+                        currentBindKeyText("MinidoracatMiniMap_Ghost"))
+                end
+                local mode = debugWarn.renderMode() -- -debug 限定：目前渲染管線狀態
+                if mode then desc = desc .. " \n" .. mode end
+                local warn = debugWarn.text()
+                if warn then desc = desc .. " \n" .. warn end
+                -- 多行不自動換行（同 ISButton.lua:326-330 的 maxLineWidth 切換）
+                self.tooltipUI.maxLineWidth = (mode or warn) and 1000 or 300
+                self.tooltipUI.description = desc
             end
-            local mode = debugWarn.renderMode() -- -debug 限定：目前渲染管線狀態
-            if mode then desc = desc .. " \n" .. mode end
-            local warn = debugWarn.text()
-            if warn then desc = desc .. " \n" .. warn end
-            -- 多行不自動換行（同 ISButton.lua:326-330 的 maxLineWidth 切換）
-            self.tooltipUI.maxLineWidth = (mode or warn) and 1000 or 300
-            self.tooltipUI.description = desc
             self.tooltipUI:setDesiredPosition(getMouseX(), self:getAbsoluteY() + self:getHeight() + 8)
         elseif self.tooltipUI and self.tooltipUI:getIsVisible() then
             self.tooltipUI:setVisible(false)

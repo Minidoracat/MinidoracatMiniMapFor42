@@ -47,6 +47,12 @@ assert(edge.draw(0.5) == 0.5, "顯式 alpha 未透傳")
 local zoneBody = assert(source:match(
     "%-%- test:zone%-render:start\n(.-)\n%-%- test:zone%-render:end"),
     "找不到 zone 繪製測試區段")
+-- deriveAffine 已前移出 zone-render 區段（殭屍/動物繪製共用），獨立標記抽取後
+-- 拼在 zone body 之前——維持單一事實來源，不在 prelude 放複製品
+local affineBody = assert(source:match(
+    "%-%- test:derive%-affine:start\n(.-)\n%-%- test:derive%-affine:end"),
+    "找不到 deriveAffine 測試區段")
+zoneBody = affineBody .. "\n" .. zoneBody
 local zonePrelude = [=[
 local registeredZoneProviders = {}
 local zoneLayerOn = true
@@ -181,6 +187,140 @@ do
     zone.resetEdgeCount()
     zone.lines(inner)
     assert(zone.edgeCount() == 4, "可見 zone 框線未畫四邊")
+    zone.clearProviders()
+    zone.resetLogs()
+
+    -- A4-3 框線與名稱解耦（2026-08-13）：borderAlpha==0／無 border 只代表不畫框，
+    -- 名稱照畫。POI 區塊模式＝純色塊＋名稱走此路；Zones addon 的 borderAlpha=0
+    -- 區域（其 name 為必填）以前被一併吞掉，此改動一併修正
+    zone.addProvider("noBorderNamed", function()
+        return { {
+            fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, name = "Zone",
+            rects = { { x1 = 10, y1 = 10, x2 = 20, y2 = 20 },
+                { x1 = 30, y1 = 10, x2 = 40, y2 = 20 } },
+        } }
+    end)
+    local nb = makeInner()
+    zone.resetEdgeCount(); zone.lines(nb)
+    assert(zone.edgeCount() == 0, "A4-3 無 border 不得畫框線（得 " .. zone.edgeCount() .. "）")
+    assert(nb.textCount == 1, "A4-3 無 border 時名稱仍須畫一次（得 " .. nb.textCount .. "）")
+    zone.clearProviders()
+    -- 顯式 borderAlpha=0 同理
+    zone.addProvider("zeroBorderNamed", function()
+        return { {
+            fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, name = "Zone",
+            border = { r = 1, g = 1, b = 1 }, borderAlpha = 0,
+            rects = { { x1 = 10, y1 = 10, x2 = 20, y2 = 20 } },
+        } }
+    end)
+    local zb = makeInner()
+    zone.resetEdgeCount(); zone.lines(zb)
+    assert(zone.edgeCount() == 0 and zb.textCount == 1,
+        "A4-3 borderAlpha=0 應無框線但有名稱（edges=" .. zone.edgeCount()
+        .. " text=" .. zb.textCount .. "）")
+    zone.clearProviders()
+    -- 無框線又無名稱＝整段跳過（不得白跑投影）
+    zone.addProvider("noBorderNoName", function()
+        return { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+            rects = { { x1 = 10, y1 = 10, x2 = 20, y2 = 20 } } } }
+    end)
+    local nn = makeInner()
+    zone.resetEdgeCount(); zone.lines(nn)
+    assert(zone.edgeCount() == 0 and nn.textCount == 0,
+        "A4-3 無框線無名稱應整段跳過")
+    zone.clearProviders()
+
+    -- A4-3b 空 rects 的 name-only zone 不得打死整個 pass：外部 addon 可給
+    -- name＋rects={}，rn 強制 1 會對 rects[1]=nil 解參考，safeDrawZone 只能整段
+    -- 中止——後續合法 zone 的名稱全滅（codex review mutation probe 實證）。
+    -- 契約：空者靜默跳過，後續 zone 照畫
+    zone.addProvider("emptyThenValid", function()
+        return {
+            { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, name = "Empty", rects = {} },
+            { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, name = "Valid",
+                rects = { { x1 = 10, y1 = 10, x2 = 20, y2 = 20 } } },
+        }
+    end)
+    local ev = makeInner()
+    local okLines = pcall(zone.lines, ev)
+    zone.clearProviders()
+    assert(okLines, "A4-3b 空 rects name-only zone 讓 lines pass 拋錯")
+    assert(ev.textCount == 1,
+        "A4-3b 空 zone 之後的合法 zone 名稱應照畫（得 " .. ev.textCount .. "）")
+
+    -- A4-4 「只畫名稱時只投影 rects[1]」的等價性前提：名稱恆錨定 rects[1]，故
+    -- rects[1] 離屏時名稱必不畫——與其餘矩形是否在屏內無關。這條性質成立，
+    -- rn=1 的優化才不改變任何輸出（該優化本身無視覺差異，測不到，只能鎖前提）
+    zone.addProvider("nameAnchorOffscreen", function()
+        return { {
+            fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, name = "Zone",
+            rects = { { x1 = 200, y1 = 200, x2 = 210, y2 = 210 },  -- 錨點離屏
+                { x1 = 10, y1 = 10, x2 = 20, y2 = 20 } },          -- 其餘在屏內
+        } }
+    end)
+    local ao = makeInner()
+    zone.lines(ao)
+    assert(ao.textCount == 0,
+        "A4-4 錨點矩形離屏時名稱不得畫（得 " .. ao.textCount .. "）")
+    zone.clearProviders()
+    zone.resetLogs()
+
+    -- A10 聚合旗標（ZR-1）：zones 表帶 hasFill/hasLine/hasIcon==false 時對應 pass
+    -- 整段跳過（即使個別 zone 有可畫內容——旗標是 provider 的聲明，錯設是 provider
+    -- 的 bug、不是 renderer 要兜的）；nil（外部 addon 未聲明）照舊逐 zone 判斷
+    local function flaggedZones(flags)
+        local zs = { {
+            fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, name = "Z",
+            border = { r = 1, g = 1, b = 1 }, borderAlpha = 0.5,
+            icon = { tex = "T", r = 1, g = 1, b = 1 }, iconOnce = true,
+            rects = { { x1 = 10, y1 = 10, x2 = 20, y2 = 20 } },
+        } }
+        for k, v in pairs(flags) do zs[k] = v end
+        return function() return zs end
+    end
+    zone.addProvider("flagOff", flaggedZones({ hasFill = false, hasLine = false, hasIcon = false }), true)
+    local fo = makeInner()
+    fo.draws = 0
+    fo.drawTextureScaled = function(self) self.draws = self.draws + 1 end
+    zone.fill(fo); zone.resetEdgeCount(); zone.lines(fo); zone.icons(fo)
+    assert(fo.polyCount == 0 and zone.edgeCount() == 0 and fo.textCount == 0 and fo.draws == 0,
+        "A10 三旗標 false 應整段跳過（poly=" .. fo.polyCount .. " edges=" .. zone.edgeCount()
+        .. " text=" .. fo.textCount .. " icons=" .. fo.draws .. "）")
+    zone.clearProviders()
+    zone.addProvider("flagOn", flaggedZones({ hasFill = true, hasLine = true, hasIcon = true }), true)
+    local fn2 = makeInner()
+    fn2.draws = 0
+    fn2.drawTextureScaled = function(self) self.draws = self.draws + 1 end
+    zone.fill(fn2); zone.resetEdgeCount(); zone.lines(fn2); zone.icons(fn2)
+    assert(fn2.polyCount == 1 and zone.edgeCount() == 4 and fn2.textCount == 1 and fn2.draws == 1,
+        "A10 三旗標 true 應照畫（poly=" .. fn2.polyCount .. " edges=" .. zone.edgeCount()
+        .. " text=" .. fn2.textCount .. " icons=" .. fn2.draws .. "）")
+    zone.clearProviders()
+    zone.resetLogs()
+
+    -- A9 底襯（haloAlpha）：細節檔每 rect 先畫外擴暗色 quad 再畫填色（2 poly/rect，
+    -- 且底襯先畫——fill 蓋掉同 zone 內部接縫的前提）；中距檔僅聯集框填色、零底襯
+    -- （城市尺度熱點不得新增成本）；無 haloAlpha 的 zone 行為不變（既有測試涵蓋）
+    local function haloZone()
+        return { {
+            fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, haloAlpha = 0.5,
+            rects = { { x1 = 10, y1 = 10, x2 = 20, y2 = 20 },
+                { x1 = 30, y1 = 10, x2 = 40, y2 = 20 } },
+            lodRect = { x1 = 10, y1 = 10, x2 = 40, y2 = 20 },
+        } }
+    end
+    zone.addProvider("haloDetail", haloZone, true)
+    local hd = makeInner(10)
+    zone.fill(hd)
+    assert(hd.polyCount == 4, "A9 細節檔應 2 底襯＋2 填色（得 " .. hd.polyCount .. "）")
+    -- 順序：前兩個 poly 是外擴底襯（x < 10），後兩個是填色（x == 10 / 30）
+    assert(hd.polyXs[1] < 10 and hd.polyXs[3] == 10,
+        "A9 底襯須先於填色繪製（x1=" .. tostring(hd.polyXs[1]) .. " x3=" .. tostring(hd.polyXs[3]) .. "）")
+    zone.clearProviders()
+    zone.addProvider("haloMid", haloZone, true)
+    local hm = makeInner(3)
+    zone.fill(hm)
+    assert(hm.polyCount == 1, "A9 中距檔應僅聯集框填色、無底襯（得 " .. hm.polyCount .. "）")
     zone.clearProviders()
     zone.resetLogs()
 
@@ -451,6 +591,42 @@ do
     local g2 = makeIconInner(); zone.icons(g2); zone.clearProviders()
     assert(g2.draws == 2, "A5-6 無旗標的多矩形 zone 應每 rect 一顆（draws=" .. g2.draws .. "）")
 
+    -- A5-7 iconRect（POI 整棟外框模式）：圖標錨點改用 iconRect，fill/line 仍走
+    -- rects——整棟框中心對商場類建物離實際店面數十格。rects 用一個「中心在窗外」
+    -- 的巨框、iconRect 用窗內小房間：畫到＝確實吃 iconRect（吃 rects 會被裁掉）
+    zone.addProvider("icon10", function()
+        return { { icon = { tex = "T", r = 1, g = 1, b = 1 }, iconOnce = true,
+            rects = { { x1 = -400, y1 = -400, x2 = 60, y2 = 60 } },
+            iconRect = { x1 = 40, y1 = 40, x2 = 50, y2 = 50 } } }
+    end, true)
+    local ir = makeIconInner(); zone.icons(ir); zone.clearProviders()
+    assert(ir.draws == 1, "A5-7 iconRect 未被採用為錨點（draws=" .. ir.draws .. "）")
+    -- 無 iconRect 的同一 zone：巨框中心在窗外 → 不畫（證明上一條不是碰巧）
+    zone.addProvider("icon11", function()
+        return { { icon = { tex = "T", r = 1, g = 1, b = 1 }, iconOnce = true,
+            rects = { { x1 = -400, y1 = -400, x2 = 60, y2 = 60 } } } }
+    end, true)
+    local nr = makeIconInner(); zone.icons(nr); zone.clearProviders()
+    assert(nr.draws == 0, "A5-7 對照組：巨框中心在窗外本不該畫（draws=" .. nr.draws .. "）")
+
+    -- A5-8 殘缺 iconRect 不得打死整個 pass：iconRect 是新公開的選配欄位，外部
+    -- addon 給 { x1 = 40 } 這種殘缺表時，直接讀 x2 會 nil 比數字拋錯，而
+    -- safeDrawZone 包的是整個 icon pass ——一個壞 zone 會讓當幀所有 provider 的
+    -- 圖標全滅。契約：四欄不齊即忽略、回退 rects[ri]（codex review）
+    zone.addProvider("icon12", function()
+        return { { icon = { tex = "T", r = 1, g = 1, b = 1 }, iconOnce = true,
+            rects = { { x1 = 40, y1 = 40, x2 = 50, y2 = 50 } },
+            iconRect = { x1 = 40 } },
+            { icon = { tex = "T", r = 1, g = 1, b = 1 }, iconOnce = true,
+                rects = { { x1 = 60, y1 = 60, x2 = 70, y2 = 70 } } } }
+    end, true)
+    local bad = makeIconInner()
+    local okPass = pcall(zone.icons, bad)
+    zone.clearProviders()
+    assert(okPass, "A5-8 殘缺 iconRect 讓整個 icon pass 拋錯")
+    assert(bad.draws == 2, "A5-8 殘缺 iconRect 應回退 rects[1]，兩顆圖標都要畫（得 "
+        .. bad.draws .. "）")
+
     -- A7 圖標去重疊：中/遠距（scale<6）lodRect zone 同一圖標尺寸格只畫第一顆、
     -- 不同格照畫；細節檔（scale>=6）全畫（疊圖時眼睛只看得到最上面那顆——
     -- 拉遠時數百顆互疊圖標的 drawTextureScaled 是遠距檔最大殘餘成本）
@@ -598,6 +774,39 @@ do
     zone.icons(comp2)
     assert(comp2.draws == 1, "A8-6 iconOnce 圖標應畫一顆（得 " .. comp2.draws .. "）")
     zone.clearProviders()
+
+    -- A8-7 distRects 覆寫量測對象（POI 整棟外框模式）：畫的是整棟框，但可見距離
+    -- 必須仍由分類房間決定——外框是外觀選項，不得讓大型建物提早數十格解鎖
+    -- （codex review blocker 的收口）。無 distRects 者維持量 rects，addon 行為不變
+    local function wholeZone()
+        return { {
+            fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+            border = { r = 1, g = 1, b = 1 }, borderAlpha = 0.5, name = "Z",
+            icon = { tex = "T", r = 1, g = 1, b = 1 }, iconOnce = true,
+            -- 整棟框橫跨 10..80，實際分類房間只在 70..80 那一角
+            rects = { { x1 = 10, y1 = 10, x2 = 80, y2 = 20 } },
+            lodRect = { x1 = 10, y1 = 10, x2 = 80, y2 = 20 },
+            iconRect = { x1 = 70, y1 = 10, x2 = 80, y2 = 20 },
+            distRects = { { x1 = 70, y1 = 10, x2 = 80, y2 = 20 } },
+        } }
+    end
+    zone.setPoiDist(15)
+    zone.setPlayerPos(15, 15) -- 整棟框內（距框 0 格），但距實際房間 55 格
+    zone.addProvider("poiWhole", wholeZone, true)
+    local wh = makeDistInner()
+    zone.fill(wh); zone.resetEdgeCount(); zone.lines(wh); zone.icons(wh)
+    assert(wh.polyCount == 0 and zone.edgeCount() == 0 and wh.draws == 0,
+        "A8-7 distRects 未生效：站在整棟框內、離分類房間 55 格仍被畫出（poly="
+        .. wh.polyCount .. " edges=" .. zone.edgeCount() .. " draws=" .. wh.draws .. "）")
+    zone.clearProviders()
+    zone.addProvider("poiWhole2", wholeZone, true)
+    zone.setPlayerPos(85, 15) -- 距分類房間 5 格 → 整棟框整個顯示
+    local wh2 = makeDistInner()
+    zone.fill(wh2); zone.icons(wh2)
+    assert(wh2.polyCount == 1 and wh2.draws == 1,
+        "A8-7 分類房間在距離內時整棟框應顯示（poly=" .. wh2.polyCount
+        .. " draws=" .. wh2.draws .. "）")
+    zone.clearProviders()
     zone.setPoiDist(nil)
     zone.setPlayerPos(50, 50)
     zone.resetLogs()
@@ -734,7 +943,7 @@ print("poi icon: mono/color/fallback/log-once cases passed")
 -- POIData → zone 消費契約（buildPoiConverted，v3 rn/r）：座標轉換、iconOnce、
 -- lodRect 聯集、無效矩形/整筆/未知類別略過、開關 gate
 --（codex 終審抓出的 consumer 零覆蓋缺口——producer 與渲染端之間這一層若把
--- x2=x+w 算錯或漏 iconOnce，其餘測試全綠但 1704 筆 POI 全滅）
+-- x2=x+w 算錯或漏 iconOnce，其餘測試全綠但 1692 筆 POI 全滅）
 --------------------------------------------------------------------------------
 local convBody = assert(poiSource:match(
     "%-%- test:poi%-convert:start\n(.-)\n%-%- test:poi%-convert:end"),
@@ -749,7 +958,7 @@ end
 local function iconTexture(cat, colorMode) return "TEX_" .. cat, colorMode end
 local function getText(key) return "T_" .. key end
 local POI_FILL_ALPHA = 0.28
-local POI_BORDER_ALPHA = 0.9
+local POI_HALO_ALPHA = 0.5
 ]=]
 local convSuffix = [=[
 return {
@@ -788,8 +997,24 @@ assert(pz.lodRect and pz.lodRect.x1 == 10 and pz.lodRect.y1 == 20
     and pz.lodRect.x2 == 32 and pz.lodRect.y2 == 24, "poi-convert：lodRect 聯集框錯")
 assert(pz.name == "T_K_Police" and pz.icon and pz.icon.tex == "TEX_police",
     "poi-convert：name/icon 欄位錯")
-assert(pz.fillAlpha == 0.28 and pz.borderAlpha == 0.9, "poi-convert：blocks 開時 alpha 應取常數")
+assert(pz.fillAlpha == 0.28, "poi-convert：blocks 開時 fillAlpha 應取常數")
+-- 區塊模式無框線：不得帶 border/borderAlpha（帶了主檔就會畫 4 條線/矩形）
+assert(pz.border == nil and pz.borderAlpha == nil,
+    "poi-convert：POI zone 不得帶 border/borderAlpha（區塊模式已改為純色塊）")
+assert(pz.haloAlpha == 0.5, "poi-convert：blocks 開時應帶 haloAlpha 底襯（得 " .. tostring(pz.haloAlpha) .. "）")
+assert(zs.hasFill == true and zs.hasLine == true and zs.hasIcon == true,
+    "poi-convert：icons+blocks 全開時三聚合旗標應皆 true（ZR-1）")
 assert(pz.icon.r == 0.2 and pz.category == "police", "poi-convert：單色染色/類別欄位錯")
+
+-- 預設組合（icons 開、blocks 關）：fill/lines 旗標必須 false——主檔兩個 pass
+-- 據此整段跳過（ZR-1 的核心收益場景）
+conv.setOpt("PoiBlocks", false)
+conv.build()
+local iconOnly = conv.zones()
+assert(iconOnly.hasFill == false and iconOnly.hasLine == false and iconOnly.hasIcon == true,
+    "poi-convert：icons-only 時旗標應 fill/line=false、icon=true（ZR-1）")
+conv.setOpt("PoiBlocks", true)
+conv.build()
 
 conv.setOpt("Cat_police", false)
 conv.build()
@@ -799,7 +1024,70 @@ conv.setOpt("PoiIcons", false)
 conv.setOpt("PoiBlocks", false)
 conv.build()
 assert(#conv.zones() == 0, "poi-convert：icons+blocks 全關應為空")
+
+-- 整棟外框模式（PoiWholeBuilding）：rects 換成單一 b、lodRect 跟著變整棟，
+-- 圖標另走 iconRect 釘住原最大房間（整棟框中心對商場類建物離實際店面數十格）
+conv.setOpt("PoiIcons", true)
+conv.setOpt("PoiBlocks", true)
+MinidoracatMiniMapPOICategories = { CATEGORIES = {
+    police = { nameKey = "K_Police", color = { r = 0.2, g = 0.4, b = 0.8 } },
+} }
+MinidoracatMiniMapPOIData = {
+    { cat = "police", rn = 2, r = {
+        { x = 10, y = 20, w = 5, h = 4 },
+        { x = 30, y = 20, w = 2, h = 2 },
+    }, b = { x = 0, y = 0, w = 100, h = 80 } },
+    -- 無 b（測試 fixture／未來資料缺欄）→ 整棟模式須退回逐房間，不得整筆消失
+    { cat = "police", rn = 1, r = { { x = 200, y = 200, w = 4, h = 4 } } },
+    -- b 尺寸非正 → 同樣退回逐房間（與 r 的矩形驗證同口徑）
+    { cat = "police", rn = 1, r = { { x = 300, y = 300, w = 4, h = 4 } },
+        b = { x = 0, y = 0, w = 0, h = 80 } },
+}
+conv.setOpt("PoiWholeBuilding", true)
+conv.build()
+local wz = conv.zones()
+assert(#wz == 3, "poi-convert 整棟：應仍 3 個 zone（得 " .. #wz .. "）")
+assert(#wz[1].rects == 1, "poi-convert 整棟：rects 應收斂成 1 個整棟框（得 " .. #wz[1].rects .. "）")
+assert(wz[1].rects[1].x1 == 0 and wz[1].rects[1].y1 == 0
+    and wz[1].rects[1].x2 == 100 and wz[1].rects[1].y2 == 80,
+    "poi-convert 整棟：整棟框座標錯（x2 必須是 x+w）")
+assert(wz[1].lodRect.x2 == 100 and wz[1].lodRect.y2 == 80,
+    "poi-convert 整棟：lodRect 未跟著整棟框")
+assert(wz[1].iconRect and wz[1].iconRect.x1 == 10 and wz[1].iconRect.x2 == 15,
+    "poi-convert 整棟：iconRect 未釘在原最大房間")
+assert(wz[2].iconRect == nil and #wz[2].rects == 1 and wz[2].rects[1].x1 == 200,
+    "poi-convert 整棟：缺 b 應退回逐房間且不帶 iconRect")
+assert(wz[3].iconRect == nil and wz[3].rects[1].x1 == 300,
+    "poi-convert 整棟：b 尺寸非正應退回逐房間")
+-- 關閉即回逐房間，且不殘留 iconRect（簽章重建路徑）
+conv.setOpt("PoiWholeBuilding", false)
+conv.build()
+local nz = conv.zones()
+assert(#nz[1].rects == 2 and nz[1].iconRect == nil,
+    "poi-convert：整棟模式關閉未回到逐房間矩形")
+
+-- 整棟模式嚴格隔離於區塊模式（codex review blocker）：PoiBlocks 關閉時區塊根本不畫
+-- （alpha=0 早退），此時換幾何＝零視覺效果卻改距離閘 → 圖標提早數十格出現。
+-- 契約：blocks 關 → 幾何完全不動；blocks 開 → 換整棟框但 distRects 保住房間矩形，
+-- 使距離閘量測對象恆為分類房間（該開關純外觀、不改可見距離）
+conv.setOpt("PoiWholeBuilding", true)
+conv.setOpt("PoiBlocks", false)
+conv.build()
+local io1 = conv.zones()
+assert(#io1[1].rects == 2 and io1[1].iconRect == nil and io1[1].distRects == nil
+    and io1[1].haloAlpha == nil,
+    "poi-convert：blocks 關時整棟模式不得更動幾何（圖標距離閘會被連帶改變）")
+conv.setOpt("PoiBlocks", true)
+conv.build()
+local io2 = conv.zones()
+assert(#io2[1].rects == 1 and io2[1].distRects and #io2[1].distRects == 2,
+    "poi-convert：blocks 開時 distRects 應保留原房間矩形供距離閘量測")
+assert(io2[1].distRects[1].x1 == 10 and io2[1].distRects[1].x2 == 15,
+    "poi-convert：distRects 應是房間矩形而非整棟框")
+conv.setOpt("PoiWholeBuilding", false)
+conv.build()
+
 MinidoracatMiniMapPOIData = nil
 MinidoracatMiniMapPOICategories = nil
 
-print("poi convert: rn/r 契約 / x2=x+w / iconOnce / lodRect / 略過與 gate cases passed")
+print("poi convert: rn/r 契約 / x2=x+w / iconOnce / lodRect / 整棟外框 / 略過與 gate cases passed")

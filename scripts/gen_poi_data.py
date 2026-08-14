@@ -13,8 +13,19 @@ each room rect. Level does not gate CLASSIFICATION (gate math counts all
 floors' area), but the drawn rects keep only the dominant level -- see
 build_entries.
 
-Output is deterministic: entries are sorted by (cat, rects), so re-running
-with unchanged inputs produces a byte-identical file.
+Each entry also carries the whole-building bbox as `b` -- the union of the
+x/y/width/height of every raw record grouped into that building -- letting the
+client draw one outline per building instead of per room. It is NOT derivable
+from the room rects: the trigger rooms of a mall can occupy one corner, so
+their union AABB and the building bbox differ by dozens of squares. Entries
+built from records without bbox fields (test fixtures) omit `b`.
+
+Grouping is two-stage: identical bbox, then records sharing a same-named room
+rect (one building's basement and ground floor are separate .lotheader records
+whose bboxes usually differ by a few squares) -- see build_entries.
+
+Output is deterministic: entries are sorted by (cat, rects, bbox), so
+re-running with unchanged inputs produces a byte-identical file.
 
 Usage:
     python scripts/gen_poi_data.py [--raw PATH] [--out PATH]
@@ -158,25 +169,17 @@ def _coalesce(rects):
     return rects
 
 
-def build_entries(raw_buildings, categories):
-    """Return (entries, stats, dup_count).
+def group_records(raw_buildings):
+    """Return (groups, group_order): raw records grouped into one physical
+    building each. Split out of build_entries so the invariant test exercises
+    the production grouping instead of a copy of it.
 
-    每棟建築依 CATEGORY_PRIORITY 產出至多一個主身分條目；觸發房全屬
-    ACCESSORY_ROOMS 且面積佔比低於 ACCESSORY_MIN_SHARE 的候選被跳過、
-    落給下一個命中類別。條目帶主身分觸發房的逐矩形清單（主樓層過濾＋
-    相鄰合併＋面積大→小，rects[0] 為圖標錨點；非整棟外框）。
-    stats maps category_key -> unique hit count (post-dedup).
-    dup_count＝同外框 building 紀錄被合併數＋(cat, rects) 全等的保險去重數。
+    分組必須在分類「之前」完成：分開分類會讓同類對任意保留先到的較差錨點、
+    異類對輸出跨樓層雙圖標（codex review 實錘一棟 12x27 掛 storage+food 兩筆），
+    且附屬房面積門檻的分母只看到半棟。合併後一棟物理建築恰做一次
+    gate/priority/anchor。無外框欄位的紀錄（測試 fixture）各自成組。
     """
-    seen = {}
-    stats = {key: 0 for key, _ in categories}
-    catmap = dict(categories)
-    # 先按「整棟外框」合併同 bbox 的 building 紀錄再分類（同棟地下室/地面層在
-    # .lotheader 是獨立紀錄，全圖 10 組）：分開分類會讓同類對任意保留先到的較差
-    # 錨點、異類對輸出跨樓層雙圖標（codex review 實錘一棟 12x27 掛 storage+food
-    # 兩筆），且 gate 分母只看到半棟。合併後一棟物理建築恰做一次
-    # gate/priority/anchor。無外框欄位的紀錄（測試 fixture）各自成組。
-    # dup_count＝被合併的額外紀錄數＋錨定後仍完全同 (cat,bbox) 的保險去重數。
+    # 第一道：整棟外框（bbox）完全相同的紀錄直接同組
     groups = {}
     group_order = []
     for i, building in enumerate(raw_buildings):
@@ -188,12 +191,93 @@ def build_entries(raw_buildings, categories):
             groups[gkey] = []
             group_order.append(gkey)
         groups[gkey].append(building)
+    # 第二道合併（2026-08-13）：精確 bbox 相等只抓到 bbox 完全一致的樓層對；同一棟
+    # 的地下／地上紀錄 bbox 常差幾格（實測 Louisville 警局 (6078,5233,12,32) 對
+    # (6077,5236,14,29)），漏網後畫成兩個套疊外框＋兩顆圖標，跨類別時還會同棟掛兩個
+    # 不同類別（books+grocery、medical+pharmacy、grocery+gunstore、food+tools 共 4 例）。
+    #
+    # 判據＝兩筆紀錄有**同名房間共享任一完全相同的 rect**（同名＋同座標同尺寸的
+    # 方格）。論證：rect 是世界座標的實體地面，兩棟不同建築的房間不可能佔據同一格，
+    # 故同名同座標 rect ⟹ 同位置的垂直堆疊 ⟹ .lotheader 的同一棟多 level 紀錄。
+    # 刻意「任一片」而非「整個房間形狀相同」：同一房間在不同樓層形狀本就不同
+    # （警局 policehall 地下 [[6080,5249,8,3],[6080,5252,3,8]] vs 地上
+    # [[6078,5249,6,3],[6080,5252,3,8]]，只有第二片相同），要求全等會漏掉真同棟；
+    # 只共享一片的典型形狀是樓梯／出入口那一格（商場 28_32_2 地下室與 28_32_35
+    # 本體共享 hall [7249,8256,5,1]）。
+    # 不變式（test_shared_room_merge_pairs_are_cross_level_overlaps 逐組鎖住）：
+    # 本道實測全 corpus 命中 17 組，每一組的成員兩兩 bbox 相交且 level 各異
+    # （-1/0、-2/0），零例外；反向的 60 對「bbox 相交但 level 相同」真·相鄰建築
+    # 零共享 rect。該測試另鎖總組數 27（＝第一道 10＋本道 17）——變異驗證顯示
+    # 光靠不變式擋不住過寬的 key（key 拿掉房名會併成 43 組，每組仍滿足不變式）。
+    # 刻意不用 bbox 相交或 IoU 閾值：相交會把大樓與其內獨立記錄的小店鋪合併，
+    # IoU 在 0.5-0.9 區間同棟與相鄰排屋混雜、找不到乾淨切點。
+    parent = {k: k for k in group_order}
+
+    def _find(k):
+        while parent[k] != k:
+            parent[k] = parent[parent[k]]
+            k = parent[k]
+        return k
+
+    room_owner = {}
+    for gkey in group_order:
+        for building in groups[gkey]:
+            for room in building.get("rooms") or ():
+                name = room.get("name")
+                if not name:
+                    continue
+                for rect in room.get("rects") or ():
+                    rk = (name, tuple(rect))
+                    prev = room_owner.get(rk)
+                    if prev is None:
+                        room_owner[rk] = gkey
+                    else:
+                        ra, rb = _find(prev), _find(gkey)
+                        if ra != rb:
+                            parent[rb] = ra
+    if any(parent[k] != k for k in group_order):
+        merged, merged_order = {}, []
+        for gkey in group_order:
+            root = _find(gkey)
+            if root not in merged:
+                merged[root] = []
+                merged_order.append(root)
+            merged[root].extend(groups[gkey])
+        groups, group_order = merged, merged_order
+    return groups, group_order
+
+
+def build_entries(raw_buildings, categories):
+    """Return (entries, stats, dup_count).
+
+    每棟建築依 CATEGORY_PRIORITY 產出至多一個主身分條目；觸發房全屬
+    ACCESSORY_ROOMS 且面積佔比低於 ACCESSORY_MIN_SHARE 的候選被跳過、
+    落給下一個命中類別。條目帶主身分觸發房的逐矩形清單（主樓層過濾＋
+    相鄰合併＋面積大→小，rects[0] 為圖標錨點；非整棟外框），另帶
+    bbox＝整棟外框（該組所有紀錄的 bbox 聯集；無外框欄位的紀錄為 None）。
+    stats maps category_key -> unique hit count (post-dedup).
+    dup_count＝同一棟的多筆 building 紀錄被合併數（bbox 相等或共享相同座標房間）
+    ＋(cat, rects, bbox) 全等的保險去重數。
+    """
+    seen = {}
+    stats = {key: 0 for key, _ in categories}
+    catmap = dict(categories)
+    groups, group_order = group_records(raw_buildings)
     dup_count = sum(len(g) - 1 for g in groups.values())
 
     for gkey in group_order:
         name_rects = {}
         total_area = 0
+        # 整棟外框＝該組所有紀錄的 bbox 聯集（第二道合併後 root 的 gkey 只涵蓋其中
+        # 一筆；警局案例地下室往西多 1 格、地上往南多 3 格，取聯集才框得住整棟）
+        bounds = None
         for building in groups[gkey]:
+            if all(k in building for k in ("x", "y", "width", "height")):
+                x0, y0 = building["x"], building["y"]
+                x1, y1 = x0 + building["width"], y0 + building["height"]
+                bounds = (x0, y0, x1, y1) if bounds is None else (
+                    min(bounds[0], x0), min(bounds[1], y0),
+                    max(bounds[2], x1), max(bounds[3], y1))
             for room in building.get("rooms") or ():
                 rects = room.get("rects") or ()
                 # 面積先進分母（含無名房——「建物全部房間面積」的契約；
@@ -246,15 +330,23 @@ def build_entries(raw_buildings, categories):
                       key=lambda r: (-(r[2] * r[3]), r[0], r[1], r[2], r[3]))
         # 跨組保險去重：物理去重已由上方的整棟合併完成，這裡只擋「不同建物
         # 但 (cat, 矩形集) 完全相同」的極端巧合，維持輸出唯一性
-        dedup_key = (key, tuple(uniq))
+        # bbox＝該組 bbox 聯集；無外框欄位的紀錄（測試 fixture）為 None，客戶端整棟
+        # 模式對缺 b 的條目自動退回逐房間矩形
+        bbox = (bounds[0], bounds[1], bounds[2] - bounds[0],
+                bounds[3] - bounds[1]) if bounds else None
+        # 保險去重的身分含 bbox：兩棟不同建築若 (cat, 房間矩形) 恰好全等，少了 bbox
+        # 會靜默併成一筆並丟掉另一棟的外框（codex review 指出；現 corpus 未撞到）
+        dedup_key = (key, tuple(uniq), bbox)
         if dedup_key in seen:
             dup_count += 1
             continue
-        seen[dedup_key] = {"cat": key, "rects": uniq}
+        seen[dedup_key] = {"cat": key, "rects": uniq, "bbox": bbox}
         stats[key] += 1
     entries = list(seen.values())
-    # key 含完整矩形清單＝全序（只取 r[1] 座標有 6 筆同鍵、順序會隨 raw 列序漂移）
-    entries.sort(key=lambda e: (e["cat"], tuple(e["rects"])))
+    # key 含完整矩形清單＋bbox＝全序（只取 r[1] 座標有 6 筆同鍵、順序會隨 raw 列序
+    # 漂移；bbox 同進 dedup 身分後也必須同進排序鍵，否則同 (cat,rects) 異 bbox 的
+    # 兩筆順序不定，破壞 byte-identical 重生）。None（fixture）排在有值者之前
+    entries.sort(key=lambda e: (e["cat"], tuple(e["rects"]), e["bbox"] or ()))
     return entries, stats, dup_count
 
 
@@ -267,9 +359,11 @@ def render_lua(entries, raw_count, gen_command):
         "--",
         f"-- 來源：poi_raw.json（{raw_count} 筆建築原始資料，世界 square 座標）。",
         "-- 消費契約見 MinidoracatMiniMapPOI.lua buildPoiConverted()（v3 逐房間矩形）：",
-        "-- 陣列，每項 { cat=<CATEGORIES 類別 key>, rn=<矩形數>, r={ {x,y,w,h},.. } }",
-        "-- （世界 square 座標，x/y 左上角、w/h 尺寸；r 按面積大→小排序，r[1] 為",
-        "-- 圖標/名稱錨點）。迭代一律用 rn（Kahlua # 不可信）；count 為除錯輔助欄位。",
+        "-- 陣列，每項 { cat=<CATEGORIES 類別 key>, rn=<矩形數>, r={ {x,y,w,h},.. },",
+        "-- b={x,y,w,h}|nil }（世界 square 座標，x/y 左上角、w/h 尺寸；r 按面積大→小",
+        "-- 排序，r[1] 為圖標/名稱錨點；b＝整棟建築外框，「整棟外框」顯示模式用，",
+        "-- 非 r 的聯集——大型建物的分類房間可能只佔一角，兩者可差數十格）。",
+        "-- 迭代一律用 rn（Kahlua # 不可信）；count 為除錯輔助欄位。",
         "",
         "MinidoracatMiniMapPOIData = {",
     ]
@@ -277,8 +371,14 @@ def render_lua(entries, raw_count, gen_command):
         parts = ", ".join(
             f"{{ x = {x}, y = {y}, w = {w}, h = {h} }}"
             for x, y, w, h in e["rects"])
+        bbox = e.get("bbox")
+        b = ""
+        if bbox:
+            b = (f", b = {{ x = {bbox[0]}, y = {bbox[1]}, "
+                 f"w = {bbox[2]}, h = {bbox[3]} }}")
         lines.append(
-            f'    {{ cat = "{e["cat"]}", rn = {len(e["rects"])}, r = {{ {parts} }} }},'
+            f'    {{ cat = "{e["cat"]}", rn = {len(e["rects"])}, '
+            f'r = {{ {parts} }}{b} }},'
         )
     lines.append("}")
     lines.append("")

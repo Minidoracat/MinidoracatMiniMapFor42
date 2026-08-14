@@ -374,6 +374,274 @@ def test_room_count_snapshot():
     )
 
 
+def test_overlapping_records_sharing_a_room_merge_as_one_building():
+    """A basement and ground-floor record of the SAME building often differ by
+    a few squares in bbox, so the exact-bbox key misses them -- they then draw
+    two nested outlines and two icons (player screenshot: Louisville police
+    (6078,5233,12,32) vs (6077,5236,14,29)). Sharing a room at identical
+    coordinates is proof of one building; the merged bbox is their union."""
+    categories = [("police", frozenset({"policeoffice"}))]
+    shared = _room("hall", (10, 20, 2, 5))
+    raw = [
+        {"rooms": [shared, _room("policeoffice", (10, 25, 4, 4))],
+         "x": 9, "y": 20, "width": 14, "height": 29, "level": -1},
+        {"rooms": [shared, _room("policeoffice", (14, 25, 6, 4))],
+         "x": 10, "y": 18, "width": 12, "height": 32, "level": 0},
+    ]
+    entries, stats, dup_count = g.build_entries(raw, categories)
+    assert len(entries) == 1, f"same building must yield one entry, got {len(entries)}"
+    assert stats["police"] == 1 and dup_count == 1
+    assert entries[0]["bbox"] == (9, 18, 14, 32), "bbox must be the union of both records"
+
+
+def test_shared_room_merge_survives_partial_room_overlap():
+    """The merge key is a same-named room sharing ANY identical rect, not the
+    whole room shape: one room's footprint legitimately differs between floors
+    (real police hall is [[6080,5249,8,3],[6080,5252,3,8]] in the basement vs
+    [[6078,5249,6,3],[6080,5252,3,8]] above), and a single shared rect is the
+    stairwell square. Requiring identical whole-room geometry would miss these."""
+    categories = [("police", frozenset({"policeoffice"}))]
+    raw = [
+        {"rooms": [_room("hall", (10, 20, 8, 3), (12, 23, 3, 8)),
+                   _room("policeoffice", (10, 30, 4, 4))],
+         "x": 9, "y": 20, "width": 14, "height": 29, "level": -1},
+        {"rooms": [_room("hall", (10, 20, 6, 3), (12, 23, 3, 8)),
+                   _room("policeoffice", (16, 30, 6, 4))],
+         "x": 10, "y": 18, "width": 12, "height": 32, "level": 0},
+    ]
+    entries, _, _ = g.build_entries(raw, categories)
+    assert len(entries) == 1, "one shared rect (the stairwell) must merge the floors"
+
+
+def test_shared_room_merge_collapses_cross_category_double_icons():
+    """The split didn't just double the outline -- each record was classified
+    on its own, so one building could carry two different category icons
+    (real corpus had books+grocery, medical+pharmacy, grocery+gunstore,
+    food+tools). After merging, priority picks a single identity."""
+    categories = [
+        ("gunstore", frozenset({"gunstore"})),
+        ("grocery", frozenset({"grocerystorage"})),
+    ]
+    raw = [
+        {"rooms": [_room("hall", (49, 56, 5, 1)), _room("grocerystorage", (48, 59, 4, 4))],
+         "x": 42, "y": 56, "width": 16, "height": 7, "level": -1},
+        {"rooms": [_room("hall", (49, 56, 5, 1)), _room("gunstore", (47, 68, 4, 2))],
+         "x": 43, "y": 56, "width": 18, "height": 44, "level": 0},
+    ]
+    entries, stats, _ = g.build_entries(raw, categories)
+    assert len(entries) == 1, "one building must not carry two category icons"
+    assert entries[0]["cat"] == "gunstore" and stats["grocery"] == 0
+
+
+# 分組合併的完整快照（27 組＝第一道 bbox 全等 10 組＋第二道共享 rect 17 組）。
+# 只鎖組數不夠：組數相同但成員被等量替換（拿掉一組真 pair、換進一組假 pair）仍會
+# 全綠（codex review 以記憶體反例證明）。鎖 building_id 才是 pair identity。
+EXPECTED_MERGE_GROUPS = [
+    ('10_56_0', '10_56_16'), ('14_24_0', '14_24_1'), ('14_48_0', '14_48_2'),
+    ('1_38_1', '1_38_16'), ('23_20_0', '23_20_50'), ('24_20_0', '24_20_11'),
+    ('24_20_4', '24_20_40'), ('25_20_1', '25_20_11'), ('25_20_3', '25_20_47'),
+    ('26_21_18', '26_21_2'), ('28_32_2', '28_32_35'), ('29_46_1', '29_46_7'),
+    ('2_38_0', '2_38_30'), ('31_44_0', '31_44_24'), ('31_45_24', '31_45_4'),
+    ('32_46_0', '32_46_5'), ('32_46_16', '33_46_2'), ('33_46_0', '33_46_7'),
+    ('33_46_10', '33_46_5'), ('42_39_0', '42_39_38'), ('46_26_0', '46_26_21'),
+    ('46_26_1', '46_26_4'), ('46_26_3', '46_26_58'), ('7_38_0', '7_38_3'),
+    ('8_22_0', '8_22_33'), ('8_25_0', '8_25_14'), ('9_54_1', '9_54_24'),
+]
+
+
+def test_shared_fragment_rooms_are_on_distinct_levels():
+    """The merge key's physical argument, tested directly: a square of ground
+    can hold only ONE room per floor, so two records sharing a same-named rect
+    must have that room on DIFFERENT levels (a vertical stack = one building).
+    Two records sharing a fragment at the SAME room level would be a
+    contradiction -- the key merged genuinely different buildings.
+
+    Checking building["level"] instead is NOT equivalent: that field is the
+    lowest floor across all of a record's rooms, so a same-level fragment pair
+    can still show -1/0 at the building level (codex review's counterexample)."""
+    if not g.DEFAULT_RAW.exists():
+        print(f"SKIP: {g.DEFAULT_RAW} not present in this checkout")
+        return
+    import json
+
+    raw = json.loads(g.DEFAULT_RAW.read_text(encoding="utf-8"))
+    groups, _ = g.group_records(raw)
+    merged = [recs for recs in groups.values() if len(recs) > 1]
+    assert merged, "expected the corpus to exercise the merge"
+
+    def fragment_levels(rec):
+        """(room name, rect) -> set of levels that room occupies in this record."""
+        out = {}
+        for room in rec.get("rooms") or ():
+            name = room.get("name")
+            if not name:
+                continue
+            for rect in room.get("rects") or ():
+                out.setdefault((name, tuple(rect)), set()).add(room.get("level"))
+        return out
+
+    bad = []
+    for recs in merged:
+        maps = [fragment_levels(r) for r in recs]
+        for i in range(len(maps)):
+            for j in range(i + 1, len(maps)):
+                for key in maps[i].keys() & maps[j].keys():
+                    clash = maps[i][key] & maps[j][key]
+                    if clash:
+                        bad.append((recs[i]["building_id"], recs[j]["building_id"],
+                                    key, sorted(clash)))
+    assert not bad, (
+        f"records merged on a fragment shared at the SAME room level "
+        f"(two rooms on one square = different buildings): {bad[:3]}"
+    )
+
+
+def test_merge_groups_exact_snapshot():
+    """Pin WHICH records merge, not just how many. Every deviation -- a wider
+    key, a narrower key, or an equal-count swap of one pair for another -- has
+    to be reviewed by hand. Mutation-verified: dropping the room name from the
+    key yields 43 groups, dropping the rect yields groups that violate the
+    level invariant, disabling stage two yields 10."""
+    if not g.DEFAULT_RAW.exists():
+        print(f"SKIP: {g.DEFAULT_RAW} not present in this checkout")
+        return
+    import json
+
+    raw = json.loads(g.DEFAULT_RAW.read_text(encoding="utf-8"))
+    groups, _ = g.group_records(raw)
+    merged = [recs for recs in groups.values() if len(recs) > 1]
+    oversized = [[r["building_id"] for r in recs] for recs in merged if len(recs) > 2]
+    assert not oversized, (
+        f"a merge component grew past a basement/ground pair: {oversized}. "
+        f"Transitive merges need manual review -- they can chain unrelated "
+        f"buildings through a common fragment."
+    )
+    actual = sorted(tuple(sorted(r["building_id"] for r in recs)) for recs in merged)
+    assert actual == sorted(EXPECTED_MERGE_GROUPS), (
+        f"merge groups drifted: "
+        f"only-now={sorted(set(actual) - set(EXPECTED_MERGE_GROUPS))[:5]}, "
+        f"only-before={sorted(set(EXPECTED_MERGE_GROUPS) - set(actual))[:5]}"
+    )
+
+
+def test_merged_records_overlap_and_span_levels():
+    """Shape check on every merged group: members must overlap in 2D and their
+    buildings must sit on different lowest floors -- the basement/ground
+    signature. Weaker than the two tests above; kept as a cheap tripwire."""
+    if not g.DEFAULT_RAW.exists():
+        print(f"SKIP: {g.DEFAULT_RAW} not present in this checkout")
+        return
+    import json
+
+    raw = json.loads(g.DEFAULT_RAW.read_text(encoding="utf-8"))
+    groups, _ = g.group_records(raw)
+
+    def overlaps(a, b):
+        return (max(0, min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0]))
+                * max(0, min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1]))) > 0
+
+    bad = []
+    for recs in groups.values():
+        if len(recs) < 2:
+            continue
+        boxes = [(r["x"], r["y"], r["width"], r["height"]) for r in recs]
+        levels = [r.get("level") for r in recs]
+        pairwise = all(overlaps(boxes[i], boxes[j])
+                       for i in range(len(boxes))
+                       for j in range(i + 1, len(boxes)))
+        if not pairwise or len(set(levels)) != len(levels):
+            bad.append((boxes, levels))
+    assert not bad, f"grouping joined non-basement/ground records: {bad[:3]}"
+
+
+def test_adjacent_buildings_without_shared_rooms_stay_separate():
+    """Overlapping bboxes alone must NOT merge: a mall bbox can contain a
+    separately-recorded shop. Only identical-coordinate rooms merge (the real
+    corpus has 60 overlapping same-level pairs, all with zero shared rooms)."""
+    categories = [("police", frozenset({"policeoffice"})),
+                  ("pharmacy", frozenset({"pharmacy"}))]
+    raw = [
+        {"rooms": [_room("policeoffice", (0, 0, 40, 40))],
+         "x": 0, "y": 0, "width": 100, "height": 100},
+        {"rooms": [_room("pharmacy", (50, 50, 4, 4))],
+         "x": 50, "y": 50, "width": 6, "height": 6},
+    ]
+    entries, _, _ = g.build_entries(raw, categories)
+    assert len(entries) == 2, "nested-but-unrelated buildings must stay separate"
+
+
+def test_dedup_identity_includes_bbox():
+    """Two buildings that land on identical (cat, room rects) but different
+    bboxes must not collapse -- that would silently drop one outline. Needs
+    DIFFERENT room names at the same coordinates, otherwise the shared-room
+    merge (correctly) treats them as one building first."""
+    categories = [("police", frozenset({"policeoffice", "policehall"}))]
+    raw = [
+        {"rooms": [_room("policeoffice", (5, 5, 4, 4))],
+         "x": 0, "y": 0, "width": 20, "height": 20},
+        {"rooms": [_room("policehall", (5, 5, 4, 4))],
+         "x": 0, "y": 0, "width": 40, "height": 40},
+    ]
+    entries, _, _ = g.build_entries(raw, categories)
+    assert len(entries) == 2, "identical rects but different bbox are two buildings"
+    assert {e["bbox"] for e in entries} == {(0, 0, 20, 20), (0, 0, 40, 40)}
+
+
+def test_entry_carries_whole_building_bbox():
+    """The entry carries the building bbox as `bbox` (the grouping key) so the
+    client can draw one outline per building. It is NOT the union of the room
+    rects -- a corner pharmacy claims a mall-sized building."""
+    categories = [("pharmacy", frozenset({"pharmacy"}))]
+    raw = [{"rooms": [_room("hall", (0, 0, 90, 90)), _room("pharmacy", (5, 5, 4, 6))],
+            "x": 0, "y": 0, "width": 100, "height": 80}]
+    entries, _, _ = g.build_entries(raw, categories)
+    assert entries[0]["bbox"] == (0, 0, 100, 80)
+    assert entries[0]["rects"] == [(5, 5, 4, 6)], "room rects must stay per-room"
+
+
+def test_entry_bbox_none_without_bbox_fields():
+    """Records with no bbox fields (fixtures) group by index and carry no
+    bbox -- render_lua must omit `b` so the client falls back to per-room."""
+    categories = [("police", frozenset({"policeoffice"}))]
+    entries, _, _ = g.build_entries([_bld(_room("policeoffice", (1, 2, 3, 4)))], categories)
+    assert entries[0]["bbox"] is None
+    assert " b = {" not in g.render_lua(entries, 1, "cmd")
+
+
+def test_render_lua_emits_bbox_field():
+    categories = [("police", frozenset({"policeoffice"}))]
+    raw = [{"rooms": [_room("policeoffice", (1, 2, 3, 4))],
+            "x": 0, "y": 1, "width": 20, "height": 30}]
+    entries, _, _ = g.build_entries(raw, categories)
+    line = [ln for ln in g.render_lua(entries, 1, "cmd").splitlines()
+            if ln.startswith("    { cat =")][0]
+    assert line.endswith('b = { x = 0, y = 1, w = 20, h = 30 } },'), line
+
+
+def test_bbox_contains_room_rects_in_production_data():
+    """Whole-building outline must be a superset of the drawn room rects --
+    otherwise the 'whole building' mode would clip off rooms it claims to
+    contain. Real corpus, all entries."""
+    if not g.DEFAULT_RAW.exists():
+        print(f"SKIP: {g.DEFAULT_RAW} not present in this checkout")
+        return
+    import json
+
+    raw = json.loads(g.DEFAULT_RAW.read_text(encoding="utf-8"))
+    entries, _, _ = g.build_entries(raw, g.parse_categories(g.DEFAULT_CATEGORIES_LUA))
+    bad = []
+    for e in entries:
+        b = e["bbox"]
+        if not b:
+            continue
+        bx, by, bw, bh = b
+        for x, y, w, h in e["rects"]:
+            if x < bx or y < by or x + w > bx + bw or y + h > by + bh:
+                bad.append((b, (x, y, w, h)))
+                break
+    assert not bad, f"{len(bad)} entries have room rects outside the bbox: {bad[:3]}"
+
+
 def test_build_entries_skips_buildings_without_rooms():
     categories = [("police", frozenset({"policeoffice"}))]
     raw = [{"rooms": [], "x": 1, "y": 2, "width": 3, "height": 4}]

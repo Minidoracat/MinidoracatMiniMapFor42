@@ -93,11 +93,27 @@ end
 --     rects={ { x1=, y1=, x2=, y2= }, ... }(世界 square 座標；硬性要求 x1<x2、y1<y2——
 --       三個 pass 的視野預裁都假設此序，反向 rect 會被一致地過嚴裁掉而整個消失),
 --     fill={ r=, g=, b= }(0-1), fillAlpha=number(0＝不填),
---     border={ r=, g=, b= }(0-1), borderAlpha=number(0＝不畫框),
+--     border={ r=, g=, b= }(0-1), borderAlpha=number(0 或缺 border＝不畫框；
+--       ⚠ 不影響 name——兩者自 2026-08-13 解耦，純色塊＋名稱是合法組合),
+--     haloAlpha=number|nil(選配；>0＝fill pass 於細節檔在每 rect 填色下先畫
+--       外擴 2px 的黑色底襯 quad——無框線區塊的暗色描邊，每 rect 僅 1 次
+--       drawPolygon（stencil 裁切、零 Lua 裁線），遠低於 4 條框線的成本；
+--       中距/拉遠檔不畫。POI 區塊模式用；無此欄位行為不變),
 --     icon={ tex=<Texture>, r=, g=, b= }|nil(選配；每 rect 中心畫染色圖標),
 --     iconOnce=true|nil(選配；true 時圖標只畫在 rects[1]——provider 應把主要
 --       矩形排在首位；名稱本就恆只錨定 rects[1]、與此旗標無關。未設維持
 --       每 rect 一圖標，既有 addon 行為不變),
+--     iconRect={ x1=, y1=, x2=, y2= }|nil(選配；覆寫第一顆圖標的錨定矩形，
+--       不影響 fill/line/名稱。POI 整棟外框模式用：框畫整棟、圖標仍釘在
+--       最大房間。四欄不齊者忽略、回退 rects[1]),
+--     distRects={ {x1=,y1=,x2=,y2=},.. }|nil(選配；覆寫 POI 顯示距離閘的量測
+--       對象，預設量 rects。整棟外框模式用：畫整棟框但距離仍由分類房間決定，
+--       使該開關純屬外觀、不改變可見距離。僅 internal provider 受距離閘),
+--   zones「表本身」可帶選配聚合旗標 hasFill/hasLine/hasIcon（ZR-1）：false＝
+--     provider 聲明該 pass 無任何可畫內容，renderer 整段跳過迴圈（內建 POI 預設
+--     純圖標模式靠此免去 fill/lines 每幀空掃全部 zone）；nil＝未聲明，照舊逐
+--     zone 判斷——外部 addon 不設即行為不變。旗標須與內容同步重建（錯設漏畫是
+--     provider 的 bug）。
 --     lodRect={ x1=, y1=, x2=, y2= }|nil(選配；有給＝參與縮放 LOD——
 --       worldScale < ZONE_LOD_HIDE 時 fill 整區不畫、< ZONE_LOD_DETAIL 時
 --       fill 只畫此聯集框（純填色，框線與名稱僅細節檔）、圖標於 < DETAIL 時
@@ -880,10 +896,19 @@ if PZAPI and PZAPI.ModOptions then
         "UI_MinidoracatMiniMap_WM_tooltip")
     -- 內建 POI（原版地圖資源點，20 類）：圖標為主（預設開）、區塊選配（預設關）。
     -- 繪製與 provider 都在 MinidoracatMiniMapPOI.lua（讀本命名空間的 PoiIcons/PoiBlocks/Cat_*）。
+    -- 獨立群組（分隔線＋標題，同下方「顯示距離」慣例）：五顆開關＋兩條滑條＋20 類
+    -- 勾選共 27 列，混在扁平清單裡玩家找不到邊界。收尾分隔線由「顯示距離」群組的
+    -- addSeparator 兼任（addTitle 只畫標題、不畫群組結束）
+    modOptions:addSeparator()
+    modOptions:addTitle("UI_MinidoracatMiniMap_SecPoiEsc")
     modOptions:addTickBox("PoiIcons", "UI_MinidoracatMiniMap_PoiIcons", true,
         "UI_MinidoracatMiniMap_PoiIcons_tooltip")
     modOptions:addTickBox("PoiBlocks", "UI_MinidoracatMiniMap_PoiBlocks", false,
         "UI_MinidoracatMiniMap_PoiBlocks_tooltip")
+    -- 區塊形狀（預設關＝逐房間；開＝整棟一框）。只作用於區塊模式的填色/框線/名稱，
+    -- 圖標錨點不變（POI provider 於整棟模式帶 iconRect 釘住最大房間）
+    modOptions:addTickBox("PoiWholeBuilding", "UI_MinidoracatMiniMap_PoiWholeBuilding", false,
+        "UI_MinidoracatMiniMap_PoiWholeBuilding_tooltip")
     -- 圖標樣式（預設關＝單色類別色剪影；開＝彩色全彩圖標）。POI provider 依此選材質集。
     modOptions:addTickBox("PoiColorIcons", "UI_MinidoracatMiniMap_PoiColorIcons", false,
         "UI_MinidoracatMiniMap_PoiColorIcons_tooltip")
@@ -1713,6 +1738,24 @@ local function visibleWorldAABB(inner)
         math.min(wy1, wy2, wy3, wy4) - 2, math.max(wy1, wy2, wy3, wy4) + 2
 end
 
+-- 仿射投影快取：worldToUI 已由反編譯證明是純仿射（見 visibleWorldAABB 的版本
+-- 假設——calcMatrices 為正交＋旋轉、無透視項），每 pass 只在視野中心採樣三點
+-- 導出係數，其後所有矩形角用純 Lua 乘加取代逐點 2 次 Kahlua→Java 呼叫——
+-- 區塊全開時視野內數百棟×8 次投影/棟是最大單一 CPU 成本。
+-- 錨點取視野中心而非世界原點：引擎座標是 float32，錨距視野太遠會災難性消去。
+-- 前移至此（原在 zone pass 區段）：殭屍/動物/載具繪製迴圈同用（ICON-1/2）。
+-- test:derive-affine:start
+local function deriveAffine(mapAPI, acx, acy)
+    local p0x = mapAPI:worldToUIX(acx, acy)
+    local p0y = mapAPI:worldToUIY(acx, acy)
+    return p0x, p0y,
+        mapAPI:worldToUIX(acx + 1, acy) - p0x,
+        mapAPI:worldToUIY(acx + 1, acy) - p0y,
+        mapAPI:worldToUIX(acx, acy + 1) - p0x,
+        mapAPI:worldToUIY(acx, acy + 1) - p0y
+end
+-- test:derive-affine:end
+
 -- test:zombie-sampling:start
 local function sampleZombieDots(inner)
     local pn = inner.playerNum or 0
@@ -1735,6 +1778,13 @@ local function sampleZombieDots(inner)
     -- 載入序而非距離序，早期版本取「清單前 N 隻」會被別處先生成的大群吃光
     -- 名額，玩家身邊的反而畫不出來（實測：管理員刷群後即重現）。
     local minX, maxX, minY, maxY = visibleWorldAABB(inner)
+    -- 仿射錨點＝取樣時的視野中心（供繪製端 deriveAffine 用）：錨定視野中心使
+    -- 最壞偏移距離＝半個視野跨度（錨定首點是全跨度、float32 係數誤差×距離會
+    -- 放大一倍——世界地圖全圖縮放下可差 px 級）；x-x%1 即 floor（座標恆正）
+    local sacx = (minX + maxX) / 2
+    local sacy = (minY + maxY) / 2
+    st.acx = sacx - sacx % 1
+    st.acy = sacy - sacy % 1
     -- 上限檔位每輪讀值（ZombieDotMax combobox），存檔即生效
     local maxDots = ZDOTS_MAXES[getComboIndex("ZombieDotMax", 2)] or ZDOTS_MAX
     -- 距離基準＝玩家位置（自由查看拖走視窗也以「離自己」為優先，符合直覺）；
@@ -1817,16 +1867,27 @@ local function drawZombieDotsOn(el, optId)
     local size = getSliderValue("ZombieDotSize", 3, 1, 16)
     local af = getSliderValue("ZombieDotAlpha", 100, 10, 100) / 100 -- 透明度係數（描邊/本體等比）
     local mapAPI = el.mapAPI
-    for i = 1, st.count do
-        local d = st.dots[i]
-        -- 世界→UI 座標：worldToUIX/Y＝UIWorldMapV1.java:298/311
-        local ux = mapAPI:worldToUIX(d.x, d.y)
-        local uy = mapAPI:worldToUIY(d.x, d.y)
-        -- 手動裁到視窗內（Lua drawRect 不吃元件裁切）；含描邊起繪於 ux-2。
-        -- drawRect＝ISUIElement.lua:1191（引數 x,y,w,h,a,r,g,b）
-        if ux >= 2 and uy >= 2 and ux <= el.width - size and uy <= el.height - size then
-            el:drawRect(ux - 2, uy - 2, size + 2, size + 2, ZDOTS_EDGE_A * af, 0, 0, 0)
-            el:drawRect(ux - 1, uy - 1, size, size, ZDOTS_A * af, c[1], c[2], c[3])
+    -- 仿射投影（perf 稽核 ICON-1）：原每點 2 次 worldToUI 跨界（800 檔＝1600 次/
+    -- 幀/表面）收斂為每幀 6 次導係數採樣＋逐點純 Lua 乘加。錨定取樣時的視野
+    -- 中心（st.acx，最壞偏移＝半個視野跨度；首點 fallback 給無此欄的舊狀態）——
+    -- 避開 float32 遠錨消去（deriveAffine 註解）；純度假設與 zone 三 pass 同一份。
+    -- worldToUIX/Y＝UIWorldMapV1.java:298/311
+    if st.count > 0 then
+        local d1 = st.dots[1]
+        local acx = st.acx or (d1.x - d1.x % 1)
+        local acy = st.acy or (d1.y - d1.y % 1)
+        local p0x, p0y, sxx, sxy, syx, syy = deriveAffine(mapAPI, acx, acy)
+        for i = 1, st.count do
+            local d = st.dots[i]
+            local dx, dy = d.x - acx, d.y - acy
+            local ux = p0x + dx * sxx + dy * syx
+            local uy = p0y + dx * sxy + dy * syy
+            -- 手動裁到視窗內（Lua drawRect 不吃元件裁切）；含描邊起繪於 ux-2。
+            -- drawRect＝ISUIElement.lua:1191（引數 x,y,w,h,a,r,g,b）
+            if ux >= 2 and uy >= 2 and ux <= el.width - size and uy <= el.height - size then
+                el:drawRect(ux - 2, uy - 2, size + 2, size + 2, ZDOTS_EDGE_A * af, 0, 0, 0)
+                el:drawRect(ux - 1, uy - 1, size, size, ZDOTS_A * af, c[1], c[2], c[3])
+            end
         end
     end
 end
@@ -2092,35 +2153,45 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
         st.owner = pn
         st.count = 0
         st.nextMs = 0
-        st.flags = nil
+        st.mask = nil
+        st.da = nil
+        st.dv = nil
+        st.rawA = nil
+        st.rawV = nil
         st.mode = nil
-        st.username = nil
-        st.hasPlayer = nil
         st.errLogged = nil
     end
     local now = getTimestampMs()
     local da = displayDist("AnimalIconDistance")
     local dv = displayDist("VehicleIconDistance")
     local livestockMode = livestockVisibilityMode()
-    -- getSpecificPlayer/getX/getY 原版用例 ISMiniMap.lua:216-222；getUsername 原版用例
-    -- ISScoreboard.lua:108。模式與 username 分欄入 cache key，避免拼接碰撞與換角沿用
-    local playerObj = getSpecificPlayer(pn)
-    local px = playerObj and playerObj:getX()
-    local py = playerObj and playerObj:getY()
-    local username = playerObj and playerObj:getUsername()
-    local hasPlayer = playerObj ~= nil
-    -- 開關組合＋篩選字串一起入 cache key：節流窗內任一變了就立即重取樣，
-    -- 否則剛關掉的類別/物種會殘留舊點池最多 500ms。此 key 僅供節流判斷：
-    -- 篩選欄位是 ESC 頁可手打的自由文字，就算打出含分隔符的怪值，
-    -- 碰撞最壞也只是 ≤500ms 殘影、怪 token 過不了 group 比對＝惰性 no-op
+    -- cache key 逐欄位比較（perf 稽核 ICON-3，殭屍側 st.distance 既有寫法）：
+    -- 原每幀組 flags 字串（5 次 tostring＋串接）＝穩定的 GC churn 來源。開關組合
+    -- ＋篩選逐欄入 key：節流窗內任一變了就立即重取樣，否則剛關掉的類別/物種會
+    -- 殘留舊點池最多 500ms。篩選欄位是自由文字，等值比較無碰撞問題
     local disAnimal, rawA = adotsDisabledGroups("AnimalSpeciesFilter", ADOTS_SPECIES_UI)
     local disVeh, rawV = adotsDisabledGroups("VehicleCategoryFilter", ADOTS_VEHCAT_UI)
     local mask = (wantWild and 1 or 0) + (wantLive and 2 or 0) + (wantVeh and 4 or 0)
-    local flags = tostring(mask) .. "|" .. tostring(da) .. "|" .. tostring(dv)
-        .. "|" .. tostring(rawA) .. "|" .. tostring(rawV)
-    if now < st.nextMs and st.flags == flags and st.mode == livestockMode
-        and st.username == username and st.hasPlayer == hasPlayer then return st end
-    st.flags = flags
+    -- username/hasPlayer 留在節流 key（牲畜隱私過濾與 fail closed 的既有契約：
+    -- 變更須「立即」淘汰快取，test_livestock_visibility 鎖此行為，不得延後）；
+    -- getSpecificPlayer/getUsername 原版用例 ISMiniMap.lua:216-222／ISScoreboard.lua:108
+    local playerObj = getSpecificPlayer(pn)
+    local username = playerObj and playerObj:getUsername()
+    local hasPlayer = playerObj ~= nil
+    if now < st.nextMs and st.mask == mask and st.da == da and st.dv == dv
+        and st.rawA == rawA and st.rawV == rawV and st.mode == livestockMode
+        and st.username == username and st.hasPlayer == hasPlayer then
+        return st
+    end
+    -- 座標 getter 延後到節流通過後（ICON-3）：px/py 僅重取樣的距離閘用，
+    -- 節流命中的 29/30 幀原本白付 2 次跨界
+    local px = playerObj and playerObj:getX()
+    local py = playerObj and playerObj:getY()
+    st.mask = mask
+    st.da = da
+    st.dv = dv
+    st.rawA = rawA
+    st.rawV = rawV
     st.mode = livestockMode
     st.username = username
     st.hasPlayer = hasPlayer
@@ -2129,6 +2200,11 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
     local cell = getCell()
     if not cell then return st end
     local minX, maxX, minY, maxY = visibleWorldAABB(inner) -- 可視框剔除（同殭屍取樣）
+    -- 仿射錨點＝取樣時的視野中心（理由同殭屍取樣的 st.acx 註解）
+    local sacx = (minX + maxX) / 2
+    local sacy = (minY + maxY) / 2
+    st.acx = sacx - sacx % 1
+    st.acy = sacy - sacy % 1
     -- 距離啟用但缺玩家時，對應動物或載具類別 fail closed
     local da2 = da and da * da
     local dv2 = dv and dv * dv
@@ -2226,12 +2302,17 @@ end
 --   物品風格＝黑底方塊（drawRect）＋原色彩圖＋野生綠角標。
 -- 白 glyph 繪製：黑影四斜角＋染色本體疊繪兩次（白 glyph 線條細、單次繪 alpha 偏淡，
 -- 疊繪增濃；次數是實測調校旋鈕）——動物符號風格與載具共用
+local adotsBodyACache = {} -- af→bodyA（ICON-4：sqrt 是跨界呼叫、原每圖標每幀一次；af 來自滑條離散值，鍵集有界）
 local function adotsDrawGlyph(inner, tex, ux, uy, size, r, g, b, af)
     af = af or 1 -- 透明度係數（黑影/本體等比；統一視窗物種小圖等呼叫端可省略）
     -- 本體疊繪兩次（增濃細線 glyph）：兩 pass 標準 alpha 合成為 1-(1-x)^2，
     -- 每 pass 直接用 af 會偏濃（50%→實得 75%，codex review 抓出）——
     -- 反解每 pass alpha 使合成恰等於滑條百分比；af=1 時 bodyA=1＝現行外觀不變
-    local bodyA = af >= 1 and 1 or 1 - math.sqrt(1 - af)
+    local bodyA = af >= 1 and 1 or adotsBodyACache[af]
+    if not bodyA then
+        bodyA = 1 - math.sqrt(1 - af)
+        adotsBodyACache[af] = bodyA
+    end
     inner:drawTextureScaled(tex, ux - 1, uy - 1, size, size, 0.85 * af, 0, 0, 0)
     inner:drawTextureScaled(tex, ux + 1, uy - 1, size, size, 0.85 * af, 0, 0, 0)
     inner:drawTextureScaled(tex, ux - 1, uy + 1, size, size, 0.85 * af, 0, 0, 0)
@@ -2262,12 +2343,23 @@ local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
     local liveC = adotsColor("AnimalLivestockColor", 1)
     local vehC = adotsColor("VehicleIconColor", 4)
     local mapAPI = inner.mapAPI
+    -- 仿射投影＋half 提出迴圈（perf 稽核 ICON-2/ICON-4）：投影同殭屍點（錨定
+    -- 取樣時視野中心 st.acx、首點 fallback）；size 僅 aSize/vSize 兩種，
+    -- math.floor（跨界）原每點一次改為迴圈前各一次
+    local aHalf = math.floor(aSize / 2)
+    local vHalf = math.floor(vSize / 2)
+    if st.count == 0 then return end
+    local d1 = st.dots[1]
+    local pax = st.acx or (d1.x - d1.x % 1)
+    local pay = st.acy or (d1.y - d1.y % 1)
+    local p0x, p0y, sxx, sxy, syx, syy = deriveAffine(mapAPI, pax, pay)
     for i = 1, st.count do
         local d = st.dots[i]
         local size = d.veh and vSize or aSize
-        local half = math.floor(size / 2) -- 圖標中心對齊目標位置
-        local ux = mapAPI:worldToUIX(d.x, d.y) - half
-        local uy = mapAPI:worldToUIY(d.x, d.y) - half
+        local half = d.veh and vHalf or aHalf -- 圖標中心對齊目標位置
+        local ddx, ddy = d.x - pax, d.y - pay
+        local ux = p0x + ddx * sxx + ddy * syx - half
+        local uy = p0y + ddx * sxy + ddy * syy - half
         -- 手動裁切同殭屍點位（Lua 繪製不吃元件裁切）；留 1px 邊給影子/描邊
         if ux >= 1 and uy >= 1 and ux + size <= inner.width - 1 and uy + size <= inner.height - 1 then
             if d.veh then -- 載具：恆用符號（無對應物品圖），顏色可自訂
@@ -2452,12 +2544,25 @@ local function drawMapBounds(inner)
         drawClippedEdge(inner, ux4, uy4, ux1, uy1, c[1], c[2], c[3], SH_EDGE_A * af)
         -- 名稱：缺譯退 mod ID（慣例同齒輪面板 getTextOrNull(label) or id）；
         -- nameKey 為 nil 時不可傳入 getTextOrNull（Java 端 startsWith 會 NPE，
-        -- Translator.java:324）
-        local name = (ov.nameKey and getTextOrNull(ov.nameKey)) or ov.mapMod
+        -- Translator.java:324）。
+        -- 名稱/寬/高首繪 memo 在 overlay 表（perf 稽核 MISC-1）：session 內不變，
+        -- 原每 overlay 每幀付翻譯查找＋逐字形量測＋字高共 4 次跨界，且與可見性
+        -- 無關；collectMapOverlays 重建 overlay 表即自然失效。
+        -- （稽核另提投影仿射化：MapBounds 無世界預裁、遠角經仿射誤差隨距離放大，
+        -- 裁線後窗內線段可能可見偏移——與 zone pass「僅投影近處」前提不同，不採）
+        local name = ov._name
+        if name == nil then
+            name = (ov.nameKey and getTextOrNull(ov.nameKey)) or ov.mapMod or false
+            ov._name = name
+            if name then
+                local tm = getTextManager()
+                ov._tw = tm:MeasureStringX(UIFont.Small, name) -- 用例 ISFactionUI.lua:238
+                ov._th = tm:getFontHeight(UIFont.Small) -- 字高隨 UI 字型倍率變動，不可硬編碼
+            end
+        end
         if name then
-            local tm = getTextManager()
-            local tw = tm:MeasureStringX(UIFont.Small, name) -- 用例 ISFactionUI.lua:238
-            local th = tm:getFontHeight(UIFont.Small) -- 字高隨 UI 字型倍率變動，不可硬編碼
+            local tw = ov._tw
+            local th = ov._th
             local cx = (ux1 + ux3) / 2 - tw / 2 -- 菱形中心＝對角中點
             local cy = (uy1 + uy3) / 2 - th / 2
             if cx >= 2 and cy >= 2 and cx + tw <= inner.width - 2 and cy + th <= inner.height - 2 then
@@ -2505,27 +2610,19 @@ end
 -- 平面圖＋名稱。無 lodRect 的 zone（Zones addon）不參與、任何縮放照畫。
 local ZONE_LOD_HIDE = 1.5
 local ZONE_LOD_DETAIL = 6
+-- 區塊底襯外擴量（螢幕 px；/scale 換算世界格後走同一仿射投影）：haloAlpha zone
+-- 於細節檔在每 rect 填色下方先畫外擴此值的暗色 quad——無框線的區塊靠這圈暗色
+-- 描邊與地圖及相鄰區塊分界。以螢幕 px 定義使縮放下描邊視覺粗細恆定
+local ZONE_HALO_PX = 2
 local lodSingle = {} -- 中距離檔重用的單元素 rect 清單（避免每 zone 每幀配置）
 -- 圖標去重疊格（generation 標記免清表）：中/遠距下 lodRect zone 的圖標在同一
 -- 「圖標尺寸」螢幕格內只畫第一顆——拉遠時數百顆互疊的圖標是遠距檔最大殘餘
 -- 成本（每顆 1 次 drawTextureScaled Java 呼叫），疊在同格的視覺上也不可分辨
 local iconGrid = {}
 local iconGridGen = 0
-
--- 仿射投影快取：worldToUI 已由反編譯證明是純仿射（見 visibleWorldAABB 的版本
--- 假設——calcMatrices 為正交＋旋轉、無透視項），每 pass 只在視野中心採樣三點
--- 導出係數，其後所有矩形角用純 Lua 乘加取代逐點 2 次 Kahlua→Java 呼叫——
--- 區塊全開時視野內數百棟×8 次投影/棟是最大單一 CPU 成本。
--- 錨點取視野中心而非世界原點：引擎座標是 float32，錨距視野太遠會災難性消去。
-local function deriveAffine(mapAPI, acx, acy)
-    local p0x = mapAPI:worldToUIX(acx, acy)
-    local p0y = mapAPI:worldToUIY(acx, acy)
-    return p0x, p0y,
-        mapAPI:worldToUIX(acx + 1, acy) - p0x,
-        mapAPI:worldToUIY(acx + 1, acy) - p0y,
-        mapAPI:worldToUIX(acx, acy + 1) - p0x,
-        mapAPI:worldToUIY(acx, acy + 1) - p0y
-end
+-- zone 名稱寬度快取（ZR-4，lines pass 用）：key＝名稱字串。renderer 自有——
+-- provider 回傳表是只讀契約，不得把快取寫進去
+local zoneNameWidth = {}
 
 -- POI 顯示距離閘（沙盒 PoiDisplayDistance＋全域上限＋玩家自訂，經 displayDist
 -- 合成取最小正值）：只作用於 internal provider（內建 POI），外部 addon zone
@@ -2542,7 +2639,7 @@ local function poiDistParams(inner)
 end
 
 -- 玩家點到矩形最近點的距離平方；夾限用純 Lua 比較而非 math.max/min——Kahlua
--- 下庫函式是 JavaFunction，每 zone 多次跨界呼叫在預裁前發生、全圖 ~1704 筆
+-- 下庫函式是 JavaFunction，每 zone 多次跨界呼叫在預裁前發生、全圖 ~1692 筆
 -- ×1~3 pass 會積成可觀成本
 local function rectDist2(rc, px, py)
     local dx = px < rc.x1 and (rc.x1 - px) or (px > rc.x2 and (px - rc.x2) or 0)
@@ -2550,17 +2647,22 @@ local function rectDist2(rc, px, py)
     return dx * dx + dy * dy
 end
 
--- zone 是否落在距離內：逐 rects 判距，任一「顯示中的資源點矩形」最近點在 N 格
--- 內即顯示——量測對象與畫面幾何一致。⚠ lodRect 不是整棟建築 bbox，是分類房間
+-- zone 是否落在距離內：逐矩形判距，任一資源點矩形最近點在 N 格內即顯示。量測對象
+-- ＝distRects（有給）否則 rects——POI 整棟外框模式畫整棟框但仍量分類房間，使該
+-- 外觀開關不改變可見距離。⚠ lodRect 不是整棟建築 bbox，逐房間模式下是分類房間
 -- 聯集的 AABB（大型建物的分類房間可能只佔一角，AABB 也含無房間的空白區——
 -- codex review 以實資料證明兩者可差數十格），故僅作快速排除：點到 AABB 的距離
--- 是點到任一內含矩形距離的下界，AABB 超距＝全部超距，免逐矩形。無矩形者放行
+-- 是點到任一內含矩形距離的下界，AABB 超距＝全部超距，免逐矩形。此下界對
+-- distRects 同樣成立（房間矩形恆在整棟框內，實測 1692 筆全數滿足）。無矩形者放行
 -- （後續本就無物可畫）。呼叫端以 pdist2 短路（閘未啟用零成本）；fill/lines/icons
 -- 三 pass 同一判定，整 zone 一致顯隱。
 local function zoneWithinDist(z, px, py, dist2)
     local lod = z.lodRect
     if lod and rectDist2(lod, px, py) > dist2 then return false end
-    local rects = z.rects
+    -- distRects（選配）覆寫量測對象：POI 整棟外框模式下畫的是整棟框，但可見距離
+    -- 該由「資源點本身」決定——外框只是外觀選項，不該讓大型建物提早數十格解鎖
+    -- （lodRect 仍是有效下界：房間矩形恆在整棟框內，AABB 超距即全部超距）
+    local rects = z.distRects or z.rects
     local n = rects and #rects or 0
     if n == 0 then return true end
     for i = 1, n do
@@ -2598,7 +2700,10 @@ local function drawZoneFillBody(inner)
         end
         if pok == false then
             zoneProviderErrorOnce(inner, provider.owner, zones)
-        elseif type(zones) == "table" then
+        -- hasFill 聚合旗標（perf 稽核 ZR-1）：false＝provider 聲明本 pass 無可畫
+        -- 內容，整段跳過（預設純圖標模式下省每幀全 zone 空掃）；nil＝未聲明
+        -- （外部 addon），照舊逐 zone 判斷
+        elseif type(zones) == "table" and zones.hasFill ~= false then
             for zi = 1, #zones do
                 local z = zones[zi]
                 local fill, rects = z.fill, z.rects
@@ -2615,6 +2720,47 @@ local function drawZoneFillBody(inner)
                         lodSingle[1] = lod
                         rects, rn = lodSingle, 1
                     end
+                    -- 底襯 pass（haloAlpha，細節檔限定）：先畫全部外擴暗色 quad、再畫
+                    -- 全部填色——分兩圈使同 zone 相鄰矩形（L 形建物）的內部接縫被後畫
+                    -- 的填色蓋掉，暗邊只留在區塊外緣；跨 zone 的暗邊蓋在先畫的鄰棟填色
+                    -- 上，正是要的分界。成本每 rect 1 次 drawPolygon（stencil 裁切、
+                    -- 零 Lua 裁線），遠低於舊框線的 4 條 drawClippedEdge；中距檔不畫
+                    -- （城市尺度 fill 是效能熱點，該檔位維持純填色零新增成本）
+                    local halo = z.haloAlpha
+                    if halo and halo > 0 and scale >= ZONE_LOD_DETAIL then
+                        local wpad = ZONE_HALO_PX / scale
+                        for ri = 1, rn do
+                            local rc = rects[ri]
+                            local hx1, hy1 = rc.x1 - wpad, rc.y1 - wpad
+                            local hx2, hy2 = rc.x2 + wpad, rc.y2 + wpad
+                            if hx2 >= vMinX and hx1 <= vMaxX and hy2 >= vMinY and hy1 <= vMaxY then
+                                local dx1, dy1 = hx1 - acx, hy1 - acy
+                                local dx2, dy2 = hx2 - acx, hy2 - acy
+                                local ux1, uy1 = p0x + dx1 * sxx + dy1 * syx, p0y + dx1 * sxy + dy1 * syy
+                                local ux2, uy2 = p0x + dx2 * sxx + dy1 * syx, p0y + dx2 * sxy + dy1 * syy
+                                local ux3, uy3 = p0x + dx2 * sxx + dy2 * syx, p0y + dx2 * sxy + dy2 * syy
+                                local ux4, uy4 = p0x + dx1 * sxx + dy2 * syx, p0y + dx1 * sxy + dy2 * syy
+                                -- 純 Lua min/max 比較鏈（ZR-2：math.* 在 Kahlua 是 JavaFunction
+                                -- 跨界呼叫——rectDist2 既有先例；每個過預裁 rect 省 4 次跨界）
+                                local minx, maxx = ux1, ux1
+                                if ux2 < minx then minx = ux2 elseif ux2 > maxx then maxx = ux2 end
+                                if ux3 < minx then minx = ux3 elseif ux3 > maxx then maxx = ux3 end
+                                if ux4 < minx then minx = ux4 elseif ux4 > maxx then maxx = ux4 end
+                                local miny, maxy = uy1, uy1
+                                if uy2 < miny then miny = uy2 elseif uy2 > maxy then maxy = uy2 end
+                                if uy3 < miny then miny = uy3 elseif uy3 > maxy then maxy = uy3 end
+                                if uy4 < miny then miny = uy4 elseif uy4 > maxy then maxy = uy4 end
+                                if maxx >= 0 and minx <= w and maxy >= 0 and miny <= h then
+                                    if not inner._minidoracatZoneStencilOn then
+                                        inner:setStencilRect(0, 0, w, h)
+                                        inner._minidoracatZoneStencilOn = true
+                                    end
+                                    inner:drawPolygon(nil, ux1, uy1, ux2, uy2, ux3, uy3, ux4, uy4,
+                                        0, 0, 0, halo)
+                                end
+                            end
+                        end
+                    end
                     for ri = 1, rn do
                         local rc = rects[ri]
                         if rc.x2 >= vMinX and rc.x1 <= vMaxX and rc.y2 >= vMinY and rc.y1 <= vMaxY then
@@ -2624,10 +2770,15 @@ local function drawZoneFillBody(inner)
                             local ux2, uy2 = p0x + dx2 * sxx + dy1 * syx, p0y + dx2 * sxy + dy1 * syy
                             local ux3, uy3 = p0x + dx2 * sxx + dy2 * syx, p0y + dx2 * sxy + dy2 * syy
                             local ux4, uy4 = p0x + dx1 * sxx + dy2 * syx, p0y + dx1 * sxy + dy2 * syy
-                            local minx = math.min(ux1, ux2, ux3, ux4)
-                            local maxx = math.max(ux1, ux2, ux3, ux4)
-                            local miny = math.min(uy1, uy2, uy3, uy4)
-                            local maxy = math.max(uy1, uy2, uy3, uy4)
+                            -- 純 Lua min/max 比較鏈（ZR-2，同 halo 段註解）
+                            local minx, maxx = ux1, ux1
+                            if ux2 < minx then minx = ux2 elseif ux2 > maxx then maxx = ux2 end
+                            if ux3 < minx then minx = ux3 elseif ux3 > maxx then maxx = ux3 end
+                            if ux4 < minx then minx = ux4 elseif ux4 > maxx then maxx = ux4 end
+                            local miny, maxy = uy1, uy1
+                            if uy2 < miny then miny = uy2 elseif uy2 > maxy then maxy = uy2 end
+                            if uy3 < miny then miny = uy3 elseif uy3 > maxy then maxy = uy3 end
+                            if uy4 < miny then miny = uy4 elseif uy4 > maxy then maxy = uy4 end
                             if maxx >= 0 and minx <= w and maxy >= 0 and miny <= h then
                                 if not inner._minidoracatZoneStencilOn then
                                     inner:setStencilRect(0, 0, w, h)
@@ -2684,25 +2835,39 @@ local function drawZoneLines(inner)
         end
         if pok == false then
             zoneProviderErrorOnce(inner, provider.owner, zones)
-        elseif type(zones) == "table" then
+        elseif type(zones) == "table" and zones.hasLine ~= false then -- ZR-1（同 fill pass）
             for zi = 1, #zones do
                 local z = zones[zi]
                 local border, rects = z.border, z.rects
                 local lod = z.lodRect
-                -- borderAlpha==0（如 POI 圖標模式）早退；LOD zone 的框線僅細節檔畫
-                -- （中距的聯集框純填色——該縮放下框線只是雜訊，且省 4 條線/棟）；
-                -- 內部 provider 的 zone 另過 POI 距離閘（名稱同段內、一併隱藏；
-                -- not pdist2 先行短路——閘未啟用不付逐 zone 呼叫）
-                if border and rects and z.borderAlpha ~= 0
+                -- 框線與名稱解耦：borderAlpha==0 只代表「不畫框」，不該連坐名稱——
+                -- POI 區塊模式是純色塊＋名稱（無框線），Zones addon 也允許
+                -- borderAlpha=0 而其 name 是必填欄位。本段兩件事各自的條件：
+                --   框線 → drawEdges（有 border 且 alpha 非 0）
+                --   名稱 → z.name（下方另有細節檔與螢幕裁切判定）
+                -- 兩者皆無則整段跳過。LOD zone 的框線與名稱都僅細節檔畫（中距的
+                -- 聯集框純填色——該縮放下框線是雜訊、名稱會洗版）；內部 provider
+                -- 另過 POI 距離閘（not pdist2 先行短路，閘未啟用不付逐 zone 呼叫）
+                local drawEdges = border and z.borderAlpha ~= 0
+                if rects and (drawEdges or z.name)
                     and not (lod and scale < ZONE_LOD_DETAIL)
                     and (not pdist2 or not provider.internal or zoneWithinDist(z, ppx, ppy, pdist2)) then
-                    local r, g, b, a = border.r, border.g, border.b, z.borderAlpha
+                    local r, g, b, a
+                    if drawEdges then r, g, b, a = border.r, border.g, border.b, z.borderAlpha end
                     local zoneVisible = false
-                    local rn = #rects
-                    if lod and scale < ZONE_LOD_DETAIL then
-                        lodSingle[1] = lod
-                        rects, rn = lodSingle, 1
+                    -- name-only zone（POI 區塊模式）免整組 quad 投影（ZR-4）：名稱的
+                    -- 繪製條件（標籤完整落窗內，見下方界檢）嚴格強於 zoneVisible，
+                    -- 以 rects[1] 的世界預裁充當 zoneVisible 即可——輸出逐像素不變。
+                    -- rects[1] 判 nil：空 rects（外部 addon 可給）靜默跳過，不得
+                    -- nil 解參考打死整個 pass（codex review mutation probe 實證）。
+                    -- 註：舊碼此處有 lod+中距→lodSingle 的分支，但上面的 gate 已排除
+                    -- 「有 lod 且 scale < DETAIL」，該分支永不成立，隨改寫刪去
+                    if not drawEdges then
+                        local rc0 = rects[1]
+                        zoneVisible = rc0 ~= nil and rc0.x2 >= vMinX and rc0.x1 <= vMaxX
+                            and rc0.y2 >= vMinY and rc0.y1 <= vMaxY
                     end
+                    local rn = drawEdges and #rects or 0
                     for ri = 1, rn do
                         local rc = rects[ri]
                         -- 世界座標預裁（被裁者投影後必在窗外，zoneVisible 語意不變）
@@ -2715,16 +2880,23 @@ local function drawZoneLines(inner)
                             local ux4, uy4 = p0x + dx1 * sxx + dy2 * syx, p0y + dx1 * sxy + dy2 * syy
                             -- A3：投影後 AABB 早退（同 drawZoneFill）——略過離屏 rect 的
                             -- clipSegment＋drawLine；zoneVisible 記住至少一 rect 落在視窗內
-                            local minx = math.min(ux1, ux2, ux3, ux4)
-                            local maxx = math.max(ux1, ux2, ux3, ux4)
-                            local miny = math.min(uy1, uy2, uy3, uy4)
-                            local maxy = math.max(uy1, uy2, uy3, uy4)
+                            -- 純 Lua min/max 比較鏈（ZR-2，同 halo 段註解）
+                            local minx, maxx = ux1, ux1
+                            if ux2 < minx then minx = ux2 elseif ux2 > maxx then maxx = ux2 end
+                            if ux3 < minx then minx = ux3 elseif ux3 > maxx then maxx = ux3 end
+                            if ux4 < minx then minx = ux4 elseif ux4 > maxx then maxx = ux4 end
+                            local miny, maxy = uy1, uy1
+                            if uy2 < miny then miny = uy2 elseif uy2 > maxy then maxy = uy2 end
+                            if uy3 < miny then miny = uy3 elseif uy3 > maxy then maxy = uy3 end
+                            if uy4 < miny then miny = uy4 elseif uy4 > maxy then maxy = uy4 end
                             if maxx >= 0 and minx <= w and maxy >= 0 and miny <= h then
                                 zoneVisible = true
-                                drawClippedEdge(inner, ux1, uy1, ux2, uy2, r, g, b, a)
-                                drawClippedEdge(inner, ux2, uy2, ux3, uy3, r, g, b, a)
-                                drawClippedEdge(inner, ux3, uy3, ux4, uy4, r, g, b, a)
-                                drawClippedEdge(inner, ux4, uy4, ux1, uy1, r, g, b, a)
+                                if drawEdges then
+                                    drawClippedEdge(inner, ux1, uy1, ux2, uy2, r, g, b, a)
+                                    drawClippedEdge(inner, ux2, uy2, ux3, uy3, r, g, b, a)
+                                    drawClippedEdge(inner, ux3, uy3, ux4, uy4, r, g, b, a)
+                                    drawClippedEdge(inner, ux4, uy4, ux1, uy1, r, g, b, a)
+                                end
                             end
                         end
                     end
@@ -2736,7 +2908,17 @@ local function drawZoneLines(inner)
                     -- 名稱僅細節檔顯示（lodRect zone；20 類全開時中/遠距的名稱洗版即此治）
                     if name and rc and zoneVisible
                         and (not lod or scale >= ZONE_LOD_DETAIL) then
-                        local tw = tm:MeasureStringX(UIFont.Small, name)
+                        -- 量測惰性快取（ZR-4）：renderer 自有、以名稱字串為 key——
+                        -- 不得寫回 provider 的 zone 表（API 明定對回傳只讀不改；寫入
+                        -- 會與 addon 同名欄位碰撞、對 __newindex 保護表拋錯，codex
+                        -- review 抓出）。鍵集有界（POI 20 類名＋伺服器區域名，隨
+                        -- zone 總量上限）；addon 改 z.name 換字串＝新 key，自然正確；
+                        -- 字型倍率改動 PZ 慣例需重啟
+                        local tw = zoneNameWidth[name]
+                        if not tw then
+                            tw = tm:MeasureStringX(UIFont.Small, name)
+                            zoneNameWidth[name] = tw
+                        end
                         local cxw, cyw = (rc.x1 + rc.x2) / 2, (rc.y1 + rc.y2) / 2
                         local cx = p0x + (cxw - acx) * sxx + (cyw - acy) * syx - tw / 2
                         local cy = p0y + (cxw - acx) * sxy + (cyw - acy) * syy - th / 2
@@ -2804,7 +2986,7 @@ local function drawZoneIcons(inner)
         end
         if pok == false then
             zoneProviderErrorOnce(inner, provider.owner, zones)
-        elseif type(zones) == "table" then
+        elseif type(zones) == "table" and zones.hasIcon ~= false then -- ZR-1（同 fill pass）
             for zi = 1, #zones do
                 local z = zones[zi]
                 local icon, rects = z.icon, z.rects
@@ -2814,10 +2996,17 @@ local function drawZoneIcons(inner)
                     and (not pdist2 or not provider.internal or zoneWithinDist(z, ppx, ppy, pdist2)) then
                     -- iconOnce（POI v3 逐房間矩形）：圖標只畫在 rects[1]（provider
                     -- 保證是最大房間），避免一棟 200+ 房間疊 200 顆圖標；預裁與
-                    -- 螢幕裁切照常作用於該矩形
+                    -- 螢幕裁切照常作用於該矩形。選配 iconRect 覆寫第一顆的錨點
+                    -- （POI 整棟外框模式：框是整棟、圖標仍釘在最大房間）
                     local rn = z.iconOnce and 1 or #rects
                     for ri = 1, rn do
+                        -- iconRect 四欄齊備才採用，否則回退 rects[ri]：這是新公開的
+                        -- 選配欄位，殘缺表（如 { x1 = 40 }）會在下方比較時 nil 比數字
+                        -- 拋錯，而 safeDrawZone 包的是整個 pass——一個壞 addon 會讓當幀
+                        -- 所有 provider 的圖標全滅（codex review）
+                        local ir = ri == 1 and z.iconRect or nil
                         local rc = rects[ri]
+                        if ir and ir.x1 and ir.y1 and ir.x2 and ir.y2 then rc = ir end
                         -- rc 判 nil：iconOnce＋空 rects（外部 addon 可給）時 rn=1 但
                         -- rects[1]=nil，缺守衛會 nil deref 打死整幀所有 provider 的圖標
                         if rc and rc.x2 >= vMinX and rc.x1 <= vMaxX and rc.y2 >= vMinY and rc.y1 <= vMaxY then
@@ -2832,7 +3021,9 @@ local function drawZoneIcons(inner)
                                 if declutter and z.lodRect then
                                     -- 同格已有圖標＝視覺不可分辨，跳過繪製；gen 標記
                                     -- 免逐幀清表。細節檔（declutter=false）全畫
-                                    local gkey = math.floor(cx / s) * 100000 + math.floor(cy / s)
+                                    -- ZR-2 純 Lua floor（cx/cy 經螢幕界檢後恆正；s 為整數
+                                    -- 滑條值，% 是 VM opcode 非跨界，恆等式對整數 s 精確）
+                                    local gkey = ((cx - cx % s) / s) * 100000 + (cy - cy % s) / s
                                     if iconGrid[gkey] == iconGridGen then
                                         ok = false
                                     else
@@ -3165,6 +3356,24 @@ local function drawNavTargets(inner)
         1.0, 0.85, 0.2, nil, dist) -- 自己＝金旗＋距離
 end
 
+-- 導航到達的「純狀態」判定（codex review：WM-1 早退不得連坐狀態更新）：
+-- drawNavTargets 的抵達清除是狀態變更（清 modData＋分享中送 clearShared），
+-- 不是繪製——世界地圖開啟期間小地圖加繪早退，但 MP 車輛乘客/外力位移仍可能
+-- 在 M 開著時抵達，清除必須照跑。從繪製函式拆出，供 WM-1 早退「前」呼叫；
+-- drawNavTargets 保留自己的抵達分支（正常路徑到達時同幀即清、不多等一幀）
+local function navCheckArrival(inner)
+    local pn = inner.playerNum or 0
+    local t = navTargets[pn]
+    if not t then return end
+    local playerObj = getSpecificPlayer(pn)
+    if not playerObj then return end
+    local ddx = t.x - playerObj:getX()
+    local ddy = t.y - playerObj:getY()
+    if ddx * ddx + ddy * ddy <= NAV_ARRIVE_DIST * NAV_ARRIVE_DIST then
+        navClear(pn, playerObj)
+    end
+end
+
 -- 玩家座標列（底部置中膠囊，freelook 提示同款樣式）：一律顯示 x, y, z（與複製值
 -- 一致——顯示帶空格、剪貼簿無空格，值相同；上下樓層不跳版面）；剛複製 1.5 秒內改
 -- 琥珀「已複製」回饋——回饋獨立於 ShowPlayerCoords 開關（關列後 XY 鈕/右鍵複製
@@ -3176,13 +3385,43 @@ local function drawPlayerCoords(inner)
     if not (copied or getBoolOption("ShowPlayerCoords", true)) then return end
     local playerObj = getSpecificPlayer(inner.playerNum or 0)
     if not playerObj then return end
-    local txt = copied and getText("UI_MinidoracatMiniMap_Copied")
-        or string.format("%d, %d, %d", math.floor(playerObj:getX()),
-            math.floor(playerObj:getY()), math.floor(playerObj:getZ()))
+    -- 座標文字快取（perf 稽核 MISC-3）：此路徑預設恆開、每幀跑，但字串與寬度
+    -- 只在玩家跨越整數格（或 copied 切換）才變——以 (ix,iy,iz) 為 key 快取，
+    -- 節掉每幀的 string.format＋MeasureStringX。
+    -- ⚠ x-x%1 只對非負值等於 floor：Kahlua 的 % 商先轉 int（朝零截斷，
+    -- KahluaThread.java:1060），-0.2%1 得 -0.2 而非 PUC Lua 的 0.8——x/y 恆正
+    -- 可用，z 在地下室樓梯上是負小數，必須走 math.floor（桌面 Lua 測試抓不到
+    -- 此差異，codex review 以反編譯源實證；複製路徑也用 math.floor，兩者須一致）
     local tm = getTextManager()
-    local cw = tm:MeasureStringX(UIFont.Small, txt)
+    local cc = inner._minidoracatCoordCache
+    if not cc then
+        cc = {}
+        inner._minidoracatCoordCache = cc
+    end
+    local txt, cw
+    if copied then
+        txt = getText("UI_MinidoracatMiniMap_Copied")
+        if cc.copiedTxt ~= txt then
+            cc.copiedTxt = txt
+            cc.copiedW = tm:MeasureStringX(UIFont.Small, txt)
+        end
+        cw = cc.copiedW
+    else
+        local px, py, pz = playerObj:getX(), playerObj:getY(), playerObj:getZ()
+        local ix = px - px % 1
+        local iy = py - py % 1
+        local iz = math.floor(pz) -- z 可為負小數（見上方 Kahlua % 註解）
+        if cc.x ~= ix or cc.y ~= iy or cc.z ~= iz then
+            cc.x, cc.y, cc.z = ix, iy, iz
+            cc.txt = string.format("%d, %d, %d", ix, iy, iz)
+            cc.w = tm:MeasureStringX(UIFont.Small, cc.txt)
+        end
+        txt, cw = cc.txt, cc.w
+    end
     local ch = tm:getFontHeight(UIFont.Small)
-    local cx = math.max(0, math.floor((inner.width - cw) / 2))
+    local cx = (inner.width - cw) / 2
+    cx = cx - cx % 1 -- 純 Lua floor（原 math.max+math.floor 兩次跨界）
+    if cx < 0 then cx = 0 end
     local cy = inner.height - ch - 10
     if inner._minidoracatFreelook and getBoolOption("FreeLook", true) then
         cy = cy - ch - 10
@@ -3257,13 +3496,13 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
     local originalInnerPrerender = ISMiniMapInner.prerender
     function ISMiniMapInner:prerender()
         originalInnerPrerender(self)
-        -- Zone 填色緊接原版 prerender 之後＝最底層（base map 之上，安全屋/框線之下）
-        safeDrawZone(self, drawZoneFill, "_minidoracatZoneFillErrLogged")
         -- 沙盒禁用殭屍熱度時每幀壓回；重新允許時恢復（雙向即時）。
         -- 以實例旗標記住「是本閘門壓過」才恢復；恢復值讀 ModOptions——面板勾選
         -- 已回寫 ModOptions（見齒輪面板 onTickBox wrap），它即單一真相，
         -- 壓制期間玩家改勾選也會在重新允許時恢復成玩家要的值。
-        -- 無 PZAPI（面板不回寫）時維持舊行為：恢復為開
+        -- 無 PZAPI（面板不回寫）時維持舊行為：恢復為開。
+        -- （置於 WM-1 早退之前：沙盒不變式須每幀維持，且引擎側小地圖 Java render
+        -- 在遮蔽下照跑，本段只設引擎旗標、不繪製，順序與 zone 填色互不影響）
         if sandboxGate("AllowZombieIntensity", true) == false then
             if self.mapAPI:getBoolean("ZombieIntensity") then
                 self._minidoracatZISuppressed = true
@@ -3274,6 +3513,22 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
             self.mapAPI:setBoolean("ZombieIntensity",
                 modOptions == nil or getBoolOption("ZombieIntensity", false))
         end
+        -- perf 稽核 WM-1：世界地圖精確全螢幕（ISWorldMap.lua:1505-1506 INSET=0）且
+        -- 原版從不隱藏小地圖——M 開啟期間小地圖的全部 mod 加繪 100% 被遮蔽，整段
+        -- 早退（省每幀 ~50 次固定跨界＋數千次 zone 迭代＋全部繪製呼叫；取樣節流
+        -- 狀態不受影響，關圖後下一幀自然恢復）。分割畫面以 playerNum 比對——他人
+        -- 的世界地圖不得關掉自己小地圖的加繪（ISWorldMap.ShowWorldMap:1510 設
+        -- playerNum）。已知盲點：第三方 MOD 若把世界地圖改成非全螢幕視窗，其縫隙
+        -- 中小地圖暫缺 mod 疊加層（原版底圖照畫）——可接受
+        if ISWorldMap_instance and ISWorldMap_instance:isVisible()
+            and ISWorldMap_instance.playerNum == (self.playerNum or 0) then
+            -- 早退前先跑導航到達的純狀態判定（codex review）：抵達清除是狀態
+            -- 變更非繪製，MP 車輛乘客/外力位移可在 M 開著時抵達，不得連坐跳過
+            pcall(navCheckArrival, self)
+            return
+        end
+        -- Zone 填色＝mod 加繪最底層（base map 之上，安全屋/框線之下）
+        safeDrawZone(self, drawZoneFill, "_minidoracatZoneFillErrLogged")
         pcall(drawSafehouses, self) -- pcall 防清單併發增刪（同殭屍取樣的防禦策略）
         pcall(drawMapBounds, self)
         safeDrawZone(self, drawZoneLines, "_minidoracatZoneLineErrLogged") -- 與 MapBounds 同層

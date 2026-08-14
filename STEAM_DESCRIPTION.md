@@ -42,7 +42,7 @@
 地圖 MOD 作者也可自帶支援：把地圖渲染成 [b]minidoracat_minimap.pyramid.zip[/b] 放進 [b]media/minimap/[/b]，[u]完全不用寫 Lua[/u]——本 MOD 自動偵測並疊加在基底之上。
 
 [h2]🗺️ 內建資源點（POI，0.8.0+）＋ Zone 圖層 API（0.7.0+）[/h2]
-[b]裝本體即見資源點[/b]：內建原版地圖 1704 筆資源點、20 類（軍事、警察、槍店、醫療、藥局、消防、圖書、學校、超市、加油站、五金、戶外、監獄、倉儲、電器行、教堂、農場、工業、零售、餐飲，各配辨識色）。預設畫染色剪影圖標（可切全彩，大小／透明度滑條可調）；另可開「資源點區塊」（半透明色塊＋名稱），統一設定視窗逐類勾選。[u]資料直接萃取自官方地圖檔[/u]——位置或分類有誤屬官方資料錯誤，待官方修正後隨更新同步。另提供區域渲染框架：`registerZoneProvider(ownerModId, providerFn, optionLabelKey)` 讓 addon 只給矩形區域資料，本 MOD 負責雙地圖繪製填色、框線、名稱與圖標（給 optionLabelKey 即有專屬開關）。搭配 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Minidoracat MiniMap Zones[/url]（MinidoracatMiniMapZonesFor42）可顯示伺服器自訂區域（`zones.json`）。未裝 addon 不影響其餘功能。
+[b]裝本體即見資源點[/b]：內建原版地圖 1692 筆資源點、20 類（軍事、警察、槍店、醫療、藥局、消防、圖書、學校、超市、加油站、五金、戶外、監獄、倉儲、電器行、教堂、農場、工業、零售、餐飲，各配辨識色）。預設畫染色剪影圖標（可切全彩，大小／透明度滑條可調）；另可開「資源點區塊」（半透明色塊＋名稱），統一設定視窗逐類勾選。[u]資料直接萃取自官方地圖檔[/u]——位置或分類有誤屬官方資料錯誤，待官方修正後隨更新同步。另提供區域渲染框架：`registerZoneProvider(ownerModId, providerFn, optionLabelKey)` 讓 addon 只給矩形區域資料，本 MOD 負責雙地圖繪製填色、框線、名稱與圖標（給 optionLabelKey 即有專屬開關）。搭配 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Minidoracat MiniMap Zones[/url]（MinidoracatMiniMapZonesFor42）可顯示伺服器自訂區域（`zones.json`）。未裝 addon 不影響其餘功能。
 
 [h2]🔗 系列 MOD[/h2]
 本 MOD 是系列[b]主 MOD[/b]，單獨安裝即可完整使用；以下 addon 依需求選裝（皆需本 MOD）：
