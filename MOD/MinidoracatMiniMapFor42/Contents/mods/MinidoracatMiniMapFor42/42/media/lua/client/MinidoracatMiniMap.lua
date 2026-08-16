@@ -12,7 +12,8 @@
 --   故每個「檔名」建一層。多層並存是原生支援：原版即掛 forest.pyramid.zip
 --   （WorldMap.java:145-148）並為其建獨立 pyramid 樣式層（ISMapDefinitions.lua:337-339）。
 --   疊層順序：newPyramidLayer 把新層 append 到層列尾（WorldMapStyleV2.java:21-24），
---   繪製對層列「正序」迭代（WorldMapRenderer.java:920-923）——後建的層畫在上面，
+--   繪製對層列「正序」迭代（WorldMapRenderer.renderCellFeatures，:933-938——
+--   :920-926 的 renderVisibleCells 是層「內」的 cell 迴圈，勿混）——後建的層畫在上面，
 --   故基底層先建（最底）、addon 層後建（最上）。每顆 zip 自帶 bounds 自動對位。
 --   注意：同一層內的同名多 zip（多個第三方 addon）引擎是「反序」迭代
 --   （WorldMapPyramidStyleLayer.java:46-51），先註冊者畫在上面。
@@ -30,9 +31,17 @@ MinidoracatMiniMapCore = Core
 -- 本 MOD 自帶圖檔 manifest：zip＝media/minimap/ 下檔名；mapMod 省略＝基底、永遠掛載，
 -- 指定時＝該地圖 MOD 的 mod ID，啟用才掛載。支援新地圖：pzmap Studio 渲染出
 -- <地圖名>.pyramid.zip（預設輸出名，免改名）丟進 media/minimap/，在此加一行即可。
+-- sortable=false＝該條目完全不吃疊層優先序重排（見 orderByMapPriority）：基底是
+-- 全世界底圖、語意上恆在最底，不能因為「剛好有地圖 MOD 把資料夾命名成 Muldraugh_KY」
+-- 就被優先序搬到 MOD 地圖上面（zip basename 撞名，同 legacy 的隱含隔離破功，
+-- code review 抓出）。PZ 不禁止這個資料夾名，靠「對不上目錄」隔離只是巧合
+-- 第三方 addon 相容約定檔名（零 Lua）：地圖 MOD 自附 minimap 支援時使用
+local LEGACY_CANONICAL = "minidoracat_minimap.pyramid.zip"
+-- test:maps:start
 local MAPS = {
-    { zip = "Muldraugh_KY.pyramid.zip" }, -- 基底全圖（B42 主世界）
+    { zip = "Muldraugh_KY.pyramid.zip", sortable = false }, -- 基底全圖（B42 主世界）
 }
+-- test:maps:end
 
 -- MOD 地圖包註冊 API（地圖包 addon 專用，如 MinidoracatMiniMapModMapsFor42）：
 -- 地圖包在自己的 client lua 呼叫（mod.info require=本 MOD 保證本檔先載入）：
@@ -43,11 +52,19 @@ local MAPS = {
 -- zip 放地圖包自己的 media/minimap/；bounds＝渲染時 pyramid.txt 的世界 square
 -- 座標（右/下排他，cell*256，MinidoracatMapRendering/src/pyramid.rs:179-186）；
 -- nameKey 缺譯退 mapMod。同地圖多 mod ID 變體＝同 zip/bounds 多條目（掛載去重）。
--- 選配 mapDir＝該條目的地圖目錄名（media/maps/ 下資料夾）：一個 mod 內含多張地圖
--- （如 SecretZ 12 據點）時指定——MP 伺服器 Map= 沒載入該目錄就不掛載也不畫框；
--- 省略＝只看 mapMod（單地圖 mod 不需要）。
+-- 選配 mapDir＝該條目的地圖目錄名（media/maps/ 下資料夾）。它有兩個獨立作用，別混：
+-- (1) 掛載閘門（passesMapDir，在蒐集前就判）：MP 伺服器 Map= 沒載入該目錄就不掛載
+--     也不畫框。省略＝不設閘門、一律放行——伺服器只挑部分地圖時，未載入的那張仍會
+--     被畫出（回報實例：未載入的 SecretZ 據點）。下面的 identity fallback 只補排序，
+--     救不了這條，所以要避免「未載入卻被畫出」就得明寫，單地圖 mod 也一樣。
+-- (2) 疊層優先序的 identity：省略時先試 zip basename，不符再用 getMapFoldersForMod
+--     反查。一個 mod 內含多張地圖（如 SecretZ 12 據點）時反查會因歸屬含糊而放棄，
+--     該條目就吃不到優先序——這種 mod **必須**指定。
+-- zip 不可用 LEGACY_CANONICAL（minidoracat_minimap.pyramid.zip）：那是「零 Lua 自動
+-- 掃描」lane 的保留名，同名兩份條目會互搶同一圖層並打亂固定位置，本 API 直接拒收該條目。
 local registeredPacks = {} -- { { owner = <地圖包 mod ID>, entries = {...} }, ... }
 MinidoracatMiniMapAPI = MinidoracatMiniMapAPI or {}
+-- test:register-maps:start
 function MinidoracatMiniMapAPI.registerMaps(ownerModId, entries)
     if type(ownerModId) ~= "string" or ownerModId == "" or type(entries) ~= "table" then
         print("[MinidoracatMiniMap] registerMaps: bad arguments (need ownerModId, entries)")
@@ -72,7 +89,16 @@ function MinidoracatMiniMapAPI.registerMaps(ownerModId, entries)
                 end
             end
         end
-        if ok then
+        if ok and e.zip == LEGACY_CANONICAL then
+            -- 保留名：canonical 檔名專屬「零 Lua 自動掃描」那條 lane。兩條 lane 同時
+            -- 產出同檔名條目時，registerMaps 那份較早被蒐集、會吃疊層優先序被搬走，
+            -- 而 mountPyramidLayers 又以第一個同 layerId 為準去重，等於把固定在尾端的
+            -- legacy 那份丟掉——canonical 層可能被壓到其他地圖層下面（codex review 以
+            -- probe 重現）。用 canonical 名的 addon 本來就不必呼叫本 API，單點拒收
+            print("[MinidoracatMiniMap] registerMaps: entry #" .. i .. " from " .. ownerModId
+                .. " uses the reserved auto-scan filename " .. LEGACY_CANONICAL
+                .. " -- skipped (rename the zip to the map folder name and register that)")
+        elseif ok then
             table.insert(valid, e)
         else
             print("[MinidoracatMiniMap] registerMaps: skipping invalid entry #" .. i .. " (from " .. ownerModId .. ")")
@@ -82,6 +108,7 @@ function MinidoracatMiniMapAPI.registerMaps(ownerModId, entries)
         table.insert(registeredPacks, { owner = ownerModId, entries = valid })
     end
 end
+-- test:register-maps:end
 
 -- Zone 渲染 API（家族第四個 addon＝MinidoracatMiniMapZonesFor42 的資料層專用）：
 -- 資料 addon 註冊 provider，本 MOD 每幀呼叫取回「已翻譯、已正規化」的 zone 陣列，
@@ -196,9 +223,6 @@ end
 -- MOD 地圖框線繪製資料（collectPyramids 於地圖初始化時重建；drawMapBounds 每幀讀）
 local mapOverlays = {}
 
--- 第三方 addon 相容約定檔名（零 Lua）：地圖 MOD 自附 minimap 支援時使用
-local LEGACY_CANONICAL = "minidoracat_minimap.pyramid.zip"
-
 local function log(msg)
     print("[MinidoracatMiniMap] " .. tostring(msg))
 end
@@ -227,6 +251,41 @@ local function findZip(modInfo, sep, zip)
     return nil
 end
 
+-- 排序 identity 的權威解析（zip 名對不上時的補救）：問引擎「這個地圖 MOD 提供哪些
+-- 地圖資料夾」，取其中已載入的那個。zip 檔名是給人看的別名，未必等於地圖資料夾名
+-- ——實測地圖包 91 筆有 3 筆不等（Atlanta - Safe Zone 的目錄帶社群後綴、EchoCreek
+-- 目錄夾中文、Kardinal Raven Creek 的目錄其實叫 Raven Creek B42），其中 Atlanta 與
+-- EdsAutoSalvageB42 真的共用 3 格 cell，光靠 zip 名會讓它排不進優先序、繼續被壓在下面
+-- （codex review 抓出的正式資料反例）。
+-- getMapFoldersForMod(modID)：掃該 mod 的 commonDir＋versionDir 下 media/maps/*/map.info
+-- 回資料夾名 ArrayList，找不到回 nil、例外自行 catch（LuaManager.java:5390-5445；
+-- 用例 ServerSettingsScreen.lua:1127/1168/2303）——與 MapGroups 建 realDirectories 的
+-- 掃描範圍一致（MapGroups.java:116／:130），故不必自己組路徑。
+-- 只在「該 mod 總共只提供一張地圖」時才反推：mod ID → 資料夾是多對一，
+-- getMapFoldersForMod 給的是資料夾清單、沒有 zip→資料夾的關聯（LuaManager.java:5394）。
+-- 拿「當下只有一個已載入」當識別會出錯：mod 提供 A、B 而 registry 的 B.pyramid.zip
+-- 省略 mapDir、MP 只載入 A 時，會把 B 的影像標成 A 的 identity、吃 A 的優先序
+-- （codex review 抓出）。多張一律回 nil，該由 registry 明寫 mapDir。
+-- 同名資料夾在 common 與版本目錄各回一次（Java 兩段各自 add），比的是名稱、不算多張
+-- test:resolve-mapdir:start
+local function resolveMapDirByMod(modID, loadedDirs)
+    local folders = getMapFoldersForMod(modID)
+    if folders == nil then return nil end
+    local only
+    for i = 1, folders:size() do
+        local dir = folders:get(i - 1)
+        if only == nil then
+            only = dir
+        elseif only ~= dir then
+            return nil -- 一 mod 多地圖：無法從 mod ID 反推這顆 zip 是哪張
+        end
+    end
+    -- 該地圖沒在載入清單裡＝這顆 zip 不該吃優先序（MP Map= 沒挑到它）
+    if only == nil or loadedDirs[only] == nil then return nil end
+    return only
+end
+-- test:resolve-mapdir:end
+
 -- 一 mod 多地圖（SecretZ 類）的逐圖閘門：MP 伺服器可在 Map= 只挑部分地圖目錄
 -- 載入，mod ID 閘門看不出這層差異（回報實例：未載入的 SecretZ 據點仍被畫出）。
 -- getWorld():getMap()（Java Core.gameMap）＝實際載入地圖目錄的分號串列——單機為
@@ -234,23 +293,41 @@ end
 -- IsoMetaGrid.getLotDirectories 回填；42.19 反編譯查證），兩種模式皆可信。
 -- 約束：僅供世界 init 之後呼叫（連線早期 Core.gameMap 短暫只有首項）——現有
 -- 呼叫點（applyMiniMapPyramids 各觸發源）皆滿足；新增更早呼叫點前先想這條。
+-- 回傳 dir → 優先序 index（1＝最高，同名 cell 覆蓋其後所有目錄——見 orderByMapPriority）；
+-- nil＝拿不到（fail-open）。值刻意用 index 而非 true：疊層順序要靠它（0.14.3 前只存集合）
 -- test:mapdir-gate:start
 local function getLoadedMapDirs()
     local okCall, mapStr = pcall(function()
         local world = getWorld()
         return world and world:getMap() or nil
     end)
-    if not okCall or type(mapStr) ~= "string" or mapStr == "" or mapStr == "DEFAULT" then
-        return nil -- 拿不到＝fail-open 退回純 mod ID 閘門（行為同無 mapDir 版本）
+    if not okCall then
+        -- 只有「真的拋例外」才留痕：getWorld/getMap 綁定失效是靜默症狀最貴的一種
+        -- ——fail-open 會讓 mapDir 閘門放寬＋疊層不重排（＝疊層錯序 bug 復活），
+        -- 沒有這行就查不出來。DEFAULT／空串維持靜默：那是世界未 init 的正常路徑，
+        -- 本函式在每次開圖／樣式重建都跑，無條件 log 會刷屏。一次 apply 會呼叫兩次
+        -- （rebuildMapOverlays 與 collectPyramids 各一），例外時就是兩行——例外屬綁定
+        -- 失效等罕見狀況，重複兩行比為了去重而把 loadedDirs 穿過兩層簽名划算
+        log("getLoadedMapDirs: getWorld():getMap() raised, falling back to mod ID gate only "
+            .. "(no priority reorder): " .. tostring(mapStr))
+        return nil
     end
-    local dirs = {}
+    if type(mapStr) ~= "string" or mapStr == "" or mapStr == "DEFAULT" then
+        return nil -- 拿不到＝fail-open：mapDir 閘門放寬，且 orderByMapPriority 不重排
+    end
+    local dirs, count = {}, 0
     for dir in string.gmatch(mapStr, "[^;]+") do
         dir = dir:match("^%s*(.-)%s*$")
-        if dir ~= "" then dirs[dir] = true end
+        -- 首見才記：重複目錄不該改寫已定的優先序（引擎同樣去重，
+        -- IsoMetaGrid.java:2017 的 result.contains 守衛）
+        if dir ~= "" and dirs[dir] == nil then
+            count = count + 1
+            dirs[dir] = count
+        end
     end
-    -- PZ Kahlua 無 next（BaseLib.java 僅註冊 18 個全域、TableLib 只有 pairs/ipairs），
-    -- 空表偵測用 pairs 探測——0.10.0 曾用 next 導致實機掛載鏈全炸（離線測試跑標準 Lua 沒抓到）
-    for _ in pairs(dirs) do return dirs end
+    -- 空表偵測用計數器：PZ Kahlua 無 next（BaseLib.java 僅註冊 18 個全域、TableLib
+    -- 只有 pairs/ipairs），0.10.0 曾用 next 導致實機掛載鏈全炸（離線測試跑標準 Lua 沒抓到）
+    if count > 0 then return dirs end
     return nil -- 拆完是空集＝同「拿不到」，fail-open
 end
 
@@ -259,9 +336,68 @@ end
 -- 單點中和、不整條目拒收，壞欄位只降級回 mod ID 閘門）
 local function passesMapDir(entry, loadedDirs)
     return entry.mapDir == nil or entry.mapDir == ""
-        or loadedDirs == nil or loadedDirs[entry.mapDir] == true
+        or loadedDirs == nil or loadedDirs[entry.mapDir] ~= nil
 end
 -- test:mapdir-gate:end
+
+-- 純決策（離線測試 scripts/test_mapdir_gate.lua）：待掛載清單依「引擎地圖優先序」
+-- 重排。同一 cell 被多個地圖 MOD 提供時引擎只載入優先序最前那份（CreateStep1 對
+-- MapFiles 反序 putAll，IsoMetaGrid.java:1424-1428；原版註解 "Add data from highest
+-- priority (mods) to lowest priority (vanilla)"，ISMapDefinitions.lua:25-28）——影像層
+-- 必須跟隨同一個勝出者，否則會拿「輸的那張」蓋掉玩家實際所在的地圖。
+-- 回報實例：Grapeseed 北緣 3 cell 與 Greenleaf 重疊（兩者 pyramid 該帶皆不透明），
+-- 舊的 registry 字母序讓 Greenleaf 的空草地蓋掉 Grapeseed 城區（2026-08-17 地圖包留言）。
+-- 層間繪製正序、後建在上（WorldMapRenderer.renderCellFeatures，:933-938）⇒ 依 pri 遞減
+-- 建層＝優先序最高者最後建、畫最上。
+-- 注意這只讓影像與世界一致，重疊 cell 本身仍是引擎層級的硬衝突
+-- （MapGroups.checkMapConflicts，MapGroups.java:476-514），兩張圖不可能同時完整顯示。
+-- 只重排「對得上已載入目錄」的條目（identity 由 collectPyramids 先補齊：registry 的
+-- mapDir → zip basename → resolveMapDirByMod）並就地填回其原位置；identity 對不上的
+-- 條目維持原槽。
+-- 但「對不上」不是位置保證：sortable == false 才是。基底全圖與 legacy 約定名 addon
+-- 都必須固定位置（前者恆在最底、後者恆在最上），而它們的 zip basename
+-- （Muldraugh_KY／minidoracat_minimap）若剛好撞到某個合法地圖目錄名，就會被解析成功
+-- 並被優先序搬走——PZ 不禁止這兩個資料夾名，故一律用顯式旗標釘住（codex review
+-- 第三輪抓出 legacy、code review 抓出基底）。
+-- 已知邊界（刻意不處理）：本函式只管「層間」順序。同一個 zip 檔名的多個條目會被
+-- mountPyramidLayers 去重成一層，該層以尾綴匹配畫出所有同名 zip、且是層「內」反序
+-- （先 addImagePyramid 者在上）——若同名條目來自不同路徑，本函式排出的層間順序反而
+-- 會讓低優先者先掛而畫在上面（codex review 第五輪以 probe 指出）。不修的理由：
+-- (1) 唯一真實存在的同名多路徑情境是 legacy 那條 lane（多個 addon 共用 canonical
+-- 檔名、各自 bounds 對位，是刻意設計），而它已 sortable=false、順序等同本次修改前；
+-- (2) 兩個地圖包 addon 提供同名 zip 時，兩份影像可能都合法且不重疊，「誰該在上」本來
+-- 就沒有定義，去重會直接弄丟一張圖；(3) 真要支援得按檔名分組反轉該組註冊序，不是
+-- 丟資料。等實際生態出現再做
+-- test:map-priority:start
+local function orderByMapPriority(entries, loadedDirs)
+    if loadedDirs == nil then return entries end
+    local slots, known = {}, {}
+    for i = 1, #entries do
+        local e = entries[i]
+        local dir = e.mapDir
+        if dir == nil or dir == "" then
+            dir = e.zip:gsub("%.pyramid%.zip$", "")
+        end
+        local pri = e.sortable ~= false and loadedDirs[dir] or nil
+        if pri then
+            slots[#slots + 1] = i
+            -- 插入排序（家規：Kahlua 禁用 table.sort，見 verify_mod.py）：pri 遞減，
+            -- 嚴格 < 才位移＝相等保留原序（穩定）。n＝已啟用地圖數（實測上限約百筆）；
+            -- 只在掛載流程跑（開世界地圖／小地圖 init／樣式重掛），不在每幀路徑上
+            local pos = #known + 1
+            while pos > 1 and known[pos - 1].pri < pri do
+                known[pos] = known[pos - 1]
+                pos = pos - 1
+            end
+            known[pos] = { entry = e, pri = pri }
+        end
+    end
+    for k = 1, #slots do
+        entries[slots[k]] = known[k].entry
+    end
+    return entries
+end
+-- test:map-priority:end
 
 -- 重建框線資料（世界地圖/小地圖各 init 一次呼叫，冪等）：來源＝已註冊地圖包；
 -- 有 bounds 且對應地圖 MOD 啟用者才畫框。框線是 Lua 自繪定位輔助——不依賴 zip
@@ -286,8 +422,12 @@ local function rebuildMapOverlays()
 end
 -- test:rebuild-overlays:end
 
--- 回傳待掛載清單 { { path=絕對路徑, zip=檔名 }, ... }，順序＝MAPS 再 legacy addon
--- （applyMiniMapPyramids 依序掛載/建層，addon 層後建、畫在基底之上）
+-- 回傳待掛載清單 { { path=絕對路徑, zip=檔名, mapMod=地圖 mod ID 或 nil,
+-- mapDir=地圖目錄名或 nil, sortable=false 才不吃優先序重排 }, ... }：
+-- 蒐集序＝MAPS 再地圖包再 legacy addon，
+-- 補齊排序 identity 後由 orderByMapPriority 依引擎地圖優先序重排
+-- （applyMiniMapPyramids 依序建層、後建在上）
+-- test:collect-pyramids:start
 local function collectPyramids()
     local list = {}
     local sep = getFileSeparator()
@@ -306,7 +446,8 @@ local function collectPyramids()
             if (not entry.mapMod or active[entry.mapMod]) and passesMapDir(entry, loadedDirs) then
                 local path = findZip(own, sep, entry.zip)
                 if path then
-                    table.insert(list, { path = path, zip = entry.zip })
+                    table.insert(list, { path = path, zip = entry.zip, mapMod = entry.mapMod,
+                        mapDir = entry.mapDir, sortable = entry.sortable })
                 elseif not entry.mapMod then
                     log("base map zip missing: " .. entry.zip .. " (not rendered yet? expected under 42/media/minimap/, see scripts/build_pyramids.ps1)")
                 else
@@ -329,7 +470,8 @@ local function collectPyramids()
                     if (not entry.mapMod or active[entry.mapMod]) and passesMapDir(entry, loadedDirs) then
                         local path = findZip(ownerInfo, sep, entry.zip)
                         if path then
-                            table.insert(list, { path = path, zip = entry.zip })
+                            table.insert(list, { path = path, zip = entry.zip,
+                                mapMod = entry.mapMod, mapDir = entry.mapDir })
                         else
                             log("map pack " .. pack.owner .. " missing " .. entry.zip .. " (not rendered or not packaged?)")
                         end
@@ -350,13 +492,42 @@ local function collectPyramids()
             if modInfo then
                 local path = findZip(modInfo, sep, LEGACY_CANONICAL)
                 if path then
-                    table.insert(list, { path = path, zip = LEGACY_CANONICAL })
+                    -- sortable = false＝完全不吃優先序重排（顯式，不靠「沒有 mapMod」
+                    -- 或檔名巧合）：legacy 全體共用同一檔名，去重後只有一層，它們的
+                    -- 上下由 addImagePyramid 呼叫序決定，而層「內」同名多 zip 是反序
+                    -- 迭代（WorldMapPyramidStyleLayer.java:46-51）＝先註冊者畫在上，
+                    -- 與層「間」的後建在上相反。把層間規則（低優先先掛）套進來會讓
+                    -- 低優先者反而蓋住高優先者（codex review 抓出）。要支援得改成按
+                    -- 檔名分組反轉註冊序，收益不值這風險
+                    table.insert(list, { path = path, zip = LEGACY_CANONICAL, sortable = false })
                 end
             end
         end
     end
-    return list
+    -- 補齊排序 identity：zip 名對不上已載入目錄時，用 getMapFoldersForMod 反查。
+    -- 只對「有 mod ID 可問」的條目做——基底與 legacy 都沒有 mapMod，不需要 identity
+    -- （它們的位置由 sortable=false 釘住，不是靠這裡跳過）。只跑對不上的少數條目
+    -- （正式資料 3 筆）、每筆一次 Java 目錄掃描；與排序同頻（每次地圖初始化／樣式
+    -- 重掛），成本可忽略
+    if loadedDirs ~= nil then
+        for _, e in ipairs(list) do
+            if (e.mapDir == nil or e.mapDir == "") and e.mapMod ~= nil
+                and loadedDirs[e.zip:gsub("%.pyramid%.zip$", "")] == nil then
+                e.mapDir = resolveMapDirByMod(e.mapMod, loadedDirs)
+                if e.mapDir == nil then
+                    -- 真資料缺口：有 mod ID，卻既對不上 zip 名、也反查不到唯一目錄
+                    -- ⇒ 該層不吃優先序，重疊時可能顯示錯的地圖，registry 該補 mapDir。
+                    -- 只有這種條目會 log（正式資料應為 0 筆）：基底與無 mapMod 的
+                    -- 條目不進這裡，不會每次開圖刷屏
+                    log("cannot resolve map directory for " .. e.zip .. " (mod " .. e.mapMod
+                        .. ") -- layer stays unsorted; add an explicit mapDir in the registry")
+                end
+            end
+        end
+    end
+    return orderByMapPriority(list, loadedDirs)
 end
+-- test:collect-pyramids:end
 
 -- 已掛載樣式層 id 集（世界地圖/小地圖同名共用）：關閉圖片化時逐 id 卸載。
 -- 刻意不走 Reapply Style（initDefaultStyleV3 內含 styleAPI:clear()，會把「其他

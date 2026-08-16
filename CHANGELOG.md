@@ -1,5 +1,75 @@
 # Changelog
 
+## [42.20.1-0.14.3] - 2026-08-17
+
+### 修正
+
+- **兩張 MOD 地圖重疊時，小地圖影像顯示錯的那一張**（玩家回報：同時啟用
+  Grapeseed 與 Greenleaf 時，Grapeseed 北緣兩個區塊在小地圖上「消失」、
+  變成空草地，但遊戲世界與原版小地圖都是正確的城區）：兩張地圖真的共用
+  3 格 cell（(24,42)(25,42)(26,42)，squares 6144,10752–6912,11008），引擎
+  遇到這種衝突時以「地圖優先序最前者」勝出，而本 MOD 的影像疊層先前是照
+  註冊清單字母序堆疊，跟引擎的勝出者無關——恰好把 Greenleaf 那片空草地
+  疊在 Grapeseed 城區上面。現在影像疊層改為跟隨引擎的地圖優先序，
+  地圖包登記的影像層一律顯示「遊戲實際載入」的那張地圖（第三方地圖 MOD 自附的
+  約定檔名影像共用同一個檔名、在引擎裡是同一層，上下規則與此相反，維持原本的
+  最上層位置、不納入這項一致性保證）。受影響的不只這一對：以本機安裝的
+  69 個地圖 MOD（90 個地圖目錄）逐格比對 lotheader，共 82 對真的共用 cell
+  （Kingsmouth North×Megurigaoka 12 格、Atlanta×BlackpineCounty 10 格、
+  Grapeseed×Hartburg 6 格……），這些組合同時啟用時先前都可能顯示錯的那張。
+  註：重疊 cell 本身是地圖 MOD 之間的衝突（遊戲選 MOD 畫面也會警告），
+  兩張地圖不可能同時完整顯示；本修正保證的是「小地圖與你腳下的世界一致」，
+  想換成另一張請用遊戲的地圖排序調整優先序
+
+> 技術要點：引擎 `IsoMetaGrid.CreateStep1` 對 MapFiles 反序 `putAll`
+> （IsoMetaGrid.java:1424-1428），故 `getLotDirectories()`／`getWorld():getMap()`
+> 分號串的 index 0 最優先（原版註解 ISMapDefinitions.lua:25-28
+> "highest priority (mods) to lowest priority (vanilla)"）；順序由
+> MapGroups.setPriority／setOrder(ActiveMods.getMapOrder()) 決定。
+> `getLoadedMapDirs` 原本把該串解析成集合（值 true）、順序被丟棄，現改存
+> 1-based 優先序 index，mapDir 閘門改判 `~= nil`。新增純函式
+> `orderByMapPriority`：只重排「對得上已載入目錄」的條目、並就地填回它們
+> 原本的位置，pri 遞減（層間繪製正序、後建在上 ⇒ 最高優先最後建、畫最上；
+> WorldMapRenderer.renderCellFeatures:933-938）。identity 解析鏈＝registry 的
+> `mapDir` → zip basename → `getMapFoldersForMod(modID)` 反查
+> （LuaManager.java:5390-5445）。反查是必要的：地圖包 91 筆有 3 筆 zip 名 ≠ 資料夾名
+> （Atlanta - Safe Zone 目錄帶社群後綴、EchoCreek 目錄夾中文、Kardinal Raven Creek
+> 的目錄其實叫 Raven Creek B42），其中 Atlanta 與 EdsAutoSalvageB42 真的共用 3 格
+> cell，光靠 zip 名會讓它排不進優先序、繼續被壓在下面（codex review 抓出的正式
+> 資料反例）。反查只在「該 mod 總共只提供一張地圖、且那張已載入」時成立：mod ID →
+> 資料夾是多對一，引擎沒有 zip→資料夾的關聯，多張時拿「當下只載入一張」當識別會把
+> 別張的 zip 標成它的 identity（codex review 第二輪抓出），一律放棄不猜、由 registry
+> 明寫 `mapDir`；有 mod ID 卻仍解析不到的條目會 log 一行（正式資料應為 0 筆），基底與
+> legacy 不進這條路徑、不會每次開圖刷屏。基底全圖與 legacy 兩者都以顯式
+> `sortable = false` 固定位置（基底恆在最底、legacy 恆在最上），不靠「沒有 mapMod」
+> 或「zip 名對不上目錄」的巧合——PZ 不禁止把地圖資料夾命名成 Muldraugh_KY 或
+> minidoracat_minimap，隱含隔離在撞名時會破功（code review 抓出）；
+> legacy 之所以要完全排除：全體共用同一檔名、去重後只有一層，層「內」同名多 zip
+> 是反序迭代（先註冊者在上，WorldMapPyramidStyleLayer.java:46-51），與層間規則相反，
+> 硬套會讓低優先者反而蓋住高優先者（codex review 抓出）。連帶把 canonical 檔名
+> 定為 `registerMaps` 的保留名並拒收：同名兩份條目（一份來自 registerMaps、一份來自
+> 自動掃描）會互搶同一圖層，前者被排序搬走、後者又被 layerId 去重丟掉，canonical
+> 層可能落到其他地圖層下面（codex review 第四輪以 probe 重現）。
+> 已知邊界（刻意不處理）：這套排序只管層間順序。同一個 zip 檔名的多個條目會被去重成
+> 一層、層內是反序繪製（先掛在上），與層間規則相反——若同名條目來自不同路徑，層間
+> 排序反而會讓低優先者畫在上面（codex review 第五輪以 probe 指出）。不修的理由：唯一
+> 真實存在的同名多路徑情境是第三方自附影像那條 lane（多個 addon 共用約定檔名、各自
+> bounds 對位，是刻意設計），而它已 `sortable = false`、順序等同本次修改前；兩個地圖
+> 包提供同名 zip 時，兩份影像可能都合法且不重疊，「誰該在上」本來就沒有定義，去重會
+> 直接弄丟一張圖。真要支援得按檔名分組反轉該組註冊序，等實際生態出現再做。
+> 排序用插入排序（家規：Kahlua 遞迴 quicksort 會堆疊溢位，見 verify_mod.py）、
+> 嚴格 `<` 才位移＝相等保留原序，n＝已啟用地圖數；只在掛載流程跑（開世界
+> 地圖／小地圖 init／樣式重掛），不在每幀路徑上。`getWorld():getMap()` 拋例外時留下診斷
+> （每次呼叫一行；框線重建與影像蒐集各呼叫一次，故一次 apply 會看到兩行。
+> DEFAULT／空串是世界未 init 的正常路徑，維持靜默）。離線測試
+> scripts/test_mapdir_gate.lua 補上回歸案例：雙向 map order、3 筆完整排序、同優先序
+> 穩定性、重複目錄首見優先、明示 mapDir 不得 fallback、unknown 原位、反查含糊／
+> 未載入／mod 不存在、log 靜默契約、正式 MAPS 的 sortable 契約、基底與 legacy 的
+> 檔名撞名、registerMaps 拒收保留名，以及 collectPyramids 的整合案例（不手動塞
+> mapDir，走完蒐集→identity 補齊→排序，含 Atlanta×Eds 雙向優先序、含糊時提示補
+> mapDir、地圖包圖層關閉）。十個變異注入（升序、`<=`、寫回 1..n、忽略 sortable、
+> 忘記傳旗標、忽略保留名、多地圖亂猜、丟失優先序 index…）全部被測試攔下
+
 ## [42.20.1-0.14.2] - 2026-08-14
 
 ### 變更
