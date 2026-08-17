@@ -72,6 +72,20 @@ def mod_display_name():
     return os.path.basename(REPO)
 
 
+def is_han(ch):
+    """漢字與假名：與英數字相鄰時要補空格（中文排版慣例）。"""
+    return bool(ch) and (0x3040 <= ord(ch) <= 0x30FF
+                         or 0x4E00 <= ord(ch) <= 0x9FFF
+                         or 0xF900 <= ord(ch) <= 0xFAFF)
+
+
+def is_fullwidth_punct(ch):
+    """全角標點（，。、：（）「」——…）：字身自帶左右間距，兩側都不該再補空格。"""
+    return bool(ch) and (0x3000 <= ord(ch) <= 0x303F
+                         or 0xFF01 <= ord(ch) <= 0xFF65
+                         or ch in "—…～·")
+
+
 def inline(text):
     text = re.sub(r"\*\*(.+?)\*\*", r"[b]\1[/b]", text)
     text = text.replace("`", "")
@@ -159,14 +173,23 @@ def main():
         if raw.strip() == "":
             continue
         if (in_list or in_sub) and raw[:1].isspace():
-            # 縮排續行（無 dash）＝上一個條目的折行，接回同一 [*]；CJK 邊界不補空格
-            cont = inline(raw)
-            sep = "" if (out[-1] and ord(out[-1][-1]) > 0x2E7F) or ord(cont[0]) > 0x2E7F else " "
+            # 縮排續行（無 dash）＝上一個條目的折行，接回同一 [*]。這裡刻意「原樣接起、
+            # 不做行內轉換」：**粗體** 常被折行切成兩半，逐行轉換配不到成對標記，
+            # 會把字面 ** 漏到公開頁面。轉換統一留到迴圈結束後做。
+            cont = raw.strip()
+            prev, head = (out[-1][-1:] if out[-1] else ""), cont[:1]
+            glue = (is_fullwidth_punct(prev) or is_fullwidth_punct(head)
+                    or (is_han(prev) and is_han(head)))
+            sep = "" if glue else " "
             out[-1] += sep + cont
             continue
         close_list()
         out.append(inline(raw))
     close_list()
+
+    # 行內標記到這裡才統一轉換——續行是原樣接起的，跨行的 **粗體** 只有合併完成後
+    # 才配得到成對標記。inline 對已轉換過的文字是幂等的（沒有 ** 與反引號可再處理）。
+    out = [inline(line) for line in out]
 
     text = "\n".join(out).strip() + "\n"
     with open(DST, "w", encoding="utf-8", newline="\n") as fh:
