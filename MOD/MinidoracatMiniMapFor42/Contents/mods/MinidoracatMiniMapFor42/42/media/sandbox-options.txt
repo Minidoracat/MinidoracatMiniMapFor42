@@ -38,3 +38,12 @@ option MinidoracatMiniMap.SafehouseDisplayDistance
 
 option MinidoracatMiniMap.AllowNavShare
 {type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowNavShare,}
+
+option MinidoracatMiniMap.ExportPlayerPositions
+{type = boolean, default = false, page = MinidoracatMiniMap, translation = MinidoracatMiniMapExportPlayerPositions,}
+
+option MinidoracatMiniMap.PlayerExportInterval
+{type = integer, min = 1, max = 300, default = 5, page = MinidoracatMiniMap, translation = MinidoracatMiniMapPlayerExportInterval,}
+
+option MinidoracatMiniMap.ExportOfflinePlayers
+{type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapExportOfflinePlayers,}

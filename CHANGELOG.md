@@ -1,8 +1,155 @@
 # Changelog
 
-## [42.20.1-0.14.3] - 2026-08-17
+## [42.20.2-0.15.0] - 2026-08-17
+
+### 新增
+
+- **玩家座標匯出（伺服器管理用，預設關閉）**：沙盒開啟後，伺服器（單機也適用）
+  每 N 秒把「在線玩家的即時座標」與「離線玩家最後一次被觀測到的座標」寫成
+  `Zomboid/Lua/MinidoracatMiniMap/players_<存檔名>.json`，與 `poi_blocks.json`
+  同一目錄。用途是讓地圖區塊重置工具（pz-rewild）在清除一塊地之前知道
+  「那裡現在有沒有人、有沒有人在裡面登出」，必要時先把人踢下線再動手——
+  離線玩家的角色下次上線仍站在原地，重置到他身上會直接影響玩家。**在線清單是
+  完整的（引擎權威）、離線清單只是本 MOD 觀測到的子集**——檔案裡帶
+  `offlineSince`／`offlineIncluded`／`offlineTruncated` 三個欄位讓外部工具判斷
+  可信度，契約明訂離線清單只能當「這裡有人」的正向證據，不能反證「這裡沒人」。
+  三個沙盒選項：匯出開關（預設關）、匯出週期 1–300 秒（預設 5）、是否一併
+  匯出離線玩家（預設開）。管理員面板改動即時生效，把週期改小也立刻生效。
+  一般玩家不需要開；開啟後玩家座標會落地成檔案。
+- **匯出檔帶 Steam64（`steamId`）**：每筆玩家帶 17 位 Steam64 字串，取不到時是空字串。
+  這個欄位是**客戶端回報、伺服器做過一致性檢查**的值，不是伺服器權威值——引擎沒給
+  伺服器端取得精確 Steam64 的路（見技術要點）。可用於對照、稽核、跨改名追蹤，
+  **不可用於授權、封鎖、所有權判定**；要權威值請在停機後讀存檔 `players.db` 的
+  `networkPlayers.steamid`。非 Steam 伺服器／客戶端一律是空字串。
+- **`Lua/MinidoracatMiniMap/` 下自動放一份目錄說明**（`_README_CH.txt` /
+  `_README_EN.txt`，分語系各一檔）：欄位表、兩份清單的證明力差異、`steamId` 的信任
+  等級、外部工具義務摘要，讓看到那堆 JSON 的人不必翻 MOD 原始碼。只在檔案不存在時
+  產生，之後不覆寫（可以在上面加自己的註記），刪掉下次啟動會補回。
+
+> 技術要點：這件事引擎沒有替代路徑（42.20.2 反編譯核對）。Lua 讀不到
+> `players.db`——`ServerPlayerDB`/`PlayerDB`/`PlayerDBHelper` 都沒 `setExposed`
+> （LuaManager.java:1687-2712），且 `ServerPlayerDB` 只有依 username/steamid
+> ＋playerIndex 的單筆 load/update、沒有列舉 API（ServerPlayerDB.java:216-227）；
+> 唯一 Lua 入口 `getSaveInfo`（LuaManager.java:8068-8071 →
+> PlayerDBHelper.java:134-165）只查 `localPlayers` 的 id/name/isDead，無座標。
+> 也沒有「玩家斷線」事件（全 snapshot 無 `OnPlayerDisconnect`；`OnDisconnect`
+> 只在客戶端且無玩家參數，LuaEventManager.java:653、GameClient.java:354-355），
+> `GameServer.disconnect` 只寫 DB 不 triggerEvent（GameServer.java:2976-3034）
+> ——所以「離線」只能由在線名單（`getOnlinePlayers()`，LuaManager.java:4454-4464
+> → GameServer.java:3522-3541；單機退回 `getNumActivePlayers`/`getSpecificPlayer`，
+> 分支慣例同原版 XpUpdate.lua:300-303）逐輪做差集推導。這個推導模型天生不完整
+> （本 MOD 開始記錄前登出的角色永遠不在清單裡），所以檔案格式必須把不完整性寫
+> 出來讓消費端 fail-closed，而不是假裝完整——三家獨立 review lane 都指向這一點。
+> 唯一鍵是 `(name, idx)` 而非 name：`idx`＝`getPlayerNum()`
+> （IsoPlayer.java:966-974，`@UsedFromLua`，原版 server 用例 ISPickDungCursor.lua:8），
+> 伺服器端由 GameServer.java:2785 指派、與 `players.db` 的 `playerIndex` 同一身分；
+> 同一帳號同機分屏可有多個角色分處兩地，只用 name 當鍵會把其中一個直接丟掉
+> （對「保護玩家」是漏報，最危險的方向）。
+> 節流掛 `OnTickEvenPaused`（LuaEventManager.java:594）不掛 `OnTick`：專用伺服器
+> 在 `pauseEmpty`＋空服時 `paused` 為真（IngameState.java:1485-1486），`OnTick`
+> 被 pause 閘門擋掉（:1489 判斷、:1532 呼叫、:1623 才 triggerEvent），而
+> `OnTickEvenPaused` 在 :1316、pause 判斷之前——空服也必須繼續推進檔內時間戳，
+> 否則工具無法區分「現在沒人」與「匯出已停擺」。專用伺服器觸發鏈
+> GameServer.java:824 `IngameState statex` → :1001 `statex.update()`，主迴圈
+> `LockFPS(10)`（:823）。真實時間用 `getTimestampMs()`（LuaManager.java:9267-9274）。
+> 節流刻意存「上次寫檔時刻」而非「絕對到期時刻」，否則把週期從 300 秒改成 5 秒要等
+> 舊間隔跑完才生效（離線測試 S4 釘住）；時鐘被往回調時視為到期，不會卡死。
+> 檔名帶存檔名（`getWorld():getWorld()`＝`Core.gameSaveWorld`，
+> IsoWorld.java:3192-3194，專用伺服器上是 serverName，:1792-1793）：`Zomboid/Lua`
+> 是全域目錄、不隨存檔，同機輪流跑兩個世界時共用單一檔名會互相覆寫，也讓工具端
+> 指錯檔時直接「檔案不存在」而不是讀進別的存檔的座標；檔名 token 只留 `%w - _`
+> （點也轉底線——含 `..` 的路徑會被 `getFileWriter` 的 `hasRelativePath` 整個拒絕，
+> LuaManager.java:6730、:8519-8522）。username 一律**無損** JSON 轉義（`\` `"` 依
+> JSON 規則、控制字元寫成 `\u00xx`，對照表用 `string.char` 建、實機確認 33 筆）：
+> 引擎允許的 username 字元集比直覺寬——primary 只擋 `" \ / . ' ? ; @ $ ,` 與 NUL、
+> 長度 2-20（ServerWorldDatabase.java:763-785），**控制字元是合法的**，coop 分屏的
+> secondary 更寬（只擋空字串與全服重名，ConnectCoopPacket.java:73-80）。所以絕不能
+> 消毒或截斷：那會讓 `ab\nc` 與 `abc` 撞成同一個 registry 鍵、或讓名字轉換後變空而
+> 被略過——少一個在線玩家就直接推翻「online 清單完整、可反證此處無人」這條核心
+> 保證（第三條 review lane 抓出）。任何一個在線玩家無法無損寫出、或出現重複
+> `(name, idx)` 時，本輪**整份拒寫**（讓舊檔因 ts 過期被工具擋下），不是略過那個人。
+> 讀回時另用 JSON 字串文法驗證（含 `\uXXXX`）擋下裸引號，並用位數＋值域守衛擋下
+> 「400 位數經 tonumber 變 inf、再被寫成 `"x":inf`」這種非法 JSON。排序用自備的迭代
+> merge sort：家規禁 `table.sort`（Kahlua 是遞迴 quicksort、coroutine 堆疊上限 3000，
+> **已排序輸入退化 O(n) 深度、數百筆即溢位**，見 scripts/verify_mod.py 檔頭）——而
+> 本功能的輸入正好幾乎總是已排序（registry 讀回自按名稱排序的檔案）、上限 2000 筆，
+> 用 table.sort 必炸；`table.concat` 一律傳 first/last，否則 Kahlua 會走 `table.len()`
+> （TableLib.java:129-138）這個家規要避開的隱性長度依賴。沙盒關閉時檔案原地凍結、
+> 不寫空文件：空清單會讓工具誤判「到處都沒人」而放行刪除，比陳舊檔案更危險——
+> 新鮮度改由工具端比對檔內 `ts`／`interval`（含上界，防未來時間戳讓陳舊檔永遠
+> 看起來新鮮），完整契約與外部工具義務寫在 `MinidoracatMiniMapPlayerExport.lua`
+> 檔頭。週期不做每輪寫後讀回驗證（I/O 加倍且下輪就覆寫），改為每 5 分鐘**整份**讀回
+> 重新解析並比對 ts/count/online——`LuaFileWriter` 走 `PrintWriter`
+> （LuaManager.java:12751-12770），磁碟滿／唯讀時完全靜默、`pcall` 接不到；只驗第一行
+> 不夠（header 落地、後續條目被截斷的 partial write 會被誤判成功）。
+> 目錄說明檔是 `42/media/exportdoc/_README_<LANG>.txt` 靜態 UTF-8 檔，啟動時原封
+> 不動複製出去，**不寫在 Lua 字面量裡**：Lua 原始檔由 `IndieFileLoader.getStreamReader`
+> 載入，主路徑是 UTF-8（IndieFileLoader.java:22-24），但 fallback 到
+> `Core.getMyDocumentFolder()/mods` 時用的是平台預設編碼（:25-27）——本機 linked-mod
+> 走的就是 fallback，第一版把中文寫在 Lua 字串裡，實機寫出來整段是 U+FFFD 亂碼
+> （`getFileWriter` 本身是 UTF-8，LuaManager.java:6753-6754，壞的是載入端）。改走
+> 靜態檔後全程 UTF-8：`getModFileReader` 明確 `StandardCharsets.UTF_8`
+> （LuaManager.java:6005，先找 versionDir 再找 commonDir）→ `getFileWriter` 寫出，
+> 實機驗證與來源 byte-identical、管理員自己加的註記在重啟後完整保留（exists-only，
+> 第二次啟動連來源檔都不讀）。守衛 `python scripts/tests/test_export_doc_assets.py`：
+> 檢查 Lua 宣告的來源檔都存在、說明檔是合法 UTF-8／無 BOM／無 CRLF，以及
+> **ExportReadme.lua 的非註解行不得含非 ASCII**（防有人又把中文塞回 Lua 字面量）。
+> Steam64 只能由客戶端回報：`IsoPlayer.getSteamID()` 回 Java long
+> （IsoPlayer.java:6412-6414），經 Kahlua 的 `NumberToLuaConverter` 一律轉成 Double
+> （KahluaNumberConverter.java:141-142）——Steam64 約 7.66e16，該量級 double 的 ULP
+> 是 16，末一兩位被靜默捨去，`tostring` 還會給科學記號；而引擎會把 SteamID 字串化的
+> Lua 入口全都擋在客戶端（`getCurrentUserSteamID()` 條件含 `!GameServer.server`，
+> LuaManager.java:9366-9372；`getSteamIDFromUsername()` 條件含 `GameClient.client`，
+> :9470-9479；`SteamUtils` 未 setExposed；字串化的值只出現在
+> ScoreboardUpdatePacket.steamIdsString，而那個 triggerEvent 也只在客戶端）。所以
+> 客戶端用 `getCurrentUserSteamID()` 取精確字串、經 `sendClientCommand` 回報，伺服器
+> 驗格式（17 位、≥ individual 區段起點）＋一致性（把回報字串 `tonumber` 後與自己的
+> `getSteamID()` 比對，兩邊都是同一個 long 的 double 投影）。亂填會被擋下，但同一個
+> double bucket 有 15-16 個相鄰 Steam64（實測任取一個 7.66e16 量級的值，其 bucket
+> 涵蓋 15 個連續整數）且多半也是真帳號，所以只能標 client-reported,
+> consistency-checked。回報協議：**只有驗證通過才回 ack**（失敗也 ack 會讓客戶端誤
+> 以為完成而停手），ack 帶 slot、客戶端逐 slot 記帳（分屏時每個 slot 是獨立的
+> (username, playerIndex) 身分）；客戶端掛 OnTick 輪詢而非 OnGameStart——後者在
+> MP 連線就緒前（IngameState.java:761 vs :764-767、UpdateStuff():563）
+> `sendClientCommand` 可能是 no-op。輪詢的每一條「未就緒」路徑（Steam 尚未初始化、
+> IsoPlayer 還沒建立、onlineID 還是 -1）都只能等下一輪，**不能放棄**，否則功能會
+> 靜默失效、而且在非 Steam 環境下與「本來就沒有 Steam ID」無法區分；真的放棄一定
+> log。離線測試 `lua scripts/test_steamid_report.lua`（21 檢查，專門釘住這些窗口）。
+> 主開關關掉再開時 `offlineSince` 會重設成當下：停用期間完全不觀測，那段時間登出的
+> 角色不會進 registry，沿用舊起點等於宣稱空窗期的人也在清單裡。
+> 離線測試 `lua scripts/test_player_export.lua`（198 檢查：黃金字串／無損轉義與文法
+> 驗證邊界／數字位數與值域守衛／路徑消毒／讀回嚴格解析與拒絕（含重複鍵）／同名分屏
+> 不塌縮並跨重啟保座標／排序正確性與穩定性含 2000 筆已排序輸入／節流與時鐘回跳／
+> 離線差集／死亡剔除／writer 缺席／截斷檔／靜默寫入失敗與 partial write 抽驗／
+> 不可表示名稱與重複鍵的整輪 abort）。真機驗證：隔離 `-cachedir` 的專用伺服器在
+> `PauseEmpty=true`＋空服下 `ts` 每 ~5.05 秒前進、跨重啟讀回 registry（含負座標、
+> 同名分屏與 `\u000a` 名稱的無損 round-trip）、輸出 `(name, idx)` 升序正確、
+> 撕裂／裸引號檔被拒絕且 `offlineSince` 重設為當下。
 
 ### 修正
+
+- **沙盒選項說明裡的輸出路徑被吃掉**：新加的說明寫了 `players_<存檔名>.json`，實際
+  顯示成「輸出 .json（存檔名＝…」——整段輸出路徑憑空消失。原因是 tooltip 由 rich
+  text 面板渲染，`<...>` 會被當成標記，**而且同一個 token 裡 `<` 之前的文字會一起
+  被丟棄**；中日文沒有空格，整句連成一個 token，所以殺傷範圍是整句而不只是那對角
+  括號。現在移除說明裡所有角括號寫法（`players_存檔名.json`），並把四語說明的換行
+  統一成實體換行、順手精簡過長段落。**翻譯改動要重啟遊戲才生效。**
+
+> 技術要點：tooltip 由 ISToolTip 的 ISRichTextPanel 畫。`:459-486` 的 tokenizer 以
+> 空格切，遇到同時含 `<` 與 `>` 的 token 就只取 `<...>` 內的標記字串丟給
+> `processCommand`，其餘部分完全不寫進 `self.lines`——原版沙盒 tooltip 自己也在用
+> rich text 標記（`<BHC>`、`<RGB:1,1,1>`），所以這是設計行為、不是 bug，寫文案時
+> 就得避開角括號。單獨的 `>`（英文 `N > 0`）安全，因為條件要求 `<` 與 `>` 同時出現。
+> 換行方面兩條沙盒 UI 路徑（新遊戲頁 SandboxOptions.lua:665-666、伺服器設定頁
+> ServerSettingsScreen.lua:2522-2525）都會在交給控制項前做
+> `tooltip:gsub("\\n", "\n")`，所以**字面 `\n` 本來就會正常換行**，既有 13 條與原版
+> 那 35 條都沒問題；本次改用實體換行是因為它在兩條路徑都成立（gsub 找不到字面
+> `\\n` 即 no-op，接著 ISRichTextPanel:445 把實體 LF 換成兩側帶空格的 `<LINE>`），
+> 一個檔案裡只留一種寫法比較好維護。新增守衛
+> `python scripts/tests/test_sandbox_tooltip_richtext.py`：把該 tokenizer 逐句移植
+> 過來跑四語 160 個翻譯值，「含 `<`」「會被吞掉的文字」「連續換行」任一出現即 fail
+> （negative test 能復現 `players_` 整段消失的現象）；字面 `\n` 也一併擋掉，理由是
+> 寫法一致，不是它會壞。
 
 - **兩張 MOD 地圖重疊時，小地圖影像顯示錯的那一張**（玩家回報：同時啟用
   Grapeseed 與 Greenleaf 時，Grapeseed 北緣兩個區塊在小地圖上「消失」、
