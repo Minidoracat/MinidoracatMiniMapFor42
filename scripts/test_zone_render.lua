@@ -119,6 +119,9 @@ local function getSpecificPlayer(pn)
         getY = function() return playerPos[2] end,
     }
 end
+-- zcCandidates 的區段外相依：可控假時鐘（TTL 測試用；PZ 端是 getTimestampMs）
+local fakeNowMs = 0
+local function getTimestampMs() return fakeNowMs end
 ]=]
 local zoneSuffix = [=[
 return {
@@ -149,6 +152,7 @@ return {
     resetLogs = function() for i = #logs, 1, -1 do logs[i] = nil end end,
     edgeCount = function() return drawClippedEdgeCount end,
     resetEdgeCount = function() drawClippedEdgeCount = 0 end,
+    advanceClock = function(ms) fakeNowMs = fakeNowMs + ms end,
 }
 ]=]
 local zoneChunk, zoneErr = compile(zonePrelude .. "\n" .. zoneBody .. "\n" .. zoneSuffix)
@@ -1338,3 +1342,245 @@ MinidoracatMiniMapPOIData = nil
 MinidoracatMiniMapPOICategories = nil
 
 print("poi convert: rn/r 契約 / x2=x+w / iconOnce / lodRect / 整棟外框 / 略過與 gate cases passed")
+
+--------------------------------------------------------------------------------
+-- A14 候選快取（ZC，2026-08-19）：命中證據／TTL 兜底／換表即時失效／視窗溢出／
+-- stale-remove sentinel／iconRect 聯集／時鐘回撥／距離閘與移動鍵／disCats 鍵
+-- （既有 A9/A9b 是 halo 底襯，故本區塊編 A14——編號唯一性）
+--------------------------------------------------------------------------------
+do
+    zone.clearProviders()
+    zone.resetLogs()
+    zone.setAABB(0, 100, 0, 100)
+    -- A14-1 同表原地 append（identity 不變）：TTL 內沿用舊候選＝命中的直接證據；
+    -- 推進假時鐘超過 TTL 後重建，append 的 zone 才可見
+    local tbl = visibleZone()
+    zone.addProvider("cacheProbe", function() return tbl end)
+    local inner = makeInner()
+    zone.fill(inner)
+    assert(inner.polyCount == 1, "A14-1 初繪應畫 1 個 zone（得 " .. inner.polyCount .. "）")
+    tbl[2] = { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+        rects = { { x1 = 30, y1 = 30, x2 = 40, y2 = 40 } } }
+    zone.fill(inner)
+    assert(inner.polyCount == 2,
+        "A14-1 TTL 內原地 append 不應立即可見（快取命中證據；得 " .. inner.polyCount .. "）")
+    zone.advanceClock(1001)
+    zone.fill(inner)
+    assert(inner.polyCount == 4,
+        "A14-1 TTL 過期重建應畫出 append 的 zone（得 " .. inner.polyCount .. "）")
+
+    -- A14-6 時鐘回撥：now < builtMs 視為到期（append 立即可見，不必等 TTL）
+    tbl[3] = { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+        rects = { { x1 = 50, y1 = 50, x2 = 60, y2 = 60 } } }
+    zone.advanceClock(-5000)
+    zone.fill(inner)
+    assert(inner.polyCount == 7,
+        "A14-6 時鐘回撥應立即重建（3 zone 全畫；得 " .. inner.polyCount .. "）")
+    zone.clearProviders()
+
+    -- A14-4 同表原地 remove：TTL 內候選存舊索引，zones[idx] 變 nil——sentinel
+    -- 必須跳過而非拋錯（拋錯＝safeDrawZone 中止＝整層圖層當幀消失）
+    local rt = { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+        rects = { { x1 = 10, y1 = 10, x2 = 20, y2 = 20 } } },
+        { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+            rects = { { x1 = 30, y1 = 30, x2 = 40, y2 = 40 } } } }
+    zone.addProvider("removeProbe", function() return rt end)
+    local ri = makeInner()
+    zone.fill(ri)
+    assert(ri.polyCount == 2, "A14-4 移除前應畫 2（得 " .. ri.polyCount .. "）")
+    table.remove(rt, 1)   -- zones[2] 變 nil、zones[1] 位移
+    zone.resetLogs()
+    zone.fill(ri)
+    assert(ri.polyCount == 3,
+        "A14-4 TTL 內 stale index 應被 sentinel 跳過且不中止 pass（得 " .. ri.polyCount .. "）")
+    assert(zone.logCount() == 0, "A14-4 stale index 不得產生 provider 錯誤 log")
+    zone.clearProviders()
+
+    -- A14-2 換表（identity 變）：不等 TTL、下一幀立即生效
+    local t1 = visibleZone()
+    local cur = t1
+    zone.addProvider("swapProbe", function() return cur end)
+    local i2 = makeInner()
+    zone.fill(i2)
+    assert(i2.polyCount == 1, "A14-2 換表前應畫 1（得 " .. i2.polyCount .. "）")
+    local t2 = visibleZone()
+    t2[2] = { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+        rects = { { x1 = 30, y1 = 30, x2 = 40, y2 = 40 } } }
+    cur = t2
+    zone.fill(i2)
+    assert(i2.polyCount == 3, "A14-2 換表應立即失效重建（得 " .. i2.polyCount .. "）")
+    zone.clearProviders()
+
+    -- A14-3 視窗溢出：候選建於外擴框，視窗移出即重建。恆等投影下用大 inner
+    -- （400×400）讓遠處 zone 進窗後畫得出來
+    local far = { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+        rects = { { x1 = 300, y1 = 300, x2 = 310, y2 = 310 } } } }
+    zone.addProvider("farProbe", function() return far end)
+    local i3 = makeInner()
+    i3.width, i3.height = 400, 400
+    zone.setAABB(0, 100, 0, 100)
+    zone.fill(i3)
+    assert(i3.polyCount == 0, "A14-3 遠處 zone（窗外 >pad）不應入畫（得 " .. i3.polyCount .. "）")
+    zone.setAABB(250, 400, 250, 400)
+    zone.fill(i3)
+    assert(i3.polyCount == 1,
+        "A14-3 視窗溢出應立即重建並畫出新視野 zone（得 " .. i3.polyCount .. "）")
+    zone.clearProviders()
+    zone.setAABB(0, 100, 0, 100)
+
+    -- A14-5 iconRect 在 rects 聯集外：候選 bbox 必須併 iconRect，否則「框在遠處、
+    -- 圖標釘在窗內」的合法 zone 被整個裁掉、icons pass 連判斷都到不了
+    local ic = { { icon = { tex = "t", r = 1, g = 1, b = 1 },
+        rects = { { x1 = 500, y1 = 500, x2 = 510, y2 = 510 } },
+        iconRect = { x1 = 40, y1 = 40, x2 = 58, y2 = 58 } } }
+    zone.addProvider("iconProbe", function() return ic end)
+    local i4 = makeInner()
+    i4.texCount = 0
+    i4.drawTextureScaled = function(self) self.texCount = self.texCount + 1 end
+    zone.icons(i4)
+    assert(i4.texCount == 1,
+        "A14-5 iconRect 在窗內時圖標必須畫（bbox 未併 iconRect 會漏；得 " .. i4.texCount .. "）")
+    zone.clearProviders()
+
+    -- A14-7 距離閘（internal）＋移動鍵：閘外 zone 不入候選；玩家移動 >16 格
+    -- 重建後入畫；移動 ≤16 格沿用（append 探針不可見）。fixture 幾何全在視窗
+    -- （0..100）內——pass 的 rect 級預裁與快取無關，不得拿窗外 zone 當探針
+    local dz = { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+        rects = { { x1 = 95, y1 = 95, x2 = 99, y2 = 99 } } } }
+    zone.addProvider("distProbe", function() return dz end, true)
+    zone.setPoiDist(5)          -- loose 半徑 = 5 + pad(64.2) + 16 = 85.2
+    zone.setPlayerPos(5, 5)     -- 距 zone ~127 格 > 85.2 → 不入候選
+    local i5 = makeInner()
+    zone.fill(i5)
+    assert(i5.polyCount == 0, "A14-7 閘外 zone 不應入畫（得 " .. i5.polyCount .. "）")
+    zone.setPlayerPos(92, 92)   -- 移動 ~123 格 > 16 → 重建；距 zone ~4.2 ≤ 5 → 精確判通過
+    zone.fill(i5)
+    assert(i5.polyCount == 1,
+        "A14-7 玩家移動超過閾值應重建並畫出閘內 zone（得 " .. i5.polyCount .. "）")
+    dz[2] = { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+        rects = { { x1 = 80, y1 = 80, x2 = 90, y2 = 90 } } }
+    zone.setPlayerPos(94, 94)   -- 移動 ~2.8 格 ≤ 16 → 沿用舊候選（append 不可見）
+    zone.fill(i5)
+    assert(i5.polyCount == 2,
+        "A14-7 移動 ≤16 格應沿用候選（append 探針不可見；得 " .. i5.polyCount .. "）")
+    zone.setPoiDist(nil)        -- 距離閘參數變（gate2 鍵）→ 立即重建：閘撤銷後
+    zone.fill(i5)               -- dz[1]＋append 的 dz[2] 都應出現，不得等 TTL
+    assert(i5.polyCount == 4,
+        "A14-7 距離閘參數改變應立即重建（得 " .. i5.polyCount .. "）")
+    zone.setPlayerPos(50, 50)
+    zone.clearProviders()
+
+    -- A14-8 disCats 鍵是正確性條件：「停用」方向有 pass 內精確判擋（雙重判），
+    -- 但「重新啟用」方向只有鍵失效重建才能把已被候選排除的 zone 加回——
+    -- 先在停用狀態下強制重建（TTL 過期）讓候選真正排除，再啟用驗證回歸
+    local ct = { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, category = "cat1",
+        rects = { { x1 = 10, y1 = 10, x2 = 20, y2 = 20 } } } }
+    zone.addProvider("catProbe", function() return ct end)
+    local i6 = makeInner()
+    zone.fill(i6)
+    assert(i6.polyCount == 1, "A14-8 停用前應畫 1（得 " .. i6.polyCount .. "）")
+    zone.setCatFilter("cat1")
+    zone.advanceClock(1001)   -- 停用狀態下強制重建：候選此後真正排除該 zone
+    zone.fill(i6)
+    assert(i6.polyCount == 1,
+        "A14-8 停用類別應生效（得 " .. i6.polyCount .. "）")
+    zone.setCatFilter(nil)    -- 重新啟用：TTL 未過，唯一能救回 zone 的是 disCats 鍵
+    zone.fill(i6)
+    assert(i6.polyCount == 2,
+        "A14-8 重新啟用類別應立即重建並畫回 zone（disCats 鍵正確性；得 " .. i6.polyCount .. "）")
+    zone.clearProviders()
+
+    -- A14-9 三 pass 共用同一候選：fill 建快取後 lines/icons 必須命中同一份——
+    -- TTL 內同表 append 對三 pass 都不可見；若 lines/icons 繞過快取全量掃描，
+    -- append 立即可見＝紅（鎖住「三 pass 共用」這項核心收益，codex review）
+    local sh = { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, name = "Z",
+        border = { r = 1, g = 1, b = 1 }, borderAlpha = 0.5,
+        icon = { tex = "t", r = 1, g = 1, b = 1 },
+        rects = { { x1 = 10, y1 = 10, x2 = 28, y2 = 28 } } } }
+    zone.addProvider("shareProbe", function() return sh end)
+    local i7 = makeInner()
+    i7.texCount = 0
+    i7.drawTextureScaled = function(self) self.texCount = self.texCount + 1 end
+    zone.fill(i7)
+    assert(i7.polyCount == 1, "A14-9 fill 應畫 1（得 " .. i7.polyCount .. "）")
+    sh[2] = { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, name = "Z2",
+        border = { r = 1, g = 1, b = 1 }, borderAlpha = 0.5,
+        icon = { tex = "t", r = 1, g = 1, b = 1 },
+        rects = { { x1 = 40, y1 = 40, x2 = 58, y2 = 58 } } }
+    zone.resetEdgeCount()
+    zone.lines(i7)
+    assert(zone.edgeCount() == 4,
+        "A14-9 lines 應命中 fill 建的候選（append 不可見＝4 邊；得 " .. zone.edgeCount() .. "）")
+    zone.icons(i7)
+    assert(i7.texCount == 1,
+        "A14-9 icons 應命中同一候選（append 不可見＝1 圖標；得 " .. i7.texCount .. "）")
+    zone.advanceClock(1001)
+    zone.fill(i7)
+    assert(i7.polyCount == 3,
+        "A14-9 TTL 重建後 append 應可見（活性檢查；得 " .. i7.polyCount .. "）")
+    zone.clearProviders()
+
+    -- A14-10 halo containment 餘裕（殺「bMin/bMax 折疊成 qMin/qMax」變異）：
+    -- zone 落在 qMax..qMax+haloPad 帶內（建構篩選框內、containment 框外）——
+    -- 視窗平移滿 PAD（不觸發溢出重建）後其 halo 伸進窗，必須畫得出來；
+    -- 折疊變異讓該 zone 根本不入候選＝halo 永不出現
+    local hz = { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, haloAlpha = 0.5,
+        rects = { { x1 = 165, y1 = 40, x2 = 166, y2 = 41 } } } }
+    zone.addProvider("haloProbe", function() return hz end)
+    local i8 = makeInner(1)     -- scale=1：haloPad=ZONE_HALO_PX/1=2 世界格
+    i8.width, i8.height = 400, 400
+    zone.setAABB(0, 100, 0, 100)   -- qMaxX=164、建構篩選框=166：zone x1=165 入候選
+    zone.fill(i8)
+    assert(i8.polyCount == 0, "A14-10 建快取時 zone 與 halo 皆窗外（得 " .. i8.polyCount .. "）")
+    zone.setAABB(64, 164, 0, 100)  -- 平移滿 PAD：vMax=164=qMax 命中沿用候選
+    zone.fill(i8)
+    assert(i8.polyCount == 1,
+        "A14-10 halo（165-2=163 ≤ 164）應伸進窗被畫：候選須含 containment 框外、"
+        .. "篩選框內的 zone（得 " .. i8.polyCount .. "）")
+    zone.clearProviders()
+    zone.setAABB(0, 100, 0, 100)
+
+    -- A14-11 scale 鍵（殺「刪 e.scale == scale」變異）：zoom 檔位變化未必伴隨
+    -- 視窗溢出（恆等投影下視窗完全不動）——scale 是獨立失效鍵，變化必須立即重建
+    local sc = 10
+    local st = visibleZone()
+    zone.addProvider("scaleProbe", function() return st end)
+    local i9 = makeInner()
+    i9.mapAPI.getWorldScale = function() return sc end
+    zone.fill(i9)
+    assert(i9.polyCount == 1, "A14-11 建快取應畫 1（得 " .. i9.polyCount .. "）")
+    st[2] = { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+        rects = { { x1 = 30, y1 = 30, x2 = 40, y2 = 40 } } }
+    sc = 3                       -- 視窗不變、TTL 內、同表：唯一失效因子是 scale
+    zone.fill(i9)
+    assert(i9.polyCount == 3,
+        "A14-11 scale 變化應立即重建（append 可見＝再畫 2；得 " .. i9.polyCount .. "）")
+    zone.clearProviders()
+
+    -- A14-12 stale index 必須走 rawget（殺「rawget(zones,·) 改回 zones[·]」變異）：
+    -- 帶 __index 的 addon 表在 TTL 內被挖洞時，普通索引會觸發 __index——
+    -- 以數字鍵計數器證明消費端讀洞絕不觸發 metatable（Grok review）
+    local numHits = 0
+    local mt = { __index = function(_, k)
+        if type(k) == "number" then numHits = numHits + 1 end
+        return nil
+    end }
+    local rt2 = setmetatable({ { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+        rects = { { x1 = 10, y1 = 10, x2 = 20, y2 = 20 } } },
+        { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+            rects = { { x1 = 30, y1 = 30, x2 = 40, y2 = 40 } } } }, mt)
+    zone.addProvider("rawgetProbe", function() return rt2 end)
+    local i10 = makeInner()
+    zone.fill(i10)
+    assert(i10.polyCount == 2, "A14-12 移除前應畫 2（得 " .. i10.polyCount .. "）")
+    table.remove(rt2, 1)
+    zone.resetLogs()
+    zone.fill(i10)
+    assert(i10.polyCount == 3,
+        "A14-12 TTL 內 stale index 應被跳過且不中止（得 " .. i10.polyCount .. "）")
+    assert(numHits == 0,
+        "A14-12 讀 stale 洞必須走 rawget——數字鍵 __index 被觸發 " .. numHits .. " 次")
+    assert(zone.logCount() == 0, "A14-12 不得產生 provider 錯誤 log")
+    zone.clearProviders()
+    print("zone candidate cache (ZC) A14 cases passed")
+end

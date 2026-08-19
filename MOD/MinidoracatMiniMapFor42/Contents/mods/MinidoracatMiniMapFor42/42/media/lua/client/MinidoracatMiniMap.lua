@@ -115,7 +115,11 @@ end
 -- 在小地圖與世界地圖填半透明色＋畫框線＋標名稱。zoneApiVersion 供 addon 掛載前守衛
 -- 版本（契約 C1）——舊主 MOD 無此欄位／無 registerZoneProvider，addon 應安靜降級。
 -- provider 契約（C2）：providerFn 每幀被呼叫（世界＋小地圖），必須回傳「快取 table」、
--- 勿每幀重建/過濾/合併；本 MOD 對回傳只讀不改。zone schema（provider 產、繪製端讀）：
+-- 勿每幀重建/過濾/合併；本 MOD 對回傳只讀不改。zones 必須是**連續陣列**（1..n 無
+-- nil 洞）——渲染端與候選快取都以 `#` 遍歷；移除元素用 table.remove（緊縮）。
+-- `zones[i]=nil` 挖洞屬違約輸入：本 MOD 保證不拋錯（sentinel／nil guard），但 `#`
+-- 對有洞的表未定義，洞後項目可能整段不掃（＝漏畫，且此語意快取前即如此）。
+-- zone schema（provider 產、繪製端讀）：
 --   { id=string, name=string|nil(已翻譯顯示名；nil＝不畫名稱),
 --     rects={ { x1=, y1=, x2=, y2= }, ... }(世界 square 座標；硬性要求 x1<x2、y1<y2——
 --       三個 pass 的視野預裁都假設此序，反向 rect 會被一致地過嚴裁掉而整個消失),
@@ -147,7 +151,9 @@ end
 --     純圖標模式靠此免去 fill/lines 每幀空掃全部 zone）；nil＝未聲明，照舊逐
 --     zone 判斷——外部 addon 不設即行為不變。旗標須與內容同步重建（錯設漏畫是
 --     provider 的 bug）。
---     lodRect={ x1=, y1=, x2=, y2= }|nil(選配；有給＝參與縮放 LOD——
+--     lodRect={ x1=, y1=, x2=, y2= }|nil(選配；**必須涵蓋該 zone 全部 rects**
+--       （涵蓋框；0.16.0 起候選快取於所有檔位依它裁切，先前僅 LOD 檔位——
+--       過小的 lodRect 會讓 zone 在細節檔整個消失）。有給＝參與縮放 LOD——
 --       worldScale < ZONE_LOD_HIDE 時 fill 整區不畫、< ZONE_LOD_DETAIL 時
 --       fill 只畫此聯集框（純填色，框線與名稱僅細節檔）、圖標於 < DETAIL 時
 --       做同格去重疊（同一「圖標尺寸」螢幕格只畫第一顆，細節檔全畫）。
@@ -2873,6 +2879,150 @@ local function zoneWithinDist(z, px, py, dist2)
     return false
 end
 
+-- ═══ 三 pass 共用：視窗候選快取（ZC；2026-08-19 GameProfiler Y/W 輪定位） ═══
+-- 熱點不是 draw call 而是 Kahlua 每 UI 幀 3 pass × 全量 zone（POI ~1669 筆）的
+-- 篩選迴圈本身（無 JIT，每迴圈體 ~µs 級；W/Y 差分：Lua 疊繪 ~6.0ms/次中
+-- POI/Zone 佔 ~5.6ms）。快取「與外擴視窗相交＋通過共通閘門」的候選索引，
+-- 三 pass 共用同一份；pass 專屬條件（fillAlpha/border/icon/LOD/精確距離閘）
+-- 仍逐候選判定——候選是精確集的超集，繪製結果逐像素不變。
+-- 失效鍵：zones 表引用（POI 重建即換表）＋ disCats 集引用＋ 距離閘參數
+-- （僅 internal provider：pass 內同條件短路，外部 provider 的候選集與玩家
+-- 座標無關，不得因玩家移動被迫重建）＋ 玩家移動 >16 格（僅距離閘生效時）＋
+-- 視窗溢出外擴框（zoom/尺寸變化必溢出）＋ TTL 1s——registerZoneProvider 契約
+-- 只要求回表，允許 addon 原地增刪同一表，identity 抓不到 mutate，TTL 兜底
+-- （stale 顯示上限 1s；靜態 addon 零影響）。TTL 存建構時刻而非到期時刻：
+-- 時鐘回撥（now < builtMs）視為到期，與玩家座標匯出的節流慣例一致。
+-- provider.fn 每幀照呼（identity 鍵需要當前表引用）；每幀回新表的 addon 自然
+-- 退化為每幀重建——即原全量掃描成本，外加每 zone 一次 zcZoneBBox 呼叫與
+-- list 寫入（對該類 provider 是淨增；addon 回報 0.16.0 後變慢先查此），不錯繪。
+local ZC_PAD = 64      -- 候選外擴（世界格）：站立零重建，移動每 ~PAD/4 格一次
+local ZC_TTL_MS = 1000
+local ZC_MOVE2 = 256   -- 距離閘生效時玩家移動平方閾值（16 格）
+
+-- zone 可繪幾何的聯集 AABB：lodRect 或逐 rects，再併 iconRect——
+-- lodRect 是 provider API 契約要求的 rects 涵蓋框（registerZoneProvider 文檔；
+-- 內部 POI provider 由建構保證）：不合規（過小）的 lodRect 先前只影響 LOD
+-- 檔位，本快取讓 detail zoom 也依它裁候選（信任契約與 lodSingle 一致）。
+-- iconRect 是「rects 外」的合法圖標錨點（icons pass 契約：四欄齊備才採用），
+-- 不併會讓「框在 A、圖標釘在 B」的合法 zone 被候選整個裁掉（codex/grok review）
+local function zcZoneBBox(z)
+    local x1, y1, x2, y2
+    local lod = z.lodRect
+    if lod then
+        x1, y1, x2, y2 = lod.x1, lod.y1, lod.x2, lod.y2
+    else
+        local rects = z.rects
+        local n = rects and #rects or 0
+        if n > 0 then
+            local rc = rects[1]
+            x1, y1, x2, y2 = rc.x1, rc.y1, rc.x2, rc.y2
+            for i = 2, n do
+                rc = rects[i]
+                if rc.x1 < x1 then x1 = rc.x1 end
+                if rc.y1 < y1 then y1 = rc.y1 end
+                if rc.x2 > x2 then x2 = rc.x2 end
+                if rc.y2 > y2 then y2 = rc.y2 end
+            end
+        end
+    end
+    local ir = z.iconRect
+    if ir and ir.x1 and ir.y1 and ir.x2 and ir.y2 then
+        if x1 == nil then
+            x1, y1, x2, y2 = ir.x1, ir.y1, ir.x2, ir.y2
+        else
+            if ir.x1 < x1 then x1 = ir.x1 end
+            if ir.y1 < y1 then y1 = ir.y1 end
+            if ir.x2 > x2 then x2 = ir.x2 end
+            if ir.y2 > y2 then y2 = ir.y2 end
+        end
+    end
+    return x1, y1, x2, y2
+end
+
+-- 消費端 stale-index sentinel：TTL 內同表被原地移除元素時 zones[cand[ci]] 為
+-- nil——回這張凍結空表讓 pass 的既有條件（z.fill/z.border/z.icon 全 nil）自然
+-- 跳過，不得拋錯——否則 safeDrawZone 中止＝整層圖層當幀消失（codex review）
+local ZC_EMPTY = {}
+
+local function zcCandidates(inner, provider, zones, disCats, scale,
+                            vMinX, vMaxX, vMinY, vMaxY, ppx, ppy, pdist2)
+    local zc = inner._minidoracatZC
+    if not zc then zc = {}; inner._minidoracatZC = zc end
+    local gate2 = provider.internal and pdist2 or nil
+    local e = zc[provider]
+    local now = getTimestampMs()
+    -- zones 表比較用 rawequal：外部 addon 的表帶 __eq metatable 時 `==` 會呼叫
+    -- 它——誤判相等＝沿用錯候選、拋錯＝整個 pass 中止（codex review）。disCats
+    -- 走 `==`（zoneDisabledCats 只回內部 cache 表或 nil，無 __eq 面）。rawequal/
+    -- rawget 在 Kahlua BaseLib 有註冊——證據 scripts/tests/test_kahlua_globals.py
+    -- 的 verified 白名單（勿「簡化」回 ==／[]，那正是要防的路徑）。
+    -- 失效鍵：zones 表引用／disCats 集引用／距離閘參數（僅 internal）／scale
+    -- （zoom 檔位；halo 世界尺寸依它）／TTL／containment 框／玩家移動（閘生效時）
+    if e and rawequal(e.zones, zones) and e.disCats == disCats and e.gate2 == gate2
+        and e.scale == scale -- zoom 檔位未必伴隨視窗溢出：獨立失效鍵（A14-11 鎖）
+        and now >= e.builtMs and now - e.builtMs < ZC_TTL_MS
+        and vMinX >= e.qMinX and vMaxX <= e.qMaxX
+        and vMinY >= e.qMinY and vMaxY <= e.qMaxY then
+        if not gate2 then return e.list end
+        local dx, dy = ppx - e.ppx, ppy - e.ppy
+        if dx * dx + dy * dy <= ZC_MOVE2 then return e.list end
+    end
+    if not e then
+        e = {}
+        zc[provider] = e
+    end
+    e.zones = zones
+    e.disCats = disCats
+    e.gate2 = gate2
+    e.scale = scale
+    e.ppx, e.ppy = ppx, ppy
+    e.builtMs = now
+    -- 兩層外擴框（codex review：halo 必須留在「containment 之外」的餘裕）——
+    --   containment 框（qMin/qMax）＝視窗 ±ZC_PAD：命中時允許視窗平移的上限；
+    --   建構篩選框（bMin/bMax）＝視窗 ±(ZC_PAD＋halo 世界尺寸)：zone bbox 相交
+    --   測試用。如此「篩選框外的 zone」距任何允許的視窗恆 > halo，其 halo
+    --   繪製外擴（ZONE_HALO_PX/scale）伸不進窗——超集在平移滿 PAD 時仍成立
+    local haloPad = ZONE_HALO_PX / scale
+    e.qMinX, e.qMaxX = vMinX - ZC_PAD, vMaxX + ZC_PAD
+    e.qMinY, e.qMaxY = vMinY - ZC_PAD, vMaxY + ZC_PAD
+    local bMinX, bMaxX = e.qMinX - haloPad, e.qMaxX + haloPad
+    local bMinY, bMaxY = e.qMinY - haloPad, e.qMaxY + haloPad
+    -- 距離閘鬆判上限：精確 zoneWithinDist 留在各 pass 內，這裡 +PAD+halo+16
+    -- 保證「移動閾值內的任何精確通過者」都在候選中（精確判基準點與建構錨點
+    -- 至多差 16 格，rect 距離差至多同值；PAD/halo 項涵蓋視窗重用餘裕）
+    local loose2
+    if gate2 then
+        local r = math.sqrt(gate2) + ZC_PAD + haloPad + 16
+        loose2 = r * r
+    end
+    local list = e.list
+    if list then
+        for i = #list, 1, -1 do list[i] = nil end
+    else
+        list = {}; e.list = list
+    end
+    -- bbox 每次現算：重建本就全清語意（TTL 兜 in-place mutate），跨呼叫 memo
+    -- 是死路——留表只會每次重建配置 ~1670 個垃圾小表（claude review）
+    local n = 0
+    for zi = 1, #zones do
+        -- z 可為 nil：`zones[i]=nil` 挖洞屬違約輸入（契約 C2 要求連續陣列）。
+        -- guard 只保證不拋錯（與消費端 sentinel 對稱）；`#` 對洞表未定義，
+        -- 洞後項目可能不掃＝漏畫（快取前的三 pass 同此語意，非本快取引入）
+        local z = zones[zi]
+        if z then
+            local x1, y1, x2, y2 = zcZoneBBox(z)
+            if not (disCats and z.category and disCats[z.category])
+                and (not loose2 or zoneWithinDist(z, ppx, ppy, loose2))
+                and (x1 == nil or (x2 >= bMinX and x1 <= bMaxX
+                    and y2 >= bMinY and y1 <= bMaxY)) then
+                n = n + 1
+                list[n] = zi
+            end
+        end
+    end
+    return list
+end
+
 local function drawZoneFillBody(inner)
     local mapAPI = inner.mapAPI
     local w, h = inner.width, inner.height
@@ -2908,8 +3058,10 @@ local function drawZoneFillBody(inner)
         elseif type(zones) == "table" and zones.hasFill ~= false then
             -- 外部 zone 類別篩選（內部 POI 走自家 Cat_，不受此清單影響）
             local disCats = not provider.internal and zoneDisabledCats() or nil
-            for zi = 1, #zones do
-                local z = zones[zi]
+            local cand = zcCandidates(inner, provider, zones, disCats, scale,
+                vMinX, vMaxX, vMinY, vMaxY, ppx, ppy, pdist2)
+            for ci = 1, #cand do
+                local z = rawget(zones, cand[ci]) or ZC_EMPTY -- rawget: stale slot 不得觸發第三方 __index（codex review）
                 local fill, rects = z.fill, z.rects
                 local lod = z.lodRect
                 -- fillAlpha==0（如 POI 圖標模式）早退，連投影都省；LOD 拉遠檔整區不畫；
@@ -3052,8 +3204,10 @@ local function drawZoneLines(inner)
             -- 「找區域」的主要手段，鎖細節檔會造成可尋性回退（實測回饋）；框線
             -- 仍維持細節檔限定。POI（internal）不受影響，名稱照鎖細節檔防洗版
             local nameFar = not provider.internal and getBoolOption("ZoneNamesFar", true)
-            for zi = 1, #zones do
-                local z = zones[zi]
+            local cand = zcCandidates(inner, provider, zones, disCats, scale,
+                vMinX, vMaxX, vMinY, vMaxY, ppx, ppy, pdist2)
+            for ci = 1, #cand do
+                local z = rawget(zones, cand[ci]) or ZC_EMPTY -- rawget: stale slot 不得觸發第三方 __index（codex review）
                 local border, rects = z.border, z.rects
                 local lod = z.lodRect
                 -- 框線與名稱解耦：borderAlpha==0 只代表「不畫框」，不該連坐名稱——
@@ -3179,7 +3333,8 @@ local function drawZoneIcons(inner)
     local ia = getSliderValue("PoiIconAlpha", 100, 10, 100) / 100
     local half = s / 2
     -- 中/遠距（<細節檔）對 lodRect zone 啟用圖標去重疊；細節檔全畫
-    local declutter = mapAPI:getWorldScale() < ZONE_LOD_DETAIL
+    local scale = mapAPI:getWorldScale()
+    local declutter = scale < ZONE_LOD_DETAIL
     iconGridGen = iconGridGen + 1
     -- 視野預裁（POI 擴至 ~1700 筆後，逐 rect 先投影再裁會付 ~3.4k 次/幀的
     -- Kahlua→Java worldToUI 呼叫）：先取一次可視世界外接框，rect 與框不相交者
@@ -3209,8 +3364,10 @@ local function drawZoneIcons(inner)
             zoneProviderErrorOnce(inner, provider.owner, zones)
         elseif type(zones) == "table" and zones.hasIcon ~= false then -- ZR-1（同 fill pass）
             local disCats = not provider.internal and zoneDisabledCats() or nil
-            for zi = 1, #zones do
-                local z = zones[zi]
+            local cand = zcCandidates(inner, provider, zones, disCats, scale,
+                vMinX, vMaxX, vMinY, vMaxY, ppx, ppy, pdist2)
+            for ci = 1, #cand do
+                local z = rawget(zones, cand[ci]) or ZC_EMPTY -- rawget: stale slot 不得觸發第三方 __index（codex review）
                 local icon, rects = z.icon, z.rects
                 -- 內部 provider 的 zone 過 POI 距離閘（與 fill/lines 同判定，整棟一致
                 -- 顯隱；not pdist2 先行短路——閘未啟用不付逐 zone 呼叫）
