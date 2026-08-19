@@ -1252,3 +1252,11 @@ local function toggleSettingsWindow(outer)
 end
 -- 主檔開窗入口（小地圖齒輪 onButton4 wrap／世界地圖爪印鈕）呼叫時查表＋nil 防呆
 Core.toggleSettingsWindow = toggleSettingsWindow
+-- 外部改動引擎選項後的視窗刷新（小地圖視角鈕等）：視窗開著且屬同玩家才重建——
+-- 重建＝勾選框重讀現值（同 unifiedOnModTick 的 PlaceNames 分支「重建即同步」先例）；
+-- 關著/他人視窗不動（開窗本就重建、他人視窗讀的是他自己的小地圖）
+Core.refreshSettingsWindow = function(pn)
+    if settingsUI and settingsUI:isVisible() and settingsUI._playerNum == (pn or 0) then
+        unifiedRebuild(settingsUI)
+    end
+end

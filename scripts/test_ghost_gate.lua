@@ -118,6 +118,10 @@ local function mkMM(rec)
 end
 
 local applyEnv = [=[
+local printed = {}
+local function print(msg) printed[#printed + 1] = tostring(msg) end
+local fakeNow = 0 -- 假時鐘：重試節流（retryAt）測試用
+local function getTimestampMs() return fakeNow end
 local ghostOn = true
 local sliderVal = 50
 local function isGhost() return ghostOn end
@@ -133,10 +137,13 @@ local function getPlayerMiniMap(pn) return minimaps[pn] end
 local applyChunk = assert(compile(applyEnv .. applyBody .. "\n" .. [=[
 return {
     applyGhost = applyGhost,
+    ghostFrameTick = ghostFrameTick,
     Core = Core,
+    printed = printed,
     setGhost = function(v) ghostOn = v end,
     setMiniMaps = function(t) minimaps = t end,
     setSlider = function(v) sliderVal = v end,
+    setNow = function(v) fakeNow = v end,
 }
 ]=], "ghost-apply"))()
 
@@ -225,13 +232,14 @@ local function mkStyle(layers)
         getLayerByIndex = function(_, i) return layers[i] end,
     }
 end
--- mapAPI stub：底紙/未探索遮罩三方法記錄最後一次呼叫的 alpha
+-- mapAPI stub：底紙/未探索遮罩三方法記錄最後一次呼叫的 alpha 與未探索 rgb
+-- （引擎 shader 不吃未探索 col.a——worldMapVisited.frag:13，穿透以 rgb×滑條暗化）
 local function mkMapAPI(style)
     local A = { calls = {} }
     A.getStyleAPI = function() return style end
     A.setBackgroundRGBA = function(_, r, g, b, a) A.calls.bg = a end
-    A.setUnvisitedRGBA = function(_, r, g, b, a) A.calls.uv = a end
-    A.setUnvisitedGridRGBA = function(_, r, g, b, a) A.calls.uvg = a end
+    A.setUnvisitedRGBA = function(_, r, g, b, a) A.calls.uv = a; A.calls.uvR = r end
+    A.setUnvisitedGridRGBA = function(_, r, g, b, a) A.calls.uvg = a; A.calls.uvgR = r end
     return A
 end
 rec = {}
@@ -250,6 +258,11 @@ assert(paper.fills[0].a == 0, "A4: 底紙 texture 歸零")
 assert(pyr.fills[0].r == 10 and pyr.fills[1].g == 21, "A4: RGB 不得變動")
 assert(apiD.calls.bg == 0, "A4: 底紙 quad setBackgroundRGBA alpha 須歸零（第一死點）")
 assert(apiD.calls.uv == 0.5 and apiD.calls.uvg == 0.5, "A4: 未探索遮罩 alpha 須壓 0.5")
+local UV_BASE = (219 / 255) * 0.915 -- BG_R×0.915（Ghost.lua 常數）
+assert(math.abs(apiD.calls.uvR - UV_BASE * 0.5) < 1e-9,
+    "A4: 未探索 rgb 須 ×滑條值（shader 不吃 col.a——worldMapVisited.frag:13）")
+assert(math.abs(apiD.calls.uvgR - (219 / 255) * 0.777) < 1e-9,
+    "A4: 網格 rgb 不縮放（grid shader 吃 col.a——worldMapGrid.frag:15）")
 applyChunk.applyGhost(mmD) -- 第二次套用（多入口重複呼叫）
 assert(pyr.fills[0].a == 128, "A4: 冪等——重複套用不得複利遞減")
 
@@ -298,4 +311,126 @@ applyChunk.applyGhost(mmR)
 assert(pyr3.fills[0].a == 255 and txt3.fills[0].a == 200,
     "A8: index 對調後仍須以 id 反查還原（255/200，不得互換成 200/255 系錯值）")
 
-print("test_ghost_gate: OK（gate G1-G6＋清理 A1-A3＋壓暗分層 A4-A8）")
+-- A9: ghostFrameTick 自癒——無快照（Recreate 後/applyGhost 套到 stale 實例/曾靜默
+--     跳過）＋穿透中 → 現場補壓＋每幀重壓 bg/未探索遮罩（實測回歸：穿透開著
+--     卻整片不透明、影像層看似消失）
+applyChunk.setSlider(50)
+local pyr9 = mkLayer(1, 255, "Pyramid", "p9")
+local paper9 = mkLayer(1, 255, "Texture", "pa9")
+rec = {}
+local mmH = mkMM(rec)
+mmH.inner.mapAPI = mkMapAPI(mkStyle({ [0] = paper9, [1] = pyr9 }))
+applyChunk.setGhost(true)
+applyChunk.ghostFrameTick(mmH.inner)
+assert(pyr9.fills[0].a == 128 and paper9.fills[0].a == 0, "A9: 自癒須現場壓暗")
+assert(mmH.inner._minidoracatGhostSnap ~= nil, "A9: 自癒須建立快照")
+assert(mmH.inner.mapAPI.calls.bg == 0 and mmH.inner.mapAPI.calls.uv == 0.5,
+    "A9: tick 須重壓底紙 quad 與未探索遮罩")
+assert(math.abs(mmH.inner.mapAPI.calls.uvR - (219 / 255) * 0.915 * 0.5) < 1e-9,
+    "A9: tick 未探索 rgb 須 ×滑條值")
+
+-- A10: 掛載重建失效契約（主檔 applyMiniMapPyramids 清 alphaUsed）：重建層以全
+--      alpha 掛回 → tick 先還原再以現值重壓
+pyr9.fills[0].a = 255 -- 模擬 mountPyramidLayers 拆掛重建
+mmH.inner._minidoracatGhostSnap.alphaUsed = nil
+applyChunk.ghostFrameTick(mmH.inner)
+assert(pyr9.fills[0].a == 128, "A10: 重掛失效後 tick 須重壓 pyramid")
+assert(paper9.fills[0].a == 0, "A10: 重掛失效後 texture 仍歸零")
+
+-- A11: 穿透已關但殘留快照（漏套退場路徑）→ tick 收斂還原＋清快照
+applyChunk.setGhost(false)
+applyChunk.ghostFrameTick(mmH.inner)
+assert(pyr9.fills[0].a == 255 and paper9.fills[0].a == 255, "A11: 退場收斂須還原")
+assert(mmH.inner._minidoracatGhostSnap == nil, "A11: 還原成功須清快照")
+
+-- A12: 寫入中途失敗（多 stop 層第 2 stop 拋錯）：先照後寫＝整層快照在手；
+--      alphaUsed 被清（強制下幀重試）＋log-once；修好後 tick 收斂重壓
+local failing = mkLayer(2, 255, "Pyramid", "pf")
+local origSet = failing.setFillRGBA
+failing.setFillRGBA = function(self, i, r, g, b, a)
+    if i == 1 then error("injected setFillRGBA failure") end
+    origSet(self, i, r, g, b, a)
+end
+rec = {}
+local mmF = mkMM(rec)
+mmF.inner.mapAPI = mkMapAPI(mkStyle({ [0] = failing }))
+applyChunk.setGhost(true)
+applyChunk.applyGhost(mmF)
+local snapF = mmF.inner._minidoracatGhostSnap
+assert(snapF and snapF.layers.pf and snapF.layers.pf[0] == 255 and snapF.layers.pf[1] == 255,
+    "A12: 寫入失敗仍須有整層快照（先照後寫，不得丟憑證）")
+assert(failing.fills[0].a == 128, "A12: 失敗前已寫入的 stop 保持壓暗值（快照可還原）")
+assert(snapF.alphaUsed == nil, "A12: 部分壓暗須清 alphaUsed（強制重試）")
+assert(applyChunk.printed[1]
+    and applyChunk.printed[1]:find("dim layer write failed", 1, true),
+    "A12: 寫入失敗須 log-once 進 console")
+failing.setFillRGBA = origSet -- 修好：節流窗內 tick 不重試、跨窗後收斂（先還原再重壓）
+applyChunk.ghostFrameTick(mmF.inner)
+assert(failing.fills[1].a == 255, "A12: 節流窗內不得重試（每幀重試風暴防護）")
+applyChunk.setNow(1001) -- 跨過 1s 節流窗
+applyChunk.ghostFrameTick(mmF.inner)
+assert(failing.fills[0].a == 128 and failing.fills[1].a == 128, "A12: 修復後跨節流窗 tick 須收斂重壓")
+
+-- A13: 還原失敗：快照必須保留（清掉＝該層永久卡在壓暗值）＋獨立旗標 log-once；
+--      修好後跨節流窗重試成功才清快照
+failing.setFillRGBA = function() error("injected restore failure") end
+applyChunk.setGhost(false)
+applyChunk.setNow(2002) -- 跨過 A12 失敗設下的節流窗，讓還原真的執行
+applyChunk.ghostFrameTick(mmF.inner)
+assert(mmF.inner._minidoracatGhostSnap ~= nil, "A13: 還原失敗須保留快照供重試")
+assert(#applyChunk.printed == 2
+    and applyChunk.printed[2]:find("restore layer failed", 1, true),
+    "A13: 還原失敗須獨立旗標 log-once（不得被寫入失敗旗標靜音）")
+applyChunk.ghostFrameTick(mmF.inner)
+assert(#applyChunk.printed == 2, "A13: log-once——重試不得刷屏")
+failing.setFillRGBA = origSet
+applyChunk.setNow(3003) -- 跨節流窗
+applyChunk.ghostFrameTick(mmF.inner)
+assert(failing.fills[0].a == 255 and failing.fills[1].a == 255, "A13: 重試後須還原")
+assert(mmF.inner._minidoracatGhostSnap == nil, "A13: 還原成功後才清快照")
+
+-- A14: 分類失敗（getTypeString 拋錯）：pyramid 誤 skip 留 255、pyramidFound 誤 false
+--      使 polygon 誤當內容被壓；dimIncomplete → 修好後跨節流窗收斂成正確分層
+local badType = mkLayer(1, 255, "Pyramid", "bt")
+local origTS = badType.getTypeString
+badType.getTypeString = function() error("injected classify failure") end
+local poly14 = mkLayer(1, 255, "Polygon", "po14")
+rec = {}
+local mmC = mkMM(rec)
+mmC.inner.mapAPI = mkMapAPI(mkStyle({ [0] = badType, [1] = poly14 }))
+applyChunk.setGhost(true)
+applyChunk.applyGhost(mmC)
+assert(badType.fills[0].a == 255, "A14: 分類失敗層本輪不得被寫入")
+assert(poly14.fills[0].a == 128, "A14: pyramidFound 誤 false 時 polygon 被誤當內容（現狀行為）")
+assert(mmC.inner._minidoracatGhostSnap.alphaUsed == nil, "A14: 分類失敗須清 alphaUsed（強制重試）")
+badType.getTypeString = origTS -- 修好：跨節流窗後 tick 收斂
+applyChunk.setNow(4004)
+applyChunk.ghostFrameTick(mmC.inner)
+assert(badType.fills[0].a == 128, "A14: 收斂後 pyramid 依滑條壓暗")
+assert(poly14.fills[0].a == 0, "A14: 收斂後 polygon 歸零（被 pyramid 蓋住）")
+
+-- A15: 快照「前」拋錯（getLayerCount 缺失類）：snap 不存在、retryAt 無處寫——
+--      節流改走 inner._minidoracatGhostRetryAt；同窗只嘗試一次、跨窗重試、
+--      修好後自癒建快照並清 inner 欄位（codex review 抓出的節流繞過）
+local probeCount = 0
+local badSt = { getLayerCount = function() probeCount = probeCount + 1; error("injected style failure") end }
+rec = {}
+local mmE = mkMM(rec)
+mmE.inner.mapAPI = { getStyleAPI = function() return badSt end }
+applyChunk.setGhost(true)
+applyChunk.setNow(5005)
+applyChunk.ghostFrameTick(mmE.inner)
+applyChunk.ghostFrameTick(mmE.inner)
+assert(probeCount == 1, "A15: 同節流窗內只得嘗試一次（實得 " .. probeCount .. "）")
+assert(mmE.inner._minidoracatGhostRetryAt == 6005, "A15: 無快照拋錯須寫 inner 節流欄位")
+applyChunk.setNow(6006)
+applyChunk.ghostFrameTick(mmE.inner)
+assert(probeCount == 2, "A15: 跨節流窗須重試")
+local pyr15 = mkLayer(1, 255, "Pyramid", "p15")
+mmE.inner.mapAPI = mkMapAPI(mkStyle({ [0] = pyr15 }))
+applyChunk.setNow(7007)
+applyChunk.ghostFrameTick(mmE.inner)
+assert(pyr15.fills[0].a == 128 and mmE.inner._minidoracatGhostSnap ~= nil, "A15: 修復後自癒補壓")
+assert(mmE.inner._minidoracatGhostRetryAt == nil, "A15: 建到快照須清 inner 節流欄位")
+
+print("test_ghost_gate: OK（gate G1-G6＋清理 A1-A3＋壓暗分層 A4-A8＋收斂自癒 A9-A15）")

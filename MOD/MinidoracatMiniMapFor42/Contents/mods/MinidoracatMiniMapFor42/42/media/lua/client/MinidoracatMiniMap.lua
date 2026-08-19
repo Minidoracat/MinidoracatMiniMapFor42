@@ -619,7 +619,7 @@ local function mountPyramidLayers(styleAPI, entries)
         indices[i] = styleAPI:indexOfLayer(layerIds[i])
         if indices[i] ~= -1 then existed = existed + 1 end
     end
-    if not layersNeedRebuild(indices, styleAPI:getLayerCount()) then return end
+    if not layersNeedRebuild(indices, styleAPI:getLayerCount()) then return false end
 
     if existed > 0 then
         -- 自癒證據行「先印再動手」（中途失敗仍留診斷）＋指認當前最上層（壓層
@@ -660,6 +660,7 @@ local function mountPyramidLayers(styleAPI, entries)
     if added > 0 then
         log("layers ready (added " .. added .. " / " .. #layerIds .. " pyramid layers total)")
     end
+    return true -- 有拆掛重建（呼叫端據此失效穿透壓暗快照——重建層以全 alpha 掛回）
 end
 -- test:layer-mount:end
 
@@ -691,7 +692,17 @@ local function applyMiniMapPyramids(mapUI)
 
     -- 樣式層：疊在原版樣式之上，不清空原版（刻意不學 showTerrainImage 的
     -- styleAPI:clear()）。掛載/自癒細節見 mountPyramidLayers
-    mountPyramidLayers(styleAPI, entries)
+    local rebuilt = mountPyramidLayers(styleAPI, entries)
+    -- 穿透壓暗快照失效（防禦性前置條件，_Ghost.lua alphaUsed sentinel 契約）：拆掛
+    -- 重建的層以全 alpha 掛回，dim 的同值冪等檢查（alphaUsed==滑條值）會誤判「已壓
+    -- 過」而跳過重壓。**目前無活路徑**（三 lane review 呼叫點窮舉）：世界地圖單例
+    -- 從不被 dim＝永無快照；InitPlayer 的 inner 在 applyGhost（其後才跑）前必無快照；
+    -- Recreate＝整個 inner 換新、快照隨舊件消失。留著防未來新增「對既有 inner 原地
+    -- 重掛」的路徑時穿透靜默回歸（成本＝兩行）。快照鍵＝layer:getID()，重建層同
+    -- id、還原寫回重建前原值（255）＝no-op
+    if rebuilt and mapUI._minidoracatGhostSnap then
+        mapUI._minidoracatGhostSnap.alphaUsed = nil
+    end
 
     mapAPI:setBoolean("ImagePyramid", true)
 end
@@ -918,13 +929,13 @@ local function resizeMax(playerNum)
     return math.floor(math.min(getPlayerScreenWidth(playerNum), getPlayerScreenHeight(playerNum)) * RESIZE_MAX_RATIO)
 end
 
--- 7 顆按鈕（M - + C XY ⚙ X）的最小可容寬度抬高 RESIZE_MIN：必須在 InitPlayer 讀
+-- 8 顆按鈕（M - + ◇視角 C XY ⚙ X）的最小可容寬度抬高 RESIZE_MIN：必須在 InitPlayer 讀
 -- CustomSize 夾限「之前」呼叫——installMinidoracatButtons 的同款回寫發生在視窗建立
 -- 之後，救不到舊存小尺寸（如 180x180）的本 session 首次建立（X 鈕會溢出右緣）。
 -- 字級在 InitPlayer 時已就緒：鈕寬同原版 BUTTON_HGT 公式 getFontHeight(Small)+6
 local function raiseResizeMinForButtons()
     local bw = getTextManager():getFontHeight(UIFont.Small) + 6
-    local minW = 7 * bw + 6 * 2 + 2 * 2 + 4 -- 7 鈕＋6×2px 間距＋外框 2×2＋4
+    local minW = 8 * bw + 7 * 2 + 2 * 2 + 4 -- 8 鈕＋7×2px 間距＋外框 2×2＋4
     if minW > RESIZE_MIN then RESIZE_MIN = minW end
 end
 
@@ -1281,6 +1292,22 @@ if ISWorldMap and ISWorldMap.ShowWorldMap then
     end
 end
 
+-- 首建尺寸決策（純函式，離線測試 scripts/test_minimap_size.lua）：自訂尺寸 >
+-- 倍率縮放 > 原版尺寸，一律夾 minWH 下限。下限夾是 8 鈕回歸防護：原版「小」檔
+-- inner 寬 6*bw+72，8 鈕最低需 8*bw+14（2px 間距）——2x/3x/4x 字型資產
+-- bw=32/39/44 時原版寬各差 6/20/30px，X 鈕溢出右緣（7 鈕時代 bw=44 尚餘 16px，
+-- 屬視角鈕新增後的回歸，codex review 以算術抓出）。Core 匿名閉包＝零主 chunk
+-- locvar（Kahlua 200 上限對策）
+-- test:minimap-size:start
+Core.minimapSizeFor = function(width, height, customW, customH, scale, minWH)
+    local w = customW or math.floor(width * scale + 0.5)
+    local h = customH or math.floor(height * scale + 0.5)
+    if w < minWH then w = minWH end
+    if h < minWH then h = minWH end
+    return w, h
+end
+-- test:minimap-size:end
+
 -- 角落小地圖：ISMiniMap.InitPlayer 於玩家生成時建立（initDefaultStyleV1 後預設
 -- ImagePyramid=false，applyMiniMapPyramids 會蓋回 true）。注意小地圖本身受沙盒
 -- 選項 SandboxVars.Map.AllowMiniMap 控制（ISMiniMap.IsAllowed），沒開就不存在。
@@ -1291,19 +1318,21 @@ if ISMiniMap and ISMiniMap.InitPlayer then
         -- ISMiniMapOuter:new，之後 createChildren/instantiate 都以 self.width 排版
         -- （inner、titleBar、bottomPanel、按鈕置中）。建好後再 setWidth 追不回這些
         -- 子元件版面，還得手動同步 javaObject，故採「呼叫期間暫時覆寫
-        -- ISMiniMapOuter.new 放大寬高」——原版自己用新尺寸排版，零版面補丁。
+        -- ISMiniMapOuter.new 改寫寬高」——原版自己用新尺寸排版，零版面補丁。
+        -- 一律走覆寫（不再對 scale=1 無自訂尺寸開原版直通道）：原版寬足夠時
+        -- w==width、位移 0＝逐位同原版；不足（8 鈕高字級「小」檔）才抬到
+        -- RESIZE_MIN，見 Core.minimapSizeFor 註解
         local sizeIndex = getSizeIndex()
         local scale = SIZE_SCALES[sizeIndex]
         raiseResizeMinForButtons() -- 先抬下限再夾 CustomSize（見該函式註解）
         -- 自訂尺寸（邊緣拖曳縮放寫入）存在時優先於下拉倍率
         local customW, customH = getCustomSize(playerNum)
         local minimap
-        if (customW ~= nil or scale ~= 1.0) and ISMiniMapOuter then
+        if ISMiniMapOuter then
             local originalNew = ISMiniMapOuter.new
             ISMiniMapOuter.new = function(self, x, y, width, height, pn)
-                local w = customW or math.floor(width * scale + 0.5)
-                local h = customH or math.floor(height * scale + 0.5)
-                -- InitPlayer 以螢幕右下角定位（x = 右緣 - 10 - width），放大後
+                local w, h = Core.minimapSizeFor(width, height, customW, customH, scale, RESIZE_MIN)
+                -- InitPlayer 以螢幕右下角定位（x = 右緣 - 10 - width），改尺寸後
                 -- 平移 x/y 保持右下角錨點不變（prerender 的 setPosition 也會再校正）
                 return originalNew(self, x + width - w, y + height - h, w, h, pn)
             end
@@ -1737,11 +1766,11 @@ end
 -- locvar 上限 200 對策）；主檔僅留按鈕列與開窗入口，呼叫時查
 -- Core.toggleSettingsWindow＋nil 防呆（模組檔載入序在本檔之後）。
 --------------------------------------------------------------------------------
--- 按鈕列重排：7 顆（M - + C XY ⚙ X）以動態間距塞進 inner 寬度
+-- 按鈕列重排：8 顆（M - + ◇視角 C XY ⚙ X）以動態間距塞進 inner 寬度
 -- （原版置中排版只按 5 顆算，ISMiniMap.lua:417）
 local function relayoutBottomButtons(mm)
-    local order = { mm.button1, mm.button2, mm.button3, mm._minidoracatCenterBtn,
-        mm._minidoracatCopyBtn, mm.button4, mm.button6 }
+    local order = { mm.button1, mm.button2, mm.button3, mm._minidoracatPerspBtn,
+        mm._minidoracatCenterBtn, mm._minidoracatCopyBtn, mm.button4, mm.button6 }
     local btns = {}
     for i = 1, #order do
         if order[i] then btns[#btns + 1] = order[i] end
@@ -1806,6 +1835,45 @@ installMinidoracatButtons = function(mm)
     copyBtn.tooltip = getText("UI_MinidoracatMiniMap_BtnCopyCoords")
     mm.bottomPanel:addChild(copyBtn)
     mm._minidoracatCopyBtn = copyBtn
+    -- 視角切換（等軸測↔俯視）：同世界地圖 perspectiveBtn（ISWorldMap.lua:329-332、
+    -- onChangePerspective :1042-1044、setIsometric＝mapAPI:setBoolean("Isometric")
+    -- :1127-1130）；材質同原版（:1480-1481，48px，forceImageSize 縮進鈕面——
+    -- ISButton.lua:187-190/221-222）。與統一視窗「圖層顯示」的等軸測勾選
+    -- （_Settings UNIFIED_LAYER_TICKS engine=true）同一顆小地圖引擎布林＝同源：
+    -- 按鈕圖每幀值變才換（原版 WM prerender 讀值同步先例 :394-397），視窗/ESC
+    -- 改動不脫鉤；toggle 後同玩家的設定視窗開著即重建（Core.refreshSettingsWindow，
+    -- 同 PlaceNames tick 重建先例），勾選框立即反映。持久化＝原版既有流程
+    -- （saveSettings 存 MiniMap.Isometric，ISMiniMap.lua:605-616；ISPlayerData.lua:60
+    -- 觸發；:606 閘門＝僅 player 0 寫入——P2+ 本場即時生效、跨場不保存，原版限制）。
+    -- 材質缺失＝不建鈕（order 表 nil 自動過濾、n 動態）——降級安全
+    local texIso = getTexture("media/textures/worldMap/ViewIsometric.png")
+    local texOrtho = getTexture("media/textures/worldMap/ViewOrtho.png")
+    if texIso and texOrtho then
+        local perspBtn = ISButton:new(0, ref.y, ref.width, ref.height, "", mm, function(target)
+            local api = target.inner and target.inner.mapAPI
+            if not api then return end
+            api:setBoolean("Isometric", not api:getBoolean("Isometric"))
+            if Core.refreshSettingsWindow then
+                pcall(Core.refreshSettingsWindow, target.playerNum or 0)
+            end
+        end)
+        perspBtn:initialise()
+        perspBtn.borderColor = { r = 0.4, g = 0.4, b = 0.4, a = 1 }
+        perspBtn.tooltip = getText("UI_MinidoracatMiniMap_BtnPerspective")
+        perspBtn:forceImageSize(ref.width - 8, ref.height - 8)
+        local originalPerspPrerender = perspBtn.prerender
+        perspBtn.prerender = function(self)
+            local api = mm.inner and mm.inner.mapAPI
+            local iso = api and api:getBoolean("Isometric") or false
+            if iso ~= self._minidoracatIso then -- 值變才 setImage（首幀 nil≠布林必設）
+                self._minidoracatIso = iso
+                self:setImage(iso and texIso or texOrtho)
+            end
+            originalPerspPrerender(self)
+        end
+        mm.bottomPanel:addChild(perspBtn)
+        mm._minidoracatPerspBtn = perspBtn
+    end
     -- 「=」圖層面板鈕已退役：引擎原生三項移入統一視窗「圖層顯示」區。
     -- 原版面板機制（getVisibleOptions/onTickBox wrap 等）保留不拆——
     -- 面板已無入口，但第三方 MOD 若開啟它，注入與回寫仍正確
@@ -1815,16 +1883,17 @@ installMinidoracatButtons = function(mm)
     if mm.button2 then mm.button2.tooltip = getText("UI_MinidoracatMiniMap_BtnZoomOut") end
     if mm.button3 then mm.button3.tooltip = getText("UI_MinidoracatMiniMap_BtnZoomIn") end
     if mm.button6 then mm.button6.tooltip = getText("UI_MinidoracatMiniMap_BtnClose") end
-    local n = relayoutBottomButtons(mm) or 7
+    local n = relayoutBottomButtons(mm) or 8
     -- n 顆按鈕的最小可容寬度回寫尺寸下限（n＝order 表實際數量，單一來源）：UI 字型
     -- 放大時 BUTTON_HGT 跟著變大，動態墊高避免縮到溢出。InitPlayer 另以
     -- raiseResizeMinForButtons 在 CustomSize 夾限前先抬——本回寫發生在視窗建立後，
     -- 只服務「本 session 後續拖曳」的下限
     local minW = n * ref.width + (n - 1) * 2 + (mm.borderSize or 2) * 2 + 4
     if minW > RESIZE_MIN then RESIZE_MIN = minW end
-    -- ponytail: C/XY 兩顆新鈕都未登記手把導航列（原版 insertNewLineOfButtons 於
-    -- createChildren 一次性登記，事後補列會亂序）——手把用戶可從 ESC 選項頁控制
-    -- 顯示開關，但複製功能手把不可達（滑鼠限定）；需要時再補登記
+    -- ponytail: C/XY/視角 三顆新鈕都未登記手把導航列（原版 insertNewLineOfButtons 於
+    -- createChildren 一次性登記，事後補列會亂序）——手把用戶：顯示開關走 ESC 選項頁、
+    -- 視角另有兩條可達路徑（原版小地圖選項面板 Isometric 勾選 ISMiniMap.lua:104、
+    -- 世界地圖 perspectiveBtn），複製功能手把不可達（滑鼠限定）；需要時再補登記
 end
 
 -- 齒輪改開設定視窗（本體拆至 MinidoracatMiniMap_Settings.lua，呼叫時查命名空間）；
@@ -3626,30 +3695,58 @@ local function navClear(playerNum, playerObj)
     end
 end
 
--- 右鍵選單回呼（addOption 簽名同原版 debug 傳送項 ISMiniMap.lua:292）
-function ISMiniMapInner:onMinidoracatSetTarget(worldX, worldY)
-    local pn = self.playerNum or 0
+-- 導航動作共用實作（Core 匿名閉包＝零主 chunk locvar 成本，Kahlua 200 上限對策）：
+-- 小地圖（ISMiniMapInner，本檔）與世界地圖（ISWorldMap，_WorldMapNav.lua）兩面
+-- 共用同一批狀態與持久化路徑；世界地圖模組檔載入在後，經 Core 命名空間取用
+Core.navGetTarget = function(pn) return navTargets[pn] end
+Core.navSetTarget = function(pn, worldX, worldY)
     local playerObj = getSpecificPlayer(pn)
     if not playerObj then return end
     navTargets[pn] = { x = worldX, y = worldY }
     navSaveModData(playerObj, navTargets[pn])
-    if navShared[pn] then self:onMinidoracatShareTarget() end -- 分享中：移動即重新廣播
+    if navShared[pn] then Core.navShareTarget(pn) end -- 分享中：移動即重新廣播
 end
-
-function ISMiniMapInner:onMinidoracatClearTarget()
-    local pn = self.playerNum or 0
+Core.navClearTarget = function(pn)
     local playerObj = getSpecificPlayer(pn)
     if playerObj then navClear(pn, playerObj) end
 end
-
-function ISMiniMapInner:onMinidoracatShareTarget()
-    local pn = self.playerNum or 0
+Core.navShareTarget = function(pn)
     local playerObj = getSpecificPlayer(pn)
     local t = navTargets[pn]
     if not (playerObj and t and isClient()) then return end
     if sandboxGate("AllowNavShare", true) == false then return end -- 伺服器沙盒禁用
     navShared[pn] = true
     sendClientCommand(playerObj, "MinidoracatMiniMap", "shareTarget", { x = t.x, y = t.y })
+end
+
+-- 導航目標載回：掛 OnCreatePlayer（原版用例 ISPlayerData.lua:203、簽名同
+-- ISPerkLog.logCreatePlayer(_player)＝playerIndex）而非只靠 ISMiniMap.InitPlayer
+-- ——InitPlayer 受沙盒 AllowMiniMap 閘門（ISPlayerDataObject.lua:139-141），
+-- 關閉時不跑，世界地圖側（_WorldMapNav.lua）會漏載持久目標、或讀到同槽位
+-- 上一位角色的殘值（三 lane review 抓出）。InitPlayer 的載回段保留（Recreate
+-- 重建路徑同步），兩處讀同一 modData、冪等
+Events.OnCreatePlayer.Add(function(pn)
+    local playerObj = getSpecificPlayer(pn)
+    if not playerObj then return end
+    local md = playerObj:getModData()
+    if md and md.MinidoracatMiniMapTX and md.MinidoracatMiniMapTY then
+        navTargets[pn] = { x = md.MinidoracatMiniMapTX, y = md.MinidoracatMiniMapTY }
+    else
+        navTargets[pn] = nil -- 新角色/無目標：清同槽位舊角色殘值
+    end
+end)
+
+-- 右鍵選單回呼（addOption 簽名同原版 debug 傳送項 ISMiniMap.lua:292）
+function ISMiniMapInner:onMinidoracatSetTarget(worldX, worldY)
+    Core.navSetTarget(self.playerNum or 0, worldX, worldY)
+end
+
+function ISMiniMapInner:onMinidoracatClearTarget()
+    Core.navClearTarget(self.playerNum or 0)
+end
+
+function ISMiniMapInner:onMinidoracatShareTarget()
+    Core.navShareTarget(self.playerNum or 0)
 end
 
 -- 旗標：黑框桿＋色旗（drawRect 疊法同殭屍點描邊）；label 掛旗上（分享者名字）
@@ -4464,6 +4561,9 @@ Core.togglePlayerMiniMap = togglePlayerMiniMap
 Core.debugWarn = debugWarn
 Core.applyChromeOpacity = applyChromeOpacity -- _Ghost.lua 切換穿透時重套外框透明度
 Core.cancelResize = cancelResize -- _Ghost.lua 進穿透時取消進行中的邊緣縮放
+Core.drawNavTargets = drawNavTargets -- _WorldMapNav.lua：世界地圖側導航旗標/箭頭（共用繪製）
+Core.drawPlayerCoords = drawPlayerCoords -- _WorldMapNav.lua：世界地圖側座標列（共用繪製）
+Core.copyCoordsText = copyCoordsText -- _WorldMapNav.lua：右鍵複製座標（共用剪貼簿＋琥珀回饋）
 Core.ready = true -- 模組檔載入閘門：最後設定＝主檔完整走完才放行
 
 log("loaded (hooks: ISWorldMap:initDataAndStyle + ISMiniMap.InitPlayer + button bar + gear panel + hotkey + mod options + zombie dots + edge zoom)")

@@ -84,28 +84,32 @@ local KIND_MAP = { Pyramid = "pyramid", Texture = "texture",
 local function layerKind(layer)
     return KIND_MAP[layer:getTypeString()] or "skip"
 end
-local function setLayerAlphas(layer, snapStops, targetOf)
-    if snapStops then -- 還原路徑
-        for si = 0, layer:getFillStops() - 1 do
-            if snapStops[si] then
-                layer:setFillRGBA(si, layer:getFillRed(si), layer:getFillGreen(si),
-                    layer:getFillBlue(si), snapStops[si])
-            end
-        end
-        return
-    end
+-- 只讀快照（不寫入）：讀與寫分離——寫入中途拋錯時快照已在手上，restore 可救
+-- （合併版的「邊讀邊寫」在多 stop 層寫到一半失敗會丟快照＝永久汙染，codex review）
+local function snapLayerAlphas(layer)
     local stops = {}
     for si = 0, layer:getFillStops() - 1 do
-        local a = layer:getFillAlpha(si)
-        stops[si] = a
-        layer:setFillRGBA(si, layer:getFillRed(si), layer:getFillGreen(si),
-            layer:getFillBlue(si), targetOf(a))
+        stops[si] = layer:getFillAlpha(si)
     end
     return stops
+end
+-- 寫入：stops[si] 為底值——帶 targetOf＝壓暗（寫 targetOf(原值)）、不帶＝還原（寫原值）
+local function setLayerAlphas(layer, stops, targetOf)
+    for si = 0, layer:getFillStops() - 1 do
+        local a = stops[si]
+        if a ~= nil then
+            if targetOf then a = targetOf(a) end
+            layer:setFillRGBA(si, layer:getFillRed(si), layer:getFillGreen(si),
+                layer:getFillBlue(si), a)
+        end
+    end
 end
 local function dimHalf(a) return math.floor(a * ghostMapAlpha() + 0.5) end
 local function dimZero() return 0 end
 local ghostKindWarned -- 引擎改版把型別字串換掉時的一次性可觀測性（防無症狀退化）
+local ghostDimWarned -- dim 拋錯級失敗的一次性可觀測性（pcall 吞錯＝不可診斷，實測回饋）
+local ghostLayerWarned -- 逐層分類/快照/壓暗寫入失敗的一次性可觀測性（含 layer id/type）
+local ghostRestoreWarned -- 還原寫入失敗獨立旗標：致命級（快照卡住）不可被上者靜音（review）
 local function layerSnapKey(layer, li)
     -- 快照鍵＝layer:getID()（index 在 in-place 重掛後會漂移、id 不會；還原以 id
     -- 反查、查無此層即跳過，不會把 A 層 alpha 寫進 B 層）；getID 異常退回 index 鍵
@@ -119,23 +123,39 @@ local function dimMapBody(inner, on)
     local st = api and api:getStyleAPI()
     if on then
         if not st then return end
-        -- 冪等：同值不重壓（多入口重複呼叫不得複利遞減）；滑條改動＝先還原再重壓
+        -- 冪等：同值不重壓（多入口重複呼叫不得複利遞減）；滑條改動＝先還原再重壓。
+        -- alphaUsed 語意：nil＝「未完整壓暗」sentinel（本輪 dimIncomplete、dim 中途
+        -- 拋錯、還原失敗、或主檔防禦性重掛失效都是/設成 nil）——nil ~= curA 恆真，
+        -- 走「先還原再以現值重壓」重試路徑；成功完整壓暗的尾端才寫入 curA。
+        -- 還原以 getID 反查，重掛同 id 層寫回原值＝no-op
         local curA = ghostMapAlpha()
         if inner._minidoracatGhostSnap then
             if inner._minidoracatGhostSnap.alphaUsed == curA then return end
             dimMapBody(inner, false)
+            -- 還原失敗（快照被保留）：放棄本次重壓——續走會以「半暗現值」蓋掉
+            -- 舊快照＝永久汙染；ghostFrameTick 下幀重試（alphaUsed 已被清）
+            if inner._minidoracatGhostSnap then return end
         end
         local n = st:getLayerCount()
-        local kinds, pyramidFound = {}, false
+        local kinds, pyramidFound, dimIncomplete = {}, false, false
         for li = 0, n - 1 do
             local ok, k = pcall(layerKind, st:getLayerByIndex(li))
             kinds[li] = ok and k or "skip"
+            if not ok then
+                -- 分類失敗（≠已識別的 skip 型別如 Line）：pyramid 誤 skip 會留 255、
+                -- 且 pyramidFound 誤 false 讓 polygon 誤當內容——入重試旗標
+                dimIncomplete = true
+                if not ghostLayerWarned then
+                    ghostLayerWarned = true
+                    print("[MinidoracatMiniMap] ghost: classify layer failed (index=" .. li .. ")")
+                end
+            end
             if kinds[li] == "pyramid" then pyramidFound = true end
         end
-        -- 快照「先掛再改、邊套邊記」：中途拋錯時已動的層仍有還原憑證，退出路徑
-        -- 可救回——不得在迴圈後才落快照（部分壓暗＋無快照＝下次重套把暗值當
-        -- 原值＝永久汙染，只剩 Recreate 能救）
-        local snap = { layers = {}, alphaUsed = curA }
+        -- 快照「逐層先照後寫」：先 snapLayerAlphas 落快照、再寫入——寫到一半拋錯
+        -- 也有整層還原憑證（邊讀邊寫版會丟快照＝永久汙染）。快照逐層即時掛上
+        -- snap.layers：中途拋錯時已動的層仍可由退出路徑救回
+        local snap = { layers = {} } -- alphaUsed 於完整壓暗成功的尾端才寫入（見 dimIncomplete 分支）
         inner._minidoracatGhostSnap = snap
         local touched = 0
         for li = 0, n - 1 do
@@ -147,38 +167,116 @@ local function dimMapBody(inner, on)
                     target = dimHalf
                 end
                 local layer = st:getLayerByIndex(li)
-                local ok, stops = pcall(setLayerAlphas, layer, nil, target)
-                if ok and stops then
-                    snap.layers[layerSnapKey(layer, li)] = stops
-                    touched = touched + 1
+                local key = layerSnapKey(layer, li)
+                local okSnap, stops = pcall(snapLayerAlphas, layer)
+                if okSnap and stops then
+                    snap.layers[key] = stops -- 寫入前先落快照：寫到一半拋錯也有還原憑證
+                    if pcall(setLayerAlphas, layer, stops, target) then
+                        touched = touched + 1
+                    else
+                        dimIncomplete = true
+                        if not ghostLayerWarned then
+                            ghostLayerWarned = true
+                            print("[MinidoracatMiniMap] ghost: dim layer write failed (id="
+                                .. tostring(key) .. " type=" .. tostring(k) .. ")")
+                        end
+                    end
+                else
+                    dimIncomplete = true -- 讀失敗＝該層未寫入、無需憑證，重試安全
+                    if not ghostLayerWarned then
+                        ghostLayerWarned = true
+                        print("[MinidoracatMiniMap] ghost: snapshot layer fills failed (id="
+                            .. tostring(key) .. " type=" .. tostring(k) .. ")")
+                    end
                 end
             end
         end
-        if touched == 0 and n > 0 and not ghostKindWarned then
+        -- not dimIncomplete：逐層失敗已有專屬 log-once，此警告專指「全層被分類
+        -- 為 skip」（引擎型別字串改版的無症狀退化訊號），失敗情境下發它是誤導
+        if touched == 0 and n > 0 and not dimIncomplete and not ghostKindWarned then
             ghostKindWarned = true
             print("[MinidoracatMiniMap] ghost: no style layers classified ("
                 .. n .. " layers) — engine layer type strings changed?")
         end
-        api:setBackgroundRGBA(BG_R, BG_G, BG_B, 0) -- 底紙 quad（per-instance，一次性）
-        api:setUnvisitedRGBA(BG_R * 0.915, BG_G * 0.915, BG_B * 0.915, curA)
+        if dimIncomplete then
+            -- 本輪未完整壓暗（分類失敗＝pyramid 可能誤 skip；寫失敗＝快照在手可還原；
+            -- 讀失敗＝該層未動）：alphaUsed 保持 nil＝ghostFrameTick 走「先還原再重壓」
+            -- 重試；retryAt 1s 節流擋持續性失敗的每幀重試風暴——每幀 2 趟全層跨界
+            -- 寫入＋Kahlua 缺 method 的引擎 trace flush 刷屏（三 lane review 共識；
+            -- give-up 計數器因滑條重置語意複雜而否決，1s 節流＝60x 降頻、修好後
+            -- 1 秒內收斂）
+            snap.retryAt = getTimestampMs() + 1000
+        else
+            snap.alphaUsed = curA -- 完整壓暗才落同值捷徑（中途拋錯時保持 nil＝必重試）
+        end
+        api:setBackgroundRGBA(BG_R, BG_G, BG_B, 0) -- 底紙 quad（per-instance；tick 每幀另重壓）
+        -- 未探索遮罩：引擎 shader 硬編未探索區 alpha＝texel 積（恆 1）、頂點 col.a
+        -- 不參與（media/shaders/worldMapVisited.frag:13 `vec4(col.rgb, texel.g*texel.r)`；
+        -- 頂點色出處 WorldMapVisited.java:252/272）——setUnvisitedRGBA 的 alpha 是
+        -- no-op，唯一可控是 rgb。穿透中 rgb×滑條值＝不透明暗化近似：暗景視覺等效
+        -- 「同比例透明」（實測回饋 2026-08-19），亮景為暗霧（引擎限制，無法真透明；
+        -- 關 HideUnvisited 會 setVisited(null)＝未探索 pyramid 全裸，洩漏，否決）。
+        -- alpha 仍傳 curA：引擎未來若修 shader 即自動變真透明。
+        -- 網格 shader 反而吃 col.a（worldMapGrid.frag:15），rgb 不需縮放
+        api:setUnvisitedRGBA(BG_R * 0.915 * curA, BG_G * 0.915 * curA, BG_B * 0.915 * curA, curA)
         api:setUnvisitedGridRGBA(BG_R * 0.777, BG_G * 0.777, BG_B * 0.777, curA)
     else
         local snap = inner._minidoracatGhostSnap
         if not snap then return end
-        if st then
-            for li = 0, st:getLayerCount() - 1 do
-                local layer = st:getLayerByIndex(li)
-                local stops = snap.layers[layerSnapKey(layer, li)]
-                if stops then pcall(setLayerAlphas, layer, stops) end
+        if not st then
+            -- styleAPI 缺席（反編譯上 getStyleAPI 惰性建構永不回 null——UIWorldMapV1
+            -- .java:62-65，防禦性分支）：層還原無從執行，快照必須留下（清掉＝壓暗值
+            -- 永久卡死、只剩 Recreate 能救），與壓暗側 st 早退對稱（review 抓出破口）
+            snap.alphaUsed = nil
+            return
+        end
+        local restoreFailed = false
+        for li = 0, st:getLayerCount() - 1 do
+            local layer = st:getLayerByIndex(li)
+            local stops = snap.layers[layerSnapKey(layer, li)]
+            if stops then
+                if not pcall(setLayerAlphas, layer, stops) then
+                    restoreFailed = true
+                    if not ghostRestoreWarned then
+                        ghostRestoreWarned = true
+                        print("[MinidoracatMiniMap] ghost: restore layer failed (id="
+                            .. tostring(layerSnapKey(layer, li)) .. ")")
+                    end
+                end
             end
         end
-        if api then -- 還原 vanilla 值（ISMapDefinitions.lua:163-166 同式）
-            api:setBackgroundRGBA(BG_R, BG_G, BG_B, 1.0)
-            api:setUnvisitedRGBA(BG_R * 0.915, BG_G * 0.915, BG_B * 0.915, 1.0)
-            api:setUnvisitedGridRGBA(BG_R * 0.777, BG_G * 0.777, BG_B * 0.777, 1.0)
+        -- 還原 vanilla 值（ISMapDefinitions.lua:163-166 同式；st 非 nil ⇒ api 非 nil）
+        api:setBackgroundRGBA(BG_R, BG_G, BG_B, 1.0)
+        api:setUnvisitedRGBA(BG_R * 0.915, BG_G * 0.915, BG_B * 0.915, 1.0)
+        api:setUnvisitedGridRGBA(BG_R * 0.777, BG_G * 0.777, BG_B * 0.777, 1.0)
+        if restoreFailed then
+            snap.alphaUsed = nil -- 重入 dim 不得走「同值已壓」捷徑
+            snap.retryAt = getTimestampMs() + 1000 -- 失敗重試節流（同壓暗側）
+            return -- 快照留下：ghostFrameTick 依節流重試（清掉＝永久卡在壓暗值）
         end
-        inner._minidoracatGhostSnap = nil -- 還原跑完才丟憑證（中途異常可重試）
+        inner._minidoracatGhostSnap = nil -- 還原全數成功才丟憑證
     end
+end
+-- dim 的唯一入口（log-once）：pcall 吞錯＝不可診斷（實測回歸就是這樣藏起來的），
+-- 失敗一律進 console.txt；拋錯時設重試節流——快照在手寫 snap.retryAt（alphaUsed
+-- 延後寫入保證拋錯後必為 nil＝重試路徑），快照「前」拋錯（getLayerCount/分類迴圈
+-- 的 getLayerByIndex）寫 inner._minidoracatGhostRetryAt（無快照時 tick 自癒分支的
+-- 節流，codex review 抓出繞過）；回傳 pcall ok 供呼叫端判斷
+local function dimSafely(inner, on)
+    local ok, err = pcall(dimMapBody, inner, on)
+    if not ok then
+        if inner then
+            local snap = inner._minidoracatGhostSnap
+            if snap then snap.retryAt = getTimestampMs() + 1000
+            else inner._minidoracatGhostRetryAt = getTimestampMs() + 1000 end
+        end
+        if not ghostDimWarned then
+            ghostDimWarned = true
+            print("[MinidoracatMiniMap] ghost: dim map body "
+                .. (on and "apply" or "restore") .. " failed: " .. tostring(err))
+        end
+    end
+    return ok
 end
 local function applyGhostTo(mm)
     if not mm then return end
@@ -204,7 +302,7 @@ local function applyGhostTo(mm)
             end
         end
     end
-    pcall(dimMapBody, mm.inner, on) -- 地圖本體半透明（快照/還原見上方註解）
+    dimSafely(mm.inner, on) -- 地圖本體半透明（快照/還原見上方註解）
     if on then
         -- 進穿透的手勢殘留清理。titleBar 拖曳必須清：原版 onMouseDown 設
         -- dragging＋capture、清理在 onMouseUp——已被 gate 攔掉，漏清＝小地圖
@@ -237,6 +335,50 @@ local function applyGhost(mm)
         if m then pcall(applyGhostTo, m) end
     end
 end
+
+-- 每幀維護（prerender 呼叫；離線測試 A9-A15）：穿透中「收斂」而非只靠一次性套用——
+-- (1) 本實例沒有壓暗快照＝漏套（Recreate 重建後、dim 曾拋錯被吞、或 applyGhost
+--     套到 stale 實例）→ 現場補壓。針對實測回歸「穿透開著卻整片不透明、影像層
+--     看似消失」（2026-08-19；console 乾淨、確切觸發路徑未實證定位）的收斂防線：
+--     不依賴根因假說——可見實例的 prerender 必然跑在可見實例上，上列任一候選
+--     路徑都會在一幀內被補正；再發時 dimSafely/逐層 log-once 會落地診斷證據；
+-- (2) 底紙 quad／未探索遮罩每幀重壓：未探索遮罩是 WorldMapVisited singleton，
+--     開大地圖（M）的樣式初始化會重設回 a=1.0（ISMapDefinitions）；底紙 quad 屬
+--     per-instance，42.20 無已知活重設路徑，防禦性一併重壓（成本＝三個 float setter）；
+-- (3) alphaUsed ~= 滑條值＝滑條改動或「未完整壓暗」sentinel（nil）→ 先還原再重壓
+--     （dimMapBody 內建）；retryAt 節流失敗重試（1s，見 dim 註解）；
+-- (4) 穿透已關但本實例仍留快照（漏套退場路徑/還原失敗）→ 依節流還原（收斂性退場）。
+local function ghostFrameTick(inner)
+    if not (inner and inner.mapAPI) then return end
+    if isGhost() then
+        if not inner._minidoracatGhostSnap then
+            -- 自癒補壓（失敗由 dimSafely log-once）；無快照的拋錯節流走 inner 欄位
+            local ra = inner._minidoracatGhostRetryAt
+            if not (ra and getTimestampMs() < ra) then
+                dimSafely(inner, true)
+                if inner._minidoracatGhostSnap then
+                    inner._minidoracatGhostRetryAt = nil -- 建到快照＝節流交棒給 snap.retryAt
+                end
+            end
+        end
+        local snap = inner._minidoracatGhostSnap
+        if not snap then return end
+        local a = ghostMapAlpha()
+        inner.mapAPI:setBackgroundRGBA(BG_R, BG_G, BG_B, 0)
+        -- 未探索遮罩 rgb×滑條（shader 不吃 col.a，見 dim 註解）；grid 走真 alpha
+        inner.mapAPI:setUnvisitedRGBA(BG_R * 0.915 * a, BG_G * 0.915 * a, BG_B * 0.915 * a, a)
+        inner.mapAPI:setUnvisitedGridRGBA(BG_R * 0.777, BG_G * 0.777, BG_B * 0.777, a)
+        if snap.alphaUsed ~= a
+            and not (snap.retryAt and getTimestampMs() < snap.retryAt) then
+            dimSafely(inner, true)
+        end
+    else
+        local snap = inner._minidoracatGhostSnap
+        if snap and not (snap.retryAt and getTimestampMs() < snap.retryAt) then
+            dimSafely(inner, false)
+        end
+    end
+end
 -- test:ghost-apply:end
 
 local ghostHintUntil -- 切換瞬間膠囊提示（1.5 秒，同「已複製」時長慣例）
@@ -258,20 +400,7 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
     local originalGhostPrerender = ISMiniMapInner.prerender
     function ISMiniMapInner:prerender()
         originalGhostPrerender(self)
-        if self._minidoracatGhostSnap and self.mapAPI and isGhost() then
-            -- 未探索遮罩＝WorldMapVisited singleton：開大地圖（M）的樣式初始化會
-            -- 把它重設回 a=1.0（ISMapDefinitions），每幀重壓（兩個 float setter，
-            -- 成本可忽略）。底紙 quad 是 per-instance、42.20 無活路徑會重設
-            -- （TERRAIN_IMAGE 死碼），dimMapBody 一次性設定即可、不需每幀補
-            local a = ghostMapAlpha()
-            self.mapAPI:setUnvisitedRGBA(BG_R * 0.915, BG_G * 0.915, BG_B * 0.915, a)
-            self.mapAPI:setUnvisitedGridRGBA(BG_R * 0.777, BG_G * 0.777, BG_B * 0.777, a)
-            -- 滑條每幀比對（mod 滑條慣例＝繪製端讀值即時生效；統一視窗滑條 handler
-            -- 只寫值不觸發 apply）：值變了就還原→以新值重壓（dimMapBody 內建）
-            if self._minidoracatGhostSnap.alphaUsed ~= a then
-                pcall(dimMapBody, self, true)
-            end
-        end
+        ghostFrameTick(self) -- 穿透收斂：自癒補壓/每幀重壓/滑條重壓/退場還原（見上）
         if not ghostHintUntil then return end
         if getTimestampMs() >= ghostHintUntil then
             ghostHintUntil = nil

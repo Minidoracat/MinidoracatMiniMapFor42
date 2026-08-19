@@ -119,30 +119,35 @@ local function idsEqual(a, b)
     return true
 end
 
--- (1) 初次掛載＋同 zip alias 去重（Chinatown 兩條同 zip）：只建一層、不撞 id、順序＝註冊序
+-- (1) 初次掛載＋同 zip alias 去重（Chinatown 兩條同 zip）：只建一層、不撞 id、順序＝註冊序；
+--     回傳 true（有拆掛重建——呼叫端據此失效穿透壓暗快照）
 local st = vanillaStyle()
-mod.mountPyramidLayers(st, entriesOf({ "A.pyramid.zip", "B.pyramid.zip", "B.pyramid.zip", "C.pyramid.zip" }))
+local rebuilt = mod.mountPyramidLayers(st, entriesOf({ "A.pyramid.zip", "B.pyramid.zip", "B.pyramid.zip", "C.pyramid.zip" }))
+assert(rebuilt == true, "初掛應回傳 rebuilt=true")
 assert(idsEqual(st.ids, { "forest", "pyramid-forest", "text-place", "paper",
     "minidoracat_A", "minidoracat_B", "minidoracat_C" }), "初掛結果錯：" .. table.concat(st.ids, ","))
 
 -- (2) 冪等：同 style 連跑兩次，第二次零動作（ids 逐位元不變、無新 log）
 mod.clearLogs()
 local before = { table.unpack(st.ids) }
-mod.mountPyramidLayers(st, entriesOf({ "A.pyramid.zip", "B.pyramid.zip", "C.pyramid.zip" }))
+rebuilt = mod.mountPyramidLayers(st, entriesOf({ "A.pyramid.zip", "B.pyramid.zip", "C.pyramid.zip" }))
+assert(rebuilt == false, "冪等重跑應回傳 rebuilt=false（不得觸發穿透快照失效）")
 assert(idsEqual(st.ids, before), "冪等重跑不應動層")
 assert(#mod.logs == 0, "冪等重跑不應輸出 log")
 
 -- (3) 被外來層壓下：自癒奪回尾端、外來層被擠下、自癒證據行指認兇手
 st.ids[#st.ids + 1] = "foreign_overlay"
 mod.clearLogs()
-mod.mountPyramidLayers(st, entriesOf({ "A.pyramid.zip", "B.pyramid.zip", "C.pyramid.zip" }))
+rebuilt = mod.mountPyramidLayers(st, entriesOf({ "A.pyramid.zip", "B.pyramid.zip", "C.pyramid.zip" }))
+assert(rebuilt == true, "自癒重掛應回傳 rebuilt=true")
 assert(idsEqual(st.ids, { "forest", "pyramid-forest", "text-place", "paper", "foreign_overlay",
     "minidoracat_A", "minidoracat_B", "minidoracat_C" }), "自癒後應奪回尾端：" .. table.concat(st.ids, ","))
 assert(mod.logs[1] and mod.logs[1]:find("foreign_overlay", 1, true), "自癒證據行應指認最上層 id")
 
 -- (4) stale 清掃：entries 縮集（如 MapPackLayers 關閉）→ 舊層從該 style 移除，
 --     registry 保留（另一側 style 卸載仍需要）
-mod.mountPyramidLayers(st, entriesOf({ "A.pyramid.zip", "C.pyramid.zip" }))
+rebuilt = mod.mountPyramidLayers(st, entriesOf({ "A.pyramid.zip", "C.pyramid.zip" }))
+assert(rebuilt == false, "stale 清掃不拆掛本 MOD 層：rebuilt=false（清掃層已卸、無需重壓）")
 assert(idsEqual(st.ids, { "forest", "pyramid-forest", "text-place", "paper", "foreign_overlay",
     "minidoracat_A", "minidoracat_C" }), "縮集應清掉 stale 層：" .. table.concat(st.ids, ","))
 assert(mod.mountedLayerIds["minidoracat_B"], "共用 registry 不可刪 key")
