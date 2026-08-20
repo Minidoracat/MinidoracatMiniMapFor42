@@ -298,7 +298,8 @@ end
 -- MapGroups 串起的全部啟用 MOD 目錄、MP 客戶端為伺服器 Map= 清單（世界 init 時
 -- IsoMetaGrid.getLotDirectories 回填；42.19 反編譯查證），兩種模式皆可信。
 -- 約束：僅供世界 init 之後呼叫（連線早期 Core.gameMap 短暫只有首項）——現有
--- 呼叫點（applyMiniMapPyramids 各觸發源）皆滿足；新增更早呼叫點前先想這條。
+-- 呼叫點（applyMiniMapPyramids 各觸發源；_NavRoute.lua makeWinnerOf——設目標
+-- 後首個繪製幀啟動，必在世界 init 後）皆滿足；新增更早呼叫點前先想這條。
 -- 回傳 dir → 優先序 index（1＝最高，同名 cell 覆蓋其後所有目錄——見 orderByMapPriority）；
 -- nil＝拿不到（fail-open）。值刻意用 index 而非 true：疊層順序要靠它（0.14.3 前只存集合）
 -- test:mapdir-gate:start
@@ -840,6 +841,20 @@ local function isAdornAlways()
     return v == 2
 end
 
+
+-- 沙盒 MapAllKnown（開始時全部已知）的 42.20.3 補位：MP 的 all-known 原由
+-- PlayerVisitedPacket 在收完 visited 同步後 setKnownInCells 全圖實現
+-- （42.20.2 PlayerVisitedPacket.java:66-68），42.20.3 該封包被移除、僅剩 SP 的
+-- WorldMapVisited.load 路徑（42.20.3 WorldMapVisited.java:892-895）——MP 下
+-- 沙盒開了也不再全圖（引擎回歸，實測 servertest MapAllKnown=true 失效）。
+-- 補位：client 端關 HideUnvisited（引擎鏈 UIWorldMap.java:183-186 →
+-- setVisited(null)＝未探索遮罩整層不畫、pyramid 影像全示）。伺服器沙盒明示
+-- 全開＝無「穿透求透明」條目的洩漏疑慮；官方日後修回＝冪等重設無害。
+-- MP 客戶端 SandboxVars 由伺服器同步，呼叫點（InitPlayer/initDataAndStyle）
+-- 皆在 OnGameStart 之後＝安全讀取點（AGENTS.md 沙盒時序）
+local function mapAllKnownEnabled()
+    return SandboxVars and SandboxVars.Map and SandboxVars.Map.MapAllKnown == true
+end
 -- 把圖層開關套到指定小地圖 mapAPI（引擎選項名出自 WorldMapRenderer.java）
 local function applyToggleOptions(mapAPI)
     mapAPI:setBoolean("Players", getBoolOption("Players", true))
@@ -867,6 +882,8 @@ local function applyToggleOptions(mapAPI)
     -- 街名顯示（資料已於 InitPlayer wrapper 補載；此值只控畫不畫，
     -- StreetRenderData.java:45 為唯一閘門，故存檔即生效）
     mapAPI:setBoolean("ShowStreetNames", getBoolOption("StreetNames", true))
+    -- MapAllKnown 補位（小地圖面）
+    if mapAllKnownEnabled() then mapAPI:setBoolean("HideUnvisited", false) end
 end
 
 -- 外框底色不透明度：縮放 outer／bottomPanel／titleBar 的 backgroundColor.a
@@ -929,13 +946,13 @@ local function resizeMax(playerNum)
     return math.floor(math.min(getPlayerScreenWidth(playerNum), getPlayerScreenHeight(playerNum)) * RESIZE_MAX_RATIO)
 end
 
--- 8 顆按鈕（M - + ◇視角 C XY ⚙ X）的最小可容寬度抬高 RESIZE_MIN：必須在 InitPlayer 讀
+-- 9 顆按鈕（M - + ◇視角 C XY 搜尋 ⚙ X）的最小可容寬度抬高 RESIZE_MIN：必須在 InitPlayer 讀
 -- CustomSize 夾限「之前」呼叫——installMinidoracatButtons 的同款回寫發生在視窗建立
 -- 之後，救不到舊存小尺寸（如 180x180）的本 session 首次建立（X 鈕會溢出右緣）。
 -- 字級在 InitPlayer 時已就緒：鈕寬同原版 BUTTON_HGT 公式 getFontHeight(Small)+6
 local function raiseResizeMinForButtons()
     local bw = getTextManager():getFontHeight(UIFont.Small) + 6
-    local minW = 8 * bw + 7 * 2 + 2 * 2 + 4 -- 8 鈕＋7×2px 間距＋外框 2×2＋4
+    local minW = 9 * bw + 8 * 2 + 2 * 2 + 4 -- 9 鈕＋8×2px 間距＋外框 2×2＋4（review：搜尋鈕入列後同步）
     if minW > RESIZE_MIN then RESIZE_MIN = minW end
 end
 
@@ -1009,6 +1026,12 @@ if PZAPI and PZAPI.ModOptions then
     -- InitPlayer wrapper），此開關控制顯示（引擎選項 ShowStreetNames）。
     modOptions:addTickBox("StreetNames", "UI_MinidoracatMiniMap_StreetNames", true,
         "UI_MinidoracatMiniMap_StreetNames_tooltip")
+    -- 導航路線（0.17.0，預設開）：右鍵目標後沿道路畫路線（_NavRoute.lua 全套
+    -- 引擎）。純顯示功能不設沙盒 gate；關閉＝退回直線旗標、設目標不觸發建圖。
+    -- 例外：開啟搜尋視窗（_Search.lua）仍會 kick 引擎——街名搜尋需要索引，
+    -- 索引與 graph 同一條建置流水線（一次性背景成本，非每幀）
+    modOptions:addTickBox("NavRoute", "UI_MinidoracatMiniMap_NavRoute", true,
+        "UI_MinidoracatMiniMap_NavRoute_tooltip")
     -- 實驗性：小地圖完整符號模式。原版小地圖固定 MiniMapSymbols=true
     -- （ISMiniMap.lua:733），該模式下文字符號一律不畫（WorldMapTextSymbol.java:168）
     -- ——「顯示地名」在角落小地圖因此看不到字，只有世界地圖（M）有效。
@@ -1240,6 +1263,10 @@ end
 local originalInitDataAndStyle = ISWorldMap.initDataAndStyle
 function ISWorldMap:initDataAndStyle()
     originalInitDataAndStyle(self)
+    -- MapAllKnown 補位（世界地圖面）：改 instance 欄位而非直寫引擎選項——
+    -- ShowWorldMap 每次開圖都以 self.hideUnvisitedAreas 重套
+    -- （ISWorldMap.lua:1515），直寫會被蓋回；欄位改 false 則齒輪面板同步一致
+    if mapAllKnownEnabled() then self.hideUnvisitedAreas = false end
     local ok, err = pcall(applyMiniMapPyramids, self)
     if not ok then
         log("init failed: " .. tostring(err))
@@ -1369,8 +1396,26 @@ if ISMiniMap and ISMiniMap.InitPlayer then
                 -- ISWorldMap.lua:1450），ShowStreetNames 開著也無字可畫。走同一
                 -- 函式（ISMapDefinitions.lua:41-49，只用 mapUI.javaObject）——
                 -- 翻譯 MOD wrap 它載入的中文街名（CatLangFor42 MapStreets_Flx）一併生效
+                -- count==0 gate：initDefaultStreetData 開頭的 clearStreetData
+                -- （ISMapDefinitions.lua:44）會走 combinedStreets.clear()——
+                -- WorldMapStreets.clear 不清 StreetLookup 空間索引且 42.20.3
+                -- 起 ObjectPool 上限 1024 < 官方 1098 條（WorldMap.java:241-248、
+                -- WorldMapStreets.java:433-437；LangFor42 AGENTS.md 實證「英文
+                -- 街名幽靈殘留」）。Recreate 每次重跑本段，無 gate＝反覆
+                -- clear+re-add 踩坑；有 gate＝每實例至多一次 clear-on-empty
+                -- （no-op）＋一次載入。LangFor42 wrap（不 clear、只 add）在
+                -- 或不在都相容
                 if MapUtils and MapUtils.initDefaultStreetData then
-                    pcall(MapUtils.initDefaultStreetData, minimap.inner)
+                    -- gate 判定整段 pcall：getStreetsAPI 探測異常（API 漂移等）
+                    -- 不得炸 InitPlayer 後續（導航目標 modData 載回在本段之後），
+                    -- 且判定失敗＝退回 0.16 無條件補載——寧可重踩 clear 坑也
+                    -- 不可靜默丟街名（claude review：gate 失效面）
+                    local gateOk, isEmpty = pcall(function()
+                        return minimap.inner.mapAPI:getStreetsAPI():getStreetDataCount() == 0
+                    end)
+                    if not gateOk or isEmpty then
+                        pcall(MapUtils.initDefaultStreetData, minimap.inner)
+                    end
                 end
             end
             pcall(applyChromeOpacity, minimap)
@@ -1766,11 +1811,12 @@ end
 -- locvar 上限 200 對策）；主檔僅留按鈕列與開窗入口，呼叫時查
 -- Core.toggleSettingsWindow＋nil 防呆（模組檔載入序在本檔之後）。
 --------------------------------------------------------------------------------
--- 按鈕列重排：8 顆（M - + ◇視角 C XY ⚙ X）以動態間距塞進 inner 寬度
+-- 按鈕列重排：9 顆（M - + ◇視角 C XY 尋 ⚙ X）以動態間距塞進 inner 寬度
 -- （原版置中排版只按 5 顆算，ISMiniMap.lua:417）
 local function relayoutBottomButtons(mm)
     local order = { mm.button1, mm.button2, mm.button3, mm._minidoracatPerspBtn,
-        mm._minidoracatCenterBtn, mm._minidoracatCopyBtn, mm.button4, mm.button6 }
+        mm._minidoracatCenterBtn, mm._minidoracatCopyBtn, mm._minidoracatSearchBtn,
+        mm.button4, mm.button6 }
     local btns = {}
     for i = 1, #order do
         if order[i] then btns[#btns + 1] = order[i] end
@@ -1874,6 +1920,26 @@ installMinidoracatButtons = function(mm)
         mm.bottomPanel:addChild(perspBtn)
         mm._minidoracatPerspBtn = perspBtn
     end
+    -- 放大鏡地圖搜尋：座標／街名／設施類別（視窗本體在 _Search.lua；
+    -- Core.toggleSearchWindow 於該檔載入期掛出，事件期呼叫必已就緒）。
+    -- icon＝原版 media/ui/Search_Icon_On.png（原版搜尋欄同款，風格一致）；
+    -- 材質缺時退回單字 label（翻譯鍵 fallback，同 perspBtn 的缺材質防線）
+    local texSearch = getTexture("media/ui/Search_Icon_On.png")
+    local searchBtn = ISButton:new(0, ref.y, ref.width, ref.height,
+        texSearch and "" or getText("UI_MinidoracatMiniMap_BtnSearchLabel"), mm, function(target)
+        if Core.toggleSearchWindow then
+            Core.toggleSearchWindow(target.playerNum or 0, target.inner)
+        end
+    end)
+    searchBtn:initialise()
+    searchBtn.borderColor = { r = 0.4, g = 0.4, b = 0.4, a = 1 }
+    searchBtn.tooltip = getText("UI_MinidoracatMiniMap_BtnSearch")
+    if texSearch then
+        searchBtn:setImage(texSearch)
+        searchBtn:forceImageSize(ref.width - 8, ref.height - 8)
+    end
+    mm.bottomPanel:addChild(searchBtn)
+    mm._minidoracatSearchBtn = searchBtn
     -- 「=」圖層面板鈕已退役：引擎原生三項移入統一視窗「圖層顯示」區。
     -- 原版面板機制（getVisibleOptions/onTickBox wrap 等）保留不拆——
     -- 面板已無入口，但第三方 MOD 若開啟它，注入與回寫仍正確
@@ -1883,17 +1949,18 @@ installMinidoracatButtons = function(mm)
     if mm.button2 then mm.button2.tooltip = getText("UI_MinidoracatMiniMap_BtnZoomOut") end
     if mm.button3 then mm.button3.tooltip = getText("UI_MinidoracatMiniMap_BtnZoomIn") end
     if mm.button6 then mm.button6.tooltip = getText("UI_MinidoracatMiniMap_BtnClose") end
-    local n = relayoutBottomButtons(mm) or 8
+    local n = relayoutBottomButtons(mm) or 9
     -- n 顆按鈕的最小可容寬度回寫尺寸下限（n＝order 表實際數量，單一來源）：UI 字型
     -- 放大時 BUTTON_HGT 跟著變大，動態墊高避免縮到溢出。InitPlayer 另以
     -- raiseResizeMinForButtons 在 CustomSize 夾限前先抬——本回寫發生在視窗建立後，
     -- 只服務「本 session 後續拖曳」的下限
     local minW = n * ref.width + (n - 1) * 2 + (mm.borderSize or 2) * 2 + 4
     if minW > RESIZE_MIN then RESIZE_MIN = minW end
-    -- ponytail: C/XY/視角 三顆新鈕都未登記手把導航列（原版 insertNewLineOfButtons 於
+    -- ponytail: C/XY/視角/搜尋 四顆新鈕都未登記手把導航列（原版 insertNewLineOfButtons 於
     -- createChildren 一次性登記，事後補列會亂序）——手把用戶：顯示開關走 ESC 選項頁、
     -- 視角另有兩條可達路徑（原版小地圖選項面板 Isometric 勾選 ISMiniMap.lua:104、
-    -- 世界地圖 perspectiveBtn），複製功能手把不可達（滑鼠限定）；需要時再補登記
+    -- 世界地圖 perspectiveBtn），複製功能手把不可達（滑鼠限定）；搜尋亦滑鼠限定
+    -- （放大鏡鈕＋兩處右鍵選單皆無手把路徑）——目前無替代入口，需要時再補登記
 end
 
 -- 齒輪改開設定視窗（本體拆至 MinidoracatMiniMap_Settings.lua，呼叫時查命名空間）；
@@ -1906,69 +1973,6 @@ if ISMiniMapOuter and ISMiniMapOuter.onButton4 then
     end
 end
 
---------------------------------------------------------------------------------
--- 精準殭屍圖標（ZombieDots，預設關）
--- 資料源：getCell():getZombieList()——getCell＝LuaManager.java:5666、
--- IsoCell.getZombieList＝IsoCell.java:2658（已載入殭屍的 ArrayList）、
--- IsoCell/IsoZombie 已 exposed 給 Lua＝LuaManager.java:2147/1807。
--- 效能設計（B41 同類功能卡頓根因＝無節流自繪，本功能靈魂在此）：
---   取樣每 ZDOTS_INTERVAL_MS 一次（getTimestampMs＝LuaManager.java:9317，
---   用例 ISChat.lua:469）、上限 ZDOTS_MAX 隻、只抄 (x,y) 進重用的 table 池，
---   不持有殭屍物件引用；開關關閉時不取樣不繪製（零成本）。
--- 繪製掛 ISMiniMapInner:prerender：UIWorldMap.java:152 render 先畫地圖本體、
--- 行 317 才 super.render() → UIElement.java:1594 呼叫 Lua prerender，
--- 故點位畫在地圖之上、齒輪面板（inner 子元件，1604 子元件迴圈較晚畫）之下。
--- 世界地圖（M 鍵）亦可畫（WM* 獨立開關，見 drawZombieDotsOn 與 ISWorldMap
--- prerender wrap）——客戶端只知道已載入個體，拉遠不會鋪滿全圖。
---------------------------------------------------------------------------------
-
-local ZDOTS_INTERVAL_MS = 300 -- 取樣間隔（毫秒）
-local ZDOTS_MAX = 200         -- 單次取樣殭屍數上限
--- 顏色／大小查表（索引＝ModOptions combobox 項次，繪製端每幀讀值即時生效）。
--- 預設亮橘＝與原版純紅 6×6 玩家點（UIWorldMap.java:218 本地、:493 遠端）錯開色相；
--- 黑描邊讓小點在草地／道路／屋頂任何底色上都跳得出來；紅色項留給不需區分者。
-local ZDOTS_COLORS = {
-    { 1.0, 0.62, 0.05 }, -- 橘（預設）
-    { 1.0, 0.9,  0.1  }, -- 黃
-    { 0.8, 0.35, 1.0  }, -- 紫
-    { 1.0, 1.0,  1.0  }, -- 白
-    { 1.0, 0.0,  0.0  }, -- 紅
-}
--- （舊三檔大小 combobox 的像素換算表已隨遷移程式碼移至 MinidoracatMiniMap_Migrate.lua）
-local ZDOTS_MAXES = { 100, 200, 400, 800 } -- 上限檔位（索引對應 ZombieDotMax combobox）
-local ZDOTS_A = 1.0
-local ZDOTS_EDGE_A = 0.8      -- 描邊透明度（黑）；隨 ZombieDotAlpha 滑條等比縮放
-
--- ponytail: 掃描硬上限 4000——超過的清單尾端不掃（輪替起點掃描是升級路徑），
--- 實務上客戶端同步的殭屍數遠低於此，引擎也早在此之前就跑不動了
-local ZDOTS_SCAN_MAX = 4000
--- 距離分層優先：視窗內殭屍數超過上限時，額度先給離玩家近的
--- （近圈→中圈→遠圈三桶，單次掃描免排序；桶各自封頂 maxDots，記憶體有界）
-local ZDOTS_NEAR = 30 -- 近圈半徑（世界格）
-local ZDOTS_MID = 80  -- 中圈半徑
-
--- 取樣狀態掛在地圖元件上（分割畫面各玩家、以及同玩家的「小地圖／世界地圖」
--- 兩個表面各自持有——按 playerNum 分槽會讓兩表面互搶點池與節流、視窗範圍
--- 不同會畫錯）；元件重建＝狀態自然重置，池重用不產生每幀垃圾
-local function zdotsStateFor(el)
-    local st = el._minidoracatZDots
-    if not st then
-        st = { dots = {}, near = {}, mid = {}, far = {}, count = 0, nextMs = 0 }
-        el._minidoracatZDots = st
-    end
-    -- 世界地圖是 singleton：關閉只隱藏（ISWorldMap.lua:1157 setVisible(false)）、
-    -- 再開改寫 playerNum 重用同物件（:1547-1550）——換擁有者即重置，
-    -- 分割畫面不沿用前一位的點池
-    local pn = el.playerNum or 0
-    if st.owner ~= pn then
-        st.owner = pn
-        st.count = 0
-        st.nextMs = 0
-        st.hasPlayer = nil
-        st.failOnce = nil
-    end
-    return st
-end
 
 -- 小地圖可視範圍的世界座標外接框：視窗四角 uiToWorld（2 參數版用例
 -- ISMiniMap.lua:234-235）取 min/max——等軸測下視窗是世界座標裡的旋轉四邊形，
@@ -2011,180 +2015,7 @@ local function deriveAffine(mapAPI, acx, acy)
 end
 -- test:derive-affine:end
 
--- test:zombie-sampling:start
-local function sampleZombieDots(inner)
-    local pn = inner.playerNum or 0
-    local st = zdotsStateFor(inner)
-    local dist = displayDist("ZombieDotDistance")
-    local now = getTimestampMs()
-    local playerObj = getSpecificPlayer(pn)
-    local hasPlayer = playerObj ~= nil
-    if now < st.nextMs and st.distance == dist and st.hasPlayer == hasPlayer then return st end
-    st.distance = dist
-    st.hasPlayer = hasPlayer
-    st.nextMs = now + ZDOTS_INTERVAL_MS
-    st.count = 0
-    -- 距離閘門啟用時缺玩家物件必須 fail closed；先於 mapAPI/list 存取，兼顧 teardown。
-    if dist and not playerObj then return st end
-    local cell = getCell()
-    local list = cell and cell:getZombieList()
-    if not list then return st end
-    -- 只收「小地圖可視範圍內」的殭屍再套 ZDOTS_MAX：getZombieList 的順序是
-    -- 載入序而非距離序，早期版本取「清單前 N 隻」會被別處先生成的大群吃光
-    -- 名額，玩家身邊的反而畫不出來（實測：管理員刷群後即重現）。
-    local minX, maxX, minY, maxY = visibleWorldAABB(inner)
-    -- 仿射錨點＝取樣時的視野中心（供繪製端 deriveAffine 用）：錨定視野中心使
-    -- 最壞偏移距離＝半個視野跨度（錨定首點是全跨度、float32 係數誤差×距離會
-    -- 放大一倍——世界地圖全圖縮放下可差 px 級）；x-x%1 即 floor（座標恆正）
-    local sacx = (minX + maxX) / 2
-    local sacy = (minY + maxY) / 2
-    st.acx = sacx - sacx % 1
-    st.acy = sacy - sacy % 1
-    -- 上限檔位每輪讀值（ZombieDotMax combobox），存檔即生效
-    local maxDots = ZDOTS_MAXES[getComboIndex("ZombieDotMax", 2)] or ZDOTS_MAX
-    -- 距離基準＝玩家位置（自由查看拖走視窗也以「離自己」為優先，符合直覺）；
-    -- getSpecificPlayer/getX/getY 原版用例 ISMiniMap.lua:216-222；未啟用距離閘門且
-    -- 缺玩家時沿用舊行為退回視窗中心
-    local px = playerObj and playerObj:getX() or ((minX + maxX) / 2)
-    local py = playerObj and playerObj:getY() or ((minY + maxY) / 2)
-    local dist2 = dist and dist * dist
-    local near2 = ZDOTS_NEAR * ZDOTS_NEAR
-    local mid2 = ZDOTS_MID * ZDOTS_MID
-    -- pcall 防競態：getZombieList 是模擬端會增刪的活 ArrayList，size 與 get
-    -- 之間殭屍被移除會丟 IndexOutOfBounds——失敗就放棄本輪取樣（300ms 後重試）
-    local ok, err = pcall(function()
-        local n = list:size()
-        if n > ZDOTS_SCAN_MAX then n = ZDOTS_SCAN_MAX end
-        local nearC, midC, farC = 0, 0, 0
-        for i = 1, n do
-            local z = list:get(i - 1)
-            local zx, zy = z:getX(), z:getY()
-            if zx >= minX and zx <= maxX and zy >= minY and zy <= maxY then
-                local ddx, ddy = zx - px, zy - py
-                local d2 = ddx * ddx + ddy * ddy
-                if not dist2 or d2 <= dist2 then
-                    local pool, c
-                    if d2 <= near2 then
-                        if nearC < maxDots then nearC = nearC + 1; pool = st.near; c = nearC end
-                    elseif d2 <= mid2 then
-                        if midC < maxDots then midC = midC + 1; pool = st.mid; c = midC end
-                    else
-                        if farC < maxDots then farC = farC + 1; pool = st.far; c = farC end
-                    end
-                    if pool then
-                        local d = pool[c]
-                        if not d then d = {}; pool[c] = d end
-                        d.x = zx
-                        d.y = zy
-                    end
-                end
-                if nearC >= maxDots then break end -- 近圈吃滿額度＝後面必不入選
-            end
-        end
-        -- 合併：近→中→遠 依序填滿 maxDots（近的永遠優先於遠的）
-        local count = 0
-        local function take(pool, c)
-            for j = 1, c do
-                if count >= maxDots then return end
-                count = count + 1
-                local s = st.dots[count]
-                if not s then s = {}; st.dots[count] = s end
-                s.x = pool[j].x
-                s.y = pool[j].y
-            end
-        end
-        take(st.near, nearC)
-        take(st.mid, midC)
-        take(st.far, farC)
-        st.count = count
-    end)
-    if not ok then
-        st.count = 0
-        -- pcall 防的是活清單競態（暫時性，下輪取樣自癒）；持久性錯誤（API 漂移）
-        -- 不能全靜默——每表面 log 一次留診斷線索（同動物取樣 failOnce 慣例）
-        if not st.failOnce then
-            st.failOnce = true
-            log("zombie sampling failed (logged once per surface): " .. tostring(err))
-        end
-    end
-    return st
-end
--- test:zombie-sampling:end
 
--- 殭屍點繪製（小地圖與世界地圖共用；el 需有 mapAPI/width/height/playerNum）。
--- optId＝該表面的開關（小地圖 ZombieDots／世界地圖 WMZombieDots）；
--- 顏色/大小/上限與伺服器沙盒閘兩表面共用
-local function drawZombieDotsOn(el, optId)
-    if not getBoolOption(optId, false) then return end -- 關閉＝零成本
-    if sandboxGate("AllowZombieDots", true) == false then return end -- 伺服器沙盒禁用
-    local st = sampleZombieDots(el)
-    local c = ZDOTS_COLORS[getComboIndex("ZombieDotColor", 1)] or ZDOTS_COLORS[1]
-    local size = getSliderValue("ZombieDotSize", 3, 1, 16)
-    local af = getSliderValue("ZombieDotAlpha", 100, 10, 100) / 100 -- 透明度係數（描邊/本體等比）
-    local mapAPI = el.mapAPI
-    -- 仿射投影（perf 稽核 ICON-1）：原每點 2 次 worldToUI 跨界（800 檔＝1600 次/
-    -- 幀/表面）收斂為每幀 6 次導係數採樣＋逐點純 Lua 乘加。錨定取樣時的視野
-    -- 中心（st.acx，最壞偏移＝半個視野跨度；首點 fallback 給無此欄的舊狀態）——
-    -- 避開 float32 遠錨消去（deriveAffine 註解）；純度假設與 zone 三 pass 同一份。
-    -- worldToUIX/Y＝UIWorldMapV1.java:298/311
-    if st.count > 0 then
-        local d1 = st.dots[1]
-        local acx = st.acx or (d1.x - d1.x % 1)
-        local acy = st.acy or (d1.y - d1.y % 1)
-        local p0x, p0y, sxx, sxy, syx, syy = deriveAffine(mapAPI, acx, acy)
-        for i = 1, st.count do
-            local d = st.dots[i]
-            local dx, dy = d.x - acx, d.y - acy
-            local ux = p0x + dx * sxx + dy * syx
-            local uy = p0y + dx * sxy + dy * syy
-            -- 手動裁到視窗內（Lua drawRect 不吃元件裁切）；含描邊起繪於 ux-2。
-            -- drawRect＝ISUIElement.lua:1191（引數 x,y,w,h,a,r,g,b）
-            if ux >= 2 and uy >= 2 and ux <= el.width - size and uy <= el.height - size then
-                el:drawRect(ux - 2, uy - 2, size + 2, size + 2, ZDOTS_EDGE_A * af, 0, 0, 0)
-                el:drawRect(ux - 1, uy - 1, size, size, ZDOTS_A * af, c[1], c[2], c[3])
-            end
-        end
-    end
-end
-
---------------------------------------------------------------------------------
--- 動物圖標（AnimalDots，預設關）：野生/畜養獨立開關＋兩種圖標風格。
--- 資料源：getCell():getAnimals()（IsoCell.java:4533——Java 端過濾 objectList
--- 回傳新 LinkedList；IsoCell/IsoAnimal 已 exposed＝LuaManager.java:2147/1785）。
--- 與殭屍清單不同：這是每呼叫新建的快照（非活 ArrayList），成本在建表——
--- 取樣節流是必要而非優化；動物數量級低（數十），免殭屍側的距離分桶。
--- 物種歸併：getAnimalType()（IsoAnimal.java:1608）回 stage 級 key（hen/chick…），
--- 以 Lua 全域表 AnimalDefinitions.animals[type].group 併成 10 物種
--- （shared/Definitions/animal/*.lua；Java 讀同表＝AnimalDefinitions.java:176-183）。
--- 圖標素材（皆遊戲內建，零自帶資產）：
---   符號風格＝原版地圖符號（MapSymbolDefinitions.lua:60-71 註冊的
---   media/ui/LootableMaps/map_*.png，白 glyph→乘法染色：白=畜養、綠=野生）；
---   物品風格＝物品欄彩圖（getTexture("Item_X") 無路徑寫法用例 ISHutchUI.lua:95）。
--- getTexture 走引擎共享快取（Texture.java:482-484），本地再快取一層免每幀 hash。
---------------------------------------------------------------------------------
-local ADOTS_INTERVAL_MS = 500 -- 動物移動慢，刷新率要求低於殭屍的 300ms
-local ADOTS_MAX = 100         -- 視窗內同時顯示上限（動物+載具合計，防禦性封頂）
-local ADOTS_SCAN_MAX = 500    -- 清單掃描硬上限（LinkedList get(i) 為 O(n)，防病態存檔）
--- （舊三檔大小 combobox 的像素換算表已隨遷移程式碼移至 MinidoracatMiniMap_Migrate.lua；
--- 0.9.0 起大小由玩家滑條直接指定像素，物品風格不再整表放大）
--- 圖標染色盤：索引對應 ADOTS_COLOR_ITEMS（選項註冊區）順序，兩表必須同步。
--- Okabe-Ito 色盲友善色系；綠/天藍沿用實測亮度（乘法染色在深色地圖需偏亮 tint）
-local ADOTS_PALETTE = {
-    { 1.0, 1.0, 1.0 },    -- 白
-    { 0.47, 0.88, 0.37 }, -- 綠（現行野生色）
-    { 0.90, 0.62, 0.0 },  -- 橘（#E69F00）
-    { 0.45, 0.8, 1.0 },   -- 天藍（現行載具色）
-    { 0.94, 0.89, 0.26 }, -- 黃（#F0E442）
-    { 0.86, 0.52, 0.70 }, -- 紫紅（#CC79A7 提亮）
-    { 0.20, 0.55, 0.85 }, -- 藍（#0072B2 提亮）
-    { 0.90, 0.42, 0.10 }, -- 硃紅（#D55E00 提亮）
-}
-local function adotsColor(optId, default)
-    return ADOTS_PALETTE[getComboIndex(optId, default)] or ADOTS_PALETTE[default]
-end
--- 載具：內建無車形地圖圖示（LootableMaps 92 張與 MapSymbolDefinitions 皆無 car），
--- 取最接近的原版符號「方向盤」（顏色由 VehicleIconColor 下拉決定，預設天藍）
-local ADOTS_VEH_SYM = "media/ui/LootableMaps/map_steeringwheel.png"
 
 -- 物種/載具類別篩選定義（統一視窗勾選 UI＋取樣端篩選共用；CSV 存「停用」鍵、
 -- 空字串＝全開）。鼠類 UI 上合併 rat+mouse（圖標也共用 map_rodent）。
@@ -2222,33 +2053,6 @@ local function unifiedCsvSet(raw)
 end
 -- test:csv-set:end
 
--- 篩選讀取（sampler 每輪呼叫；以原始字串為 key 快取解析結果）。
--- 回傳「停用 group 集合」與原始字串（原始字串併入取樣 cache key）
-local adotsFilterCaches = {} -- [optId] = { raw, groups }
-local function adotsDisabledGroups(optId, uiDefs)
-    if not modOptions then return nil, "" end
-    local opt = modOptions:getOption(optId)
-    if not opt then return nil, "" end
-    local raw = tostring(opt:getValue() or "")
-    local c = adotsFilterCaches[optId]
-    if not c or c.raw ~= raw then
-        local dis = unifiedCsvSet(raw)
-        local groups = {}
-        for i = 1, #uiDefs do
-            local def = uiDefs[i]
-            if dis[def.key] then
-                if def.groups then
-                    for j = 1, #def.groups do groups[def.groups[j]] = true end
-                else
-                    groups[def.key] = true
-                end
-            end
-        end
-        c = { raw = raw, groups = groups }
-        adotsFilterCaches[optId] = c
-    end
-    return c.groups, raw
-end
 
 -- 物種 → 圖標素材。活鹿無物品圖（不可入包的動物只有屍體圖），物品風格用鹿屍圖；
 -- 未知物種（其他 MOD 動物）→ 腳印備援。（統一視窗畫物種小圖經命名空間引用）
@@ -2327,331 +2131,7 @@ local function adotsTexture(name) -- 統一視窗物種小圖亦用（經命名�
     return t
 end
 
-local adotsGroupCache = {} -- [animalType] = 物種 group 字串
-local function adotsGroup(atype)
-    if atype == nil then return "unknown" end -- 載入前窗口 type 可為空；nil 鍵入快取的保險
-    local g = adotsGroupCache[atype]
-    if g == nil then
-        local defs = AnimalDefinitions and AnimalDefinitions.animals
-        local def = defs and defs[atype]
-        g = (def and def.group) or "unknown"
-        adotsGroupCache[atype] = g
-    end
-    return g
-end
 
--- 牲畜歸屬只能用所在安全屋代理：動物與畜養區（DesignationZoneAnimal.java
--- 全檔無 owner 欄位）都沒有持久化的玩家擁有者資料。成員判定同 drawSafehouses
--- （String 版 playerAllowed，SafeHouse.java:290-292）。
--- 每輪取樣先抽成純 Lua 表：每動物重掃 Java 清單是 O(動物×安全屋) 跨界呼叫、
--- 病態 MP 配置（50 屋×30 牲畜）有取樣幀尖峰；抽表後內迴圈是純 Lua 數值比較
--- （drawSafehouses 逐幀重讀是畫框所需，這裡 500ms 一次快照即可）
-local function adotsSafehouseRects(username)
-    if not (SafeHouse and SafeHouse.getSafehouseList) then return nil end
-    local list = SafeHouse.getSafehouseList()
-    if not list then return nil end
-    local rects = {}
-    for i = 0, list:size() - 1 do
-        local sh = list:get(i)
-        rects[i + 1] = { x1 = sh:getX(), y1 = sh:getY(), x2 = sh:getX2(), y2 = sh:getY2(),
-            allowed = username ~= nil and username ~= "" and sh:playerAllowed(username) }
-    end
-    return rects
-end
-
--- 含界判定照原版半開區間（containsLocation＝SafeHouse.java:636-638：>= x1 且 < x2），
--- 用 <= 會把剛好在東/南界外一格的牲畜誤隱藏。
--- nil rects＝SafeHouse API/清單或玩家身分不可用；模式 2/3 一律 fail closed。
--- 有效空清單則不同：模式 2 顯示安全屋外牲畜，模式 3 全隱藏。
--- 注意這是「顯示層政策」非防作弊：修改過的客戶端仍讀得到已同步資料。
--- test:livestock-visibility:start
-local function adotsLivestockVisible(ax, ay, mode, rects)
-    if mode == 1 then return true end
-    if mode == 4 or rects == nil then return false end
-    for i = 1, #rects do
-        local r = rects[i]
-        if ax >= r.x1 and ax < r.x2 and ay >= r.y1 and ay < r.y2 then
-            return r.allowed
-        end
-    end
-    return mode == 2
-end
--- test:livestock-visibility:end
-
--- 載具分類：警燈車（警/消/救，橫跨 mechanicType 1/3）優先判特勤——
--- hasLightbar＝BaseVehicle.java:9107（script.getLightbar().enable）；
--- 其餘依 VehicleScript.getMechanicType（:1942；腳本值對照 media/scripts/generated/
--- vehicles/**：皮卡/廂型=2、luxury/警用跑車=3、一般=1）
-local function adotsVehCategory(v)
-    -- 先取 script 判 nil 再問警燈：hasLightbar 直接解參考 script
-    -- （BaseVehicle.java:9107），而 script==null 是引擎承認的運行態
-    -- （原版多處自防，如 BaseVehicle.java:6511）——不防會 NPE 廢掉整輪取樣
-    local script = v:getScript()
-    if not script then return "standard" end
-    if v:hasLightbar() then return "special" end
-    local mt = script:getMechanicType() or 1
-    if mt == 2 then return "heavy" end
-    if mt == 3 then return "sport" end
-    return "standard"
-end
-
--- 取樣狀態掛在地圖元件上（分槽理由同 zdotsStateFor：兩表面/分割畫面各自持有）
--- test:animal-sampling:start
-local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
-    local pn = inner.playerNum or 0
-    local st = inner._minidoracatADots
-    if not st then
-        st = { dots = {}, count = 0, nextMs = 0 }
-        inner._minidoracatADots = st
-    end
-    -- 世界地圖 singleton 換擁有者重置（同 zdotsStateFor 註解）：點池、節流、
-    -- cache key 與 log-once 旗標都不跨玩家沿用——牲畜隱私過濾按各自身分重算
-    if st.owner ~= pn then
-        st.owner = pn
-        st.count = 0
-        st.nextMs = 0
-        st.mask = nil
-        st.da = nil
-        st.dv = nil
-        st.rawA = nil
-        st.rawV = nil
-        st.mode = nil
-        st.errLogged = nil
-    end
-    local now = getTimestampMs()
-    local da = displayDist("AnimalIconDistance")
-    local dv = displayDist("VehicleIconDistance")
-    local livestockMode = livestockVisibilityMode()
-    -- cache key 逐欄位比較（perf 稽核 ICON-3，殭屍側 st.distance 既有寫法）：
-    -- 原每幀組 flags 字串（5 次 tostring＋串接）＝穩定的 GC churn 來源。開關組合
-    -- ＋篩選逐欄入 key：節流窗內任一變了就立即重取樣，否則剛關掉的類別/物種會
-    -- 殘留舊點池最多 500ms。篩選欄位是自由文字，等值比較無碰撞問題
-    local disAnimal, rawA = adotsDisabledGroups("AnimalSpeciesFilter", ADOTS_SPECIES_UI)
-    local disVeh, rawV = adotsDisabledGroups("VehicleCategoryFilter", ADOTS_VEHCAT_UI)
-    local mask = (wantWild and 1 or 0) + (wantLive and 2 or 0) + (wantVeh and 4 or 0)
-    -- username/hasPlayer 留在節流 key（牲畜隱私過濾與 fail closed 的既有契約：
-    -- 變更須「立即」淘汰快取，test_livestock_visibility 鎖此行為，不得延後）；
-    -- getSpecificPlayer/getUsername 原版用例 ISMiniMap.lua:216-222／ISScoreboard.lua:108
-    local playerObj = getSpecificPlayer(pn)
-    local username = playerObj and playerObj:getUsername()
-    local hasPlayer = playerObj ~= nil
-    if now < st.nextMs and st.mask == mask and st.da == da and st.dv == dv
-        and st.rawA == rawA and st.rawV == rawV and st.mode == livestockMode
-        and st.username == username and st.hasPlayer == hasPlayer then
-        return st
-    end
-    -- 座標 getter 延後到節流通過後（ICON-3）：px/py 僅重取樣的距離閘用，
-    -- 節流命中的 29/30 幀原本白付 2 次跨界
-    local px = playerObj and playerObj:getX()
-    local py = playerObj and playerObj:getY()
-    st.mask = mask
-    st.da = da
-    st.dv = dv
-    st.rawA = rawA
-    st.rawV = rawV
-    st.mode = livestockMode
-    st.username = username
-    st.hasPlayer = hasPlayer
-    st.nextMs = now + ADOTS_INTERVAL_MS
-    st.count = 0
-    local cell = getCell()
-    if not cell then return st end
-    local minX, maxX, minY, maxY = visibleWorldAABB(inner) -- 可視框剔除（同殭屍取樣）
-    -- 仿射錨點＝取樣時的視野中心（理由同殭屍取樣的 st.acx 註解）
-    local sacx = (minX + maxX) / 2
-    local sacy = (minY + maxY) / 2
-    st.acx = sacx - sacx % 1
-    st.acy = sacy - sacy % 1
-    -- 距離啟用但缺玩家時，對應動物或載具類別 fail closed
-    local da2 = da and da * da
-    local dv2 = dv and dv * dv
-    -- 點池欄位每次全量覆寫（含 veh 旗標）——池重用會殘留上一輪欄位
-    local function push(x, y, veh, wild, group)
-        local c = st.count + 1
-        st.count = c
-        local d = st.dots[c]
-        if not d then d = {}; st.dots[c] = d end
-        d.x = x
-        d.y = y
-        d.veh = veh
-        d.wild = wild
-        d.group = group
-        return c >= ADOTS_MAX
-    end
-    -- pcall 防競態：清單雖是快照，元素仍是活物件（isDead/getX 期間可能被模擬端移除）。
-    -- 動物/載具各自一個 failure boundary：第三方動物資料出錯不連坐清空載具
-    -- （反之亦然）；失敗保留該輪已 push 的部分結果。首錯記 log 一次
-    -- （取樣層最可能出錯：第三方資料/API 漂移，broad catch 不能全靜默）
-    local function failOnce(err)
-        if not st.errLogged then
-            st.errLogged = true
-            log("animal/vehicle sampling failed: " .. tostring(err))
-        end
-    end
-    if (wantWild or (wantLive and livestockMode ~= 4)) and (not da or playerObj ~= nil) then
-        local ok, err = pcall(function()
-            local list = cell:getAnimals()
-            local shRects
-            if wantLive and (livestockMode == 2 or livestockMode == 3)
-                and username ~= nil and username ~= "" then
-                shRects = adotsSafehouseRects(username)
-            end
-            local n = list and list:size() or 0
-            if n > ADOTS_SCAN_MAX then n = ADOTS_SCAN_MAX end
-            for i = 1, n do
-                local a = list:get(i - 1)
-                local ax, ay = a:getX(), a:getY()
-                local inDistance = not da2
-                    or (ax - px) * (ax - px) + (ay - py) * (ay - py) <= da2
-                -- isDead＝IsoGameCharacter.java:4896（死亡動物屍體不畫）
-                if ax >= minX and ax <= maxX and ay >= minY and ay <= maxY
-                    and inDistance and not a:isDead() then
-                    local wild = a:isWild() -- IsoAnimal.java:3222
-                    local show = wild and wantWild
-                    if not wild then
-                        show = wantLive and adotsLivestockVisible(ax, ay, livestockMode, shRects)
-                    end
-                    if show then
-                        local group = adotsGroup(a:getAnimalType())
-                        if not (disAnimal and disAnimal[group]) then -- 物種篩選
-                            if push(ax, ay, false, wild, group) then break end
-                        end
-                    end
-                end
-            end
-        end)
-        if not ok then failOnce(err) end
-    end
-    -- 載具：getVehicles() 回 HashSet（IsoCell.java:155/2698）——沒有 get(i)，
-    -- ISVehicleBloodUI.lua:80-82 的 get 寫法是原版冷門路徑的雷、勿仿；
-    -- 以 :toArray()＋ipairs 迭代（原版用例 Vehicles.lua:1038）
-    if wantVeh and st.count < ADOTS_MAX and (not dv or playerObj ~= nil) then
-        local ok, err = pcall(function()
-            local vlist = cell:getVehicles()
-            local varr = vlist and vlist:toArray()
-            if varr then
-                local scanned = 0
-                for _, v in ipairs(varr) do
-                    scanned = scanned + 1
-                    if scanned > ADOTS_SCAN_MAX then break end
-                    local vx, vy = v:getX(), v:getY()
-                    local inDistance = not dv2
-                        or (vx - px) * (vx - px) + (vy - py) * (vy - py) <= dv2
-                    if vx >= minX and vx <= maxX and vy >= minY and vy <= maxY
-                        and inDistance then
-                        if not (disVeh and disVeh[adotsVehCategory(v)]) then -- 類別篩選
-                            if push(vx, vy, true, false, nil) then break end
-                        end
-                    end
-                end
-            end
-        end)
-        if not ok then failOnce(err) end
-    end
-    return st
-end
--- test:animal-sampling:end
-
--- 繪製（prerender wrap 內呼叫）：
---   符號風格＝黑影四斜角偏移＋染色本體疊繪兩次（白 glyph 線條細、單次繪 alpha 偏淡，
---   疊繪增濃；疊繪次數是實測調校旋鈕）——drawTextureScaled 引數 (tex,x,y,w,h,a,r,g,b)，
---   本檔標題列 wrap 與 ISCollapsableWindow.lua:160 同序；
---   物品風格＝黑底方塊（drawRect）＋原色彩圖＋野生綠角標。
--- 白 glyph 繪製：黑影四斜角＋染色本體疊繪兩次（白 glyph 線條細、單次繪 alpha 偏淡，
--- 疊繪增濃；次數是實測調校旋鈕）——動物符號風格與載具共用
-local adotsBodyACache = {} -- af→bodyA（ICON-4：sqrt 是跨界呼叫、原每圖標每幀一次；af 來自滑條離散值，鍵集有界）
-local function adotsDrawGlyph(inner, tex, ux, uy, size, r, g, b, af)
-    af = af or 1 -- 透明度係數（黑影/本體等比；統一視窗物種小圖等呼叫端可省略）
-    -- 本體疊繪兩次（增濃細線 glyph）：兩 pass 標準 alpha 合成為 1-(1-x)^2，
-    -- 每 pass 直接用 af 會偏濃（50%→實得 75%，codex review 抓出）——
-    -- 反解每 pass alpha 使合成恰等於滑條百分比；af=1 時 bodyA=1＝現行外觀不變
-    local bodyA = af >= 1 and 1 or adotsBodyACache[af]
-    if not bodyA then
-        bodyA = 1 - math.sqrt(1 - af)
-        adotsBodyACache[af] = bodyA
-    end
-    inner:drawTextureScaled(tex, ux - 1, uy - 1, size, size, 0.85 * af, 0, 0, 0)
-    inner:drawTextureScaled(tex, ux + 1, uy - 1, size, size, 0.85 * af, 0, 0, 0)
-    inner:drawTextureScaled(tex, ux - 1, uy + 1, size, size, 0.85 * af, 0, 0, 0)
-    inner:drawTextureScaled(tex, ux + 1, uy + 1, size, size, 0.85 * af, 0, 0, 0)
-    inner:drawTextureScaled(tex, ux, uy, size, size, bodyA, r, g, b)
-    inner:drawTextureScaled(tex, ux, uy, size, size, bodyA, r, g, b)
-end
-
--- wildOpt/liveOpt/vehOpt＝該表面的開關選項（小地圖 AnimalWild…／世界地圖 WM 前綴）；
--- 風格/大小/顏色/物種與類別篩選、伺服器沙盒閘皆兩表面共用
-local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
-    local allowAnimals = sandboxGate("AllowAnimalDots", true) ~= false -- 伺服器沙盒閘門
-    local wantWild = allowAnimals and getBoolOption(wildOpt, false)
-    local wantLive = allowAnimals and getBoolOption(liveOpt, false)
-    local wantVeh = getBoolOption(vehOpt, false)
-        and sandboxGate("AllowVehicleDots", true) ~= false
-    if not (wantWild or wantLive or wantVeh) then return end -- 全關＝零成本
-    local st = sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
-    if st.count == 0 then return end
-    local styleItem = getComboIndex("AnimalIconStyle", 1) == 2
-    -- 大小/透明度滑條每幀讀值（0.9.0 起動物/載具各自獨立；風格不再影響大小）
-    local aSize = getSliderValue("AnimalIconSize", 16, 8, 48)
-    local vSize = getSliderValue("VehicleIconSize", 16, 8, 48)
-    local aAlpha = getSliderValue("AnimalIconAlpha", 100, 10, 100) / 100
-    local vAlpha = getSliderValue("VehicleIconAlpha", 100, 10, 100) / 100
-    -- 染色三下拉每幀讀值（同殭屍點顏色模式，存檔即生效）
-    local wildC = adotsColor("AnimalWildColor", 2)
-    local liveC = adotsColor("AnimalLivestockColor", 1)
-    local vehC = adotsColor("VehicleIconColor", 4)
-    local mapAPI = inner.mapAPI
-    -- 仿射投影＋half 提出迴圈（perf 稽核 ICON-2/ICON-4）：投影同殭屍點（錨定
-    -- 取樣時視野中心 st.acx、首點 fallback）；size 僅 aSize/vSize 兩種，
-    -- math.floor（跨界）原每點一次改為迴圈前各一次
-    local aHalf = math.floor(aSize / 2)
-    local vHalf = math.floor(vSize / 2)
-    if st.count == 0 then return end
-    local d1 = st.dots[1]
-    local pax = st.acx or (d1.x - d1.x % 1)
-    local pay = st.acy or (d1.y - d1.y % 1)
-    local p0x, p0y, sxx, sxy, syx, syy = deriveAffine(mapAPI, pax, pay)
-    for i = 1, st.count do
-        local d = st.dots[i]
-        local size = d.veh and vSize or aSize
-        local half = d.veh and vHalf or aHalf -- 圖標中心對齊目標位置
-        local ddx, ddy = d.x - pax, d.y - pay
-        local ux = p0x + ddx * sxx + ddy * syx - half
-        local uy = p0y + ddx * sxy + ddy * syy - half
-        -- 手動裁切同殭屍點位（Lua 繪製不吃元件裁切）；留 1px 邊給影子/描邊
-        if ux >= 1 and uy >= 1 and ux + size <= inner.width - 1 and uy + size <= inner.height - 1 then
-            if d.veh then -- 載具：恆用符號（無對應物品圖），顏色可自訂
-                local tex = adotsTexture(ADOTS_VEH_SYM)
-                if tex then
-                    adotsDrawGlyph(inner, tex, ux, uy, size, vehC[1], vehC[2], vehC[3], vAlpha)
-                end
-            else
-                local art = ADOTS_ART[d.group]
-                local tex, asItem
-                if styleItem and art then
-                    tex = adotsTexture(art.item)
-                    asItem = tex ~= nil
-                end
-                if not tex then
-                    tex = adotsTexture(art and art.sym or ADOTS_FALLBACK_SYM)
-                        or adotsTexture(ADOTS_FALLBACK_SYM)
-                end
-                if tex then
-                    if asItem then
-                        inner:drawRect(ux - 1, uy - 1, size + 2, size + 2, 0.75 * aAlpha, 0, 0, 0)
-                        inner:drawTextureScaled(tex, ux, uy, size, size, aAlpha, 1, 1, 1)
-                        if d.wild then -- 角標＝野生（彩圖不可染色，用角標區分；色跟野生下拉）
-                            inner:drawRect(ux + size - 3, uy - 1, 4, 4, aAlpha,
-                                wildC[1], wildC[2], wildC[3])
-                        end
-                    else
-                        local c = d.wild and wildC or liveC
-                        adotsDrawGlyph(inner, tex, ux, uy, size, c[1], c[2], c[3], aAlpha)
-                    end
-                end
-            end
-        end
-    end
-end
 
 --------------------------------------------------------------------------------
 -- 安全屋範圍（Safehouses，預設開）：成員（含擁有者/受邀）＝綠框、他人＝紅框。
@@ -3482,6 +2962,24 @@ local function drawZoneIcons(inner)
                                 if ok then
                                     inner:drawTextureScaled(icon.tex, ix, iy, s, s,
                                         ia, icon.r, icon.g, icon.b)
+                                    if z.basement then
+                                        -- 地下條目「↓」角標（POI v3 basement 欄；幾何自
+                                        -- 縮放不吃字型）：右下黑底小方塊＋白色下箭頭
+                                        -- ＝「設施在地下層」，地上可能是別的建築
+                                        -- 尺寸夾限（review：s=8 時固定 7px 塊蓋掉 77%
+                                        -- 圖標面積、剪影不可辨）：0.45s 夾 [5,9]——
+                                        -- s=8→5px（39%）、s=18→8px、s=48 封頂 9px
+                                        local bs = math.floor(s * 0.45)
+                                        if bs < 5 then bs = 5 end
+                                        if bs > 9 then bs = 9 end
+                                        local bx0, by0 = ix + s - bs, iy + s - bs
+                                        inner:drawRect(bx0, by0, bs, bs, 0.8 * ia, 0, 0, 0)
+                                        local mx = bx0 + bs / 2
+                                        local byb = by0 + bs - 2
+                                        inner:drawLine(nil, mx, by0 + 2, mx, byb, 1, ia, 1, 1, 1)
+                                        inner:drawLine(nil, bx0 + 2, byb - 3, mx, byb, 1, ia, 1, 1, 1)
+                                        inner:drawLine(nil, mx, byb, bx0 + bs - 2, byb - 3, 1, ia, 1, 1, 1)
+                                    end
                                 end
                             end
                         end
@@ -3509,13 +3007,15 @@ if ISWorldMap and ISWorldMap.prerender then
         -- 畫在 original prerender「之前」：引擎地圖本體在 Java 層早已畫完
         -- （UIWorldMap.java:152→317 才進 Lua prerender），而 original 內含
         -- 註記編輯預覽（ISWorldMapSymbols.lua:1459）——先畫圖標，預覽才不被反蓋。
-        -- 持久繪製錯誤首次記 log（同小地圖動物繪製的 log-once 策略）
-        local adOk, adErr = pcall(drawAnimalDots, self, "WMAnimalWild", "WMAnimalLivestock", "WMVehicleDots")
+        -- 持久繪製錯誤首次記 log（同小地圖動物繪製的 log-once 策略）。
+        -- 點雲本體在 _Dots.lua（主 chunk locvar 上限拆檔），Core.* 動態查：
+        -- 模組缺席（載入失敗）時 pcall(nil) 回 false，照走 log-once 可診斷
+        local adOk, adErr = pcall(Core.drawAnimalDots, self, "WMAnimalWild", "WMAnimalLivestock", "WMVehicleDots")
         if not adOk and not self._minidoracatWMADotsErrLogged then
             self._minidoracatWMADotsErrLogged = true
             log("world map animal icons draw failed: " .. tostring(adErr))
         end
-        local zdOk, zdErr = pcall(drawZombieDotsOn, self, "WMZombieDots")
+        local zdOk, zdErr = pcall(Core.drawZombieDotsOn, self, "WMZombieDots")
         if not zdOk and not self._minidoracatWMZDotsErrLogged then
             self._minidoracatWMZDotsErrLogged = true
             log("world map zombie dots draw failed: " .. tostring(zdErr))
@@ -3543,7 +3043,25 @@ if ISWorldMap and ISWorldMap.createChildren then
             -- Core.toggleSettingsWindow＝Settings 模組檔提供；缺席（模組缺失）就不插鈕
             if not (modOptions and Core.toggleSettingsWindow and self.buttonPanel and self.closeBtn) then return end
             local btnSize = self.closeBtn.height
-            local btn = ISButton:new(self.closeBtn.x, 0, btnSize, btnSize, "", self,
+            -- 放大鏡搜尋鈕（實測回饋：大地圖找不到搜尋入口——右鍵選單之外補
+            -- 按鈕）；self 兼 NavRoute 引擎冷啟動的 mapAPI 載體（同右鍵選單）
+            local searchBtn = ISButton:new(self.closeBtn.x, 0, btnSize, btnSize, "", self,
+                function(target)
+                    if Core.toggleSearchWindow then
+                        Core.toggleSearchWindow(target.playerNum or 0, target)
+                    end
+                end)
+            searchBtn:initialise()
+            local texSearch = getTexture("media/ui/Search_Icon_On.png")
+            if texSearch then
+                searchBtn:setImage(texSearch)
+                searchBtn:forceImageSize(math.floor(btnSize * 0.6), math.floor(btnSize * 0.6))
+            else
+                searchBtn:setTitle(getText("UI_MinidoracatMiniMap_BtnSearchLabel"))
+            end
+            searchBtn.tooltip = getText("UI_MinidoracatMiniMap_BtnSearch")
+            self.buttonPanel:addChild(searchBtn)
+            local btn = ISButton:new(searchBtn:getRight() + 10, 0, btnSize, btnSize, "", self,
                 function(target) Core.toggleSettingsWindow(target) end)
             btn:initialise()
             local paw = adotsTexture and adotsTexture("media/ui/LootableMaps/map_pawprint.png")
@@ -3559,6 +3077,7 @@ if ISWorldMap and ISWorldMap.createChildren then
             self.buttonPanel:shrinkWrap(0, 0, nil)
             self.buttonPanel:setX(self.width - 10 - self.buttonPanel.width)
             self._minidoracatWMBtn = btn
+            self._minidoracatWMSearchBtn = searchBtn
             -- ponytail: 未登記手把導航列（同小地圖新鈕的取捨——事後補列會亂序），
             -- 手把用戶走 ESC 選項頁（PZAPI ModOptions 已列全部開關；引擎原生三項
             -- 原版世界地圖選項面板本就可及），需要時再補登記
@@ -3699,6 +3218,34 @@ end
 -- 小地圖（ISMiniMapInner，本檔）與世界地圖（ISWorldMap，_WorldMapNav.lua）兩面
 -- 共用同一批狀態與持久化路徑；世界地圖模組檔載入在後，經 Core 命名空間取用
 Core.navGetTarget = function(pn) return navTargets[pn] end
+-- NavRoute 分享路線用：回「給此玩家的分享目標桶」（[author]={x,y}）；沙盒
+-- 閘門與旗標繪製同源——閘門關閉時旗與路線一起消失，不會旗滅線存
+Core.navGetShared = function(pn)
+    if sandboxGate("AllowNavShare", true) == false then return nil end
+    local playerObj = getSpecificPlayer(pn)
+    return playerObj and sharedTargets[playerObj:getUsername()] or nil
+end
+-- 分享目標配色盤：首色紅（單一分享者＝紅，使用者回饋要與自己的青色路線
+-- 明確區分）；多分享者以作者名穩定 hash 輪色——同人跨場恆同色。色盤避開
+-- 自己的金旗與路線青色
+local SHARE_COLORS = {
+    { 1.0, 0.25, 0.25 }, -- 紅
+    { 1.0, 0.62, 0.15 }, -- 橙
+    { 0.75, 0.45, 1.0 }, -- 紫
+    { 0.3, 0.95, 0.4 },  -- 綠
+    { 1.0, 0.5, 0.8 },   -- 粉
+    { 0.65, 0.9, 0.2 },  -- 黃綠
+}
+Core.navShareColor = function(author)
+    local h = 0
+    -- string.byte：Kahlua 有註冊但原版無用例（AGENTS.md）——pcall 降級為長度
+    local ok = pcall(function()
+        for i = 1, #author do h = h + author:byte(i) * i end
+    end)
+    if not ok then h = #author end
+    local c = SHARE_COLORS[(h % #SHARE_COLORS) + 1]
+    return c[1], c[2], c[3]
+end
 Core.navSetTarget = function(pn, worldX, worldY)
     local playerObj = getSpecificPlayer(pn)
     if not playerObj then return end
@@ -3749,22 +3296,37 @@ function ISMiniMapInner:onMinidoracatShareTarget()
     Core.navShareTarget(self.playerNum or 0)
 end
 
--- 旗標：黑框桿＋色旗（drawRect 疊法同殭屍點描邊）；label 掛旗上（分享者名字）
-local function drawNavFlag(inner, ux, uy, r, g, b, label)
+function ISMiniMapInner:onMinidoracatSearch()
+    if Core.toggleSearchWindow then
+        Core.toggleSearchWindow(self.playerNum or 0, self)
+    end
+end
+
+-- 旗標：黑框桿＋色旗（drawRect 疊法同殭屍點描邊）；label（分享者名）與 dist
+-- （距離公尺）分兩行掛旗上——同行擠在一起難讀（使用者回饋），名字上、距離下
+local function drawNavFlag(inner, ux, uy, r, g, b, label, dist)
     inner:drawRect(ux - 2, uy - 14, 4, 15, 0.8, 0, 0, 0)
     inner:drawRect(ux - 1, uy - 13, 2, 13, 1, 1, 1, 1)
     inner:drawRect(ux, uy - 14, 11, 8, 0.8, 0, 0, 0)
     inner:drawRect(ux + 1, uy - 13, 9, 6, 1, r, g, b)
-    if label then
-        -- 深色底墊字（同原版玩家名牌做法 UIWorldMap.java:509），淺色地圖上才清晰；
-        -- 位置夾進視窗（長名字貼上/右緣時不外溢），夾法同距離文字
-        local tw = getTextManager():MeasureStringX(UIFont.Small, label)
-        local w, h = inner.width, inner.height
-        local lx, ly = ux + 4, uy - 30
+    -- 深色底墊字（同原版玩家名牌做法 UIWorldMap.java:509），淺色地圖上才清晰；
+    -- 位置夾進視窗（長名字貼上/右緣時不外溢）。Medium 字級＋離旗 10/44px
+    local w, h = inner.width, inner.height
+    local lines = {}
+    -- 作者名行用旗色（隊友 ID 與其路線/旗同色一眼對應，使用者回饋）；距離行
+    -- 維持白色（讀數清晰）
+    if label then lines[#lines + 1] = { t = label, cr = r, cg = g, cb = b } end
+    if dist then lines[#lines + 1] = { t = tostring(dist) .. "m", cr = 1, cg = 1, cb = 1 } end
+    local ly = uy - 44 - (#lines - 1) * 22 -- 多行往上長，最下行維持離旗 44px
+    for i = 1, #lines do
+        local ln = lines[i]
+        local tw = getTextManager():MeasureStringX(UIFont.Medium, ln.t)
+        local lx = ux + 10
         if lx < 2 then lx = 2 elseif lx > w - tw - 2 then lx = w - tw - 2 end
-        if ly < 2 then ly = 2 elseif ly > h - 16 then ly = h - 16 end
-        inner:drawRect(lx - 3, ly - 1, tw + 6, 16, 0.6, 0, 0, 0)
-        inner:drawText(label, lx, ly, 1, 1, 1, 0.95, UIFont.Small) -- drawText＝ISUIElement.lua:1293
+        local cy2 = ly + (i - 1) * 22
+        if cy2 < 2 then cy2 = 2 elseif cy2 > h - 22 then cy2 = h - 22 end
+        inner:drawRect(lx - 4, cy2 - 1, tw + 8, 22, 0.6, 0, 0, 0)
+        inner:drawText(ln.t, lx, cy2, ln.cr, ln.cg, ln.cb, 0.95, UIFont.Medium) -- drawText＝ISUIElement.lua:1293
     end
 end
 
@@ -3773,7 +3335,7 @@ end
 local function drawNavIndicator(inner, tx, ty, r, g, b, label, dist)
     local w, h = inner.width, inner.height
     if tx >= 8 and ty >= 16 and tx <= w - 14 and ty <= h - 4 then
-        drawNavFlag(inner, tx, ty, r, g, b, label)
+        drawNavFlag(inner, tx, ty, r, g, b, label, dist) -- 名字/距離分行由旗標函式排版
         return
     end
     local cx, cy = w / 2, h / 2
@@ -3793,32 +3355,50 @@ local function drawNavIndicator(inner, tx, ty, r, g, b, label, dist)
     local txt = label
     if dist then txt = tostring(dist) .. "m" end
     if txt then
-        -- MeasureStringX 用例 ISFactionUI.lua:238
-        local tw = getTextManager():MeasureStringX(UIFont.Small, txt)
-        local px = tipx - uxn * 24 - tw / 2
-        local py = tipy - uyn * 24 - 7
+        -- MeasureStringX 用例 ISFactionUI.lua:238；Medium 字級同旗標 label
+        local tw = getTextManager():MeasureStringX(UIFont.Medium, txt)
+        local px = tipx - uxn * 28 - tw / 2
+        local py = tipy - uyn * 28 - 10
         if px < 2 then px = 2 elseif px > w - tw - 2 then px = w - tw - 2 end
-        if py < 2 then py = 2 elseif py > h - 16 then py = h - 16 end
+        if py < 2 then py = 2 elseif py > h - 22 then py = h - 22 end
         -- 深色底墊字（同原版玩家名牌做法 UIWorldMap.java:509），淺色地圖上才清晰
-        inner:drawRect(px - 3, py - 1, tw + 6, 16, 0.6, 0, 0, 0)
-        inner:drawText(txt, px, py, 1, 1, 1, 0.95, UIFont.Small)
+        inner:drawRect(px - 4, py - 1, tw + 8, 22, 0.6, 0, 0, 0)
+        inner:drawText(txt, px, py, 1, 1, 1, 0.95, UIFont.Medium)
     end
 end
 
+
 local function drawNavTargets(inner)
+    -- 路線層（_NavRoute.lua 掛 Core.drawNavRoute）：先畫＝墊在旗標/箭頭/分享旗
+    -- 之下。收 err＋實例旗標 log-once（同動物繪製/_WorldMapNav 慣例：主檔
+    -- :4022-4027 明寫「持久錯誤首次記 log 免全靜默」——裸 pcall 吞錯會讓路線
+    -- 靜默消失且每幀重試失敗熱路徑，三 review lanes 一致指認）
+    if Core.drawNavRoute then
+        local navOk, navErr = pcall(Core.drawNavRoute, inner)
+        if not navOk and not inner._minidoracatNavRouteErrLogged then
+            inner._minidoracatNavRouteErrLogged = true
+            log("nav route draw failed: " .. tostring(navErr))
+        end
+    end
     local pn = inner.playerNum or 0
     local mapAPI = inner.mapAPI
     local playerObj = getSpecificPlayer(pn)
-    -- 陣營分享來的：只畫「給這位玩家」的桶（青旗＋名字）；getUsername 原版用例
-    -- ISScoreboard.lua:108。已收到的目標仍受目前 AllowNavShare 閘門即時控制
-    local bucket = sandboxGate("AllowNavShare", true) ~= false
-        and playerObj and sharedTargets[playerObj:getUsername()]
-    if bucket then
+    -- 陣營分享來的：只畫「給這位玩家」的桶（青旗＋名字＋距離）；getUsername
+    -- 原版用例 ISScoreboard.lua:108。已收到的目標仍受目前 AllowNavShare 閘門
+    -- 即時控制（navGetShared 同源）
+    local bucket = Core.navGetShared and Core.navGetShared(pn) or nil
+    if bucket and playerObj then
         for author, t in pairs(bucket) do
+            local sdx, sdy = t.x - playerObj:getX(), t.y - playerObj:getY()
+            local cr, cg, cb = Core.navShareColor(author)
             drawNavIndicator(inner, mapAPI:worldToUIX(t.x, t.y), mapAPI:worldToUIY(t.x, t.y),
-                0.2, 0.8, 1.0, author, nil)
+                cr, cg, cb, author, math.floor(math.sqrt(sdx * sdx + sdy * sdy) + 0.5))
         end
     end
+    -- 搜尋落點 ping（本體在 _Search.lua 掛 Core.drawSearchPing——主 chunk locvar
+    -- 已頂 Kahlua 200 上限（LexState actvar[200]），主檔不得再增頂層 local；
+    -- 動態查同 :3924 Core.drawNavRoute 慣例）。無導航目標時也要畫，須在下行早退前
+    if Core.drawSearchPing then Core.drawSearchPing(inner, mapAPI) end
     local t = navTargets[pn]
     if not t then return end
     if not playerObj then return end
@@ -3942,6 +3522,8 @@ if ISMiniMapInner and ISMiniMapInner.onRightMouseUp then
         local cwx, cwy = math.floor(worldX), math.floor(worldY)
         context:addOption(getText("UI_MinidoracatMiniMap_CopyHere",
             string.format("%d, %d, 0", cwx, cwy)), self, self.onMinidoracatCopyCoords, cwx, cwy)
+        context:addOption(getText("UI_MinidoracatMiniMap_SearchMenu"), self,
+            self.onMinidoracatSearch)
         if navTargets[pn] then
             context:addOption(getText("UI_MinidoracatMiniMap_ClearTarget"), self,
                 self.onMinidoracatClearTarget)
@@ -4014,7 +3596,7 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         pcall(drawNavTargets, self)
         -- 動物圖標（畫在殭屍點位之下：殭屍小點蓋大圖標可辨）。持久錯誤首次記 log
         -- 免全靜默（API 漂移/第三方動物資料異常可診斷；既有三個 pcall 沿舊慣例不動）
-        local adOk, adErr = pcall(drawAnimalDots, self, "AnimalWild", "AnimalLivestock", "VehicleDots")
+        local adOk, adErr = pcall(Core.drawAnimalDots, self, "AnimalWild", "AnimalLivestock", "VehicleDots")
         if not adOk and not self._minidoracatADotsErrLogged then
             self._minidoracatADotsErrLogged = true
             log("animal icons draw failed: " .. tostring(adErr))
@@ -4039,7 +3621,9 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
             cBtn.borderColor.g = flOn and 0.85 or 0.4
             cBtn.borderColor.b = 0.4
         end
-        drawZombieDotsOn(self, "ZombieDots") -- 繪製本體共用化（世界地圖用 WMZombieDots）
+        if Core.drawZombieDotsOn then -- 繪製本體在 _Dots.lua（世界地圖用 WMZombieDots）
+            Core.drawZombieDotsOn(self, "ZombieDots")
+        end
     end
 end
 
@@ -4553,6 +4137,8 @@ Core.ADOTS_SPECIES_UI = ADOTS_SPECIES_UI
 Core.ADOTS_VEHCAT_UI = ADOTS_VEHCAT_UI
 Core.ADOTS_ART = ADOTS_ART
 Core.adotsTexture = adotsTexture
+Core.ADOTS_FALLBACK_SYM = ADOTS_FALLBACK_SYM -- _Dots.lua：未知物種腳印備援
+Core.deriveAffine = deriveAffine -- _Dots.lua：仿射投影快取（zone/POI/點雲共用單一實作）
 Core.registeredPacks = registeredPacks
 Core.registeredZoneProviders = registeredZoneProviders
 Core.hasExternalZoneProvider = hasExternalZoneProvider
@@ -4561,7 +4147,10 @@ Core.togglePlayerMiniMap = togglePlayerMiniMap
 Core.debugWarn = debugWarn
 Core.applyChromeOpacity = applyChromeOpacity -- _Ghost.lua 切換穿透時重套外框透明度
 Core.cancelResize = cancelResize -- _Ghost.lua 進穿透時取消進行中的邊緣縮放
+Core.clipSegment = clipSegment -- _NavRoute.lua：路線裁剪（共用零配置 Liang-Barsky 單一實作）
 Core.drawNavTargets = drawNavTargets -- _WorldMapNav.lua：世界地圖側導航旗標/箭頭（共用繪製）
+Core.getLoadedMapDirs = getLoadedMapDirs -- _NavRoute.lua：cell 勝出閘門的地圖優先序來源
+Core.visibleWorldAABB = visibleWorldAABB -- _NavRoute.lua：路線繪製的世界視窗剔除（共用單一實作）
 Core.drawPlayerCoords = drawPlayerCoords -- _WorldMapNav.lua：世界地圖側座標列（共用繪製）
 Core.copyCoordsText = copyCoordsText -- _WorldMapNav.lua：右鍵複製座標（共用剪貼簿＋琥珀回饋）
 Core.ready = true -- 模組檔載入閘門：最後設定＝主檔完整走完才放行

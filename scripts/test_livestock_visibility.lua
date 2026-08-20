@@ -1,9 +1,13 @@
--- 主檔拆分後：牲畜/取樣/註冊區段仍在主檔（arg[1]）；
--- worldmap-effective-tick 與 UNIFIED_WM_TICKS 已移至 _Settings.lua（arg[2]）
+-- 主檔拆分後的區段來源：註冊/模式/距離/安全屋/導航閘門仍在主檔（arg[1]）；
+-- worldmap-effective-tick 與 UNIFIED_WM_TICKS 在 _Settings.lua（arg[2]）；
+-- 點雲取樣三段（zombie/animal-sampling、livestock-visibility）於主 chunk
+-- locvar 上限拆檔後移至 _Dots.lua（arg[3]，2026-08-20）
 local sourcePath = arg[1]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua"
 local settingsPath = arg[2]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Settings.lua"
+local dotsPath = arg[3]
+    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Dots.lua"
 
 local function readSource(path)
     local file = assert(io.open(path, "rb"))
@@ -13,8 +17,9 @@ local function readSource(path)
 end
 local source = readSource(sourcePath)
 local settingsSource = readSource(settingsPath)
+local dotsSource = readSource(dotsPath)
 
-local body = assert(source:match(
+local body = assert(dotsSource:match(
     "%-%- test:livestock%-visibility:start\n(.-)\n%-%- test:livestock%-visibility:end"),
     "找不到 adotsLivestockVisible 測試區段")
 local compile = loadstring or load
@@ -152,7 +157,7 @@ local function livestockVisibilityMode() return mode end
 assert(worldMapChunk, worldMapErr)
 local worldMap = worldMapChunk()
 
-local sampleBody = assert(source:match(
+local sampleBody = assert(dotsSource:match(
     "%-%- test:animal%-sampling:start\n(.-)\n%-%- test:animal%-sampling:end"),
     "找不到 sampleAnimalDots 測試區段")
 local samplePrelude = [=[
@@ -241,7 +246,7 @@ local sampleChunk, sampleErr = compile(samplePrelude .. "\n" .. sampleBody .. "\
 assert(sampleChunk, sampleErr)
 local harness = sampleChunk()
 
-local zombieBody = assert(source:match(
+local zombieBody = assert(dotsSource:match(
     "%-%- test:zombie%-sampling:start\n(.-)\n%-%- test:zombie%-sampling:end"),
     "找不到 sampleZombieDots 測試區段")
 local zombiePrelude = [=[
@@ -470,8 +475,10 @@ assert(settingsSource:find("if sliderW < %d+ then sliderW = %d+ end"),
 local DIST_NAMES = { "ZombieDotDistance", "AnimalIconDistance", "VehicleIconDistance",
     "SafehouseDisplayDistance", "PoiDisplayDistance" }
 for _, n in ipairs(DIST_NAMES) do
-    assert(source:find('displayDist%("' .. n .. '"%)'),
-        "主檔缺 displayDist(\"" .. n .. "\") 呼叫點")
+    -- 消費端呼叫點可在主檔或 _Dots.lua（點雲距離閘門隨拆檔遷移）
+    assert(source:find('displayDist%("' .. n .. '"%)')
+        or dotsSource:find('displayDist%("' .. n .. '"%)'),
+        "主檔/_Dots 缺 displayDist(\"" .. n .. "\") 呼叫點")
     assert(source:find('addSlider%("Client' .. n .. '", "UI_MinidoracatMiniMap_Dist%w+", 0, CLIENT_DIST_MAX, 1, 0%)'),
         "ESC 頁缺 Client" .. n .. " 滑條註冊（或 step 不為 1）")
     assert(settingsSource:find('capBy = "' .. n .. '"'),

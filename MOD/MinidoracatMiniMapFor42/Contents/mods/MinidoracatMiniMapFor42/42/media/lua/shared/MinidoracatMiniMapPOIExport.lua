@@ -6,7 +6,9 @@
 --
 -- 檔案格式 v1（一條目一行；條目間逗號在行首）：
 --   {"v":1,"modversion":"<mod.info modversion>","count":N,"categories":{
---   "<cat>":[{"b":[x,y,w,h],"r":[[x,y,w,h],...]}
+--   "<cat>":[{"b":[x,y,w,h],"u":1,"r":[[x,y,w,h],...]}
+--   （"u":1＝地下條目（B42 basement，主分類房的主樓層在地下）；選配欄、
+--   僅地下時輸出——additive 擴充，消費端（pz-rewild）忽略未知鍵不受影響）
 --   ,{...}
 --   ],"<cat2>":[...
 --   ]}}
@@ -79,6 +81,10 @@ local function buildPoiBlocksJson(data, modversion)
             pn = pn + 1
             parts[pn] = '"b":[' .. b.x .. ',' .. b.y .. ',' .. b.w .. ',' .. b.h .. '],'
         end
+        if e.u == 1 then
+            pn = pn + 1
+            parts[pn] = '"u":1,' -- 地下條目（basement；additive 選配欄——rewild 忽略未知鍵）
+        end
         pn = pn + 1
         parts[pn] = '"r":['
         for j = 1, e.rn do
@@ -90,11 +96,11 @@ local function buildPoiBlocksJson(data, modversion)
         pn = pn + 1
         parts[pn] = ']}'
         ln = ln + 1
-        lines[ln] = table.concat(parts)
+        lines[ln] = table.concat(parts, "", 1, pn) -- 顯式界（家規：Kahlua 缺 4 參走 table.len＝隱性 # 依賴）
     end
     ln = ln + 1
     lines[ln] = (curCat ~= nil) and ']}}' or '}}'
-    return table.concat(lines, "\n")
+    return table.concat(lines, "\n", 1, ln)
 end
 -- test:poi-export:end
 

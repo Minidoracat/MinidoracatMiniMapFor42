@@ -382,19 +382,26 @@ def build_entries(raw_buildings, categories):
         # 模式對缺 b 的條目自動退回逐房間矩形
         bbox = (bounds[0], bounds[1], bounds[2] - bounds[0],
                 bounds[3] - bounds[1]) if bounds else None
+        # 地下條目（B42 basement）：畫的主樓層在地下＝地上看不到這個設施
+        # （2026-08-20 玩家回報「普通民宅有 food 圖示」＝West Point 民宅的地下
+        # 酒吧 28_32_0，corpus 有 113 棟 basement-only、62 筆入 POI 且多為高價值
+        # loot——不剔除、改標注：圖標角標＋搜尋後綴由消費端處理）
+        underground = best < 0
         # 保險去重的身分含 bbox：兩棟不同建築若 (cat, 房間矩形) 恰好全等，少了 bbox
         # 會靜默併成一筆並丟掉另一棟的外框（codex review 指出；現 corpus 未撞到）
-        dedup_key = (key, tuple(uniq), bbox)
+        dedup_key = (key, tuple(uniq), bbox, underground)
         if dedup_key in seen:
             dup_count += 1
             continue
-        seen[dedup_key] = {"cat": key, "rects": uniq, "bbox": bbox}
+        seen[dedup_key] = {"cat": key, "rects": uniq, "bbox": bbox,
+                           "underground": underground}
         stats[key] += 1
     entries = list(seen.values())
     # key 含完整矩形清單＋bbox＝全序（只取 r[1] 座標有 6 筆同鍵、順序會隨 raw 列序
     # 漂移；bbox 同進 dedup 身分後也必須同進排序鍵，否則同 (cat,rects) 異 bbox 的
     # 兩筆順序不定，破壞 byte-identical 重生）。None（fixture）排在有值者之前
-    entries.sort(key=lambda e: (e["cat"], tuple(e["rects"]), e["bbox"] or ()))
+    entries.sort(key=lambda e: (e["cat"], tuple(e["rects"]), e["bbox"] or (),
+                                e["underground"]))
     return entries, stats, dup_count
 
 
@@ -408,9 +415,11 @@ def render_lua(entries, raw_count, gen_command):
         f"-- 來源：poi_raw.json（{raw_count} 筆建築原始資料，世界 square 座標）。",
         "-- 消費契約見 MinidoracatMiniMapPOI.lua buildPoiConverted()（v3 逐房間矩形）：",
         "-- 陣列，每項 { cat=<CATEGORIES 類別 key>, rn=<矩形數>, r={ {x,y,w,h},.. },",
-        "-- b={x,y,w,h}|nil }（世界 square 座標，x/y 左上角、w/h 尺寸；r 按面積大→小",
-        "-- 排序，r[1] 為圖標/名稱錨點；b＝整棟建築外框，「整棟外框」顯示模式用，",
-        "-- 非 r 的聯集——大型建物的分類房間可能只佔一角，兩者可差數十格）。",
+        "-- b={x,y,w,h}|nil, u=1|nil }（世界 square 座標，x/y 左上角、w/h 尺寸；",
+        "-- r 按面積大→小排序，r[1] 為圖標/名稱錨點；b＝整棟建築外框，「整棟外框」",
+        "-- 顯示模式用，非 r 的聯集——大型建物的分類房間可能只佔一角，兩者可差",
+        "-- 數十格；u=1＝地下條目（B42 basement，主分類房的主樓層在地下——圖標角標",
+        "-- ／搜尋後綴／匯出 u 欄由消費端處理，僅地下時輸出）。",
         "-- 迭代一律用 rn（Kahlua # 不可信）；count 為除錯輔助欄位。",
         "",
         "MinidoracatMiniMapPOIData = {",
@@ -424,6 +433,8 @@ def render_lua(entries, raw_count, gen_command):
         if bbox:
             b = (f", b = {{ x = {bbox[0]}, y = {bbox[1]}, "
                  f"w = {bbox[2]}, h = {bbox[3]} }}")
+        if e.get("underground"):
+            b += ", u = 1"
         lines.append(
             f'    {{ cat = "{e["cat"]}", rn = {len(e["rects"])}, '
             f'r = {{ {parts} }}{b} }},'

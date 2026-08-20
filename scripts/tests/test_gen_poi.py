@@ -744,6 +744,34 @@ def test_render_lua_emits_bbox_field():
     assert line.endswith('b = { x = 0, y = 1, w = 20, h = 30 } },'), line
 
 
+def test_basement_entry_gets_underground_flag_and_u_field():
+    """B42 basement building (all rooms level<0) must carry underground=True
+    and render `u = 1` -- 2026-08-20 player report: a surface house showed a
+    food icon because its basement is a bar (28_32_0); we annotate instead of
+    dropping the 62 high-value basement POIs."""
+    categories = [("food", frozenset({"bar"}))]
+    raw = [{"rooms": [_room("bar", (10, 10, 5, 5), level=-1)],
+            "x": 10, "y": 10, "width": 5, "height": 5, "level": -1}]
+    entries, _, _ = g.build_entries(raw, categories)
+    assert len(entries) == 1 and entries[0]["underground"] is True
+    line = [ln for ln in g.render_lua(entries, 1, "cmd").splitlines()
+            if ln.startswith("    { cat =")][0]
+    assert line.endswith(", u = 1 },"), line
+
+
+def test_surface_entry_has_no_u_field():
+    """Surface (level 0) entries must not emit the u field -- byte budget and
+    consumer semantics (absent == above ground)."""
+    categories = [("food", frozenset({"bar"}))]
+    raw = [{"rooms": [_room("bar", (10, 10, 5, 5))],
+            "x": 10, "y": 10, "width": 5, "height": 5}]
+    entries, _, _ = g.build_entries(raw, categories)
+    assert entries[0]["underground"] is False
+    line = [ln for ln in g.render_lua(entries, 1, "cmd").splitlines()
+            if ln.startswith("    { cat =")][0]
+    assert ", u = 1" not in line, line
+
+
 def test_bbox_contains_room_rects_in_production_data():
     """Whole-building outline must be a superset of the drawn room rects --
     otherwise the 'whole building' mode would clip off rooms it claims to

@@ -122,6 +122,23 @@ else:
             bad.append(r.stderr.strip().splitlines()[-1] if r.stderr else f)
     fail("Lua 語法（luac -p）", bad) if bad else ok(f"Lua 語法（luac -p，{len(LUA_FILES)} 檔）")
 
+# ---- 1b. 主 chunk 累計 local 上限 ----
+# Kahlua 每 FuncState 的 locvars 累計上限 200（LexState actvar[200] 固定陣列）；
+# -debug 下 actvarline 以「累計宣告數 nlocvars」索引，第 201 個宣告直接
+# ArrayIndexOutOfBounds（遊戲內實爆 2026-08-20：主檔加一個頂層 local function
+# 就炸，非 -debug 不炸＝最陰險的靜默出貨）。luac -p 抓不到（PUC 檢查的是同時
+# 活躍數），但 luac -l 的 main chunk 標頭 "N locals" 與 nlocvars 同義（debug
+# locvars 累計、含主 chunk 所有 block 內宣告、不含函式體）。警戒線 190：
+# 留 10 的緩衝——貼線再加就該拆檔（見 _Dots/_Settings/_NavRoute 先例）。
+if luac:
+    bad = []
+    for f in LUA_FILES:
+        r = subprocess.run([luac, "-p", "-l", f], capture_output=True, text=True)
+        m = re.search(r"main [^\n]*\n\d+\+? params[^\n]*?(\d+) locals", r.stdout)
+        if m and int(m.group(1)) > 190:
+            bad.append(f"{os.path.basename(f)}: main chunk {m.group(1)} locals（>190，Kahlua 上限 200）")
+    fail("主 chunk local 數 ≤190", bad) if bad else ok("主 chunk local 數 ≤190（Kahlua actvar[200] 防線）")
+
 # ---- 2. BOM / CRLF ----
 bad = []
 for m in MEDIA_DIRS:

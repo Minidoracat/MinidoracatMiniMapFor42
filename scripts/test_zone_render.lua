@@ -1185,12 +1185,16 @@ MinidoracatMiniMapPOIData = {
     } },
     { cat = "police", rn = 1, r = { { x = 1, y = 1, w = 0, h = 1 } } },
     { cat = "nope", rn = 1, r = { { x = 1, y = 1, w = 1, h = 1 } } },
+    -- u=1 地下條目（basement 透傳回歸鎖：漏傳＝角標/搜尋後綴全靜默失效）
+    { cat = "police", rn = 1, r = { { x = 60, y = 60, w = 3, h = 3 } }, u = 1 },
 }
 conv.build()
 local zs = conv.zones()
-assert(#zs == 1, "poi-convert：應恰 1 個 zone（無效整筆/未知類別須略過，得 " .. #zs .. "）")
+assert(#zs == 2, "poi-convert：應恰 2 個 zone（無效整筆/未知類別須略過，得 " .. #zs .. "）")
 local pz = zs[1]
 assert(pz.iconOnce == true, "poi-convert：iconOnce 未設")
+assert(pz.basement == nil, "poi-convert：地上條目不得帶 basement 旗標")
+assert(zs[2].basement == true, "poi-convert：u=1 條目須透傳 basement=true（角標/後綴依此）")
 assert(#pz.rects == 2, "poi-convert：合法矩形應 2 個（w<=0 須略過）")
 assert(pz.rects[1].x1 == 10 and pz.rects[1].y1 == 20 and pz.rects[1].x2 == 15 and pz.rects[1].y2 == 24,
     "poi-convert：rects[1] 座標轉換錯（x2 必須是 x+w）")

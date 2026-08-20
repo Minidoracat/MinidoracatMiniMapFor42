@@ -35,6 +35,8 @@ local DOCS = {
       dest = "MinidoracatMiniMap/_README_CH.txt" },
     { src = "media/exportdoc/_README_EN.txt",
       dest = "MinidoracatMiniMap/_README_EN.txt" },
+    { src = "media/exportdoc/_README_JP.txt",
+      dest = "MinidoracatMiniMap/_README_JP.txt" },
 }
 
 -- 存在就跳過，不看內容：管理員可能編修過，MOD 不該覆寫（見檔頭）。

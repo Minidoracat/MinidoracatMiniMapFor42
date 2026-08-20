@@ -1,8 +1,9 @@
 -- 小地圖首建尺寸決策（Core.minimapSizeFor）離線回歸測試。
 -- 仿 test_ghost_gate.lua：抽主檔標記區段→離線跑（純函式，只用 math.floor）。
--- 核心不變量：自訂尺寸 > 倍率縮放 > 原版尺寸；一律夾 minWH 下限——8 鈕在高字級
--- 「小（原版）」檔的溢出防護（原版 inner 寬 6*bw+72 < 8 鈕最低 8*bw+14，
--- 2x/3x/4x 字型 bw=32/39/44 各差 6/20/30px；codex review 以算術抓出的回歸）。
+-- 核心不變量：自訂尺寸 > 倍率縮放 > 原版尺寸；一律夾 minWH 下限——高字級「小
+-- （原版）」檔的按鈕列溢出防護（0.17.0 起 9 鈕：raiseResizeMinForButtons 公式
+-- 9*bw+8*2+2*2+4；本測試的 minWH 為外部參數，不變量與鈕數解耦，案例數字沿用
+-- 8 鈕時代亦有效；codex review 以算術抓出的回歸）。
 -- 用法：lua scripts/test_minimap_size.lua
 local mainPath = arg[1]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua"

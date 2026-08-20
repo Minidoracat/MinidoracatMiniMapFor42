@@ -58,6 +58,7 @@ local UNIFIED_LAYER_TICKS = {
     { id = "ZombieIntensity", label = "UI_MinidoracatMiniMap_ZombieIntensity", default = false },
     { id = "PlaceNames", label = "UI_MinidoracatMiniMap_PlaceNames", default = true },
     { id = "StreetNames", label = "UI_MinidoracatMiniMap_StreetNames", default = true },
+    { id = "NavRoute", label = "UI_MinidoracatMiniMap_NavRoute", default = true },
     { id = "Safehouses", label = "UI_MinidoracatMiniMap_Safehouses", default = true },
     -- PoiIcons/PoiBlocks 移入獨立「資源點」區塊（poicat），與 ZoneLayer 解耦
     { id = "Isometric", label = "IGUI_MapOption_Isometric", engine = true },
@@ -1142,6 +1143,31 @@ local function buildSettingsWindow()
     win.resizable = false -- 同圖層面板做法（ISMiniMap.lua:187）
     win:setTitle(getText("UI_MinidoracatMiniMap_Options")) -- setTitle＝ISCollapsableWindow.lua:18-20
     win:initialise()
+    -- 家族圓角皮膚（Core.Skin，同搜尋視窗；移植自 NoticeBoard NBSkin）：
+    -- 關掉原生框改自畫。drawFrame 用欄位賦值、不走 setDrawFrame——那個 setter
+    -- 會連 closeButton 一起藏（ISCollapsableWindow.lua:356-360）。原生 prerender
+    -- 在兩旗標 false 時只剩 stencil 段（:152-176），照常回呼保留裁切
+    win.drawFrame = false
+    win.background = false
+    local origWinPrerender = win.prerender
+    win.prerender = function(self)
+        local Skin = Core.Skin
+        local th = self:titleBarHeight()
+        local h = self.isCollapsed and th or self.height -- 收合＝只剩標題列（原生 :153-157 同判）
+        if Skin then
+            Skin.fill(self, 0, 0, self.width, h, Skin.COLORS.BG_PANEL)
+            -- 收合時標題列＝整窗，四角全圓（topOnly=false）；展開時只圓上兩角
+            Skin.fill(self, 0, 0, self.width, th, Skin.COLORS.TITLEBAR_FILL, not self.isCollapsed)
+            Skin.border(self, 0, 0, self.width, h, Skin.COLORS.BORDER)
+        else -- 皮膚缺席（貼圖壞）退回原生同款直角
+            self:drawRect(0, 0, self.width, h, 0.8, 0, 0, 0)
+            self:drawRectBorder(0, 0, self.width, h, 1, 0.4, 0.4, 0.4)
+        end
+        if self.title then -- 原生置中標題（ISCollapsableWindow.lua:173-174 同款）
+            self:drawTextCentre(self.title, self.width / 2, 1, 1, 1, 1, 1, self.titleBarFont)
+        end
+        origWinPrerender(self)
+    end
     win:addToUIManager()
     win:setVisible(false)
     win._rows = {}

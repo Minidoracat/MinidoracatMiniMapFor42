@@ -2,6 +2,7 @@ Minidoracat MiniMap - Zomboid/Lua/MinidoracatMiniMap 目錄說明（format v1）
 
 本檔由 MOD 在檔案不存在時自動產生，之後不會再覆寫（你可以在上面加註記）；
 刪掉不影響 MOD 運作，下次啟動會補回。
+英文版與日文版在同目錄：_README_EN.txt、_README_JP.txt。
 完整契約（含全部邊界情況）在 MOD 原始碼檔頭：
   42/media/lua/server/MinidoracatMiniMapPlayerExport.lua
   42/media/lua/shared/MinidoracatMiniMapPOIExport.lua
@@ -9,12 +10,15 @@ Minidoracat MiniMap - Zomboid/Lua/MinidoracatMiniMap 目錄說明（format v1）
 == 這個目錄有什麼 ==
 
   poi_blocks.json           內建資源點（POI）區塊。每次啟動寫一次，內容隨 MOD
-                            版本走，與存檔無關。
+                            版本走，與存檔無關。條目選配欄 "u":1＝地下室設施
+                            （B42 basement，主分類房的主樓層在地下；additive
+                            擴充，工具端忽略未知鍵即可）。
   players_存檔名.json       玩家座標。要在沙盒開啟「匯出玩家座標檔」才會產生，
                             之後每 N 秒（沙盒可調，預設 5）整檔重寫。
                             存檔名＝多人的伺服器名／單機的存檔資料夾名。
   _README_CH.txt            本檔（繁體中文）。
   _README_EN.txt            本檔（English）。
+  _README_JP.txt            本檔（日本語）。
 
   另外 Zones addon 會在隔壁目錄 MinidoracatMiniMapZones/ 放 zones.json
   （伺服器自訂區域），那是另一個 MOD 的產物。

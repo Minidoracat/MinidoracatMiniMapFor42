@@ -233,6 +233,12 @@ local function buildPoiConverted()
                                         g = isColor and 1 or color.g,
                                         b = isColor and 1 or color.b } or nil,
                                     category = cat,
+                                    -- 地下條目（B42 basement；資料 u=1＝主分類房的
+                                    -- **主樓層**在地下——dominant floor，跨層同類房取
+                                    -- 面積最大層）：圖標 pass 加「↓」角標——地上是別的
+                                    -- 建築（如民宅），無標注會被當標錯（2026-08-20
+                                    -- West Point 地下酒吧玩家回報）
+                                    basement = (e.u == 1) or nil,
                                 }
                             end
                         end

@@ -34,6 +34,14 @@ function ISWorldMap:onMinidoracatCopyCoords(wx, wy)
     Core.copyCoordsText(self, string.format("%d,%d,0", wx, wy))
 end
 
+-- 搜尋視窗（本體 _Search.lua；世界地圖側 self 兼作 NavRoute 引擎冷啟動的
+-- mapAPI 載體——與小地圖 inner 同介面）
+function ISWorldMap:onMinidoracatSearch()
+    if Core.toggleSearchWindow then
+        Core.toggleSearchWindow(self.playerNum or 0, self)
+    end
+end
+
 --------------------------------------------------------------------------------
 -- 右鍵選單：原版 onRightMouseUp（ISWorldMap.lua:907-982）三段——
 --   (a) symbolsUI 工具取消（:908-910，ISWorldMapSymbols.lua:1597-1611：
@@ -77,6 +85,8 @@ if ISWorldMap and ISWorldMap.onRightMouseUp then
         local cwx, cwy = math.floor(worldX), math.floor(worldY)
         context:addOption(getText("UI_MinidoracatMiniMap_CopyHere",
             string.format("%d, %d, 0", cwx, cwy)), self, self.onMinidoracatCopyCoords, cwx, cwy)
+        context:addOption(getText("UI_MinidoracatMiniMap_SearchMenu"), self,
+            self.onMinidoracatSearch)
         if Core.navGetTarget(pn) then
             context:addOption(getText("UI_MinidoracatMiniMap_ClearTarget"), self,
                 self.onMinidoracatClearTarget)
