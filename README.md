@@ -76,19 +76,22 @@ Project Zomboid Build 42 遊戲內世界地圖圖片化 MOD。
 - **玩家座標匯出**（伺服器管理用，預設關閉）：沙盒開啟後伺服器每 N 秒把在線玩家
   即時座標與離線玩家最後座標寫成 `players_<存檔名>.json`，供地圖區塊重置工具在
   清除區域前判斷該處有無玩家（見下方「外部工具介接」）
+- **家族圓角深色 UI**：搜尋視窗、統一設定視窗與小地圖整框（卡片式外框＋標題列
+  ＋底部按鈕列）同一套圓角皮膚語彙（與公告板 MOD 同源）；皮膚貼圖缺失時
+  自動退回原版直角樣式，功能不受影響
 
 ## 截圖
 
 | | |
 |---|---|
-| ![統一設定視窗](docs/screenshots/settings-window.png) | ![導航選單與回中提示](docs/screenshots/nav-menu-recenter-hint.png) |
-| ![陣營目標分享](docs/screenshots/nav-share-faction.png) | ![導航邊緣指示](docs/screenshots/nav-edge-indicator.png) |
-| ![管理員沙盒選項](docs/screenshots/admin-sandbox-options.png) | ![內建資源點（POI）](docs/screenshots/poi-resource-points.png) |
-| ![地圖搜尋：地下室條目](docs/screenshots/search-basement.png) | ![地圖搜尋：英文街名](docs/screenshots/search-street.png) |
-| ![沿道路導航路線（大地圖）](docs/screenshots/nav-route-worldmap.png) | ![沿道路導航路線（小地圖）](docs/screenshots/nav-route-minimap.png) |
-| ![分享目標的隊友路線](docs/screenshots/nav-route-shared.png) | |
+| ![統一設定視窗（圓角皮膚）](docs/screenshots/settings-window.png) | ![小地圖圓角卡片外框](docs/screenshots/minimap-frame.png) |
+| ![導航選單與回中提示](docs/screenshots/nav-menu-recenter-hint.png) | ![陣營目標分享](docs/screenshots/nav-share-faction.png) |
+| ![導航邊緣指示](docs/screenshots/nav-edge-indicator.png) | ![管理員沙盒選項](docs/screenshots/admin-sandbox-options.png) |
+| ![內建資源點（POI）](docs/screenshots/poi-resource-points.png) | ![地圖搜尋：地下室條目](docs/screenshots/search-basement.png) |
+| ![地圖搜尋：英文街名](docs/screenshots/search-street.png) | ![沿道路導航路線（大地圖）](docs/screenshots/nav-route-worldmap.png) |
+| ![沿道路導航路線（小地圖）](docs/screenshots/nav-route-minimap.png) | ![分享目標的隊友路線](docs/screenshots/nav-route-shared.png) |
 
-（設定視窗／沙盒選項／回中提示另有英日文版截圖：`*-en.png`、`*-jp.png`）
+（沙盒選項／回中提示另有英日文版截圖：`*-en.png`、`*-jp.png`）
 
 ## 設定
 

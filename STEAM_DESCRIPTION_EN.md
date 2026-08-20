@@ -20,7 +20,7 @@ Overlays "map images rendered from the actual in-game view" onto the B42 world m
 [*] [b]Player coordinates + one-click copy[/b]: x, y, z at the bottom of both maps; XY button copies, right-click copies any pointed spot — paste straight into /teleportto
 [*] [b]Ghost mode[/b]: clicks and wheel pass through to the game while the map turns semi-transparent — enlarge it into a permanent overlay that never blocks play; hotkey '
 [*] [b]Free look[/b]: drag to inspect and stay there, click once to snap back to the player
-[*] [b]Unified settings window[/b] (gear button): collapsible two-column sections, every change applies and saves instantly — no ESC menu needed
+[*] [b]Unified settings window[/b] (gear button): collapsible two-column sections, every change applies and saves instantly — no ESC menu needed. The whole UI set (settings/search windows, minimap frame & button bar) wears the family rounded dark skin
 [*] [b]Server sandbox controls[/b]: disable individual icons, cap display distances, four livestock-visibility levels, faction-sharing toggle — changes apply live
 [*] [b]Singleplayer & multiplayer[/b]: only visualizes data the client already receives — no extra intel; Traditional/Simplified Chinese, English, Japanese
 [/list]
