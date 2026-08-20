@@ -1,8 +1,6 @@
 version=1
 id=3763913359
 title=Minidoracat MiniMap for B42
-tags=Build 42;Interface;Map;Multiplayer
-visibility=public
 description=[h1]🗺️ Minidoracat MiniMap for B42[/h1]
 description=[h3]By Minidoracat[/h3]
 description=
@@ -66,3 +64,5 @@ description=[b]#map #minimap #worldmap #Minidoracat[/b]
 description=
 description=Workshop ID: 3763913359
 description=Mod ID: MinidoracatMiniMapFor42
+tags=Build 42;Interface;Map;Multiplayer
+visibility=public

@@ -449,7 +449,12 @@ end
 local function unifiedAddBtn(ctx, x, yy, w, labelText, fn, tooltip)
     local b = ISButton:new(x, yy, w, ctx.fontH + 4, labelText, ctx.win, fn)
     b:initialise()
-    b.borderColor = { r = 0.4, g = 0.4, b = 0.4, a = 1 }
+    -- 家族皮膚化：淡框淡底、hover 亮階走原生 fade 混色（ISButton:prerender
+    -- :117-133 於 backgroundColor↔backgroundColorMouseOver 間補間，守衛
+    -- shouldDrawBackground/shouldDrawBorder :91-100；mouseOver 欄位 :12/:19）
+    b.borderColor = { r = 0.55, g = 0.55, b = 0.55, a = 0.35 }
+    b.backgroundColor = { r = 1, g = 1, b = 1, a = 0.05 }
+    b.backgroundColorMouseOver = { r = 1, g = 1, b = 1, a = 0.16 }
     if tooltip then b.tooltip = tooltip end
     return unifiedAdd(ctx, b)
 end
@@ -1040,8 +1045,8 @@ unifiedRebuild = function(win)
         for i = 1, #UNIFIED_SECTIONS do unifiedExpand[UNIFIED_SECTIONS[i].id] = nil end
         unifiedRebuild(win)
     end)
-    laneY[1] = rowH + 4
-    laneY[2] = rowH + 4
+    laneY[1] = rowH + 8 -- 頂鈕列與首區段間留呼吸（皮膚化 UX 微調）
+    laneY[2] = rowH + 8
 
     for s = 1, #UNIFIED_SECTIONS do
         local sec = UNIFIED_SECTIONS[s]
@@ -1049,8 +1054,12 @@ unifiedRebuild = function(win)
         local cur = UNIFIED_LANE[sec.id] or 1 -- 固定分欄，位置不隨展開狀態變動
         ctx.curX = laneX[cur]
         ctx.curY = laneY[cur]
-        -- 標題列＝空字 ISButton（點擊/hover 底），文字由捲動面板 render 畫
-        -- （ISButton 標題強制置中，左對齊＋右側摘要只能自畫）
+        -- 標題列＝空字 ISButton（點擊 hit-target），視覺全自畫（panel:render 畫
+        -- 圓角列底＋文字——ISButton 標題強制置中，左對齊＋右側摘要只能自畫）；
+        -- 原生框底全透明（alpha 0：ISButton:prerender :117-133 fade 混色兩端皆 0、
+        -- pressed 分支 :118-125 抄 backgroundColorMouseOver.a 同為 0、border 守衛
+        -- shouldDrawBorder :99-100 hover/pressed 時畫的也是 a=0——全路徑隱形；
+        -- hover 亮階改由自畫層讀 mouseOver 欄位（ISButton.lua:12/:19）決定）
         local hdr = ISButton:new(ctx.curX - 4, ctx.curY, laneW + 8, fontH + 6, "", win,
             function(target, btn)
                 unifiedExpand[btn._minidoracatSec] = not unifiedExpand[btn._minidoracatSec]
@@ -1058,10 +1067,13 @@ unifiedRebuild = function(win)
             end)
         hdr._minidoracatSec = sec.id
         hdr:initialise()
-        hdr.borderColor = { r = 0.35, g = 0.35, b = 0.35, a = 1 }
-        hdr.backgroundColor = { r = 1, g = 1, b = 1, a = 0.06 }
+        hdr.borderColor = { r = 0, g = 0, b = 0, a = 0 }
+        hdr.backgroundColor = { r = 0, g = 0, b = 0, a = 0 }
+        hdr.backgroundColorMouseOver = { r = 0, g = 0, b = 0, a = 0 }
         unifiedAdd(ctx, hdr)
         win._headers[#win._headers + 1] = {
+            btn = hdr, -- 自畫層 hover 判定用（讀 .mouseOver，零呼叫成本）
+            bx = ctx.curX - 4, by = ctx.curY, bw = laneW + 8, bh = fontH + 6,
             x = ctx.curX + 2, y = ctx.curY + 3, rx = ctx.curX + laneW - 2,
             text = (expanded and "- " or "+ ") .. getText(sec.label),
             sec = sec, -- 摘要由 panel:render 每幀現算（見 unifiedHeaderSummary）
@@ -1077,7 +1089,7 @@ unifiedRebuild = function(win)
             local builder = UNIFIED_BUILDERS[sec.id]
             if builder then builder(ctx) end
         end
-        laneY[cur] = ctx.curY + 6
+        laneY[cur] = ctx.curY + 8 -- 區段間距（皮膚化 UX 微調：6→8）
     end
     -- 內容高＝較長 lane；面板高夾玩家 viewport，超出開捲動
     -- （setScrollHeight/getScrollHeight＝ISUIElement 內建捲動 API）
@@ -1210,8 +1222,19 @@ local function buildSettingsWindow()
         ISPanel.render(self)
         local w = self.parent
         local tm = getTextManager()
+        local Skin = Core.Skin
         for i = 1, #w._headers do
             local h = w._headers[i]
+            -- 圓角區段列底（文字之前）：平時 ROW_HOVER 淡底、hover 亮一階
+            -- （ROW_SELECTED）；hover 讀 ISButton.mouseOver 欄位（ISButton.lua:12/:19）。
+            -- Skin 缺席（貼圖壞/離線）退 drawRect 直角同色，零配置（引用色票常量）
+            local hov = h.btn and h.btn.mouseOver
+            if Skin then
+                Skin.fill(self, h.bx, h.by, h.bw, h.bh,
+                    hov and Skin.COLORS.ROW_SELECTED or Skin.COLORS.ROW_HOVER)
+            else
+                self:drawRect(h.bx, h.by, h.bw, h.bh, hov and 0.12 or 0.06, 1, 1, 1)
+            end
             self:drawText(h.text, h.x, h.y, 0.92, 0.72, 0.25, 1, UIFont.Small)
             local right = h.sec and unifiedHeaderSummary(h.sec, w._playerNum or 0)
             if right then
