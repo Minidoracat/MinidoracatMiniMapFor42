@@ -13,10 +13,7 @@ The full contract, including every edge case, lives in the mod source headers:
 
   poi_blocks.json           Built-in resource point (POI) blocks. Written once per
                             startup; tied to the mod version, not to a save.
-                            Optional entry field "u":1 = basement facility (B42
-                            basements; the dominant floor of the category rooms is
-                            below ground). Additive extension - tools should just
-                            ignore unknown keys.
+                            Fields are explained in the next section.
   players_SAVENAME.json     Player positions. Only created when the sandbox option
                             "Export player position file" is enabled, then rewritten
                             every N seconds (sandbox, default 5).
@@ -27,6 +24,39 @@ The full contract, including every edge case, lives in the mod source headers:
 
   The Zones addon writes zones.json (server-defined areas) into the sibling folder
   MinidoracatMiniMapZones/ - that is a different mod's output.
+
+== Fields of poi_blocks.json ==
+
+One entry per line, separating commas at line starts (diff friendly). Output is
+byte-identical within a mod version and only changes on mod updates.
+
+  v            Format version, currently 1. Abort on anything else.
+  modversion   Mod version installed when the file was written ("unknown" when
+               unavailable). Before destructive operations, compare against the
+               mod version actually installed on the server (modversion= in
+               mod.info); a mismatch means the file is stale (a previous write
+               failed and left the old file behind) - abort.
+  count        Total number of entries across all categories. If the actual
+               entry count differs, the file is incomplete - abort.
+  categories   Category -> entry array. Category keys are internal identifiers
+               (lowercase letters only, e.g. gas, grocery, industry... 20
+               categories in total).
+
+  Fields of each entry:
+    b   [x, y, w, h]: whole-building bounding box. World square coordinates,
+        x/y top-left corner, w/h size, covering tiles [x, x+w-1]. This is the
+        chunk-deletion basis for whole-building resets; chunk conversion =
+        floor(tile/8) (B42 chunk = 8x8 tiles, save file map/<cx>/<cy>.bin).
+        The contract allows b to be absent (test-fixture scenario; official
+        baked data always has b) - do not model b as a required field.
+    r   [[x, y, w, h], ...]: rectangles of the dominant-category rooms, sorted
+        by area descending (the first one anchors the map icon).
+    u   Optional (main mod 42.20.3-0.17.0+): "u":1 = basement entry (B42
+        basements; the dominant floor of the category rooms is below ground).
+        Only basement entries carry this field; ground entries omit it (there
+        is no "u":0). Additive extension: tools should just ignore unknown
+        keys. Chunk files do not separate floors, so u never changes which
+        chunks a reset touches.
 
 == Fields of players_SAVENAME.json ==
 

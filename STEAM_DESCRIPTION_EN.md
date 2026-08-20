@@ -4,60 +4,51 @@
 [hr][/hr]
 
 [h2]✨ What is this[/h2]
-Overlays a map image rendered from actual in-game visuals directly onto the B42
-in-game world map, replacing the vanilla vector-line style. Built on the B42
-engine's native ImagePyramid mechanism:
+Overlays "map images rendered from the actual in-game view" onto the B42 world map and corner mini-map, replacing the vanilla vector-line style. Built on the engine's native ImagePyramid: multi-level LOD for smooth zooming, low VRAM, and what-you-see-is-what-you-get.
+
+[h2]🧰 Main features[/h2]
 [list]
-[*] Multi-level LOD — smooth zooming, no more stutter
-[*] Engine-level texture caching and async loading — low VRAM usage
-[*] What you see is what you get: buildings, roads and vegetation match the in-game look
+[*] [b]Image-based world map & mini-map[/b] — matches the in-game view; switch back to vanilla vector style anytime
+[*] [b]Navigation target + road-following route[/b]: right-click to set a target — a route is computed along actual roads (auto-replans when you stray; deep-wilderness targets route to the nearest road), with flag + edge arrow + distance, auto-clears on arrival; share to your faction and teammates get the route too
+[*] [b]Map search[/b]: magnifier button or right-click "Search map…" — coordinates, street names ([u]English and translated names both work[/u]) or facility categories (pharmacy, gun store etc. across the 20 categories), sorted by distance; jump to the world map (gold pulsing marker) or set as navigation target directly
+[*] [b]Mini-map hotkey + floating icon[/b]: default / (rebindable), works even when the sandbox disables the mini-map; the always-on icon toggles the map (left-click) and ghost mode (right-click), drag to reposition
+[*] [b]Free sizing[/b]: four presets + edge-drag resizing with memory; the button bar stays put — no hover-expanding
+[*] [b]Live zombie dots[/b] (off by default): real-time zombie positions with adjustable color / size / opacity / cap; vanilla heatmap toggle included
+[*] [b]Animal & vehicle icons[/b] (off by default): separate wild/livestock toggles, species and vehicle-category filters (the compatibility pack adds dogs, horses and more); two icon styles, colorblind-friendly palette
+[*] [b]World-map icons[/b]: the same zombie/animal/vehicle icons on the world map (M), four independent toggles
+[*] [b]Street names + safehouse outlines[/b]: street names on the corner mini-map (vanilla never had them); your safehouse green, others red
+[*] [b]Player coordinates + one-click copy[/b]: x, y, z at the bottom of both maps; XY button copies, right-click copies any pointed spot — paste straight into /teleportto
+[*] [b]Ghost mode[/b]: clicks and wheel pass through to the game while the map turns semi-transparent — enlarge it into a permanent overlay that never blocks play; hotkey '
+[*] [b]Free look[/b]: drag to inspect and stay there, click once to snap back to the player
+[*] [b]Unified settings window[/b] (gear button): collapsible two-column sections, every change applies and saves instantly — no ESC menu needed
+[*] [b]Server sandbox controls[/b]: disable individual icons, cap display distances, four livestock-visibility levels, faction-sharing toggle — changes apply live
+[*] [b]Singleplayer & multiplayer[/b]: only visualizes data the client already receives — no extra intel; Traditional/Simplified Chinese, English, Japanese
 [/list]
 
-[h2]🧰 Features[/h2]
+[b]⚠️ -debug users[/b]: HOME is a hidden engine render-debug key (halves FPS). This mod defaults to / and auto-migrates old bindings; a conflict shows an orange warning bar.
+
+[h2]🧩 Map mod support[/h2]
+Pair with the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps pack[/url]: mini-map images + boundary outlines for many map mods, auto-detected — shown only when the matching map mod is enabled.
+Map mod authors can ship their own support: render a [b]minidoracat_minimap.pyramid.zip[/b] into [b]media/minimap/[/b] — [u]no Lua needed[/u].
+
+[h2]🗺️ Built-in POIs + zone layer API[/h2]
+1669 points of interest across 20 categories on the vanilla map (military/medical/commercial/industrial etc., each color-coded): tinted-silhouette icons (full-color optional) or translucent blocks, per-category toggles in the settings window. Positions come straight from official map files; categories are derived from official room [u]loot types[/u] — they may disagree with the map's zoning colors (residential/commercial legend), the actual loot is what counts.
+Basement facilities (B42 basements — a bar under a house, underground armories) get a "↓" corner mark on the icon and a "(basement)" suffix in search results — the building above ground may be something else.
+A `registerZoneProvider` zone-rendering framework is also included; with the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones addon[/url] it displays server-defined zones (zones.json).
+
+[h2]🔗 Mod series[/h2]
+This is the [b]main mod[/b] — fully functional on its own; addons are optional:
 [list]
-[*] [b]Image-based world map & corner mini-map[/b] — matches the in-game look; prefer vanilla? One toggle falls back to the vector style, everything else keeps working
-[*] [b]Mini-map hotkey[/b]: / (slash, right of M) by default, rebindable; works even when the server sandbox disables the mini-map
-[*] [b]Floating toggle icon[/b]: always-on-screen icon — left-click toggles the mini-map, right-click toggles ghost mode; drag to reposition, hover shows the current hotkeys (can be disabled)
-[*] [b]Flexible sizing[/b]: four presets + free resize by dragging the mini-map edges, remembered automatically
-[*] [b]Always-visible button bar[/b]: no more hover-expanding; gear button opens the unified settings window — collapsible two-column sections, no ESC menu needed
-[*] [b]Navigation targets[/b]: right-click the mini-map or the world map to set a target — flag + edge arrow + distance, auto-clears on arrival; share to your faction with one click
-[*] [b]Live zombie dots[/b] (off by default): real-time zombie positions with adjustable color / size / opacity / cap
-[*] [b]Zombie heatmap[/b] toggle (off by default)
-[*] [b]Animal icons[/b] (off by default): live nearby animals — separate wild/livestock toggles, 9 built-in species filters (the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]compatibility pack[/url] adds dogs, horses and more); map-symbol or item-icon style, adjustable size/opacity/color (colorblind-friendly palette)
-[*] [b]Vehicle icons[/b] (off by default): steering-wheel markers; standard / heavy-duty / sports / emergency filters, adjustable size/opacity/color
-[*] [b]World map icons[/b]: zombie / animal / vehicle icons on the world map (M) — four separate toggles; style and filters follow the mini-map; a paw button opens settings directly
-[*] [b]Street names[/b]: on the corner mini-map too (vanilla only shows them on the world map)
-[*] [b]Safehouse outlines[/b]: yours in green, others in red
-[*] [b]Free look[/b]: drag to pan and stay, click once to snap back; a recenter hint appears while panned away
-[*] [b]Player coordinates & one-click copy[/b]: current x, y, z at the bottom of the mini-map and the world map (toggleable); the XY button copies them and right-click copies any spot you point at — paste straight into /teleportto
-[*] [b]Ghost mode (click-through)[/b]: clicks, wheel and right-clicks pass through to the game world while the map turns semi-transparent (opacity slider) — enlarge it into a permanent overlay that never blocks play; toggle via the ' hotkey, the floating icon's right-click, or settings
-[*] [b]Server sandbox controls[/b]: disable dots/heatmap/animal/vehicle icons, limit display distances (POI included, plus a global cap), configure safehouse display, livestock visibility and faction sharing — admin changes apply live; players see the server cap in the settings window and can tighten further
-[*] [b]Singleplayer & multiplayer[/b]: works out of the box in SP; in MP the server enables the mod and admins stay in control via the sandbox options — it only visualizes data the client already receives, no extra intel
-[*] [b]Languages[/b]: Traditional Chinese / Simplified Chinese / English / Japanese
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps[/url] — images + outlines for map mods
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]MOD Compatibility[/url] — adds dogs, horses and more to animal icons
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones[/url] — server-defined zone display
 [/list]
 
-[b]⚠️ -debug users[/b]: HOME is a hidden engine render-debug key (switches the world render path — half the FPS, snow visuals change). This mod defaults to / and auto-migrates old HOME installs; an in-game orange warning bar flags binding conflicts or the legacy render path with recovery instructions.
-
-[h2]🧩 Map MOD support[/h2]
-Pair it with the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]Minidoracat MiniMap - MOD Maps[/url] map pack addon: mini-map images and named area outlines for several map MODs, [u]auto-detected[/u] — a map's image only shows when that map MOD is enabled. The pack also unlocks extra options (tiles toggle, outline toggle/color/opacity).
-Map MOD authors can ship their own support: render your map into [b]minidoracat_minimap.pyramid.zip[/b] under [b]media/minimap/[/b] — [u]no Lua required[/u]; this MOD auto-detects and overlays it above the base map.
-
-[h2]🗺️ Built-in resource points (POI, 0.8.0+) + Zone layer API (0.7.0+)[/h2]
-[b]Resource points ship with the mod[/b]: 1669 built-in vanilla-map resource points across 20 categories (military, police, gun store, medical, pharmacy, fire, library, school, grocery, gas, tools, outdoor, prison, storage, electronics, church, farm, industry, retail, food — each with a distinct color). Default "icon mode" draws tinted silhouette icons (full-color style optional, size/opacity sliders); optional "resource blocks" adds translucent blocks and names (whole-building outlines by default, switchable to per-room), with per-category toggles in the unified settings window. [u]Positions are extracted directly from the official vanilla map files; categories are decided by this mod from room usage[/u] — report any misplaced or miscategorised point and it gets fixed case by case. A zone-rendering framework is also provided: `registerZoneProvider` lets addons supply rectangle zones while this MOD draws fills, outlines, names and icons on both maps. Pair with [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Minidoracat MiniMap Zones[/url] (MinidoracatMiniMapZonesFor42) for server-defined zones (`zones.json`). Without addons, everything else is unaffected.
-
-[h2]🔗 MOD series[/h2]
-This is the series' [b]main MOD[/b] and works fully on its own; the addons below are optional (all require this MOD):
-[list]
-[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps[/url] — map pack addon: mini-map images + area outlines for map MODs
-[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]MOD Compatibility[/url] — adds species such as dogs and horses to the animal icons
-[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones[/url] — server custom-zone display (zones.json; requires this MOD 0.8.0+)
-[/list]
-
-[h2]📋 MOD info[/h2]
+[h2]📋 Mod info[/h2]
 [list]
 [*] [b]Mod ID:[/b] MinidoracatMiniMapFor42
 [*] [b]Supported version:[/b] Build 42.20.1+
-[*] Works in singleplayer / multiplayer (MP requires the server to enable the mod)
+[*] Singleplayer / multiplayer (server must enable the mod)
 [/list]
 
 [h2]💬 Feedback & community[/h2]

@@ -10,9 +10,7 @@ Minidoracat MiniMap - Zomboid/Lua/MinidoracatMiniMap 目錄說明（format v1）
 == 這個目錄有什麼 ==
 
   poi_blocks.json           內建資源點（POI）區塊。每次啟動寫一次，內容隨 MOD
-                            版本走，與存檔無關。條目選配欄 "u":1＝地下室設施
-                            （B42 basement，主分類房的主樓層在地下；additive
-                            擴充，工具端忽略未知鍵即可）。
+                            版本走，與存檔無關。欄位解釋見下一節。
   players_存檔名.json       玩家座標。要在沙盒開啟「匯出玩家座標檔」才會產生，
                             之後每 N 秒（沙盒可調，預設 5）整檔重寫。
                             存檔名＝多人的伺服器名／單機的存檔資料夾名。
@@ -22,6 +20,33 @@ Minidoracat MiniMap - Zomboid/Lua/MinidoracatMiniMap 目錄說明（format v1）
 
   另外 Zones addon 會在隔壁目錄 MinidoracatMiniMapZones/ 放 zones.json
   （伺服器自訂區域），那是另一個 MOD 的產物。
+
+== poi_blocks.json 的欄位 ==
+
+一條目一行、條目間逗號在行首（方便 diff）。同版本內輸出逐 byte 相同，
+MOD 更新才會變。
+
+  v            格式版本，目前是 1。讀到別的值請中止。
+  modversion   寫檔當下安裝的 MOD 版本（取不到時 "unknown"）。破壞性操作前
+               應比對伺服器實際安裝的 MOD 版本（mod.info 的 modversion=），
+               不等＝檔案陳舊（上次寫檔失敗殘留了舊檔），請中止。
+  count        全部分類加總的條目數。實際條目數不等於 count＝檔案不完整，
+               請中止。
+  categories   分類 → 條目陣列。分類鍵是內部識別字（純小寫字母，如 gas、
+               grocery、industry……共 20 類）。
+
+  每筆條目的欄位：
+    b   [x, y, w, h]：整棟建築外框。世界 square 座標，x/y 是左上角、w/h 是
+        尺寸，涵蓋 tiles [x, x+w-1]。這是整棟重置的刪 chunk 依據；
+        chunk 換算＝floor(tile/8)（B42 chunk＝8×8 tiles，
+        存檔檔案 map/<cx>/<cy>.bin）。契約允許 b 缺席（測試 fixture 情境；
+        目前官方烘焙資料一律有 b）——別把 b 寫成必填欄。
+    r   [[x, y, w, h], ...]：主分類觸發房的矩形，面積大→小排列
+        （第一筆是圖標錨點）。
+    u   選配（主 MOD 42.20.3-0.17.0+）："u":1＝地下條目（B42 basement，
+        主分類房的主樓層在地下）。只有地下條目會輸出這個欄，地上條目
+        沒有它（不會出現 "u":0）。additive 擴充：工具端照「忽略未知鍵」
+        慣例處理即可。chunk 檔不分樓層，u 不影響刪 chunk 的範圍。
 
 == players_存檔名.json 的欄位 ==
 

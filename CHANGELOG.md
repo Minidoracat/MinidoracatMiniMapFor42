@@ -1,8 +1,55 @@
 # Changelog
 
-## [未發布]
+## [42.20.3-0.17.0] - 2026-08-20
 
 ### 新增
+
+- **導航目標升級「沿道路路線」**：右鍵設定導航目標後，自動沿實際道路計算路線，
+  以青色路線畫在小地圖與世界地圖上（目標旗標之下）；偏離路線約 28 格會自動重新
+  規劃，抵達即清除。走路開車皆可用、完全本地計算（單機／多人／專用伺服器通用，
+  不需伺服器支援）。統一設定視窗與 ESC 選項頁新增「導航路線（沿道路）」開關
+  （預設開）；關閉或附近無道路資料時維持原本的直線旗標指示。資料來源為各地圖
+  內建的官方街道資料——有提供街道資料的地圖 MOD 自動支援；鐵路不納入路網。
+  目標旗標現在**不分視野內外都顯示距離公尺**（原本只有視野外的邊緣箭頭有讀數）；
+  **深野外目標也有路線**：目標離路網很遠時（軍事基地、湖心島營地等），
+  自動導到「離目標最近的道路點」，最後一段越野以直線接到目標；完全無街道
+  資料的極端情況也至少畫一條玩家→目標的直線方向線，不再只剩旗標。
+  **修復拖動/縮放時路線片段消失**：視窗外的路段剔除先前以「抽樣點」為單位
+  誤砍——前一節在畫面外、下一節橫貫畫面時，橫貫段一起被砍掉（症狀＝拖動
+  地圖到某些位置，長直路段整段不見）；改以「線段」為單位判定，只有真正
+  完全在畫面外的線段才跳過。
+  **陣營分享的目標也有路線**——接收方以較淡的青色細線顯示通往每個分享點的
+  道路路線（各自本地計算、不增加網路流量），與自己的主路線可辨。
+
+- **地圖搜尋**：小地圖按鈕列與**世界地圖按鈕列**（爪印鈕左側）新增放大鏡鈕，
+  小地圖與世界地圖右鍵選單另有「搜尋地圖…」。輸入自動判別——純數字＋分隔符
+  ＝座標（支援 `12895,3499`、`12895 - 3499 - 0`、`10980,9679,0`，全形逗號也認），
+  其餘＝關鍵字，同時比對街道名與設施類別（藥局、槍店等 20 類，命中即列出該類
+  全部設施、依距離排序）。**街道名中英雙語可搜**：翻譯後街名（裝中文包搜
+  「威廉街」）與官方英文原名（搜 "will" 出 Williams St——原名隨 MOD 內建
+  對照表，翻譯包整份取代街道資料後遊戲裡已無英文名可查）都認。結果可
+  「在大地圖顯示」（帶座標開圖置中＋落點金色脈動標記 12 秒，大小地圖同步
+  顯示）或直接「設為導航目標」（沿路線導航接手）。
+- **UI 現代化**：搜尋視窗與統一設定視窗改用家族圓角深色皮膚（與公告板 MOD
+  同一套 9-slice 資產與色票）；搜尋結果列有懸停/選中高亮、類型色點與右對齊
+  距離欄。皮膚貼圖缺失時自動退回原生直角樣式，不影響功能。
+- **分享目標的隊友名字改用其專屬色**（與旗、路線同色一眼對應）。
+- **地下室資源點標注**（玩家回報「普通民宅有官方資源圖示」的解答）：B42 新增
+  的地下室設施（民宅地下酒吧、地下軍火庫、槍店倉庫等 62 筆）先前與地上圖示
+  無法區分——地上看到的是民宅、圖示標的是地下 loot。現在這類條目的圖標右下
+  帶「↓」角標、搜尋結果加「（地下室）」後綴；伺服器匯出 `poi_blocks.json`
+  同步加選配欄 `"u":1`（additive，重置工具照舊忽略）。
+
+- **匯出目錄說明檔**（`Zomboid/Lua/MinidoracatMiniMap/_README_*.txt`）：新增
+  **日文版**（_README_JP.txt）；三語內容新增 `poi_blocks.json` **完整欄位解釋**
+  （v／modversion／count／categories 與條目 b／r／u，含 b 可缺席與 u 僅地下輸出
+  的語義）。說明檔是「不存在才寫、絕不覆寫」（保護管理員自己加的註記）——
+  **想拿到新版請刪掉舊檔**，下次啟動自動補回。
+
+- **修復沙盒「開始時全部已知」（MapAllKnown）在多人下失效**：42.20.3 引擎把
+  多人 visited 同步後的全圖已知處理移除了（單機不受影響），伺服器沙盒開著
+  也會看到未探索迷霧。本 MOD 現在在該沙盒選項開啟時自動把兩張地圖的未探索
+  遮罩關掉，恢復全圖顯示；沙盒關閉時行為照舊。
 
 - **世界地圖也能看座標、設導航目標**：大地圖（M）底部置中顯示自己的 x, y, z
   （與小地圖共用同一個「顯示玩家座標」開關）；右鍵大地圖即可設定／清除導航目標、
@@ -25,6 +72,37 @@
   白天則是暗霧）。
 
 > 技術要點：
+> - 導航路線引擎（`_NavRoute.lua`，零第三方依賴；經三 lane review-plus＋codex
+>   對抗審查逐項修正定版）：資料源＝42.20.0 官方街道 API（global `getStreets`＋
+>   `WorldMapStreet` 自身讀點方法）；抽取＝byRel 主路徑（lot dirs，來源即查詢鍵）
+>   ＋byIndex 兜底全容器（street 級首末點簽名去重；未知來源 src=nil——翻譯
+>   MOD 的全量容器如 LangFor42 `Riverside, KY` rel，MP 不在 lot dirs、SP 其 dir
+>   無 lotheader，一律 fail-open 收入不裁）；對實例全程唯讀（clearStreetData
+>   的 combinedStreets 幽靈坑見 AGENTS.md，主檔小地圖補載同步加 count==0 gate）。
+>   lotheader cell 勝出閘門（cell=256、段沿 cell 邊界切分、優先序取
+>   `getLoadedMapDirs`、拿不到或未知來源 fail-open）擋重疊地圖敗者幽靈路。
+>   連接規則＝端點量化 join（0.5 格）＋端點吸附（epMove 單向合流小 key 根、
+>   世界距離判端點/段內；容差＝兩路半寬和＋4.5 路口間隙——streets.xml 是道路
+>   中心線，寬路支路端點停在路緣（距幹道中心線＝半寬 3-4 格＝MP 實測「無路線」
+>   根因），分隔帶公路更畫成兩條平行線（中央帶 10 格、支路只畫到近側線＝MP
+>   實測「繞行 800 格」根因，離線 repro ratio 8.94→1.15）＋中段 X 交叉切割
+>   （交點存 pair-time 世界座標、兩段
+>   共享同一節點——移動後幾何重插 t 會令交點分裂，codex 執行反例修正）；
+>   Railroad 剔除＝英文子串 ∪ vanilla 9 條鐵路首點幾何簽名（翻譯免疫、
+>   「鐵路街」類真街道零誤殺）。抽取與建圖全 OnTick 分幀（48 街/tick＋
+>   STEP_BUDGET=900 硬上限：pairs 桶內游標可中斷續跑）——惰性啟動、無
+>   Navigator 式啟動卡頓；OnGameStart 重置引擎（client Lua 跨存檔不重載，
+>   不重置＝舊世界 graph 帶進新世界）。A*＝整數節點＋SoA 鄰接＋generation
+>   stamp＋二元堆；起/終各 2 snap 候選（跨圈蒐集）、代價含 approach×3 加權
+>   （防穿荒地退化路線）、終點臨時注入 pcall 保護＋無條件回滾、同段直達特例。
+>   每幀行進投影（±12 段窗）供裁切繪製（route 從進度點畫起、approach 連投影
+>   點——否則畫回頭線）；偏航 >28 格 3s 冷卻重算、無路位移 64 格重試。繪製＝
+>   單輪投影雙 pass 共用＋世界視窗 bbox 段剔除＋ppu 兩軸抽樣（≈3px/點）＋主檔
+>   零配置 clipSegment（經 Core 掛出，單一實作）。離線測試
+>   scripts/test_nav_route.lua 15 組（幾何／十字／T 字吸附／互吸合流／長段近端
+>   T／cell gate 多來源＋src=nil fail-open（含 mutation check 實證會抓）／兩島
+>   nil／複合吸附交點一致／跨桶 T／budget=1 硬上限／連續尋路回滾／終點次近
+>   候選／Railroad 謂詞／負座標）。
 > - 穿透壓暗改「收斂式」：`ghostFrameTick` 每幀維護（無快照自癒補壓／重壓底紙 quad
 >   與未探索遮罩／滑條重壓／退場還原）；逐層先快照後寫入、`alphaUsed` 延後寫入
 >   （中途拋錯必重試）、還原失敗保留快照、失敗重試 1s 節流、全失敗路徑 log-once。
@@ -34,6 +112,46 @@
 >   alpha＝texel 積、頂點 `col.a` 不參與）＝`setUnvisitedRGBA` 的 alpha 恆為 no-op，
 >   改以 rgb×滑條暗化近似；**勿關 `HideUnvisited` 求透明**——`UIWorldMap.java:183-186`
 >   會 `setVisited(null)`，未探索區的 pyramid 影像全裸（洩漏）。
+> - 深野外導航＝`nearestSnap` fallback（`findRoute` snap ring 全空時全段線性掃
+>   最近投影點，O(segCount) 僅 rebuild 時跑）：實測案例 Muldraugh(12895,3498)→
+>   軍事基地(5783,12484) 終點離路網 >160 格（SNAP_RING 上限）整條 noroad——
+>   修後導到路網最近點、越野末段走既有 approach 直線；graph 空/建置中另有
+>   drawOneRoute 直線 fallback（玩家→目標，同 approach 樣式）。回歸鎖
+>   test_nav_route 案例十八＋離線重現 scripts/repro_nav.lua（吃 vanilla
+>   streets.xml 全量，預設即該實測座標）。
+> - 雙線公路 Z 字＝已知行為（斷口橋接做過又撤回，2026-08-20）：vanilla 幾何
+>   實證 x=12513——S 1st St 止 y=3442、Dixie Highway 起 y=3458、KY-1394 雙線帶
+>   （3445/3455）之間無縱向連接，A* 借最近貫穿點橫移成 Z＝合法繞行。曾以
+>   「端點對齊（≤6）＋軸向間距 4~24」合成短街補斷口，但 vanilla 實測生成
+>   +347 節點——遠超雙線斷口量級，大多是排屋後巷/圍籬/河岸誤接（導錯路實害
+>   大於視覺瑕疵），發布前撤回（codex review 裁決）。嚴謹重做需「兩端切線同軸
+>   ＋縫隙內確有橫穿道路」驗證；test_nav_route 案例十九鎖「不橋接」拓撲。
+> - 路線剔除改段級（`drawRoutePolyline`，2026-08-20 拖動消失實測）：舊實作
+>   點級哨兵——AABB 只驗「該抽樣點的前一節」，false 卻同時砍以該點為端的
+>   前後兩條線，「前節離屏、後節穿窗」被誤砍。改抽樣（純 Lua 收世界座標）
+>   與投影分離：段 AABB（相鄰抽樣點對＝實際畫的直線）判交、命中才 lazy 投影
+>   （端點共享），離屏路段照舊零跨界呼叫。回歸鎖 test_nav_route 案例二十
+>   （stub 恆等投影：穿窗段必畫＋全離屏零繪製）。
+> - 街名雙語搜尋＝生成期烘焙（`scripts/gen_street_names.py` →
+>   `shared/MinidoracatMiniMapStreetNames.lua`，1098 條英文原名＋首點）：
+>   翻譯 MOD（LangFor42）是「整份取代」官方 streets.xml——runtime 只剩譯名
+>   （`WorldMapStreet` 僅 `translatedText` 一欄），讀遊戲目錄原檔的
+>   `getGameFilesTextInput` 非 debug 回 null，故走 POIData 同款烘焙。搜尋端
+>   雙來源互補（譯名查引擎索引、英文查烘焙表），首點精確鍵去重（引擎項優先，
+>   無翻譯 MOD 環境兩邊命中同條不重複列）。**PZ 更新後重跑生成器**
+>   （EXPECTED_MIN 1000 擋來源異常）。
+> - **點雲段拆新模組 `_Dots.lua`（主 chunk locvar 上限實爆對策，2026-08-20）**：
+>   主檔加一個頂層 `local function drawSearchPing` 就觸發
+>   `LexState.new_localvar Index 200 out of bounds`——Kahlua 每 FuncState 的
+>   locvars 累計上限 200（`actvar[200]` 固定陣列），且 `-debug` 下 `actvarline`
+>   以「累計宣告數」索引＝**非 debug 不炸、-debug 才炸**；`luac -p` 抓不到
+>   （PUC 檢查同時活躍數）。殭屍/動物/載具點雲「取樣＋繪製」整段（27 個主 chunk
+>   local）遷出，主檔 200→171；註冊表與公開 API（`registerAnimalGroup`／
+>   `ADOTS_ART`／`adotsTexture`／篩選 UI 表）留主檔，`deriveAffine`／
+>   `visibleWorldAABB`／`unifiedCsvSet` 為 zone/POI 跨段共用同樣留主檔補
+>   `Core` 曝露；搜尋 ping 繪製移 `_Search.lua` 掛 `Core.drawSearchPing`。
+>   `verify_mod.py` 新增守衛：全 Lua 檔 main chunk locals ≤190（`luac -l`
+>   標頭與 Kahlua nlocvars 同義）。
 > - 世界地圖側拆新模組 `_WorldMapNav.lua`（主檔 Kahlua 200 locvar 上限對策）：導航動作
 >   抽 `Core` 閉包與小地圖共用；右鍵 wrap 保留原版 symbolsUI 工具取消與 debug/admin
 >   選單（handled 時追加 player-0 單例、一般玩家自建 `ISContextMenu.get(playerNum)`
