@@ -890,6 +890,11 @@ end
 -- （原版值首次套用時快照在 _minidoracatBgA，切回「原版」可還原）。
 -- 地圖本體是 GPU 直繪（UIElement 無整體 alpha API），只能調整外框視覺重量。
 local CHROME_FACTORS = { 1.0, 0.5, 0.15 }
+-- 卡片式外框厚度（px）：皮膚圓角（CORNER=6，_Skin.lua:23）需要地圖內容離
+-- 外框角落 ≥ 圓角半徑，否則直角地圖貼圖蓋掉圓弧——8＝6 弧＋2 餘裕。
+-- 注入點在 InitPlayer 的 ISMiniMapOuter.new 覆寫（createChildren 用它排
+-- inner/bottomPanel/adorned 全布局，ISMiniMap.lua:407/419/479-496 連動）
+local CHROME_BORDER = 8
 local function applyChromeOpacity(mm)
     local f = CHROME_FACTORS[getComboIndex("Opacity", 1)] or 1.0
     -- 穿透模式：外框強制取最淡檔（「看得到摸不到＝變淡」單一心智模型），
@@ -907,16 +912,24 @@ local function applyChromeOpacity(mm)
     end
 end
 
--- 標題列透明度：原版 prerender 是單行 alpha=1 材質直繪（ISMiniMap.lua:354-357，
--- drawTextureScaled(titlebarbkg,1,1,w-2,th-2,1,1,1,1)），已畫上去的無法事後調淡，
--- 只能在因子 <1 時以相同引數改 alpha 重畫（忠實複製該行，引數順序 a,r,g,b）
+-- 標題列皮膚化＋透明度：皮膚在（Core.Skin）＝圓上兩角淡填色（TITLEBAR_FILL
+-- 疊在外框皮膚底上，同統一設定視窗標題列做法），alphaScale 帶入外框不透明度
+-- 因子（Skin.fill 第 8 參，_Skin.lua:108）。皮膚缺席退回原版材質路徑：原版
+-- prerender 是單行 alpha=1 材質直繪（ISMiniMap.lua:354-357，
+-- drawTextureScaled(titlebarbkg,1,1,w-2,th-2,1,1,1,1)），已畫上去的無法事後
+-- 調淡，只能在因子 <1 時以相同引數改 alpha 重畫（忠實複製，引數順序 a,r,g,b）
 if ISMiniMapTitleBar and ISMiniMapTitleBar.prerender then
     local originalTitleBarPrerender = ISMiniMapTitleBar.prerender
     function ISMiniMapTitleBar:prerender()
         local f = CHROME_FACTORS[getComboIndex("Opacity", 1)] or 1.0
         if getBoolOption("GhostMode", false) then f = math.min(f, CHROME_FACTORS[3]) end
-        if f >= 1.0 then return originalTitleBarPrerender(self) end
+        local Skin = Core.Skin
         local th = self:titleBarHeight()
+        if Skin then
+            Skin.fill(self, 0, 0, self.width, th, Skin.COLORS.TITLEBAR_FILL, true, f)
+            return
+        end
+        if f >= 1.0 then return originalTitleBarPrerender(self) end
         self:drawTextureScaled(self.titlebarbkg, 1, 1, self:getWidth() - 2, th - 2, f, 1, 1, 1)
     end
 end
@@ -935,6 +948,9 @@ local RESIZE_MAX_RATIO = 0.85 -- 尺寸上限 = 玩家螢幕短邊 85%（實測 
 -- 全遊戲的 ISPanel，只能每次重建時掛實例。
 local installResizeHooks
 local cancelResize
+-- 外框每幀調色前置宣告（installMinidoracatButtons 的實例 prerender 要用；
+-- 本體在縮放節 resizeState 宣告之後——它讀 resizeState 判拖曳中亮階）
+local chromeTintBorder
 -- 導航目標表前置宣告（InitPlayer wrapper 要載回 modData；本體與註解見導航一節）
 local navTargets = {}
 -- 按鈕列擴充前置宣告（InitPlayer 要用；本體見按鈕列一節）。統一設定視窗已拆至
@@ -952,7 +968,7 @@ end
 -- 字級在 InitPlayer 時已就緒：鈕寬同原版 BUTTON_HGT 公式 getFontHeight(Small)+6
 local function raiseResizeMinForButtons()
     local bw = getTextManager():getFontHeight(UIFont.Small) + 6
-    local minW = 9 * bw + 8 * 2 + 2 * 2 + 4 -- 9 鈕＋8×2px 間距＋外框 2×2＋4（review：搜尋鈕入列後同步）
+    local minW = 9 * bw + 8 * 2 + CHROME_BORDER * 2 + 4 -- 9 鈕＋8×2px 間距＋卡片外框 ×2＋4
     if minW > RESIZE_MIN then RESIZE_MIN = minW end
 end
 
@@ -1361,7 +1377,12 @@ if ISMiniMap and ISMiniMap.InitPlayer then
                 local w, h = Core.minimapSizeFor(width, height, customW, customH, scale, RESIZE_MIN)
                 -- InitPlayer 以螢幕右下角定位（x = 右緣 - 10 - width），改尺寸後
                 -- 平移 x/y 保持右下角錨點不變（prerender 的 setPosition 也會再校正）
-                return originalNew(self, x + width - w, y + height - h, w, h, pn)
+                local o = originalNew(self, x + width - w, y + height - h, w, h, pn)
+                -- 卡片式粗邊框：new 之後、createChildren（instantiate 觸發）之前改
+                -- borderSize（原版 2，ISMiniMap.lua:677）——inner/bottomPanel/adorned
+                -- 布局全以它排版（:407/:419/:479-496），零版面補丁（同本 wrap 哲學）
+                o.borderSize = CHROME_BORDER
+                return o
             end
             local ok, result = pcall(originalInitPlayer, playerNum)
             ISMiniMapOuter.new = originalNew -- 無論成敗都還原，不留全域污染
@@ -1814,14 +1835,23 @@ end
 -- 按鈕列重排：9 顆（M - + ◇視角 C XY 尋 ⚙ X）以動態間距塞進 inner 寬度
 -- （原版置中排版只按 5 顆算，ISMiniMap.lua:417）
 local function relayoutBottomButtons(mm)
-    local order = { mm.button1, mm.button2, mm.button3, mm._minidoracatPerspBtn,
-        mm._minidoracatCenterBtn, mm._minidoracatCopyBtn, mm._minidoracatSearchBtn,
-        mm.button4, mm.button6 }
-    local btns = {}
-    for i = 1, #order do
-        if order[i] then btns[#btns + 1] = order[i] end
+    -- 逐鈕 append＋顯式計數：候選含可缺席鈕（perspBtn 材質降級＝nil），
+    -- 表構造子中間 nil 會讓 # 截斷（Kahlua len 二分探邊界，KahluaUtil.java:436-452
+    -- ——先前僅因 nil 落點錯開探點而僥倖正確；家規「# 不可信」count/rn 慣例）
+    local btns, bn = {}, 0
+    local function addBtn(b)
+        if b then bn = bn + 1; btns[bn] = b end
     end
-    local n = #btns
+    addBtn(mm.button1)
+    addBtn(mm.button2)
+    addBtn(mm.button3)
+    addBtn(mm._minidoracatPerspBtn)
+    addBtn(mm._minidoracatCenterBtn)
+    addBtn(mm._minidoracatCopyBtn)
+    addBtn(mm._minidoracatSearchBtn)
+    addBtn(mm.button4)
+    addBtn(mm.button6)
+    local n = bn
     if n < 2 then return end
     local bw = btns[1].width
     local spacing = math.floor((mm.inner.width - n * bw) / (n - 1))
@@ -1862,7 +1892,7 @@ installMinidoracatButtons = function(mm)
         if target.inner then target.inner._minidoracatFreelook = nil end
     end)
     cBtn:initialise()
-    cBtn.borderColor = { r = 0.4, g = 0.4, b = 0.4, a = 1 } -- 同原版按鈕（ISMiniMap.lua:424）
+    -- 樣式由本函式尾端「按鈕列皮膚化」迴圈統一覆蓋（單一真相源）
     cBtn.tooltip = getText("UI_MinidoracatMiniMap_BtnCenter") -- ISButton 內建 tooltip（ISButton.lua:317-321）
     mm.bottomPanel:addChild(cBtn)
     mm._minidoracatCenterBtn = cBtn
@@ -1877,7 +1907,6 @@ installMinidoracatButtons = function(mm)
             math.floor(playerObj:getZ())))
     end)
     copyBtn:initialise()
-    copyBtn.borderColor = { r = 0.4, g = 0.4, b = 0.4, a = 1 }
     copyBtn.tooltip = getText("UI_MinidoracatMiniMap_BtnCopyCoords")
     mm.bottomPanel:addChild(copyBtn)
     mm._minidoracatCopyBtn = copyBtn
@@ -1904,7 +1933,6 @@ installMinidoracatButtons = function(mm)
             end
         end)
         perspBtn:initialise()
-        perspBtn.borderColor = { r = 0.4, g = 0.4, b = 0.4, a = 1 }
         perspBtn.tooltip = getText("UI_MinidoracatMiniMap_BtnPerspective")
         perspBtn:forceImageSize(ref.width - 8, ref.height - 8)
         local originalPerspPrerender = perspBtn.prerender
@@ -1932,7 +1960,6 @@ installMinidoracatButtons = function(mm)
         end
     end)
     searchBtn:initialise()
-    searchBtn.borderColor = { r = 0.4, g = 0.4, b = 0.4, a = 1 }
     searchBtn.tooltip = getText("UI_MinidoracatMiniMap_BtnSearch")
     if texSearch then
         searchBtn:setImage(texSearch)
@@ -1949,6 +1976,27 @@ installMinidoracatButtons = function(mm)
     if mm.button2 then mm.button2.tooltip = getText("UI_MinidoracatMiniMap_BtnZoomOut") end
     if mm.button3 then mm.button3.tooltip = getText("UI_MinidoracatMiniMap_BtnZoomIn") end
     if mm.button6 then mm.button6.tooltip = getText("UI_MinidoracatMiniMap_BtnClose") end
+    -- 按鈕列皮膚化：9 顆（原版 5＋本 MOD 4）統一淡框淡底＋hover 亮階——同
+    -- _Settings unifiedAddBtn 樣式（fade 混色 ISButton:prerender :117-133、
+    -- 守衛 shouldDrawBackground/shouldDrawBorder :91-100）。鈕底半透明化後
+    -- 露出 outer 黑 0.8 底（ISMiniMap.lua:675），與統一設定視窗同基調。
+    -- 逐鈕呼叫、不經中間表：perspBtn 材質缺失時為 nil，表構造子中間 nil
+    -- 會讓 # 截斷（家規「Kahlua # 不可信」，同 POIExport count/rn 慣例）
+    local function skinBtn(b)
+        if not b then return end
+        b.borderColor = { r = 0.55, g = 0.55, b = 0.55, a = 0.35 }
+        b.backgroundColor = { r = 1, g = 1, b = 1, a = 0.05 }
+        b.backgroundColorMouseOver = { r = 1, g = 1, b = 1, a = 0.16 }
+    end
+    skinBtn(mm.button1)
+    skinBtn(mm.button2)
+    skinBtn(mm.button3)
+    skinBtn(mm.button4)
+    skinBtn(mm.button6)
+    skinBtn(cBtn)
+    skinBtn(copyBtn)
+    skinBtn(mm._minidoracatPerspBtn)
+    skinBtn(searchBtn)
     local n = relayoutBottomButtons(mm) or 9
     -- n 顆按鈕的最小可容寬度回寫尺寸下限（n＝order 表實際數量，單一來源）：UI 字型
     -- 放大時 BUTTON_HGT 跟著變大，動態墊高避免縮到溢出。InitPlayer 另以
@@ -1961,6 +2009,38 @@ installMinidoracatButtons = function(mm)
     -- 視角另有兩條可達路徑（原版小地圖選項面板 Isometric 勾選 ISMiniMap.lua:104、
     -- 世界地圖 perspectiveBtn），複製功能手把不可達（滑鼠限定）；搜尋亦滑鼠限定
     -- （放大鏡鈕＋兩處右鍵選單皆無手把路徑）——目前無替代入口，需要時再補登記
+    -- 外框皮膚化：替換實例 prerender——重演原版邏輯（ISMiniMap.lua:452-468，
+    -- 42.20.3 原文：setPosition＋adornments hover 判斷＋inner:prerenderHack），
+    -- 僅把直角 drawRectStatic/drawRectBorderStatic（:462-463）換成圓角皮膚。
+    -- 升版檢查點：原版 prerender 三件套若有變，此處同步。
+    -- 實例欄位會遮蔽下方 class 層 ISMiniMapOuter:prerender wrap（穿透琥珀
+    -- ／hover 邊框調色，三 lane review 抓出）——調色抽成 chromeTintBorder
+    -- 單一實作，繪製前呼叫；class wrap 續存兜底未走本函式的實例。
+    -- backgroundColor.a 由 applyChromeOpacity 縮放（透明度/穿透鏈自動生效）；
+    -- setAdornmentsVisible 走 self 動態查找＝「永遠顯示」wrap 照常攔截。
+    -- Skin 缺席退回原版直角同款繪製
+    mm.prerender = function(self)
+        self:setPosition()
+        if self.joyfocus or (not (self.inner.dragging and self.inner.dragMoved) and self:isMouseOver())
+            or self.titleBar:isMouseOver() or self.titleBar.dragging then
+            self:setAdornmentsVisible(true)
+        else
+            self:setAdornmentsVisible(false)
+        end
+        if chromeTintBorder then chromeTintBorder(self) end
+        local Skin = Core.Skin
+        if Skin then
+            Skin.fill(self, 0, 0, self.width, self.height, self.backgroundColor)
+            Skin.border(self, 0, 0, self.width, self.height, self.borderColor)
+        else
+            self:drawRectStatic(0, 0, self.width, self.height,
+                self.backgroundColor.a, self.backgroundColor.r, self.backgroundColor.g, self.backgroundColor.b)
+            self:drawRectBorderStatic(0, 0, self.width, self.height,
+                self.borderColor.a, self.borderColor.r, self.borderColor.g, self.borderColor.b)
+        end
+        self.inner:prerenderHack()
+    end
+
 end
 
 -- 齒輪改開設定視窗（本體拆至 MinidoracatMiniMap_Settings.lua，呼叫時查命名空間）；
@@ -3616,10 +3696,12 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
             self:drawText(hint, hx, hy, 1, 0.85, 0.4, 1, UIFont.Small)
         end
         local cBtn = self.parent and self.parent._minidoracatCenterBtn
-        if cBtn then -- C 鈕琥珀高亮＝次要提示；還原值同建立時的原版灰框
-            cBtn.borderColor.r = flOn and 1 or 0.4
-            cBtn.borderColor.g = flOn and 0.85 or 0.4
-            cBtn.borderColor.b = 0.4
+        if cBtn then -- C 鈕琥珀高亮＝次要提示；還原值同皮膚化基準（skinBtn
+            -- 0.55 a0.35，見 installMinidoracatButtons）；琥珀時 a 拉滿保持醒目
+            cBtn.borderColor.r = flOn and 1 or 0.55
+            cBtn.borderColor.g = flOn and 0.85 or 0.55
+            cBtn.borderColor.b = flOn and 0.4 or 0.55
+            cBtn.borderColor.a = flOn and 1 or 0.35
         end
         if Core.drawZombieDotsOn then -- 繪製本體在 _Dots.lua（世界地圖用 WMZombieDots）
             Core.drawZombieDotsOn(self, "ZombieDots")
@@ -3630,11 +3712,11 @@ end
 --------------------------------------------------------------------------------
 -- 邊緣拖曳縮放 + HUD 視覺微調
 -- 事件路由（UIElement.java:1015 onMouseDown：1047-1057 先讓子元件消化、
--- 沒人消化才輪到自己的 Lua handler 1096）：8px 熱區大多落在 outer 的子元件上——
---   左右緣＝inner 地圖（onMouseDown 回 true 消化，ISMiniMap.lua:226-237）、
---   上緣＝titleBar（消化並做移動，ISMiniMap.lua:363-369）、
---   下緣＝bottomPanel（ISPanel.lua:49 非 moveWithMouse 不消化→事件落回 outer）、
---   2px 外框環＝outer 自己。
+-- 沒人消化才輪到自己的 Lua handler 1096）：RESIZE_EDGE=8 熱區與卡片外框
+-- CHROME_BORDER=8 同寬，左右/上下熱區大多落在 outer 自己的邊框環上；但
+-- adorned（滑鼠在圖上，正是會拖曳的時刻）時上緣是 titleBar、下緣熱區
+-- 與 bottomPanel 相接，inner 亦可能吃到深入的角落熱區——三個 class 的
+-- 滑鼠事件仍須全部 hook（歷史前提「2px 環」時代如此，8px 後同樣成立）。
 -- 故共用一套熱區判定（outer 區域座標），hook ISMiniMapOuter / ISMiniMapInner /
 -- ISMiniMapTitleBar 三個 class 的滑鼠事件（wrap 保留原行為；拖曳用 setCapture
 -- 續收 Outside 事件，同 titleBar 做法 ISMiniMap.lua:367）。
@@ -3648,6 +3730,21 @@ local HANDLE_ALPHA_IDLE = 0.35  -- 把手平時透明度（半透明白）
 local HANDLE_ALPHA_HOVER = 0.9  -- 把手 hover／拖曳中透明度（PZ 改不了系統游標，靠這個給回饋）
 
 local resizeState -- 進行中的拖曳（同時只會有一筆）：{ outer, edges, startMX, startMY, rect0, adornExtra, adorned, preview }
+
+-- 外框邊色每幀調色（穿透琥珀＝主提示；hover/拖曳亮階）：抽成單一實作供
+-- 兩處呼叫——class 層 prerender wrap（兜底：未走 installMinidoracatButtons
+-- 的實例）與皮膚化實例 prerender（會遮蔽 class wrap，見 install 尾端註解）。
+-- 皮膚 border 直讀 borderColor，調色先於繪製即生效
+chromeTintBorder = function(outer)
+    if getBoolOption("GhostMode", false) then
+        -- 穿透中：琥珀邊框＝「看得到摸不到」主提示（mod 琥珀慣例），不做 hover 變化
+        outer.borderColor.r, outer.borderColor.g, outer.borderColor.b = 1, 0.85, 0.4
+    else
+        local hover = outer:isMouseOver() or (resizeState ~= nil and resizeState.outer == outer)
+        local v = hover and 0.55 or 0.4
+        outer.borderColor.r, outer.borderColor.g, outer.borderColor.b = v, v, v
+    end
+end
 
 -- 以 outer 區域座標判定邊緣熱區；回傳 {l,r,t,b} 布林表（角落＝兩者皆真），不在熱區回 nil
 local function hitResizeEdge(outer, ox, oy)
@@ -3944,14 +4041,7 @@ if ISMiniMapOuter and ISMiniMapOuter.prerender and ISMiniMapOuter.render then
     -- 維持原版 OLED 深色高對比風格。
     local originalOuterPrerender = ISMiniMapOuter.prerender
     function ISMiniMapOuter:prerender()
-        if getBoolOption("GhostMode", false) then
-            -- 穿透中：琥珀邊框＝「看得到摸不到」主提示（mod 琥珀慣例），不做 hover 變化
-            self.borderColor.r, self.borderColor.g, self.borderColor.b = 1, 0.85, 0.4
-        else
-            local hover = self:isMouseOver() or (resizeState ~= nil and resizeState.outer == self)
-            local v = hover and 0.55 or 0.4
-            self.borderColor.r, self.borderColor.g, self.borderColor.b = v, v, v
-        end
+        chromeTintBorder(self)
         originalOuterPrerender(self)
     end
 
