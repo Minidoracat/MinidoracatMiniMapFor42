@@ -24,6 +24,10 @@ desktop.ini
 # 渲染產物不進版控（用 scripts/build_pyramids.ps1 重新產生）
 *.pyramid.zip
 
+# Workshop 上傳描述檔＝產物（scripts/gen_workshop.py 由 EN 描述重生成；
+# 遊戲上傳後會回寫本檔——不追蹤即不髒工作樹）
+MOD/MinidoracatMiniMapFor42/workshop.txt
+
 temp/
 
 # poster 產生器輸出（正式檔已部署至 MOD 目錄，此為重產暫存）
