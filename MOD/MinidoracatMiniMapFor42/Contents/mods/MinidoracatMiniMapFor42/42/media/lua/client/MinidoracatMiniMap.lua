@@ -139,13 +139,16 @@ end
 --     iconRect={ x1=, y1=, x2=, y2= }|nil(選配；覆寫第一顆圖標的錨定矩形，
 --       不影響 fill/line/名稱。POI 整棟外框模式用：框畫整棟、圖標仍釘在
 --       最大房間。四欄不齊者忽略、回退 rects[1]),
---     distRects={ {x1=,y1=,x2=,y2=},.. }|nil(選配；覆寫 POI 顯示距離閘的量測
---       對象，預設量 rects。整棟外框模式用：畫整棟框但距離仍由分類房間決定，
---       使該開關純屬外觀、不改變可見距離。僅 internal provider 受距離閘),
+--     distRects={ {x1=,y1=,x2=,y2=},.. }|nil(選配；覆寫顯示距離閘的量測對象，
+--       預設量 rects。POI 整棟外框模式用：畫整棟框但距離仍由分類房間決定，
+--       使該開關純屬外觀、不改變可見距離。不要求含於 lodRect——有給時距離
+--       判定不用 lodRect 快排，逐矩形直判),
 --   ⚠ 註冊時機：provider 應於 OnGameBoot 前註冊（檔案載入期，family addon 慣例）
---     ——ZoneLayer/ZoneNamesFar/ZoneCategoryFilter 選項與統一視窗「伺服器區域」
---     區塊都在 OnGameBoot 依「有無外部 provider」一次性建立。之後才註冊者仍會
---     被渲染（fail-visible：名稱遠距依預設值生效），但本場沒有對應 UI 可調。
+--     ——ZoneLayer/ZoneNamesFar/ZoneCategoryFilter/ClientZoneDisplayDistance 選項
+--     與統一視窗「自訂區域」區塊、「顯示距離」區第 6 條滑條都在 OnGameBoot 依
+--     「有無外部 provider」一次性建立。之後才註冊者仍會被渲染（fail-visible：
+--     名稱遠距與玩家距離滑條依預設值生效；沙盒 ZoneDisplayDistance 仍照裁），
+--     但本場沒有對應 UI 可調。
 --   zones「表本身」可帶選配聚合旗標 hasFill/hasLine/hasIcon（ZR-1）：false＝
 --     provider 聲明該 pass 無任何可畫內容，renderer 整段跳過迴圈（內建 POI 預設
 --     純圖標模式靠此免去 fill/lines 每幀空掃全部 zone）；nil＝未聲明，照舊逐
@@ -159,22 +162,32 @@ end
 --       做同格去重疊（同一「圖標尺寸」螢幕格只畫第一顆，細節檔全畫）。
 --       未設＝一律畫全部 rects、圖標不去重疊，既有 addon 行為不變),
 --     category=string|nil }
--- 選配第三參 optionLabelKey：有給時本 MOD 於統一視窗動態追加一顆 per-provider 母開關
--- （如「顯示伺服器區域」），關＝渲染時整個跳過該 provider。
+-- 選配第三參 optionLabelKey：有給時本 MOD 於統一視窗動態追加一顆 per-provider 母開關，
+-- 關＝渲染時整個跳過該 provider；與 ZoneLayer 總開關是 AND 關係（皆開才畫）。
+-- 單一外部 provider 時母開關與總開關作用範圍 100% 重疊——家族 Zones addon 自其
+-- 0.5.0 起不再傳此參（兩顆相鄰等效開關令人困惑，實測回饋）；機制保留給第三方／
+-- 未來多 addon。⚠ 主 MOD 端勿以「provider 數」動態隱藏已註冊的母開關——會產生
+-- 雙向幽靈（玩家關過的 ini 值被靜默翻回顯示、日後第二個 addon 裝上時又復活——
+-- codex review 裁決）；要不要母開關由 addon 端「傳或不傳」靜態決定。
 -- 選配第四參 internal：true＝本體內部 provider（如內建 POI），不受 ZoneLayer 總閘連坐、
 -- 由自家開關（PoiIcons/PoiBlocks/類別）控制；外部 addon 一律省略（受 ZoneLayer 總閘）。
--- ⚠ 傳 internal 者同時受 POI 顯示距離閘（沙盒 PoiDisplayDistance/AllInfoDistance＋
--- 玩家自訂距離）連坐——距離啟用時 zone 會依玩家距離被靜默裁掉，外部 addon 勿傳。
+-- ⚠ 傳 internal 者受 POI 顯示距離閘（沙盒 PoiDisplayDistance/AllInfoDistance＋
+-- 玩家自訂距離）連坐；外部 provider 另受自訂區域顯示距離閘（沙盒
+-- ZoneDisplayDistance/AllInfoDistance＋玩家 ClientZoneDisplayDistance，預設 0＝
+-- 不裁）——任一距離閘啟用時 zone 依玩家距離被靜默裁掉（fill/框線/名稱/圖標
+-- 一致顯隱），addon 勿依賴「恆全圖可見」。
 local registeredZoneProviders = {} -- { { owner=, fn=, optionLabelKey=, optionKey=, internal= }, ... }
 -- ZoneLayer 總開關的 UI 出現條件＝「有『外部』provider」：內建 POI（internal=true）
 -- 繞過 ZoneLayer 閘門（見 drawZoneFill/Lines/Icons 的 gating），若把 internal 也計入，
 -- 純本體安裝會出現一顆對任何東西都無作用的死開關（codex review 抓出）。
+-- test:has-external-provider:start
 local function hasExternalZoneProvider()
     for i = 1, #registeredZoneProviders do
         if not registeredZoneProviders[i].internal then return true end
     end
     return false
 end
+-- test:has-external-provider:end
 MinidoracatMiniMapAPI.zoneApiVersion = 1
 function MinidoracatMiniMapAPI.registerZoneProvider(ownerModId, providerFn, optionLabelKey, internal)
     if type(ownerModId) ~= "string" or ownerModId == "" or type(providerFn) ~= "function" then
@@ -191,7 +204,7 @@ function MinidoracatMiniMapAPI.registerZoneProvider(ownerModId, providerFn, opti
 end
 
 -- Zone 動作 API（通用小 API，供 zone-layer addon 在統一視窗「圖層顯示」區追加一列動作）：
--- 主 MOD 於伺服器區域 tick 之後渲染 [combo]+[按鈕]（options 有給才有 combo）；按鈕點擊呼叫
+-- 主 MOD 於自訂區域 tick 之後渲染 [combo]+[按鈕]（options 有給才有 combo）；按鈕點擊呼叫
 -- onTrigger(選中的 value)。無註冊＝零列（dormant）。spec 契約：
 --   { labelKey=string(按鈕文字鍵), tooltipKey=string|nil,
 --     options={ { value=any, labelKey=string }, ... }|nil(nil＝純按鈕),
@@ -774,7 +787,7 @@ end
 
 -- 距離沙盒值 0 或缺值＝不限制；僅正數啟用距離閘門。AllInfoDistance＝全域距離
 -- 上限（最優先）：與個別距離取較小的正值——個別值只能更嚴、不能放寬全域上限；
--- 只設全域時五類距離項目（殭屍/動物/載具/安全屋/POI）一體生效
+-- 只設全域時全部距離項目（殭屍/動物/載具/安全屋/POI/自訂區域）一體生效
 -- test:sandbox-distance:start
 local function sandboxDist(name)
     local v = sandboxGate(name, 0)
@@ -2395,8 +2408,9 @@ end
 -- 分兩段插入以對齊 z-order——fillPass 走最底層（base map 之上、框線之下），
 -- linePass（框線＋名稱）與 drawMapBounds 同層。無 provider 或全空表＝dormant 零成本。
 -- 閘門 per-provider：外部 addon provider 受 ZoneLayer 總開關（關則跳過該 provider、
--- 不呼叫）；內部 provider（internal，如內建 POI）不受 ZoneLayer 連坐，由自家開關
--- 控制＋另受 POI 顯示距離閘（poiDistParams/zoneWithinDist——沙盒與玩家自訂距離）。
+-- 不呼叫）＋自訂區域顯示距離閘（ZoneDisplayDistance）；內部 provider（internal，
+-- 如內建 POI）不受 ZoneLayer 連坐，由自家開關控制＋受 POI 顯示距離閘
+-- （PoiDisplayDistance）。兩類距離閘同經 distGateParams/zoneWithinDist 合成。
 --------------------------------------------------------------------------------
 
 -- 填色：每 rect 四角 worldToUIX/Y 投影（等軸測下矩形成菱形）→ 投影後 AABB 出視窗即略過
@@ -2444,7 +2458,7 @@ local iconGridGen = 0
 -- zone 名稱寬度快取（ZR-4，lines pass 用）：key＝名稱字串。renderer 自有——
 -- provider 回傳表是只讀契約，不得把快取寫進去
 local zoneNameWidth = {}
--- 外部 zone 類別停用清單（ZoneCategoryFilter CSV；統一視窗「伺服器區域」區塊的
+-- 外部 zone 類別停用清單（ZoneCategoryFilter CSV；統一視窗「自訂區域」區塊的
 -- 類別勾選寫入）：只作用於外部 provider 的 zone——內部 POI 有自己的 Cat_ 篩選，
 -- 且其 category 欄與伺服器自訂類別是不同命名空間。無選項/空值＝全開。
 -- raw 字串比對快取（同 adotsDisabledGroups 手法），選項未變不重解析
@@ -2461,18 +2475,26 @@ local function zoneDisabledCats()
     return zoneCatCache.set
 end
 
--- POI 顯示距離閘（沙盒 PoiDisplayDistance＋全域上限＋玩家自訂，經 displayDist
--- 合成取最小正值）：只作用於 internal provider（內建 POI），外部 addon zone
--- （地圖包範圍框線等）不受影響。語意近安全屋距離閘——資源點矩形（顯示中的
--- 分類房間）最近點距玩家 N 格內才顯示；二維、不計樓層。回傳 px, py, dist²
--- （未啟用時 dist²=nil＝全放行）與 blocked（距離啟用但缺玩家：fail closed，
--- 內部 provider 整段不畫——同 drawSafehouses 的缺玩家語意）。
-local function poiDistParams(inner)
-    local dist = displayDist("PoiDisplayDistance")
-    if not dist then return nil, nil, nil, false end
+-- 顯示距離閘參數（沙盒＋全域上限 AllInfoDistance＋玩家自訂滑條，經 displayDist
+-- 合成取最小正值）：internal provider（內建 POI）走 PoiDisplayDistance，外部
+-- addon zone（自訂區域等）走 ZoneDisplayDistance——兩者獨立啟用。語意近安全
+-- 屋距離閘——zone 矩形（distRects 或 rects）最近點距玩家 N 格內才顯示；二維、
+-- 不計樓層。回傳 px, py, pdist², zdist²（各自未啟用＝nil＝該類全放行）與
+-- poiBlocked/zoneBlocked（該類距離啟用但缺玩家：fail closed，該類 provider
+-- 整段不畫——同 drawSafehouses 的缺玩家語意）。
+local function distGateParams(inner)
+    local pdist = displayDist("PoiDisplayDistance")
+    -- zdist 僅在有外部 provider 時求值：displayDist 內含 "Client"..name 字串
+    -- 配置＋選項/沙盒查找，純本體（無 zone addon）每幀 3 pass×2 表面全屬浪費
+    -- （三 lane review 同報）；hasExternalZoneProvider 是 ≤2 項純 Lua 迴圈
+    local zdist = hasExternalZoneProvider() and displayDist("ZoneDisplayDistance") or nil
+    if not pdist and not zdist then return nil, nil, nil, nil, false, false end
     local playerObj = getSpecificPlayer(inner.playerNum or 0)
-    if not playerObj then return nil, nil, nil, true end
-    return playerObj:getX(), playerObj:getY(), dist * dist, false
+    if not playerObj then
+        return nil, nil, nil, nil, pdist ~= nil, zdist ~= nil
+    end
+    return playerObj:getX(), playerObj:getY(),
+        pdist and pdist * pdist or nil, zdist and zdist * zdist or nil, false, false
 end
 
 -- 玩家點到矩形最近點的距離平方；夾限用純 Lua 比較而非 math.max/min——Kahlua
@@ -2484,22 +2506,53 @@ local function rectDist2(rc, px, py)
     return dx * dx + dy * dy
 end
 
--- zone 是否落在距離內：逐矩形判距，任一資源點矩形最近點在 N 格內即顯示。量測對象
--- ＝distRects（有給）否則 rects——POI 整棟外框模式畫整棟框但仍量分類房間，使該
--- 外觀開關不改變可見距離。⚠ lodRect 不是整棟建築 bbox，逐房間模式下是分類房間
--- 聯集的 AABB（大型建物的分類房間可能只佔一角，AABB 也含無房間的空白區——
--- codex review 以實資料證明兩者可差數十格），故僅作快速排除：點到 AABB 的距離
--- 是點到任一內含矩形距離的下界，AABB 超距＝全部超距，免逐矩形。此下界對
--- distRects 同樣成立（房間矩形恆在整棟框內，實測 1669 筆全數滿足）。無矩形者放行
--- （後續本就無物可畫）。呼叫端以 pdist2 短路（閘未啟用零成本）；fill/lines/icons
--- 三 pass 同一判定，整 zone 一致顯隱。
-local function zoneWithinDist(z, px, py, dist2)
+-- zone 是否落在距離內：逐矩形判距，任一矩形最近點在 N 格內即顯示。量測對象
+-- ＝distRects（有有效元素時）否則 rects——POI 整棟外框模式畫整棟框但仍量分類
+-- 房間，使該外觀開關不改變可見距離。⚠ lodRect 不是整棟建築 bbox，逐房間模式
+-- 下是分類房間聯集的 AABB（大型建物的分類房間可能只佔一角，AABB 也含無房間的
+-- 空白區——codex review 以實資料證明兩者可差數十格），故僅作快速排除：點到
+-- AABB 的距離是點到任一內含矩形距離的下界，AABB 超距＝全部超距，免逐矩形。
+-- 快排的適用面（lodCovers＝呼叫端傳 provider.internal）：
+--   · rects 路徑恆可快排——lodRect 契約保證涵蓋 rects；
+--   · distRects 路徑僅 internal 快排——POI 建構保證 distRects ⊆ lodRect
+--     （整棟模式 distRects＝原房間矩形、lodRect 由整棟框算出；且該模式
+--     distRects 可達一棟 200+ 房間，無快排時超距 zone 無法提早跳出，會回退
+--     0.16.0 壓掉的 1669-zone 鬆判熱點——claude lane review）；外部 addon 的
+--     distRects 契約不要求含於 lodRect，快排會錯誤隱藏（codex review）。
+-- distRects 型別防呆（iconRect 同款標準，但更深一層——codex lane review 兩輪
+-- 論證：safeDrawZone 的 pcall 不是安全降級，provider 每幀回同一壞表＝整層
+-- （含 POI）每幀重滅直到資料改，滅層防護值得付跨界檢查）：
+--   · 表級：distRects 非 table（欄位型別搞錯）→ 視為未提供、回退 rects；
+--     type() 是 JavaFunction 跨界，nil 先短路——無 distRects 的多數 zone 不付；
+--   · 元素級：非 table 元素（平陣列 {42,43} 是現實失誤形態；number 索引在
+--     Kahlua 拋錯）與缺欄元素一律跳過；成本＝每有效判定元素 +1 次 type()
+--     跨界，僅距離閘啟用時發生、且 internal 由 lodRect 快排先擋超距 zone；
+--   · 無任何有效元素（空表／全殘缺／全非 table）＝視為未提供、回退 rects
+--     路徑（codex lane review：空表原本 n==0 放行＝繞過距離閘）；有有效元素
+--     但全部超距＝隱藏——絕不回退 rects，那會讓整棟框替房間解鎖可見距離。
+-- rects 路徑不驗欄位：rects 是繪製用硬性欄位，殘缺本就炸 pass（既有契約面）。
+-- 無矩形者放行（後續本就無物可畫）。呼叫端以該 provider 的有效距離 gd2 短路
+-- （閘未啟用零成本）；fill/lines/icons 三 pass 同一判定，整 zone 一致顯隱。
+local function zoneWithinDist(z, px, py, dist2, lodCovers)
+    local dr = z.distRects
+    if dr ~= nil and type(dr) == "table" then
+        if lodCovers then
+            local lod = z.lodRect
+            if lod and rectDist2(lod, px, py) > dist2 then return false end
+        end
+        local seen = false
+        for i = 1, #dr do
+            local rc = dr[i]
+            if type(rc) == "table" and rc.x1 and rc.y1 and rc.x2 and rc.y2 then
+                seen = true
+                if rectDist2(rc, px, py) <= dist2 then return true end
+            end
+        end
+        if seen then return false end
+    end
     local lod = z.lodRect
     if lod and rectDist2(lod, px, py) > dist2 then return false end
-    -- distRects（選配）覆寫量測對象：POI 整棟外框模式下畫的是整棟框，但可見距離
-    -- 該由「資源點本身」決定——外框只是外觀選項，不該讓大型建物提早數十格解鎖
-    -- （lodRect 仍是有效下界：房間矩形恆在整棟框內，AABB 超距即全部超距）
-    local rects = z.distRects or z.rects
+    local rects = z.rects
     local n = rects and #rects or 0
     if n == 0 then return true end
     for i = 1, n do
@@ -2515,8 +2568,9 @@ end
 -- 三 pass 共用同一份；pass 專屬條件（fillAlpha/border/icon/LOD/精確距離閘）
 -- 仍逐候選判定——候選是精確集的超集，繪製結果逐像素不變。
 -- 失效鍵：zones 表引用（POI 重建即換表）＋ disCats 集引用＋ 距離閘參數
--- （僅 internal provider：pass 內同條件短路，外部 provider 的候選集與玩家
--- 座標無關，不得因玩家移動被迫重建）＋ 玩家移動 >16 格（僅距離閘生效時）＋
+-- （per-provider：internal 走 PoiDisplayDistance、外部走 ZoneDisplayDistance，
+-- 由呼叫端選定後經 gate2 傳入；未啟用＝nil，候選集與玩家座標無關、不因
+-- 玩家移動被迫重建）＋ 玩家移動 >16 格（僅距離閘生效時）＋
 -- 視窗溢出外擴框（zoom/尺寸變化必溢出）＋ TTL 1s——registerZoneProvider 契約
 -- 只要求回表，允許 addon 原地增刪同一表，identity 抓不到 mutate，TTL 兜底
 -- （stale 顯示上限 1s；靜態 addon 零影響）。TTL 存建構時刻而非到期時刻：
@@ -2574,10 +2628,9 @@ end
 local ZC_EMPTY = {}
 
 local function zcCandidates(inner, provider, zones, disCats, scale,
-                            vMinX, vMaxX, vMinY, vMaxY, ppx, ppy, pdist2)
+                            vMinX, vMaxX, vMinY, vMaxY, ppx, ppy, gate2)
     local zc = inner._minidoracatZC
     if not zc then zc = {}; inner._minidoracatZC = zc end
-    local gate2 = provider.internal and pdist2 or nil
     local e = zc[provider]
     local now = getTimestampMs()
     -- zones 表比較用 rawequal：外部 addon 的表帶 __eq metatable 時 `==` 會呼叫
@@ -2585,7 +2638,8 @@ local function zcCandidates(inner, provider, zones, disCats, scale,
     -- 走 `==`（zoneDisabledCats 只回內部 cache 表或 nil，無 __eq 面）。rawequal/
     -- rawget 在 Kahlua BaseLib 有註冊——證據 scripts/tests/test_kahlua_globals.py
     -- 的 verified 白名單（勿「簡化」回 ==／[]，那正是要防的路徑）。
-    -- 失效鍵：zones 表引用／disCats 集引用／距離閘參數（僅 internal）／scale
+    -- 失效鍵：zones 表引用／disCats 集引用／距離閘參數 gate2（per-provider，
+    -- 呼叫端選定：internal＝POI 距離、外部＝自訂區域距離）／scale
     -- （zoom 檔位；halo 世界尺寸依它）／TTL／containment 框／玩家移動（閘生效時）
     if e and rawequal(e.zones, zones) and e.disCats == disCats and e.gate2 == gate2
         and e.scale == scale -- zoom 檔位未必伴隨視窗溢出：獨立失效鍵（A14-11 鎖）
@@ -2641,7 +2695,7 @@ local function zcCandidates(inner, provider, zones, disCats, scale,
         if z then
             local x1, y1, x2, y2 = zcZoneBBox(z)
             if not (disCats and z.category and disCats[z.category])
-                and (not loose2 or zoneWithinDist(z, ppx, ppy, loose2))
+                and (not loose2 or zoneWithinDist(z, ppx, ppy, loose2, provider.internal))
                 and (x1 == nil or (x2 >= bMinX and x1 <= bMaxX
                     and y2 >= bMinY and y1 <= bMaxY)) then
                 n = n + 1
@@ -2665,15 +2719,19 @@ local function drawZoneFillBody(inner)
     local acx = math.floor((vMinX + vMaxX) / 2)
     local acy = math.floor((vMinY + vMaxY) / 2)
     local p0x, p0y, sxx, sxy, syx, syy = deriveAffine(mapAPI, acx, acy)
-    local ppx, ppy, pdist2, poiBlocked = poiDistParams(inner)
+    local ppx, ppy, pdist2, zdist2, poiBlocked, zoneBlocked = distGateParams(inner)
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
         -- 閘門：外部 provider 受 ZoneLayer 總閘（internal 不受）＋ per-provider 母開關
-        -- （optionKey 有給才 gate）；內部 provider 另受 POI 顯示距離閘（沙盒
-        -- PoiDisplayDistance／全域上限 AllInfoDistance＋玩家自訂，見 poiDistParams；
-        -- 缺玩家 fail closed 整段跳過）；任一關則 pok 留 nil、整段跳過
+        -- （optionKey 有給才 gate）；距離閘 per-provider——internal 走 POI 距離
+        -- （PoiDisplayDistance），外部走自訂區域距離（ZoneDisplayDistance），皆含
+        -- 全域上限與玩家滑條（見 distGateParams；該類距離啟用但缺玩家＝fail closed
+        -- 整段跳過）；任一關則 pok 留 nil、整段跳過
+        local gd2, gBlocked
+        if provider.internal then gd2, gBlocked = pdist2, poiBlocked
+        else gd2, gBlocked = zdist2, zoneBlocked end
         local pok, zones
-        if not (provider.internal and poiBlocked)
+        if not gBlocked
             and (provider.internal or getBoolOption("ZoneLayer", true))
             and (not provider.optionKey or getBoolOption(provider.optionKey, true)) then
             -- A2：每個 provider 個別 pcall，壞的跳過續跑下一個（附 owner，log-once）
@@ -2688,18 +2746,18 @@ local function drawZoneFillBody(inner)
             -- 外部 zone 類別篩選（內部 POI 走自家 Cat_，不受此清單影響）
             local disCats = not provider.internal and zoneDisabledCats() or nil
             local cand = zcCandidates(inner, provider, zones, disCats, scale,
-                vMinX, vMaxX, vMinY, vMaxY, ppx, ppy, pdist2)
+                vMinX, vMaxX, vMinY, vMaxY, ppx, ppy, gd2)
             for ci = 1, #cand do
                 local z = rawget(zones, cand[ci]) or ZC_EMPTY -- rawget: stale slot 不得觸發第三方 __index（codex review）
                 local fill, rects = z.fill, z.rects
                 local lod = z.lodRect
                 -- fillAlpha==0（如 POI 圖標模式）早退，連投影都省；LOD 拉遠檔整區不畫；
-                -- 內部 provider 的 zone 另過 POI 距離閘（not pdist2 先行短路：閘未啟用
+                -- zone 另過該 provider 的顯示距離閘（not gd2 先行短路：閘未啟用
                 -- ——絕大多數玩家的預設——不付逐 zone 函式呼叫）
                 if fill and rects and z.fillAlpha ~= 0
                     and not (disCats and z.category and disCats[z.category])
                     and not (lod and scale < ZONE_LOD_HIDE)
-                    and (not pdist2 or not provider.internal or zoneWithinDist(z, ppx, ppy, pdist2)) then
+                    and (not gd2 or zoneWithinDist(z, ppx, ppy, gd2, provider.internal)) then
                     local a = z.fillAlpha or 0.2
                     local rn = #rects
                     if lod and scale < ZONE_LOD_DETAIL then
@@ -2812,13 +2870,17 @@ local function drawZoneLines(inner)
     local acx = math.floor((vMinX + vMaxX) / 2)
     local acy = math.floor((vMinY + vMaxY) / 2)
     local p0x, p0y, sxx, sxy, syx, syy = deriveAffine(mapAPI, acx, acy)
-    local ppx, ppy, pdist2, poiBlocked = poiDistParams(inner)
+    local ppx, ppy, pdist2, zdist2, poiBlocked, zoneBlocked = distGateParams(inner)
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
-        -- 閘門（同 drawZoneFill）：外部受 ZoneLayer 總閘＋per-provider 母開關；internal
-        -- 不受，但另受 POI 顯示距離閘（沙盒＋全域上限＋玩家自訂；缺玩家 fail closed）
+        -- 閘門（同 drawZoneFill）：外部受 ZoneLayer 總閘＋per-provider 母開關＋自訂
+        -- 區域距離閘；internal 不受，但另受 POI 顯示距離閘（皆含全域上限＋玩家
+        -- 滑條；該類距離啟用但缺玩家＝fail closed）
+        local gd2, gBlocked
+        if provider.internal then gd2, gBlocked = pdist2, poiBlocked
+        else gd2, gBlocked = zdist2, zoneBlocked end
         local pok, zones
-        if not (provider.internal and poiBlocked)
+        if not gBlocked
             and (provider.internal or getBoolOption("ZoneLayer", true))
             and (not provider.optionKey or getBoolOption(provider.optionKey, true)) then
             -- A2：每個 provider 個別 pcall，壞的跳過續跑下一個（附 owner，log-once）
@@ -2834,7 +2896,7 @@ local function drawZoneLines(inner)
             -- 仍維持細節檔限定。POI（internal）不受影響，名稱照鎖細節檔防洗版
             local nameFar = not provider.internal and getBoolOption("ZoneNamesFar", true)
             local cand = zcCandidates(inner, provider, zones, disCats, scale,
-                vMinX, vMaxX, vMinY, vMaxY, ppx, ppy, pdist2)
+                vMinX, vMaxX, vMinY, vMaxY, ppx, ppy, gd2)
             for ci = 1, #cand do
                 local z = rawget(zones, cand[ci]) or ZC_EMPTY -- rawget: stale slot 不得觸發第三方 __index（codex review）
                 local border, rects = z.border, z.rects
@@ -2846,15 +2908,15 @@ local function drawZoneLines(inner)
                 --   名稱 → z.name（下方另有細節檔與螢幕裁切判定）
                 -- 兩者皆無則整段跳過。LOD zone 的框線僅細節檔畫（中距的聯集框
                 -- 純填色——該縮放下框線是雜訊）；名稱對內部（POI）僅細節檔防洗版，
-                -- 外部 zone 依 nameFar（見上）可於任何縮放顯示；內部 provider
-                -- 另過 POI 距離閘（not pdist2 先行短路，閘未啟用不付逐 zone 呼叫）
+                -- 外部 zone 依 nameFar（見上）可於任何縮放顯示；zone 另過該
+                -- provider 的顯示距離閘（not gd2 先行短路，閘未啟用不付逐 zone 呼叫）
                 -- 中/遠距檔（lodRect zone）：框線恆不畫；名稱僅 nameFar 時放行
                 local midFar = lod ~= nil and scale < ZONE_LOD_DETAIL
                 local drawEdges = border and z.borderAlpha ~= 0 and not midFar
                 if rects and (drawEdges or z.name)
                     and not (disCats and z.category and disCats[z.category])
                     and (not midFar or (nameFar and z.name ~= nil))
-                    and (not pdist2 or not provider.internal or zoneWithinDist(z, ppx, ppy, pdist2)) then
+                    and (not gd2 or zoneWithinDist(z, ppx, ppy, gd2, provider.internal)) then
                     local r, g, b, a
                     if drawEdges then r, g, b, a = border.r, border.g, border.b, z.borderAlpha end
                     local zoneVisible = false
@@ -2915,7 +2977,7 @@ local function drawZoneLines(inner)
                         -- 量測惰性快取（ZR-4）：renderer 自有、以名稱字串為 key——
                         -- 不得寫回 provider 的 zone 表（API 明定對回傳只讀不改；寫入
                         -- 會與 addon 同名欄位碰撞、對 __newindex 保護表拋錯，codex
-                        -- review 抓出）。鍵集有界（POI 20 類名＋伺服器區域名，隨
+                        -- review 抓出）。鍵集有界（POI 20 類名＋自訂區域名，隨
                         -- zone 總量上限）；addon 改 z.name 換字串＝新 key，自然正確；
                         -- 字型倍率改動 PZ 慣例需重啟
                         local tw = zoneNameWidth[name]
@@ -2978,13 +3040,17 @@ local function drawZoneIcons(inner)
     local acx = math.floor((vMinX + vMaxX) / 2)
     local acy = math.floor((vMinY + vMaxY) / 2)
     local p0x, p0y, sxx, sxy, syx, syy = deriveAffine(mapAPI, acx, acy)
-    local ppx, ppy, pdist2, poiBlocked = poiDistParams(inner)
+    local ppx, ppy, pdist2, zdist2, poiBlocked, zoneBlocked = distGateParams(inner)
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
-        -- 閘門（同 drawZoneFill）：外部受 ZoneLayer 總閘＋per-provider 母開關；internal
-        -- 不受，但另受 POI 顯示距離閘（沙盒＋全域上限＋玩家自訂；缺玩家 fail closed）
+        -- 閘門（同 drawZoneFill）：外部受 ZoneLayer 總閘＋per-provider 母開關＋自訂
+        -- 區域距離閘；internal 不受，但另受 POI 顯示距離閘（皆含全域上限＋玩家
+        -- 滑條；該類距離啟用但缺玩家＝fail closed）
+        local gd2, gBlocked
+        if provider.internal then gd2, gBlocked = pdist2, poiBlocked
+        else gd2, gBlocked = zdist2, zoneBlocked end
         local pok, zones
-        if not (provider.internal and poiBlocked)
+        if not gBlocked
             and (provider.internal or getBoolOption("ZoneLayer", true))
             and (not provider.optionKey or getBoolOption(provider.optionKey, true)) then
             pok, zones = pcall(provider.fn)
@@ -2994,15 +3060,15 @@ local function drawZoneIcons(inner)
         elseif type(zones) == "table" and zones.hasIcon ~= false then -- ZR-1（同 fill pass）
             local disCats = not provider.internal and zoneDisabledCats() or nil
             local cand = zcCandidates(inner, provider, zones, disCats, scale,
-                vMinX, vMaxX, vMinY, vMaxY, ppx, ppy, pdist2)
+                vMinX, vMaxX, vMinY, vMaxY, ppx, ppy, gd2)
             for ci = 1, #cand do
                 local z = rawget(zones, cand[ci]) or ZC_EMPTY -- rawget: stale slot 不得觸發第三方 __index（codex review）
                 local icon, rects = z.icon, z.rects
-                -- 內部 provider 的 zone 過 POI 距離閘（與 fill/lines 同判定，整棟一致
-                -- 顯隱；not pdist2 先行短路——閘未啟用不付逐 zone 呼叫）
+                -- zone 過該 provider 的顯示距離閘（與 fill/lines 同判定，整棟一致
+                -- 顯隱；not gd2 先行短路——閘未啟用不付逐 zone 呼叫）
                 if icon and icon.tex and rects
                     and not (disCats and z.category and disCats[z.category])
-                    and (not pdist2 or not provider.internal or zoneWithinDist(z, ppx, ppy, pdist2)) then
+                    and (not gd2 or zoneWithinDist(z, ppx, ppy, gd2, provider.internal)) then
                     -- iconOnce（POI v3 逐房間矩形）：圖標只畫在 rects[1]（provider
                     -- 保證是最大房間），避免一棟 200+ 房間疊 200 顆圖標；預裁與
                     -- 螢幕裁切照常作用於該矩形。選配 iconRect 覆寫第一顆的錨點
@@ -4179,7 +4245,7 @@ Core.displayDist = displayDist
 Core.livestockVisibilityMode = livestockVisibilityMode
 Core.unifiedCsvSet = unifiedCsvSet
 local zoneCatErrLogged = {} -- zoneExternalCategories 的 provider 失敗 log-once（依 owner）
--- 統一視窗「伺服器區域」區塊用：收集外部 provider 當前 zone 的 distinct category
+-- 統一視窗「自訂區域」區塊用：收集外部 provider 當前 zone 的 distinct category
 -- （排序穩定；無 category 的 zone 不列——類別是伺服器 zones.json 選配欄位）。
 -- 視窗開啟時才呼叫，pcall 防外部 provider 拋錯（失敗依 owner log-once，
 -- 不得靜默呈現成「沒有分類」——codex review）。

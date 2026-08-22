@@ -1,7 +1,7 @@
 {
     "Sandbox_MinidoracatMiniMap": "Minidoracat 小地圖",
     "Sandbox_MinidoracatMiniMapAllInfoDistance": "【全域】全部資訊顯示距離上限（格）",
-    "Sandbox_MinidoracatMiniMapAllInfoDistance_tooltip": "0＝無距離限制（預設）。\nN＞0＝殭屍點位、動物、載具、安全屋範圍、資源點（POI）的顯示距離全域上限。\n最優先生效：個別距離選項只能設得更嚴（兩者取較小），不能放寬此上限。\n玩家還可在設定視窗「顯示距離」區把自己的顯示距離收得更緊。\n1 格約 1 公尺；採二維直線距離，不計樓層。\n管理員按「套用」後立即生效。",
+    "Sandbox_MinidoracatMiniMapAllInfoDistance_tooltip": "0＝無距離限制（預設）。\nN＞0＝殭屍點位、動物、載具、安全屋範圍、資源點（POI）、自訂區域的顯示距離全域上限。\n最優先生效：個別距離選項只能設得更嚴（兩者取較小），不能放寬此上限。\n玩家還可在設定視窗「顯示距離」區把自己的顯示距離收得更緊。\n1 格約 1 公尺；採二維直線距離，不計樓層。\n管理員按「套用」後立即生效。",
     "Sandbox_MinidoracatMiniMapAllowZombieDots": "允許即時殭屍點位",
     "Sandbox_MinidoracatMiniMapAllowZombieDots_tooltip": "允許玩家在小地圖上顯示可視範圍內殭屍的即時位置。關閉後所有玩家的殭屍點位功能失效（管理員改動即時生效）。",
     "Sandbox_MinidoracatMiniMapZombieDotDistance": "殭屍點位顯示距離（格）",
@@ -33,6 +33,8 @@
     "Sandbox_MinidoracatMiniMapVehicleIconDistance_tooltip": "0＝無距離限制。\nN＞0＝僅顯示距玩家 N 格內的項目。\n1 格約 1 公尺；採二維直線距離，不計樓層。\n管理員按「套用」後立即生效。",
     "Sandbox_MinidoracatMiniMapPoiDisplayDistance": "資源點（POI）顯示距離（格）",
     "Sandbox_MinidoracatMiniMapPoiDisplayDistance_tooltip": "0＝無距離限制（預設）。\nN＞0＝資源點區域（顯示中的分類房間）最近點距玩家 N 格內才顯示（區塊、框線、圖標一併隱藏）。\n1 格約 1 公尺；建議 300＝約一個街區群，保留探索感。\n僅影響內建資源點；地圖包範圍框線等其他圖層不受影響。\n採二維直線距離，不計樓層。\n管理員按「套用」後立即生效。",
+    "Sandbox_MinidoracatMiniMapZoneDisplayDistance": "自訂區域顯示距離（格）",
+    "Sandbox_MinidoracatMiniMapZoneDisplayDistance_tooltip": "0＝無距離限制（預設）。\nN＞0＝自訂區域（zone 圖層 addon 提供，如伺服器推送的區域）最近點距玩家 N 格內才顯示（色塊、框線、名稱、圖標一併隱藏）。\n僅影響自訂區域圖層；資源點與地圖包範圍框線不受影響。\n玩家還可用自己的滑條把距離收得更緊（兩者取較小）。\n1 格約 1 公尺；採二維直線距離，不計樓層。\n管理員按「套用」後立即生效。",
     "Sandbox_MinidoracatMiniMapExportPlayerPositions": "匯出玩家座標檔（外部工具）",
     "Sandbox_MinidoracatMiniMapExportPlayerPositions_tooltip": "把玩家座標寫成 JSON 檔給外部工具讀（預設關閉）。\n輸出到 Zomboid/Lua/MinidoracatMiniMap/，檔名 players_存檔名.json（多人＝伺服器名，單機＝存檔資料夾名），與 poi_blocks.json 同目錄。\n用途：地圖重置工具在清除區域前判斷該處有沒有玩家，必要時先把人踢下線。\n內容：玩家名稱、世界座標、樓層、是否在線、座標觀測時間。\n注意：玩家座標會落地成檔案，僅在確實要搭配外部工具時開啟。\n管理員按「套用」後立即生效。",
     "Sandbox_MinidoracatMiniMapPlayerExportInterval": "玩家座標匯出週期（秒）",

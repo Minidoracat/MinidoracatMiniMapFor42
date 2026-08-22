@@ -30,6 +30,9 @@ option MinidoracatMiniMap.VehicleIconDistance
 option MinidoracatMiniMap.PoiDisplayDistance
 {type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMap, translation = MinidoracatMiniMapPoiDisplayDistance,}
 
+option MinidoracatMiniMap.ZoneDisplayDistance
+{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMap, translation = MinidoracatMiniMapZoneDisplayDistance,}
+
 option MinidoracatMiniMap.SafehouseDisplay
 {type = enum, numValues = 3, default = 3, page = MinidoracatMiniMap, translation = MinidoracatMiniMapSafehouseDisplay,}
 

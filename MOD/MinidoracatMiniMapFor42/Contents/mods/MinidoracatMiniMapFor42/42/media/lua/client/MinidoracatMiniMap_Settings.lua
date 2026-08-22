@@ -188,16 +188,18 @@ local UNIFIED_SECTIONS = {
     { id = "vehicles", label = "UI_MinidoracatMiniMap_SecVehicles", gate = "AllowVehicleDots" },
     { id = "worldmap", label = "UI_MinidoracatMiniMap_SecWorldMap" },
     { id = "appearance", label = "UI_MinidoracatMiniMap_SecAppearance" },
+    { id = "perf", label = "UI_MinidoracatMiniMap_SecPerf" },
 }
 -- ponytail: 展開狀態 session 記憶即可，跨場記憶（存 ModOptions）是升級路徑。
 -- 預設全部收合（實測回饋：每次開窗都先展開圖層顯示很煩）
 local unifiedExpand = {}
--- 固定分欄（實測回饋：貪婪平衡會讓區塊隨展開狀態在左右欄跳動，破壞空間記憶）：
--- 左欄＝圖層顯示/資源點/外觀與行為，右欄＝殭屍點位/動物圖標/載具圖標/世界地圖圖標。
--- worldmap 置右欄：與同為「點位顯示」的殭屍/動物/載具同群（世界地圖圖標亦是這三類點位），
--- 且平衡兩欄全展開高度（資源點併入左欄後左重，右移 worldmap 後左右列數約略持平）
+-- 左欄＝圖層顯示/資源點/顯示距離/外觀與行為（＋動態自訂區域），右欄＝殭屍點位/
+-- 動物圖標/載具圖標/世界地圖圖標。worldmap 置右欄：與同為「點位顯示」的
+-- 殭屍/動物/載具同群（世界地圖圖標亦是這三類點位），且平衡兩欄全展開高度。
+-- perf＝"full" 跨雙欄（實測回饋：長文字區塊塞單欄會把該欄撐得老高、另一欄
+-- 大片留白；全寬行長加倍、行數減半），排在兩欄之下
 local UNIFIED_LANE = { layers = 1, poicat = 1, distance = 1, appearance = 1,
-    zombie = 2, animals = 2, vehicles = 2, worldmap = 2 }
+    zombie = 2, animals = 2, vehicles = 2, worldmap = 2, perf = "full" }
 local settingsUI -- 單例；獨立頂層視窗，不隨小地圖 Recreate 消失（apply 自行重抓 mm）
 
 -- 地圖包 addon 專屬選項（有註冊才出現）：OnGameBoot＝所有 MOD lua 載入完
@@ -248,9 +250,11 @@ Events.OnGameBoot.Add(function()
         "UI_MinidoracatMiniMap_ZoneLayer_tooltip")
     table.insert(UNIFIED_LAYER_TICKS, { id = "ZoneLayer",
         label = "UI_MinidoracatMiniMap_ZoneLayer", default = true })
-    -- per-provider 母開關（provider 註冊時給了 optionLabelKey 才有；如 Zones addon 的
-    -- 「顯示伺服器區域」）：ModOptions 選項本體＋統一視窗圖層區加項。渲染時
-    -- drawZoneFill/Lines/Icons 依 optionKey 讀值，關＝整個 provider 跳過。
+    -- per-provider 母開關（provider 註冊時給了 optionLabelKey 才有）：ModOptions 選項
+    -- 本體＋統一視窗圖層區加項。渲染時 drawZoneFill/Lines/Icons 依 optionKey 讀值，
+    -- 關＝整個 provider 跳過（與 ZoneLayer 總開關 AND）。家族 Zones addon 自 0.5.0
+    -- 起不傳（與總開關重複）；機制留給第三方 addon——勿依 provider 數動態隱藏
+    -- （雙向幽靈，見主檔 registerZoneProvider 契約註解）
     for i = 1, #registeredZoneProviders do
         local p = registeredZoneProviders[i]
         if p.optionKey then
@@ -259,13 +263,29 @@ Events.OnGameBoot.Add(function()
                 label = p.optionLabelKey, default = true })
         end
     end
-    -- 伺服器區域專屬設定（同本條件：有外部 provider 才出現）——
+    -- 自訂區域專屬設定（同本條件：有外部 provider 才出現）——
     -- 名稱遠距開關＋類別篩選 CSV（統一視窗類別勾選自動寫入；空/'-'＝全開）。
-    -- 統一視窗「伺服器區域」區塊亦在此動態插入（插在資源點之後、左欄）
+    -- 統一視窗「自訂區域」區塊亦在此動態插入（插在資源點之後、左欄）
     modOptions:addTickBox("ZoneNamesFar", "UI_MinidoracatMiniMap_ZoneNamesFar", true,
         "UI_MinidoracatMiniMap_ZoneNamesFar_tooltip")
     modOptions:addTextEntry("ZoneCategoryFilter", "UI_MinidoracatMiniMap_ZoneCategoryFilter", "",
         "UI_MinidoracatMiniMap_ZoneCategoryFilter_tooltip")
+    -- 自訂區域顯示距離（僅裁外部 provider；渲染端消費見主檔 distGateParams）：
+    -- ESC 頁滑條尾端追加（家規：addon 條件選項一律 OnGameBoot 尾端，同 MapPackLayers
+    -- ——PZAPI 無中插 API），前置 addTitle 復用「顯示距離」標題鍵帶出「0＝不限」
+    -- 語意（slider 型別 MainOptions 不渲染 tooltip，MainOptions.lua:3024-3027 無
+    -- tooltip 讀取——tickbox 才有）；統一視窗走 UNIFIED_SLIDERS.distance 第 6 條
+    -- （capBy＝沙盒 ZoneDisplayDistance，含全域上限 AllInfoDistance；zeroLabel＝不限）
+    modOptions:addTitle("UI_MinidoracatMiniMap_SecDistanceEsc")
+    modOptions:addSlider("ClientZoneDisplayDistance", "UI_MinidoracatMiniMap_DistZone", 0, 2000, 1, 0)
+    -- 收尾分隔線（主檔 ESC 距離群組同款規範）：addTitle 只畫標題不畫群組結束，
+    -- 本 handler 目前是最後註冊的 OnGameBoot，但再加第三個 addon 條件 handler 時
+    -- 其選項會被視覺歸進「顯示距離」標題底下（claude lane review）
+    modOptions:addSeparator()
+    table.insert(UNIFIED_SLIDERS.distance, { id = "ClientZoneDisplayDistance",
+        label = "UI_MinidoracatMiniMap_DistZone", default = 0, min = 0, max = 2000,
+        step = 1, fmt = "%d", zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited",
+        capBy = "ZoneDisplayDistance" })
     table.insert(UNIFIED_SECTIONS, 3, { id = "zones", label = "UI_MinidoracatMiniMap_SecZones" })
     UNIFIED_LANE.zones = 1
 end)
@@ -372,7 +392,8 @@ local function unifiedHeaderSummary(sec, pn)
         end
         return on .. "/" .. #order
     elseif sec.id == "distance" then
-        -- 有距離限制生效（伺服器或玩家任一）之項目數；0/5＝全不限
+        -- 有距離限制生效（伺服器或玩家任一）之項目數；0/N＝全不限
+        -- （N＝#UNIFIED_SLIDERS.distance：裝區域 addon 時 6、否則 5）
         if not displayDist then return nil end
         local on = 0
         for i = 1, #UNIFIED_SLIDERS.distance do
@@ -777,27 +798,23 @@ local function unifiedBuildAppearance(ctx)
     ctx.curY = ctx.curY + ctx.rowH + 4
 end
 
--- builder 分派表（骨架見 UNIFIED_SECTIONS）
--- 顯示距離區：說明列＋5 類距離滑條（0＝不限；滑條上限＝伺服器允許範圍）
-local function unifiedBuildDistance(ctx)
-    unifiedAdd(ctx, ISLabel:new(ctx.curX, ctx.curY + 3, ctx.fontH,
-        getText("UI_MinidoracatMiniMap_DistNote"), 0.75, 0.75, 0.75, 1, UIFont.Small, true))
-    ctx.curY = ctx.curY + ctx.rowH
-    unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.distance)
-end
 -- 長提示句斷行（ISLabel 無自動換行，長句會溢出 lane——實測「無類別提示」
 -- 四語皆超寬）：貪婪斷行，CJK 逐字可斷、拉丁以最後空白優先；UTF-8 逐碼點
 -- 步進，絕不切壞多位元組字元。僅設定視窗重建時執行，量測成本無妨
-local function unifiedAddWrappedNote(ctx, text)
+-- indent（選配）＝整段左縮排 px（懸掛版式的描述行用）；r/g/b（選配）＝文字色
+-- （預設 0.75 灰；效能區收尾建議用亮色突出）。既有呼叫端不帶新參、行為不變
+local function unifiedAddWrappedNote(ctx, text, indent, r, g, b)
+    indent = indent or 0
+    r, g, b = r or 0.75, g or 0.75, b or 0.75
     local tm = getTextManager()
-    local maxW = ctx.laneW - 10
+    local maxW = ctx.laneW - 10 - indent
     local s = tostring(text or "")
     local n = #s
     local lineStart = 1
     local lastSpaceEnd = nil -- 行內最後一個空白之後的 byte 位置（拉丁斷點）
     local function emit(seg)
-        unifiedAdd(ctx, ISLabel:new(ctx.curX + 4, ctx.curY + 3, ctx.fontH,
-            seg, 0.75, 0.75, 0.75, 1, UIFont.Small, true))
+        unifiedAdd(ctx, ISLabel:new(ctx.curX + 4 + indent, ctx.curY + 3, ctx.fontH,
+            seg, r, g, b, 1, UIFont.Small, true))
         ctx.curY = ctx.curY + ctx.rowH
     end
     local i = 1
@@ -825,9 +842,65 @@ local function unifiedAddWrappedNote(ctx, text)
     if lineStart <= n then emit(string.sub(s, lineStart, n)) end
 end
 
+-- 顯示距離區：說明列＋距離滑條（0＝不限；滑條上限＝伺服器允許範圍）＋效能標語。
+-- 定義必須在 unifiedAddWrappedNote 之後（local 前向引用會被編譯成全域查找、
+-- 執行期 nil——check_lua_bindings 守的坑）
+local function unifiedBuildDistance(ctx)
+    unifiedAdd(ctx, ISLabel:new(ctx.curX, ctx.curY + 3, ctx.fontH,
+        getText("UI_MinidoracatMiniMap_DistNote"), 0.75, 0.75, 0.75, 1, UIFont.Small, true))
+    ctx.curY = ctx.curY + ctx.rowH
+    unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.distance)
+end
+
+-- 效能說明區（實測回饋 0.19.0：一行標語塞在顯示距離區尾不易發現、也放不下逐項
+-- 說明——升級為獨立收合區塊）。版式＝逐項「名稱（白）＋等級（彩色右對齊）」
+-- 標題列＋縮排描述行（懸掛式；取代舊「- 」前綴純文字清單——貪婪斷行會把
+-- 前綴孤立成整行、續行頂格難讀，實測截圖回饋）。等級色沿家族 Okabe-Ito
+-- 色盲友善向（綠／黃／橘）。等級是機制推導＋整包實測錨點（AGENTS.md
+-- 2026-08-19 GameProfiler A/B：「MOD＋常駐小地圖預設設定」上界 0.56ms/幀
+-- ≈ 60fps 幀預算 3.4%，文案取整約 0.6ms／約 4％）——無逐項 profiler 數據，
+-- 不給逐項百分比（數字表述紀律）。
+local PERF_LEVELS = {
+    [0] = { key = "UI_MinidoracatMiniMap_PerfLv0", r = 0.40, g = 0.80, b = 0.40 },
+    [1] = { key = "UI_MinidoracatMiniMap_PerfLv1", r = 0.90, g = 0.85, b = 0.35 },
+    [2] = { key = "UI_MinidoracatMiniMap_PerfLv2", r = 0.95, g = 0.60, b = 0.25 },
+}
+local PERF_ITEMS = {
+    { name = "UI_MinidoracatMiniMap_PerfItemMap", lvl = 0, desc = "UI_MinidoracatMiniMap_PerfDescMap" },
+    { name = "UI_MinidoracatMiniMap_PerfItemPoi", lvl = 1, desc = "UI_MinidoracatMiniMap_PerfDescPoi" },
+    { name = "UI_MinidoracatMiniMap_PerfItemZone", lvl = 1, desc = "UI_MinidoracatMiniMap_PerfDescZone" },
+    { name = "UI_MinidoracatMiniMap_PerfItemZombie", lvl = 2, desc = "UI_MinidoracatMiniMap_PerfDescZombie" },
+    { name = "UI_MinidoracatMiniMap_PerfItemAnimal", lvl = 1, desc = "UI_MinidoracatMiniMap_PerfDescAnimal" },
+    { name = "UI_MinidoracatMiniMap_PerfItemMisc", lvl = 1, desc = "UI_MinidoracatMiniMap_PerfDescMisc" },
+}
+local function unifiedBuildPerf(ctx)
+    unifiedAddWrappedNote(ctx, getText("UI_MinidoracatMiniMap_PerfIntro"))
+    ctx.curY = ctx.curY + 4
+    local tm = getTextManager()
+    for i = 1, #PERF_ITEMS do
+        local item = PERF_ITEMS[i]
+        local lv = PERF_LEVELS[item.lvl]
+        -- 標題列：名稱白字靠左＋等級彩字右貼齊（名稱鍵刻意精簡確保單行；極端
+        -- 字型倍率下重疊優於裁字——slider 段同款取捨）
+        unifiedAdd(ctx, ISLabel:new(ctx.curX + 4, ctx.curY + 3, ctx.fontH,
+            getText(item.name), 0.92, 0.92, 0.92, 1, UIFont.Small, true))
+        local lvText = getText(lv.key)
+        local lvW = tm:MeasureStringX(UIFont.Small, lvText)
+        unifiedAdd(ctx, ISLabel:new(ctx.curX + ctx.laneW - 6 - lvW, ctx.curY + 3, ctx.fontH,
+            lvText, lv.r, lv.g, lv.b, 1, UIFont.Small, true))
+        ctx.curY = ctx.curY + ctx.rowH
+        unifiedAddWrappedNote(ctx, getText(item.desc), 12)
+        ctx.curY = ctx.curY + 2
+    end
+    unifiedAddWrappedNote(ctx, getText("UI_MinidoracatMiniMap_PerfNoteWorldmap"))
+    ctx.curY = ctx.curY + 2
+    -- 收尾行動建議提亮（0.85 暖白）——整區唯一的「該做什麼」，值得跳出灰階
+    unifiedAddWrappedNote(ctx, getText("UI_MinidoracatMiniMap_PerfAdvice"), 0, 0.88, 0.85, 0.70)
+end
+
 -- 註冊的 zone 動作列（registerZoneAction，如 Zones addon 的「生成範例檔」）：
 -- [combo]+[按鈕] 一列（options 有給才有 combo）。原渲染在圖層顯示區尾端，
--- 0.14 移入「伺服器區域」區塊（實測回饋：與區域設定同區才找得到）。註冊
+-- 0.14 移入「自訂區域」區塊（實測回饋：與區域設定同區才找得到）。註冊
 -- action 的 addon 依家族契約必同時註冊 provider——區塊存在性由 provider 決定
 local function unifiedAddZoneActions(ctx)
     for ai = 1, #registeredZoneActions do
@@ -859,7 +932,7 @@ local function unifiedAddZoneActions(ctx)
     end
 end
 
--- 伺服器區域區（有外部 zone provider 才插入，見上方 OnGameBoot）：名稱遠距開關
+-- 自訂區域區（有外部 zone provider 才插入，見上方 OnGameBoot）：名稱遠距開關
 -- ＋動態類別勾選。類別是 zones.json 選配欄位——伺服器定義什麼列什麼；MP 區域
 -- 非同步到貨，重開視窗即刷新清單。已知取捨：CSV 依「當前可見類別」序列化，
 -- 已停用但暫不在清單的類別（伺服器移除該類全部區域期間改勾選）會被序列化丟出
@@ -910,6 +983,7 @@ local UNIFIED_BUILDERS = {
     zombie = unifiedBuildZombie,
     animals = unifiedBuildAnimals, vehicles = unifiedBuildVehicles, distance = unifiedBuildDistance,
     worldmap = unifiedBuildWorldmap, appearance = unifiedBuildAppearance,
+    perf = unifiedBuildPerf,
 }
 
 -- 版面量測（原 unifiedRebuild 前段拆出）：各語系標籤實測寬度決定 lane 寬與欄數
@@ -1051,16 +1125,23 @@ unifiedRebuild = function(win)
     for s = 1, #UNIFIED_SECTIONS do
         local sec = UNIFIED_SECTIONS[s]
         local expanded = unifiedExpand[sec.id] and true or false
-        local cur = UNIFIED_LANE[sec.id] or 1 -- 固定分欄，位置不隨展開狀態變動
-        ctx.curX = laneX[cur]
-        ctx.curY = laneY[cur]
+        local cur = UNIFIED_LANE[sec.id] or 1 -- 固定分欄；"full"＝跨雙欄全寬（效能說明）
+        local secW = laneW
+        if cur == "full" then
+            secW = laneW * 2 + 12
+            ctx.curX = laneX[1]
+            ctx.curY = math.max(laneY[1], laneY[2])
+        else
+            ctx.curX = laneX[cur]
+            ctx.curY = laneY[cur]
+        end
         -- 標題列＝空字 ISButton（點擊 hit-target），視覺全自畫（panel:render 畫
         -- 圓角列底＋文字——ISButton 標題強制置中，左對齊＋右側摘要只能自畫）；
         -- 原生框底全透明（alpha 0：ISButton:prerender :117-133 fade 混色兩端皆 0、
         -- pressed 分支 :118-125 抄 backgroundColorMouseOver.a 同為 0、border 守衛
         -- shouldDrawBorder :99-100 hover/pressed 時畫的也是 a=0——全路徑隱形；
         -- hover 亮階改由自畫層讀 mouseOver 欄位（ISButton.lua:12/:19）決定）
-        local hdr = ISButton:new(ctx.curX - 4, ctx.curY, laneW + 8, fontH + 6, "", win,
+        local hdr = ISButton:new(ctx.curX - 4, ctx.curY, secW + 8, fontH + 6, "", win,
             function(target, btn)
                 unifiedExpand[btn._minidoracatSec] = not unifiedExpand[btn._minidoracatSec]
                 unifiedRebuild(win)
@@ -1073,8 +1154,8 @@ unifiedRebuild = function(win)
         unifiedAdd(ctx, hdr)
         win._headers[#win._headers + 1] = {
             btn = hdr, -- 自畫層 hover 判定用（讀 .mouseOver，零呼叫成本）
-            bx = ctx.curX - 4, by = ctx.curY, bw = laneW + 8, bh = fontH + 6,
-            x = ctx.curX + 2, y = ctx.curY + 3, rx = ctx.curX + laneW - 2,
+            bx = ctx.curX - 4, by = ctx.curY, bw = secW + 8, bh = fontH + 6,
+            x = ctx.curX + 2, y = ctx.curY + 3, rx = ctx.curX + secW - 2,
             text = (expanded and "- " or "+ ") .. getText(sec.label),
             sec = sec, -- 摘要由 panel:render 每幀現算（見 unifiedHeaderSummary）
         }
@@ -1087,9 +1168,20 @@ unifiedRebuild = function(win)
                 ctx.curY = ctx.curY + rowH
             end
             local builder = UNIFIED_BUILDERS[sec.id]
-            if builder then builder(ctx) end
+            if builder then
+                -- 跨欄區塊執行期把 ctx.laneW 放大（wrapped note 行寬／等級右貼齊
+                -- 皆讀 ctx.laneW），builder 返回即還原——防後續區塊吃到錯寬度
+                if cur == "full" then ctx.laneW = secW end
+                builder(ctx)
+                if cur == "full" then ctx.laneW = laneW end
+            end
         end
-        laneY[cur] = ctx.curY + 8 -- 區段間距（皮膚化 UX 微調：6→8）
+        if cur == "full" then
+            laneY[1] = ctx.curY + 8
+            laneY[2] = laneY[1]
+        else
+            laneY[cur] = ctx.curY + 8 -- 區段間距（皮膚化 UX 微調：6→8）
+        end
     end
     -- 內容高＝較長 lane；面板高夾玩家 viewport，超出開捲動
     -- （setScrollHeight/getScrollHeight＝ISUIElement 內建捲動 API）
@@ -1123,7 +1215,7 @@ unifiedRebuild = function(win)
     end
 end
 
--- 伺服器區域資料到貨時的視窗自動刷新（實測回饋：視窗開著按「生成範例檔」，
+-- 自訂區域資料到貨時的視窗自動刷新（實測回饋：視窗開著按「生成範例檔」，
 -- 類別勾選不會自己長出來——重建僅在開窗/操作時觸發）。zone 快取是原子替換
 -- （C2 契約：provider 恆回快取參照、更新即換新表），參照變＝資料變：逐外部
 -- provider 比參照，變了才重建。每幀成本＝外部 provider 數次 pcall（fn 只回

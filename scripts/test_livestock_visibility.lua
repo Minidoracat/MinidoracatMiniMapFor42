@@ -473,21 +473,25 @@ assert(settingsSource:find("if sliderW < %d+ then sliderW = %d+ end"),
 -- 命名契約守衛："Client"..沙盒名 三方對齊（displayDist 串接 ↔ ESC 註冊 step=1 ↔
 -- 統一視窗 capBy/id）——日後新增距離沙盒選項漏註冊 Client 滑條時這裡會紅
 local DIST_NAMES = { "ZombieDotDistance", "AnimalIconDistance", "VehicleIconDistance",
-    "SafehouseDisplayDistance", "PoiDisplayDistance" }
+    "SafehouseDisplayDistance", "PoiDisplayDistance", "ZoneDisplayDistance" }
 for _, n in ipairs(DIST_NAMES) do
     -- 消費端呼叫點可在主檔或 _Dots.lua（點雲距離閘門隨拆檔遷移）
     assert(source:find('displayDist%("' .. n .. '"%)')
         or dotsSource:find('displayDist%("' .. n .. '"%)'),
         "主檔/_Dots 缺 displayDist(\"" .. n .. "\") 呼叫點")
-    assert(source:find('addSlider%("Client' .. n .. '", "UI_MinidoracatMiniMap_Dist%w+", 0, CLIENT_DIST_MAX, 1, 0%)'),
-        "ESC 頁缺 Client" .. n .. " 滑條註冊（或 step 不為 1）")
+    -- ESC 註冊點可在主檔（本體恆存選項，值域用 CLIENT_DIST_MAX 常數）或
+    -- _Settings.lua（addon 條件選項 OnGameBoot 尾端追加，字面 2000＝同值——
+    -- 該檔無 CLIENT_DIST_MAX local；值域對齊由本守衛釘住）
+    assert(source:find('addSlider%("Client' .. n .. '", "UI_MinidoracatMiniMap_Dist%w+", 0, CLIENT_DIST_MAX, 1, 0%)')
+        or settingsSource:find('addSlider%("Client' .. n .. '", "UI_MinidoracatMiniMap_Dist%w+", 0, 2000, 1, 0%)'),
+        "ESC 頁缺 Client" .. n .. " 滑條註冊（或 step 不為 1／值域不對齊）")
     assert(settingsSource:find('capBy = "' .. n .. '"'),
         "統一視窗 distance 區缺 capBy=" .. n)
     assert(settingsSource:find('id = "Client' .. n .. '"'),
         "統一視窗 distance 區缺 id=Client" .. n)
 end
 local stepOneCount = select(2, settingsSource:gsub('step = 1, fmt = "%%d"', ""))
-assert(stepOneCount == 5, "統一視窗 distance 滑條 step 應全為 1（得 " .. stepOneCount .. "）")
+assert(stepOneCount == 6, "統一視窗 distance 滑條 step 應全為 1（得 " .. stepOneCount .. "）")
 
 local worldMapMappings = {
     { "WMZombieDots", "AllowZombieDots" },

@@ -58,7 +58,12 @@ local csvBody = assert(source:match(
 local zcatBody = assert(source:match(
     "%-%- test:zone%-categories:start\n(.-)\n%-%- test:zone%-categories:end"),
     "找不到 zoneExternalCategories 測試區段")
-zoneBody = csvBody .. "\n" .. affineBody .. "\n" .. zoneBody .. "\n" .. zcatBody
+-- hasExternalZoneProvider（distGateParams 的 zdist 惰性求值用）：production 版
+-- 經標記抽取（單一事實來源，防 stub 語意分歧——與 unifiedCsvSet 同慣例）
+local hasExtBody = assert(source:match(
+    "%-%- test:has%-external%-provider:start\n(.-)\n%-%- test:has%-external%-provider:end"),
+    "找不到 hasExternalZoneProvider 測試區段")
+zoneBody = csvBody .. "\n" .. hasExtBody .. "\n" .. affineBody .. "\n" .. zoneBody .. "\n" .. zcatBody
 local zonePrelude = [=[
 local registeredZoneProviders = {}
 local zoneLayerOn = true
@@ -101,14 +106,17 @@ local iconSize = 18
 local function getSliderValue(id) return id == "PoiIconAlpha" and 100 or iconSize end
 local zoneAABB = { 0, 100, 0, 100 }
 local function visibleWorldAABB() return zoneAABB[1], zoneAABB[2], zoneAABB[3], zoneAABB[4] end
--- POI 距離閘的區段外相依：displayDist（鎖定選項名；沙盒×玩家合成另在
+-- 距離閘的區段外相依：displayDist（鎖定選項名；沙盒×玩家合成另在
 -- test_livestock_visibility.lua 的 display-distance 區段測）與玩家 stub
--- （記錄收到的 playerNum——防 inner.playerNum 被硬編碼 0 的回歸）
+-- （記錄收到的 playerNum——防 inner.playerNum 被硬編碼 0 的回歸）。
+-- poiDist＝內部 provider（POI）閘、zoneDist＝外部 provider（自訂區域）閘
 local poiDist = nil          -- nil＝未啟用（displayDist 對 0/缺值回 nil 的語意）
+local zoneDist = nil
 local playerPos = { 50, 50 } -- nil＝缺玩家（fail closed 分支）
 local lastPlayerNum = nil
 local function displayDist(name)
     if name == "PoiDisplayDistance" then return poiDist end
+    if name == "ZoneDisplayDistance" then return zoneDist end
     return nil
 end
 local function getSpecificPlayer(pn)
@@ -142,6 +150,7 @@ return {
     setCatFilter = function(v) catFilterValue = v end,
     zoneCategories = function() return Core.zoneExternalCategories() end,
     setPoiDist = function(d) poiDist = d end,
+    setZoneDist = function(d) zoneDist = d end,
     setPlayerPos = function(x, y) playerPos = x and { x, y } or nil end,
     lastPn = function() return lastPlayerNum end,
     logCount = function()
@@ -833,9 +842,10 @@ do
     assert(dcl.draws == 2, "A7b 無 lodRect zone 同格也應全畫（得 " .. dcl.draws .. "）")
 end
 
--- A8 POI 顯示距離沙盒閘（PoiDisplayDistance）：僅 internal provider 受距離限制，
--- 三 pass（fill/lines/icons）同一判定；最近點語意含邊界（<=）；距離啟用但缺
--- 玩家時 fail closed（內部 provider 連呼叫都不發生）；外部 addon zone 不受影響
+-- A8 顯示距離閘：internal provider 走 PoiDisplayDistance、外部 provider 走
+-- ZoneDisplayDistance（A8-7 起），三 pass（fill/lines/icons）同一判定；最近點
+-- 語意含邊界（<=）；該類距離啟用但缺玩家時 fail closed（該類 provider 連呼叫
+-- 都不發生）；distRects 覆寫量測對象（空表/殘缺回退 rects，見 A8-7e~7i）
 do
     local function distZone(x1, y1, x2, y2)
         return { {
@@ -905,7 +915,8 @@ do
         "A8-2b 無 lodRect 內部 zone 應同受距離閘（近畫遠隱，得 " .. lmDist.polyCount .. "）")
     zone.clearProviders()
 
-    -- A8-3 外部 addon zone 不受距離閘影響（同一顆遠 zone 改外部註冊）
+    -- A8-3 外部 addon zone 不受「POI」距離閘影響（同一顆遠 zone 改外部註冊；
+    -- 外部自有 ZoneDisplayDistance 閘見 A8-7，此處未啟用）
     zone.setPoiDist(30)
     zone.setPlayerPos(10, 10)
     zone.addProvider("addonFarExt", function() return distZone(60, 60, 70, 70) end)
@@ -916,8 +927,8 @@ do
     assert(ext.draws == 1, "A8-3 外部 zone 圖標不應被距離閘裁掉")
     zone.clearProviders()
 
-    -- A8-4 fail closed：距離啟用但缺玩家→內部 provider 整段不畫（連 fn 都不呼叫）；
-    -- 外部 provider 照常
+    -- A8-4 fail closed：POI 距離啟用但缺玩家→內部 provider 整段不畫（連 fn 都
+    -- 不呼叫）；外部 provider 照常（其 zone 距離閘未啟用，不受缺玩家影響）
     zone.setPlayerPos(nil)
     local intCalled = 0
     zone.addProvider("poiNoPlayer", function()
@@ -938,6 +949,194 @@ do
     zone.fill(off)
     assert(off.polyCount == 1, "A8-5 閘未啟用時遠 zone 應照畫")
     zone.clearProviders()
+    zone.setPlayerPos(50, 50)
+
+    -- A8-7 自訂區域距離閘（ZoneDisplayDistance）：只裁外部 provider——internal
+    -- （POI）不受 zoneDist 影響（兩閘各走各的距離，見主檔 distGateParams）。
+    -- 幾何同 A8-1：近 zone 最近點 ~14 格、遠 zone ~71 格
+    zone.setPoiDist(nil)
+    zone.setZoneDist(30)
+    zone.setPlayerPos(10, 10)
+    zone.addProvider("extNear", function() return distZone(20, 20, 30, 30) end)
+    zone.addProvider("extFar", function() return distZone(60, 60, 70, 70) end)
+    zone.addProvider("poiFarZd", function() return distZone(60, 60, 70, 70) end, true)
+    local zg = makeDistInner()
+    zone.fill(zg)
+    assert(zg.polyCount == 2,
+        "A8-7 fill 應畫外部近 zone＋內部遠 zone（POI 不受 zoneDist；得 " .. zg.polyCount .. "）")
+    zone.resetEdgeCount(); zone.lines(zg)
+    assert(zone.edgeCount() == 8, "A8-7 lines 應畫兩顆 zone 八邊（得 " .. zone.edgeCount() .. "）")
+    assert(zg.textCount == 2, "A8-7 名稱應隨距離閘一致顯隱（得 " .. zg.textCount .. "）")
+    zone.icons(zg)
+    assert(zg.draws == 2, "A8-7 icons 應畫兩顆圖標（得 " .. zg.draws .. "）")
+    zone.clearProviders()
+
+    -- A8-7b 邊界含等號（外部；同 A8-2 幾何）：恰 N 格顯示、收 1 格隱藏
+    zone.setPlayerPos(10, 40)
+    zone.addProvider("extEdge", function() return distZone(40, 40, 50, 50) end) -- 最近點距 30
+    local zat = makeDistInner(); zone.fill(zat)
+    assert(zat.polyCount == 1, "A8-7b 恰在距離上（<=）應顯示")
+    zone.setZoneDist(29)
+    local zunder = makeDistInner(); zone.fill(zunder)
+    assert(zunder.polyCount == 0, "A8-7b 超出距離應隱藏")
+    zone.clearProviders()
+
+    -- A8-7c fail closed：zoneDist 啟用但缺玩家→外部 provider 整段不畫（連 fn
+    -- 都不呼叫）；內部 provider 照常（poiDist 未啟用）
+    zone.setZoneDist(30)
+    zone.setPlayerPos(nil)
+    local extCalled = 0
+    zone.addProvider("extNoPlayer", function()
+        extCalled = extCalled + 1
+        return distZone(20, 20, 30, 30)
+    end)
+    zone.addProvider("poiNoPlayerZd", function() return distZone(20, 20, 30, 30) end, true)
+    local znop = makeDistInner()
+    zone.fill(znop); zone.icons(znop)
+    assert(extCalled == 0, "A8-7c 缺玩家時外部 provider 不應被呼叫（fail closed）")
+    assert(znop.polyCount == 1 and znop.draws == 1, "A8-7c 缺玩家時內部 provider 應照常繪製")
+    zone.clearProviders()
+
+    -- A8-7d 兩閘同開、各自作用：poiDist=30 裁內部遠 zone（~71 格）；
+    -- zoneDist=100 放行外部同一顆遠 zone（71 < 100）
+    zone.setPoiDist(30)
+    zone.setZoneDist(100)
+    zone.setPlayerPos(10, 10)
+    zone.addProvider("poiFarBoth", function() return distZone(60, 60, 70, 70) end, true)
+    zone.addProvider("extFarBoth", function() return distZone(60, 60, 70, 70) end)
+    local both = makeDistInner()
+    zone.fill(both)
+    assert(both.polyCount == 1,
+        "A8-7d 內部遠 zone 應被 POI 距離裁掉、外部由 zoneDist 放行（得 " .. both.polyCount .. "）")
+    zone.clearProviders()
+    zone.setZoneDist(nil)
+    zone.setPoiDist(nil)
+    zone.setPlayerPos(50, 50)
+
+    -- A8-7e distRects 在 lodRect 外（外部 addon 合法輸入；codex review 抓出）：
+    -- lodRect 契約只涵蓋 rects——快排若對 distRects 生效，玩家在實際量測
+    -- 距離內仍被 lodRect 錯誤拒絕（fail-invisible 回歸鎖：修前此案例 fail）
+    zone.setZoneDist(30)
+    zone.setPlayerPos(10, 10)
+    zone.addProvider("extDistRectsOut", function()
+        return { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+            rects = { { x1 = 60, y1 = 60, x2 = 70, y2 = 70 } },
+            lodRect = { x1 = 60, y1 = 60, x2 = 70, y2 = 70 },
+            distRects = { { x1 = 20, y1 = 20, x2 = 25, y2 = 25 } } } }
+    end)
+    local dro = makeDistInner()
+    zone.fill(dro)
+    assert(dro.polyCount == 1,
+        "A8-7e distRects 在 lodRect 外且玩家在量測距離內應顯示（得 " .. dro.polyCount .. "）")
+    zone.clearProviders()
+
+    -- A8-7f distRects 覆寫量測對象（internal，distRects⊆lodRect 慣例形狀）：
+    -- 玩家距 rects 恰 30 格、距 distRects ~33.5 格——dist=32 量 rects 會誤顯示，
+    -- 量 distRects 正確隱藏；dist=34 恢復顯示（鎖覆寫語意與 POI 既有行為）
+    zone.setZoneDist(nil)
+    zone.setPoiDist(32)
+    zone.setPlayerPos(10, 60)
+    zone.addProvider("poiDistRects", function()
+        return { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+            rects = { { x1 = 40, y1 = 40, x2 = 80, y2 = 80 } },
+            lodRect = { x1 = 40, y1 = 40, x2 = 80, y2 = 80 },
+            distRects = { { x1 = 40, y1 = 40, x2 = 45, y2 = 45 } } } }
+    end, true)
+    local drf = makeDistInner()
+    zone.fill(drf)
+    assert(drf.polyCount == 0,
+        "A8-7f 量測對象應為 distRects（量 rects 會誤顯示；得 " .. drf.polyCount .. "）")
+    zone.setPoiDist(34)
+    local drf2 = makeDistInner()
+    zone.fill(drf2)
+    assert(drf2.polyCount == 1,
+        "A8-7f 距離放寬到 distRects 內應顯示（得 " .. drf2.polyCount .. "）")
+    zone.clearProviders()
+    zone.setPoiDist(nil)
+    zone.setPlayerPos(50, 50)
+
+    -- A8-7g 空 distRects 回退 rects（codex lane review：空表原本 n==0 放行＝
+    -- 繞過距離閘）：rects 遠（~71 格）、distRects={} → 應量 rects 而隱藏
+    zone.setZoneDist(30)
+    zone.setPlayerPos(10, 10)
+    zone.addProvider("extEmptyDR", function()
+        return { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+            rects = { { x1 = 60, y1 = 60, x2 = 70, y2 = 70 } },
+            distRects = {} } }
+    end)
+    local edr = makeDistInner()
+    zone.fill(edr)
+    assert(edr.polyCount == 0,
+        "A8-7g 空 distRects 應回退量 rects 而隱藏遠 zone（得 " .. edr.polyCount .. "）")
+    zone.clearProviders()
+
+    -- A8-7h distRects 型別防呆（claude/codex lane review：rectDist2 對缺欄拋錯
+    -- ＝整層當幀消失且每幀重犯；平陣列 {42} 是現實失誤形態）：
+    -- h1 混合表——非 table 與缺欄元素跳過、有效近距元素生效（顯示且不炸）
+    zone.resetLogs()
+    zone.addProvider("extMixedDR", function()
+        return { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+            rects = { { x1 = 60, y1 = 60, x2 = 70, y2 = 70 } },
+            distRects = { 42, { x1 = 40 }, { x1 = 20, y1 = 20, x2 = 25, y2 = 25 } } } }
+    end)
+    local mdr = makeDistInner()
+    zone.fill(mdr)
+    assert(mdr.polyCount == 1,
+        "A8-7h1 混合 distRects 應以有效近距元素顯示（得 " .. mdr.polyCount .. "）")
+    zone.clearProviders()
+    -- h2 distRects 非 table（欄位型別搞錯）→ 視為未提供、回退 rects（遠→隱藏）
+    zone.addProvider("extNumDR", function()
+        return { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+            rects = { { x1 = 60, y1 = 60, x2 = 70, y2 = 70 } },
+            distRects = 5 } }
+    end)
+    local ndr = makeDistInner()
+    zone.fill(ndr)
+    assert(ndr.polyCount == 0,
+        "A8-7h2 非 table distRects 應回退量 rects 而隱藏（得 " .. ndr.polyCount .. "）")
+    zone.clearProviders()
+    -- h3 全壞元素（無任何有效矩形）→ 回退 rects（遠→隱藏）；全程不得拋錯
+    zone.addProvider("extBadDR", function()
+        return { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+            rects = { { x1 = 60, y1 = 60, x2 = 70, y2 = 70 } },
+            distRects = { 42, "x" } } }
+    end)
+    local bdr = makeDistInner()
+    zone.fill(bdr)
+    assert(bdr.polyCount == 0,
+        "A8-7h3 全壞 distRects 應回退量 rects 而隱藏（得 " .. bdr.polyCount .. "）")
+    assert(zone.logCount() == 0,
+        "A8-7h 型別防呆不得拋錯進 log（得 " .. zone.logCount() .. " 筆）")
+    zone.clearProviders()
+
+    -- A8-7i lodCovers 傳遞證據（grok advisory：呼叫端漏傳＝快排永不作用）：
+    -- fixture 故意違反「distRects ⊆ lodRect」（POI 建構保證；此處純機制探針）
+    -- ——lodRect 超距（~71）、distRects 距內（~14）：internal 走快排→隱藏，
+    -- 外部無快排→量 distRects 顯示（A8-7e 同語意）。internal 隱藏即證明
+    -- provider.internal 有傳到 zoneWithinDist 的 lodCovers
+    local function probeDR()
+        return { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+            rects = { { x1 = 60, y1 = 60, x2 = 70, y2 = 70 } },
+            lodRect = { x1 = 60, y1 = 60, x2 = 70, y2 = 70 },
+            distRects = { { x1 = 20, y1 = 20, x2 = 25, y2 = 25 } } } }
+    end
+    zone.setZoneDist(nil)
+    zone.setPoiDist(30)
+    zone.addProvider("poiLodCover", probeDR, true)
+    local lci = makeDistInner()
+    zone.fill(lci)
+    assert(lci.polyCount == 0,
+        "A8-7i internal 應被 lodRect 快排隱藏（lodCovers 未傳到＝誤顯示；得 " .. lci.polyCount .. "）")
+    zone.clearProviders()
+    zone.setPoiDist(nil)
+    zone.setZoneDist(30)
+    zone.addProvider("extLodCover", probeDR)
+    local lce = makeDistInner()
+    zone.fill(lce)
+    assert(lce.polyCount == 1,
+        "A8-7i 外部不快排、應量 distRects 顯示（得 " .. lce.polyCount .. "）")
+    zone.clearProviders()
+    zone.setZoneDist(nil)
     zone.setPlayerPos(50, 50)
 
     -- A8-6 逐房間判距（codex review：lodRect＝分類房間聯集 AABB，非整棟建築
@@ -1471,6 +1670,24 @@ do
     zone.fill(i5)               -- dz[1]＋append 的 dz[2] 都應出現，不得等 TTL
     assert(i5.polyCount == 4,
         "A14-7 距離閘參數改變應立即重建（得 " .. i5.polyCount .. "）")
+    zone.setPlayerPos(50, 50)
+    zone.clearProviders()
+
+    -- A14-7b 距離閘（外部＝ZoneDisplayDistance）走同一 gate2 候選路徑：閘外
+    -- 不入候選、參數變立即重建（機制同 A14-7；此處鎖「外部 provider 的 gd2
+    -- 選擇」——先前外部恆 nil，回歸＝遠 zone 被裁後撤銷閘不恢復）
+    local xdz = { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+        rects = { { x1 = 95, y1 = 95, x2 = 99, y2 = 99 } } } }
+    zone.addProvider("extDistProbe", function() return xdz end)
+    zone.setZoneDist(5)
+    zone.setPlayerPos(5, 5)     -- 距 zone ~127 格 > loose 85.2 → 不入候選
+    local i5b = makeInner()
+    zone.fill(i5b)
+    assert(i5b.polyCount == 0, "A14-7b 閘外外部 zone 不應入畫（得 " .. i5b.polyCount .. "）")
+    zone.setZoneDist(nil)       -- 閘撤銷（gate2 鍵變）→ 立即重建、恢復顯示
+    zone.fill(i5b)
+    assert(i5b.polyCount == 1,
+        "A14-7b 撤銷外部距離閘應立即重建（得 " .. i5b.polyCount .. "）")
     zone.setPlayerPos(50, 50)
     zone.clearProviders()
 
