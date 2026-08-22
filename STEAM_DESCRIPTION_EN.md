@@ -20,7 +20,7 @@ Overlays "map images rendered from the actual in-game view" onto the B42 world m
 [*] [b]Player coordinates + one-click copy[/b]: x, y, z at the bottom of both maps; XY button copies, right-click copies any pointed spot — paste straight into /teleportto
 [*] [b]Ghost mode[/b]: clicks and wheel pass through to the game while the map turns semi-transparent — enlarge it into a permanent overlay that never blocks play; hotkey '
 [*] [b]Free look[/b]: drag to inspect and stay there, click once to snap back to the player
-[*] [b]Unified settings window[/b] (gear button): collapsible two-column sections, every change applies and saves instantly — no ESC menu needed. The whole UI set (settings/search windows, minimap frame & button bar) wears the family rounded dark skin
+[*] [b]Unified settings window[/b] (gear button): collapsible two-column sections, every change applies and saves instantly — no ESC menu needed. The whole UI set (settings/search windows, minimap frame & button bar) wears the family rounded dark skin; built-in "Performance notes" section (per-feature levels + remedies)
 [*] [b]Server sandbox controls[/b]: disable individual icons, cap display distances, four livestock-visibility levels, faction-sharing toggle — changes apply live
 [*] [b]Singleplayer & multiplayer[/b]: only visualizes data the client already receives — no extra intel; Traditional/Simplified Chinese, English, Japanese
 [/list]
@@ -34,7 +34,7 @@ Map mod authors can ship their own support: render a [b]minidoracat_minimap.pyra
 [h2]🗺️ Built-in POIs + zone layer API[/h2]
 1669 points of interest across 20 categories on the vanilla map (military/medical/commercial/industrial etc., each color-coded): tinted-silhouette icons (full-color optional) or translucent blocks, per-category toggles in the settings window. Positions come straight from official map files; categories are derived from official room [u]loot types[/u] — they may disagree with the map's zoning colors (residential/commercial legend), the actual loot is what counts.
 Basement facilities (B42 basements — a bar under a house, underground armories) get a "↓" corner mark on the icon and a "(basement)" suffix in search results — the building above ground may be something else.
-A `registerZoneProvider` zone-rendering framework is also included; with the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones addon[/url] it displays server-defined zones (zones.json).
+A `registerZoneProvider` zone-rendering framework is also included; with the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones addon[/url] it displays server-defined zones (zones.json), with a dedicated display distance (sandbox + player slider).
 
 [h2]🔗 Mod series[/h2]
 This is the [b]main mod[/b] — fully functional on its own; addons are optional:
