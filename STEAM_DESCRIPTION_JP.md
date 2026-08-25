@@ -3,6 +3,11 @@
 
 [hr][/hr]
 
+[h2]⚠️ 必須の前提 MOD（0.20.0 以降）[/h2]
+0.20.0 以降、本 MOD の動作には [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701][b]Minidoracat UI Library for B42[/b][/url]（共用 UI ライブラリ）が必要です。このページの Required Items から併せてサブスクライブしてください。ライブラリ未購読のまま更新すると本 MOD は読み込まれません。
+
+[hr][/hr]
+
 [h2]✨ これは何？[/h2]
 「実際のゲーム画面からレンダリングした地図画像」を B42 のワールドマップとミニマップに重ねて、バニラのベクター線画スタイルを置き換えます。エンジン標準の ImagePyramid 採用：多段 LOD でズーム滑らか、低 VRAM、見たままの地図。
 

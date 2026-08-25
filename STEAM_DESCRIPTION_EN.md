@@ -3,6 +3,11 @@
 
 [hr][/hr]
 
+[h2]⚠️ Required dependency (since 0.20.0)[/h2]
+Since 0.20.0 this mod requires [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701][b]Minidoracat UI Library for B42[/b][/url] (the shared UI library). Please subscribe to it as well — see Required Items on this page. Updating this mod without subscribing to the library will stop it from loading.
+
+[hr][/hr]
+
 [h2]✨ What is this[/h2]
 Overlays "map images rendered from the actual in-game view" onto the B42 world map and corner mini-map, replacing the vanilla vector-line style. Built on the engine's native ImagePyramid: multi-level LOD for smooth zooming, low VRAM, and what-you-see-is-what-you-get.
 

@@ -1,5 +1,23 @@
 # Changelog
 
+## [42.20.3-0.20.0] - 2026-08-25
+
+### 變更
+
+- **新增必要依賴：Minidoracat UI 函式庫**：本版起小地圖的視窗外觀改由家族
+  共用的介面函式庫提供，**必須一併訂閱**（Workshop 頁面已列為 Required
+  Item）。只更新本 MOD 卻沒訂閱該函式庫的話，本 MOD 會無法載入。
+- **視窗外觀與家族其他 MOD 統一**：面板圓角、配色與浮動按鈕行為改用共用
+  實作，與公告欄等家族 MOD 一致；外觀細節日後由函式庫統一改進，本 MOD
+  自動受益。
+
+> 技術要點：`_Skin`／`_FloatIcon` 改為框架 thin wrapper，經
+> `MinidoracatUI.v1` 的 `CAPABILITIES` 逐項探測後委派，函式庫缺席或能力
+> 未就緒時退回原本的直角／內建浮鈕路徑；`mod.info` 掛
+> `require=MinidoracatUIFor42`。兩邊 `versionMin` 皆 42.20.1——require 會讓
+> 引擎過濾掉 build 範圍外的依賴而導致整包拒載，故本 MOD 的 versionMin
+> 永不得低於函式庫的。
+
 ## [42.20.3-0.19.0] - 2026-08-22
 
 ### 新增

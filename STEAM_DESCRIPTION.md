@@ -3,6 +3,11 @@
 
 [hr][/hr]
 
+[h2]⚠️ 必要前置 MOD（0.20.0 起）[/h2]
+本 MOD 自 0.20.0 起需要 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701][b]Minidoracat UI Library for B42[/b][/url]（家族共用介面函式庫）才能運作，請一併訂閱（見本頁 Required Items）。只更新本 MOD 而未訂閱函式庫會無法載入。
+
+[hr][/hr]
+
 [h2]✨ 這是什麼[/h2]
 把「實際遊戲畫面渲染的地圖圖片」疊加到 B42 世界地圖與角落小地圖上，取代原版向量線條。使用引擎原生 ImagePyramid：多層級 LOD 縮放流暢、低 VRAM、開圖即所見。
 
