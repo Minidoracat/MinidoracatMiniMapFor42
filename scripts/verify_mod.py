@@ -314,6 +314,26 @@ if os.path.isfile(_cl):
                     leaks.append(f"CHANGELOG.md:{lineno} {desc}（{mm.group()[:40]}）")
     fail("CHANGELOG 無基礎設施洩漏樣式", leaks) if leaks else ok("CHANGELOG 無基礎設施洩漏樣式")
 
+# ---- 12. Lua 單元測試：皮膚 adapter ----
+# _Skin.lua 是家族 UI 框架（MinidoracatUIFor42）的 thin adapter——每幀繪製轉發層，
+# 靜態掃描抓不到轉發參數錯置／退回路徑壞掉。test_skin_adapter.lua 驗兩態（框架
+# 在場轉發＋缺席退回）；缺 lua 或缺同層框架 repo 時列 SKIP 而非 PASS（SKIP＝該
+# 防線沒跑到）。其餘 test_*.lua 為手動／開發期測試，不在本閘門（維持既有慣例）。
+_lua_bin = shutil.which("lua")
+if not _lua_bin:
+    skip("Lua 單元測試（test_skin_adapter.lua）", "PATH 沒有 lua")
+else:
+    _r = subprocess.run([_lua_bin, "scripts/test_skin_adapter.lua"], capture_output=True, cwd=REPO)
+    _lines = [l for l in (_r.stdout or b"").decode("utf-8", "replace").splitlines() if l.strip()]
+    _err_tail = (_r.stderr or b"").decode("utf-8", "replace").splitlines()[-3:]
+    if _r.returncode != 0:
+        fail("Lua 單元測試（test_skin_adapter.lua）", (_lines[-3:] or []) + _err_tail)
+    elif _lines and _lines[0].startswith("SKIP"):
+        skip("Lua 單元測試（test_skin_adapter.lua）", _lines[0])
+    else:
+        fail("Lua 單元測試（test_skin_adapter.lua）", ["無輸出"]) if not _lines \
+            else ok(f"Lua 單元測試（test_skin_adapter.lua：{_lines[-1]}）")
+
 # ---- 總結 ----
 print()
 print(f"PASS {len(passed)} / FAIL {len(failed)} / SKIP {len(skipped)}")
