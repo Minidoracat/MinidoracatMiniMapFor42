@@ -12,6 +12,10 @@ Project Zomboid Build 42 遊戲內世界地圖圖片化 MOD。
 設計決策詳見 [MinidoracatMapRendering/docs/minimap-mod-design.md](../MinidoracatMapRendering/docs/minimap-mod-design.md)
 （該文件描述初版「同名檔案」架構，現為第三方相容路徑；現行架構見下方架構節）。
 
+> **必要前置 MOD（0.20.0 起）**：本 MOD 的視窗外觀改由家族共用介面函式庫提供，
+> 需一併訂閱 [Minidoracat UI Library for B42](https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701)
+> （`require=MinidoracatUIFor42`）。只更新本 MOD 而未訂閱該函式庫會導致本 MOD 不載入。
+
 ## 功能
 
 - **世界地圖 / 角落小地圖圖片化**：ImagePyramid 疊加層，自動掛載基底與 addon 地圖 zip；
