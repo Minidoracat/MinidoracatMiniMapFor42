@@ -1,11 +1,14 @@
--- 一次性快捷鍵遷移（HOME→/）＋浮動圖標拖曳門檻回歸測試。
+-- 一次性快捷鍵遷移（HOME→/）回歸測試。
 -- 仿 test_zone_render.lua 的 stub 風格：抽標記區段→補最小 stub→組裝可離線跑。
--- 主檔拆分後：遷移區段在 _Migrate.lua（arg[1]）、浮動圖標拖曳區段在 _FloatIcon.lua（arg[2]）。
+-- 遷移區段在 _Migrate.lua（arg[1]）。
 -- 用法：lua scripts/test_key_migration.lua
+-- 【防護遷移】原 H-K 浮動圖標拖曳門檻情境（≦4px 點擊／>4px 拖曳存位置／未按下
+-- no-op／跨門檻縮回黏著）已隨拖曳實作上移家族 UI 框架，由框架 repo 的
+-- smoke_harness 情境五覆蓋（MinidoracatUIFor42/scripts/smoke_harness.lua）；
+-- _FloatIcon.lua 現為框架 FloatButton 的 thin wrapper（業務綁定由
+-- test_skin_adapter.lua 態 D 覆蓋）。
 local migratePath = arg[1]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Migrate.lua"
-local floatIconPath = arg[2]
-    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_FloatIcon.lua"
 
 local function readSource(path)
     local file = assert(io.open(path, "rb"))
@@ -14,7 +17,6 @@ local function readSource(path)
     return content
 end
 local source = readSource(migratePath)
-local floatSource = readSource(floatIconPath)
 
 local compile = loadstring or load
 
@@ -143,98 +145,6 @@ local entryG = mkEntry("MinidoracatMiniMap_Toggle", 199)
 mig.setup({ coreKey = 199, mainOptions = mkMainOptions({ entryG }) })
 mig.run()
 assert(mig.state().files[mig.marker] == nil, "G: saveKeys 失敗仍寫了 marker")
-
---------------------------------------------------------------------------------
--- 浮動圖標拖曳門檻：≦4px＝點擊 toggle、>4px＝拖曳存位置
---------------------------------------------------------------------------------
-local dragBody = assert(floatSource:match(
-    "%-%- test:float%-drag:start\n(.-)\n%s*%-%- test:float%-drag:end"),
-    "找不到 float-drag 測試區段")
-local dragPrelude = [=[
-local FLOAT_DRAG_THRESHOLD = 4
-local mouseX, mouseY = 0, 0
-local savedPos, toggled, clamped
-local function getMouseX() return mouseX end
-local function getMouseY() return mouseY end
-local function floatIconClamp(_) clamped = true end
-local function floatIconSavePos(x, y) savedPos = { x = x, y = y } end
-local function togglePlayerMiniMap() toggled = true end
-]=]
-local dragSuffix = [=[
-return {
-    move = moveIcon,
-    release = releaseIcon,
-    setMouse = function(x, y) mouseX, mouseY = x, y end,
-    reset = function() savedPos, toggled, clamped = nil, nil, nil end,
-    state = function() return { savedPos = savedPos, toggled = toggled, clamped = clamped } end,
-}
-]=]
-local dragChunk, dragErr = compile(dragPrelude .. "\n" .. dragBody .. "\n" .. dragSuffix)
-assert(dragChunk, dragErr)
-local drag = dragChunk()
-
--- 假 icon 元件：欄位對齊 onMouseDown 設定的狀態
-local function mkIcon(x, y)
-    local o = { x = x, y = y }
-    function o:getX() return self.x end
-    function o:getY() return self.y end
-    function o:setX(v) self.x = v end
-    function o:setY(v) self.y = v end
-    function o:setCapture(b) self.captured = b end
-    return o
-end
-local function press(icon, mx, my)
-    drag.setMouse(mx, my)
-    icon._down = true
-    icon._dragged = nil
-    icon._downX, icon._downY = mx, my
-    icon._origX, icon._origY = icon.x, icon.y
-    icon.captured = true
-end
-
--- H. 按下 → 位移 2px → 放開＝點擊：toggle、不存位置、位置不變
-local iconH = mkIcon(100, 100)
-drag.reset()
-press(iconH, 50, 50)
-drag.setMouse(52, 51)
-assert(drag.move(iconH) == true, "H: move 應回 true")
-assert(drag.release(iconH) == true, "H: release 應回 true")
-assert(drag.state().toggled == true, "H: 點擊未觸發 toggle")
-assert(drag.state().savedPos == nil, "H: 點擊不應存位置")
-assert(iconH.x == 100 and iconH.y == 100, "H: 點擊不應移動圖標")
-assert(iconH.captured == false, "H: 未釋放捕捉")
-
--- I. 按下 → 位移 10px → 放開＝拖曳：位置更新、clamp＋存檔、不 toggle
-local iconI = mkIcon(100, 100)
-drag.reset()
-press(iconI, 50, 50)
-drag.setMouse(60, 55)
-drag.move(iconI)
-drag.release(iconI)
-assert(drag.state().toggled == nil, "I: 拖曳不應 toggle")
-assert(iconI.x == 110 and iconI.y == 105, "I: 位置未依位移更新，實得 " .. iconI.x .. "," .. iconI.y)
-assert(drag.state().clamped == true, "I: 放開未夾回螢幕")
-assert(drag.state().savedPos and drag.state().savedPos.x == 110 and drag.state().savedPos.y == 105,
-    "I: 位置未存檔")
-
--- J. 未按下的 move / release → 不動作
-local iconJ = mkIcon(100, 100)
-drag.reset()
-assert(drag.move(iconJ) == false, "J: 未按下 move 應回 false")
-assert(drag.release(iconJ) == false, "J: 未按下 release 應回 false")
-assert(drag.state().toggled == nil and drag.state().savedPos == nil, "J: 未按下不應有副作用")
-
--- K. 跨過門檻後縮回原點仍屬拖曳（_dragged 黏著，不會誤判成點擊）
-local iconK = mkIcon(100, 100)
-drag.reset()
-press(iconK, 50, 50)
-drag.setMouse(60, 50)
-drag.move(iconK)
-drag.setMouse(50, 50) -- 拖回原點
-drag.move(iconK)
-drag.release(iconK)
-assert(drag.state().toggled == nil, "K: 拖回原點被誤判為點擊")
-assert(drag.state().savedPos ~= nil, "K: 拖曳結束未存位置")
 
 --------------------------------------------------------------------------------
 -- 選項遷移（combobox 檔位 → 滑條像素）：.selected 訊號、風格分表、載具播種
@@ -559,4 +469,4 @@ assert(p.live and not p.recreate and not p.reapplyWorldMap and not p.clearCustom
 p = plan(planSnap({ worldImagery = false, imagery = false }), planCur())
 assert(p.reapplyWorldMap and p.recreate, "P9")
 
-print("[OK] scripts/test_key_migration.lua 全部通過（快捷鍵遷移 A-G、拖曳 H-K、選項遷移 M1-M5、強制圖片化 V1-V5、整棟預設翻轉 W1-W6、apply 決策 P1-P9）")
+print("[OK] scripts/test_key_migration.lua 全部通過（快捷鍵遷移 A-G、選項遷移 M1-M5、強制圖片化 V1-V5、整棟預設翻轉 W1-W6、apply 決策 P1-P9；拖曳門檻情境已遷移至框架 harness）")

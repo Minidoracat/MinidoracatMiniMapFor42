@@ -140,9 +140,136 @@ do
     check(okNotReady and _G.MinidoracatMiniMapCore.Skin == nil,
         "態C Core.ready=false：早退且不掛 Core.Skin（版本檢查未過時本節不存在）")
 end
+
+-- ============================================================
+print("態 D：FloatIcon wrapper（業務綁定——點擊/右鍵/位置持久化/顯示收斂）")
+-- ============================================================
+do
+    -- 框架 widget 需要的最小 vanilla 面（拖曳/門檻/clamp 本體由框架 harness 覆蓋，
+    -- 這裡只驗 wrapper 把 MiniMap 業務綁對）
+    local ISPanelStub = {}
+    ISPanelStub.__index = ISPanelStub
+    function ISPanelStub:derive(name)
+        local c = setmetatable({ Type = name }, self); c.__index = c; return c
+    end
+    function ISPanelStub.new(class, x, y, w, h)
+        local o = setmetatable({}, class)
+        o.x, o.y, o.width, o.height = x, y, w, h
+        o.visible = true
+        return o
+    end
+    function ISPanelStub:initialise() end
+    function ISPanelStub:setX(x) self.x = x end
+    function ISPanelStub:setY(y) self.y = y end
+    function ISPanelStub:getX() return self.x end
+    function ISPanelStub:getY() return self.y end
+    function ISPanelStub:getAbsoluteY() return self.y end
+    function ISPanelStub:getHeight() return self.height end
+    function ISPanelStub:setVisible(v) self.visible = v end
+    function ISPanelStub:getIsVisible() return self.visible end
+    function ISPanelStub:addToUIManager() end
+    function ISPanelStub:removeFromUIManager() end
+    function ISPanelStub:bringToTop() end
+    function ISPanelStub:setCapture() end
+    function ISPanelStub:isMouseOver() return false end
+    function ISPanelStub:drawTextureScaled() end
+    function ISPanelStub:drawTextCentre() end
+    function ISPanelStub:drawRect() end
+    function ISPanelStub:drawRectBorder() end
+    _G.ISPanel = ISPanelStub
+    _G.getCore = function()
+        return {
+            getScreenWidth = function() return 1920 end,
+            getScreenHeight = function() return 1080 end,
+            getKey = function() return 53 end,
+        }
+    end
+    _G.getMouseX = function() return 0 end
+    _G.getMouseY = function() return 0 end
+    _G.getTimestampMs = function() return 5000000 end
+    _G.getSpecificPlayer = function() return {} end
+    _G.getTexture = function() return nil end -- 缺圖路徑：drawContent 畫 M
+    _G.getText = function(key, a) return "[" .. tostring(key) .. (a and ("|" .. tostring(a)) or "") .. "]" end
+    _G.getKeyName = function() return "SLASH" end
+    _G.UIFont = { Small = "Small", Medium = "Medium", NewSmall = "NewSmall" }
+    _G.getTextManager = function()
+        return { getFontHeight = function() return 12 end,
+            MeasureStringX = function(_, _, t) return string.len(t) * 10 end }
+    end
+    _G.Events = setmetatable({}, { __index = function()
+        return { Add = function() end }
+    end })
+    local savedCalls = 0
+    _G.PZAPI = { ModOptions = { save = function() savedCalls = savedCalls + 1 end } }
+
+    -- 重載框架（態 B 拔掉了）＋widget
+    dofile(MUI_V1)
+    local MUI_DIR = MUI_V1:gsub("V1%.lua$", "")
+    dofile(MUI_DIR .. "Widgets/FloatButton.lua")
+    check(MinidoracatUI.v1.CAPABILITIES.floatButton == true, "態D 框架 FloatButton 能力就緒")
+
+    _G.__floatIconOptionOn = true
+    -- Core stub：modOptions 存 FloatIconPos；toggle 計數
+    local optValue = nil
+    local toggles, ghosts = 0, 0
+    local core = {
+        ready = true,
+        modOptions = { getOption = function(_, id)
+            if id == "FloatIconPos" then
+                return {
+                    setValue = function(_, v) optValue = v end,
+                    getValue = function() return optValue end,
+                }
+            end
+            return nil
+        end },
+        -- 間接旗標：_FloatIcon 載入期會把 Core.getBoolOption 快取成 local，
+        -- 事後換函式無效——換旗標值才動得了它
+        getBoolOption = function(_, default) return _G.__floatIconOptionOn end,
+        debugWarn = { renderMode = function() return nil end, text = function() return nil end },
+        togglePlayerMiniMap = function() toggles = toggles + 1 end,
+        toggleGhost = function() ghosts = ghosts + 1 end,
+        isGhost = function() return false end,
+    }
+    _G.MinidoracatMiniMapCore = core
+    dofile("MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_FloatIcon.lua")
+
+    core.updateFloatIconVisibility()
+    local icon = core._floatIcon
+    check(icon ~= nil, "態D 顯示收斂點經框架建立浮鈕（Core._floatIcon 觀察面）")
+    check(icon:getX() == 1920 - 32 - 6 and icon:getY() == math.floor(1080 * 0.35),
+        "態D 無存檔值：預設位置右緣偏上（1882, 378）")
+
+    -- onClick / onRightClick 業務綁定
+    icon.onClick(icon)
+    check(toggles == 1, "態D 點擊綁 togglePlayerMiniMap")
+    icon.onRightClick(icon)
+    check(ghosts == 1, "態D 右鍵綁 Core.toggleGhost")
+
+    -- onMoved 綁定 → ModOptions 存檔（floor＋立即 save）
+    icon.onMoved(icon, 55.7, 66.2)
+    check(optValue == "55,66" and savedCalls == 1,
+        "態D 拖曳落點 floor 後存 FloatIconPos 並立即 save")
+
+    -- 存檔位置載入：收斂點重讀（ESC 改欄位即時生效路徑）
+    optValue = "200,300"
+    core.updateFloatIconVisibility()
+    check(icon:getX() == 200 and icon:getY() == 300, "態D 存檔位置經 setPosition 套用")
+
+    -- tooltip 文字組裝（快捷鍵名＋ghost 熱鍵行；-debug 無資料不附加）
+    local desc, maxW = icon.getTooltipText(icon)
+    check(type(desc) == "string" and desc:find("SLASH", 1, true) ~= nil
+        and desc:find("ghost_tip", 1, true) ~= nil and maxW == 300,
+        "態D tooltip 含當前快捷鍵與 ghost 熱鍵行")
+
+    -- 選項關閉 → 隱藏（tip 同步收掉不炸）
+    _G.__floatIconOptionOn = false
+    core.updateFloatIconVisibility()
+    check(icon:getIsVisible() == false, "態D 選項關閉：浮鈕隱藏")
+end
 print()
 -- 條數守門（家族慣例）：整段被註解掉時數字變小但不會紅，靠這裡擋
-local EXPECTED_ASSERTIONS = 14
+local EXPECTED_ASSERTIONS = 23
 if assertionCount ~= EXPECTED_ASSERTIONS then
     print("斷言條數不符：預期 " .. EXPECTED_ASSERTIONS .. "、實際 " .. assertionCount
         .. "（有測試被刪掉或跳過？）")
