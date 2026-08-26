@@ -63,6 +63,9 @@ local MAPS = {
 -- zip 不可用 LEGACY_CANONICAL（minidoracat_minimap.pyramid.zip）：那是「零 Lua 自動
 -- 掃描」lane 的保留名，同名兩份條目會互搶同一圖層並打亂固定位置，本 API 直接拒收該條目。
 local registeredPacks = {} -- { { owner = <地圖包 mod ID>, entries = {...} }, ... }
+function Core.getRegisteredPacks() -- StreetI18n：回傳同一 table（地圖包 registerMaps 寫入）
+    return registeredPacks
+end
 MinidoracatMiniMapAPI = MinidoracatMiniMapAPI or {}
 -- test:register-maps:start
 function MinidoracatMiniMapAPI.registerMaps(ownerModId, entries)
@@ -78,6 +81,7 @@ function MinidoracatMiniMapAPI.registerMaps(ownerModId, entries)
             and (e.mapMod == nil or type(e.mapMod) == "string")
             and (e.mapDir == nil or type(e.mapDir) == "string")
             and (e.nameKey == nil or type(e.nameKey) == "string")
+            and (e.streetI18n == nil or type(e.streetI18n) == "string")
         if ok and e.bounds ~= nil then
             ok = type(e.bounds) == "table" and #e.bounds == 4
             if ok then

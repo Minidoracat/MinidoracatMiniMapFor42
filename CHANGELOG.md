@@ -1,5 +1,25 @@
 # Changelog
 
+## [42.20.3-0.21.0] - 2026-08-26
+
+### 新增
+
+- **MOD 地圖街名多語化載入層**：遊戲語言為繁體中文／簡體中文／日文時，若地圖包提供了
+  該地圖的街名翻譯檔，就改用翻譯版取代地圖作者的英文 `streets.xml`；其他語言或找不到
+  翻譯檔時維持原本的英文街名。小地圖與世界地圖同步生效。
+  - 起因：玩家回報「雛菊郡的道路顯示英文」（2026-08-25）。查證後確認**引擎沒有街名翻譯
+    機制**（`WorldMapStreetsXML.parseStreet` 直接把 `streets.xml` 的 `name` 原樣繪製，
+    整個 streets 子系統零 `Translator` 呼叫），唯一安全做法是整份替換。
+  - 實作為獨立檔 `MinidoracatMiniMap_StreetI18n.lua`，包裝
+    `MapUtils.initDirectoryStreetData`（目錄層），與翻譯 MOD 包裝迴圈層
+    `initDefaultStreetData` 正交、可共存。**全程只 `addStreetData`、絕不 `clearStreetData`**
+    （清除會留下不清空間索引的幽靈街名）。
+  - `registerMaps` 新增選配欄位 `streetI18n`（資料集 ID，需同時指定 `mapDir`）。舊版地圖包
+    沒有此欄位＝維持英文；新版地圖包搭配舊版主 MOD 也只是忽略，不會出錯。
+  - 同一地圖目錄有多個互斥變體時（如渡鴉溪本體與 Kardinal 移植版），依實際啟用的地圖 MOD
+    挑選對應翻譯；無法唯一判定時退回英文，不猜。
+  - 需要地圖包 **MinidoracatMiniMapModMapsFor42 0.7.0** 或更新版本提供翻譯資料。
+
 ## [42.20.3-0.20.0] - 2026-08-25
 
 ### 變更
