@@ -59,9 +59,6 @@
 [h2]💬 フィードバック & コミュニティ[/h2]
 [url=https://discord.gg/Gur2V67]👉 Discord サーバーに参加[/url]
 
-[h2]📺 作者をフォロー[/h2]
-[url=https://www.twitch.tv/minidoracat]🎬 Twitch チャンネル[/url]
-
 [b]#マップ #ミニマップ #minimap #worldmap #Minidoracat[/b]
 
 Workshop ID: 3763913359

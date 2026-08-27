@@ -59,9 +59,6 @@ This is the [b]main mod[/b] — fully functional on its own; addons are optional
 [h2]💬 Feedback & community[/h2]
 [url=https://discord.gg/Gur2V67]👉 Join the Discord server[/url]
 
-[h2]📺 Follow the author[/h2]
-[url=https://www.twitch.tv/minidoracat]🎬 Twitch channel[/url]
-
 [b]#map #minimap #worldmap #Minidoracat[/b]
 
 Workshop ID: 3763913359
