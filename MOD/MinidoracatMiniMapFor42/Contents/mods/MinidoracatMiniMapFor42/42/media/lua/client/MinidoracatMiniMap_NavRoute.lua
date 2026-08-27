@@ -1410,3 +1410,52 @@ Core.navEngineState = function() -- _Search.lua：唯讀狀態（refresh cache k
     return engine.state
 end
 Core.NavRouteCore = NavCore -- 除錯/測試面（離線測試另行抽取原始碼區段）
+
+-- Addon 公開查詢面（nav API v1；首個消費者＝MinidoracatAutoDriveFor42，見
+-- docs/plan-autodrive-addon.md M1）。回傳的 route／graph 皆為唯讀本體、不複製；
+-- 不寫導航目標、不另建路網。requestRoute 會刻意讀寫主線共用的
+-- navRoutes[playerNum] cache（更新進度、必要時 A* 重算），只用來取得玩家目前
+-- 導航目標的路線；不得拿它做 speculative／多目標查詢，否則會與 UI 路線交替
+-- 覆蓋同一 cache。設目標仍只走 Core.navSetTarget——含 addon 閘門與 modData
+-- 持久化的唯一入口。getNavGraph 才是純查詢，回 graph 本體＋唯讀契約，避免每次
+-- 複製 ~4k 節點的 SoA 扁平陣列。
+-- 回 (route, state)：
+--   route＝NavCore.findRoute 產物 { pts=扁平座標, len, sx, sy, ex, ey }（唯讀）
+--   state＝"ok"｜"noroad"｜"badargs"｜"noplayer"｜engine 狀態（idle／extracting／
+--          building／failed）——皆穩定字串，addon 可直接分支
+-- badargs 從嚴（review 指認）：playerNum 須是 0-3 的整數（分割畫面槽位——非整數
+-- 或越界會讓 getSpecificPlayer 拿錯槽／回 nil，錯得無聲）；targetX/Y 須是有限
+-- 數——NaN／±Infinity 進 A* 後所有距離比較恆為 false，節點永不出 open set，會
+-- 白跑完一張 ~4k 節點路網才回 nil（每次呼叫都燒一輪，addon 還看不出傳了壞值）。
+-- test:nav-api:start（scripts/test_nav_api.lua 抽本區段跑查詢面回歸測試）
+local apiTarget = { x = 0, y = 0 } -- 餵 ensureRoute 的重用暫存（它只讀 x/y、不留參考）
+MinidoracatMiniMapAPI.requestRoute = function(playerNum, targetX, targetY)
+    -- 槽位：先擋 NaN（自比不等，範圍比較對 NaN 恆為 false 擋不住），再擋越界／
+    -- 非整數（±Infinity 由範圍比較擋下；% 1 只剩有限值要判，實作差異無關）
+    if type(playerNum) ~= "number" or playerNum ~= playerNum
+        or playerNum < 0 or playerNum > 3 or playerNum % 1 ~= 0
+    then
+        return nil, "badargs"
+    end
+    -- 有限值：x ~= x 抓 NaN（IEEE-754 自比不等）、與 ±math.huge 比抓無窮
+    if type(targetX) ~= "number" or type(targetY) ~= "number"
+        or targetX ~= targetX or targetY ~= targetY
+        or targetX == math.huge or targetX == -math.huge
+        or targetY == math.huge or targetY == -math.huge
+    then
+        return nil, "badargs"
+    end
+    local playerObj = getSpecificPlayer(playerNum)
+    if not playerObj then return nil, "noplayer" end
+    -- engine 未 ready＝沒有 graph 可查（idle 亦不在此冷啟動：kickEngine 需要
+    -- mapAPI 的 streets 容器，本函式無繪製表面；主線設目標的首個繪製幀會啟動）
+    if engine.state ~= "ready" then return nil, engine.state end
+    apiTarget.x, apiTarget.y = targetX, targetY
+    local route = ensureRoute(playerNum, apiTarget, playerObj:getX(), playerObj:getY())
+    local rs = navRoutes[playerNum]
+    return route, rs and rs.state or "noroad"
+end
+MinidoracatMiniMapAPI.getNavGraph = function()
+    return engine.graph, engine.state
+end
+-- test:nav-api:end

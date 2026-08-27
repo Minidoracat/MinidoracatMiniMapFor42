@@ -152,6 +152,7 @@
     "UI_MinidoracatMiniMap_SetTarget": "設定導航目標",
     "UI_MinidoracatMiniMap_ClearTarget": "清除導航目標",
     "UI_MinidoracatMiniMap_ShareTarget": "分享目標給陣營",
+    "UI_MinidoracatMiniMap_NavBlocked": "需要導航設備",
     "UI_MinidoracatMiniMap_BtnWorldMap": "開啟世界地圖（M）",
     "UI_MinidoracatMiniMap_BtnZoomOut": "縮小",
     "UI_MinidoracatMiniMap_BtnZoomIn": "放大",

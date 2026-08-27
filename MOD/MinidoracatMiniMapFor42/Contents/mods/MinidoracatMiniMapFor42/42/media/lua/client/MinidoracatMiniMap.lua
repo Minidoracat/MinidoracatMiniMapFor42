@@ -3396,13 +3396,83 @@ Core.navShareColor = function(author)
     local c = SHARE_COLORS[(h % #SHARE_COLORS) + 1]
     return c[1], c[2], c[3]
 end
+-- Addon 導航閘門（nav API v1；首個消費者＝MinidoracatAutoDriveFor42 的
+-- 「GPS 導航儀道具」gating，見 docs/plan-autodrive-addon.md M1）：註冊表與
+-- 錯誤旗標一律掛 Core／API 表——主檔主 chunk locvar 已頂 Kahlua 200 上限
+-- （LexState actvar[200] 固定陣列、頂層 local 永不出 scope），本節不得增頂層 local。
+-- 契約：gateFn(playerNum, context) → (allowed, reasonKey)，context＝"set"
+-- （寫入目標前）／"draw"（路線與旗標繪製前）兩值。明確回 false 才擋，nil／
+-- 其他值一律放行——addon 忘了 return 不該讓整組導航靜默死掉。第二回傳
+-- reasonKey＝翻譯鍵字串（選填）：被擋時由 navSetTarget 拿去做 halo 提示，
+-- 讓 addon 能說出「缺 GPS 導航儀」；缺省或非字串則退回主 MOD generic 鍵。
+-- 多 gate 為 AND（任一擋即擋，回報第一個擋阻者的 reasonKey）。gateFn
+-- 拋錯＝fail-open 並依 owner 每場只 log 一次（同 zoneProviderErrorOnce 慣例：
+-- 外部程式碼壞掉不得讓核心功能連坐，更不得每幀刷屏）。零註冊時行為與加
+-- API 前逐位元相同（addon 不裝零影響）。
+-- test:nav-gate:start
+MinidoracatMiniMapAPI.navApiVersion = 1
+Core.navGates = {} -- { { owner=, fn=, errLogged= }, ... }
+function MinidoracatMiniMapAPI.registerNavGate(ownerModId, gateFn)
+    if type(ownerModId) ~= "string" or ownerModId == "" or type(gateFn) ~= "function" then
+        log("registerNavGate bad arguments (need ownerModId string, gateFn function)")
+        return false
+    end
+    local gates = Core.navGates
+    for i = 1, #gates do
+        if gates[i].owner == ownerModId then
+            -- 同 owner 重註冊＝覆蓋（addon 條件換實作/熱重載不留舊 gate 疊加）；
+            -- 錯誤旗標一併重置——新 fn 的錯誤值得記一次新 log
+            gates[i].fn = gateFn
+            gates[i].errLogged = nil
+            return true
+        end
+    end
+    gates[#gates + 1] = { owner = ownerModId, fn = gateFn }
+    return true
+end
+-- 閘門查詢（繪製路徑每幀呼叫：零註冊在 #gates 後即返回，無配置、無 pcall）
+Core.navGateAllows = function(playerNum, context)
+    local gates = Core.navGates
+    local n = #gates
+    if n == 0 then return true end
+    for i = 1, n do
+        local g = gates[i]
+        -- 第三回傳位＝gateFn 的 reasonKey（pcall 成功時）；拋錯時第二位是錯誤訊息
+        local ok, allowed, reasonKey = pcall(g.fn, playerNum, context)
+        if not ok then
+            if not g.errLogged then
+                g.errLogged = true
+                log("nav gate error (" .. tostring(g.owner) .. "): " .. tostring(allowed))
+            end
+        elseif allowed == false then
+            return false, reasonKey
+        end
+    end
+    return true
+end
+-- 回 (ok, reasonKey)：ok=true＝已寫入目標；false＝無玩家或被 gate 擋。
+-- 被擋必須「看得見」：右鍵選單／搜尋視窗設目標是玩家主動操作，靜默失敗＝
+-- 玩家以為功能壞掉（silent-failure review 指認）。走原版 halo 壞訊息通道
+-- （HaloTextHelper.addBadText，原版用例 ISVehicleMenu.lua:1197 等），addon 的
+-- reasonKey 優先（能明說「缺 GPS 導航儀」），缺省／非字串退回主 MOD generic
+-- 鍵。第二回傳＝實際用掉的鍵（供呼叫端與測試判斷）；無玩家時無提示亦無鍵
 Core.navSetTarget = function(pn, worldX, worldY)
     local playerObj = getSpecificPlayer(pn)
-    if not playerObj then return end
+    if not playerObj then return false end
+    local allowed, reasonKey = Core.navGateAllows(pn, "set")
+    if not allowed then
+        if type(reasonKey) ~= "string" or reasonKey == "" then
+            reasonKey = "UI_MinidoracatMiniMap_NavBlocked"
+        end
+        HaloTextHelper.addBadText(playerObj, getText(reasonKey))
+        return false, reasonKey
+    end
     navTargets[pn] = { x = worldX, y = worldY }
     navSaveModData(playerObj, navTargets[pn])
     if navShared[pn] then Core.navShareTarget(pn) end -- 分享中：移動即重新廣播
+    return true
 end
+-- test:nav-gate:end
 Core.navClearTarget = function(pn)
     local playerObj = getSpecificPlayer(pn)
     if playerObj then navClear(pn, playerObj) end
@@ -3517,26 +3587,31 @@ local function drawNavIndicator(inner, tx, ty, r, g, b, label, dist)
     end
 end
 
-
+-- test:nav-draw:start（scripts/test_nav_gate.lua 抽本區段跑 draw gate 整合測試）
 local function drawNavTargets(inner)
+    local pn = inner.playerNum or 0
+    -- Addon 閘門（context="draw"）：只擋「導航目標層繪製與路線計算」——搜尋
+    -- 落點 ping 不屬導航目標層（搜尋是獨立功能，不該被導航道具連坐），抵達
+    -- 清除與狀態收尾亦照跑：那是狀態變更，擋掉會讓玩家走到目標後目標永久
+    -- 黏著（同 navCheckArrival 註解的「早退不得連坐狀態更新」理由）
+    local allowed = Core.navGateAllows(pn, "draw")
     -- 路線層（_NavRoute.lua 掛 Core.drawNavRoute）：先畫＝墊在旗標/箭頭/分享旗
     -- 之下。收 err＋實例旗標 log-once（同動物繪製/_WorldMapNav 慣例：主檔
     -- :4022-4027 明寫「持久錯誤首次記 log 免全靜默」——裸 pcall 吞錯會讓路線
     -- 靜默消失且每幀重試失敗熱路徑，三 review lanes 一致指認）
-    if Core.drawNavRoute then
+    if allowed and Core.drawNavRoute then
         local navOk, navErr = pcall(Core.drawNavRoute, inner)
         if not navOk and not inner._minidoracatNavRouteErrLogged then
             inner._minidoracatNavRouteErrLogged = true
             log("nav route draw failed: " .. tostring(navErr))
         end
     end
-    local pn = inner.playerNum or 0
     local mapAPI = inner.mapAPI
     local playerObj = getSpecificPlayer(pn)
     -- 陣營分享來的：只畫「給這位玩家」的桶（青旗＋名字＋距離）；getUsername
     -- 原版用例 ISScoreboard.lua:108。已收到的目標仍受目前 AllowNavShare 閘門
     -- 即時控制（navGetShared 同源）
-    local bucket = Core.navGetShared and Core.navGetShared(pn) or nil
+    local bucket = allowed and Core.navGetShared and Core.navGetShared(pn) or nil
     if bucket and playerObj then
         for author, t in pairs(bucket) do
             local sdx, sdy = t.x - playerObj:getX(), t.y - playerObj:getY()
@@ -3559,9 +3634,11 @@ local function drawNavTargets(inner)
         navClear(pn, playerObj)
         return
     end
+    if not allowed then return end -- 被 gate 擋：狀態已收尾，只略過自身旗標繪製
     drawNavIndicator(inner, mapAPI:worldToUIX(t.x, t.y), mapAPI:worldToUIY(t.x, t.y),
         1.0, 0.85, 0.2, nil, dist) -- 自己＝金旗＋距離
 end
+-- test:nav-draw:end
 
 -- 導航到達的「純狀態」判定（codex review：WM-1 早退不得連坐狀態更新）：
 -- drawNavTargets 的抵達清除是狀態變更（清 modData＋分享中送 clearShared），
