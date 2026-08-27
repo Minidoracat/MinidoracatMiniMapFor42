@@ -1,4 +1,5 @@
--- Addon 導航閘門（registerNavGate / navGateAllows / navSetTarget / drawNavTargets）
+-- Addon 導航 API（registerNavGate / navGateAllows / navSetTarget / getNavTarget /
+-- drawNavTargets）
 -- 離線回歸測試。仿 test_ghost_gate.lua：抽主檔標記區段→補最小 stub→組裝離線跑；
 -- nav-gate 與 nav-draw 兩區段拼在同一 chunk＝判定與繪製都跑真正的 production 碼。
 -- 核心不變量（addon 是外部程式碼，錯得起但不能拖垮導航）：
@@ -10,6 +11,9 @@
 --     且 gate 拋錯的錯誤訊息不得被當成 reasonKey 洩漏給玩家
 --   * draw 被擋只擋導航目標層（路線／分享旗／自身旗）：搜尋 ping 照畫、抵達
 --     清除照跑——狀態變更不得被繪製閘門連坐（否則走到目標後目標永久黏著）
+--   * getNavTarget 是純狀態讀取：槽位驗證從嚴（非 0-3 整數＝badargs）、無目標
+--     回 "notarget"，且只交出兩個純量——不得洩漏 navTargets 內部 table（交出
+--     參考＝addon 能繞過 navSetTarget 改目標，不重播分享也不存檔）
 -- 用法：lua scripts/test_nav_gate.lua
 local mainPath = arg[1]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua"
@@ -94,8 +98,8 @@ local function resetGates() Core.navGates = {} end
 --------------------------------------------------------------------------------
 -- 註冊面
 --------------------------------------------------------------------------------
--- N0: API 版本號存在（addon 以此判相容）
-assert(API.navApiVersion == 1, "N0: navApiVersion 須為 1")
+-- N0: API 版本號存在（addon 以此判相容）；v2＝多了 getNavTarget
+assert(API.navApiVersion == 2, "N0: navApiVersion 須為 2")
 
 -- N1: 零註冊＝放行（addon 不裝零影響）
 resetGates()
@@ -381,5 +385,71 @@ assert(#T.routeDraws == 1, "D6: 放行時路線層仍先畫（抵達判定在其
 assert(#T.cleared == 1, "D6: 抵達須清除")
 assert(#T.flags == 0, "D6: 抵達同幀不得再畫自身旗")
 
+--------------------------------------------------------------------------------
+-- getNavTarget 查詢面（nav API v2）
+--------------------------------------------------------------------------------
+-- G0: 槽位邊界——0-3 皆為合法槽位（分割畫面四人），越界回 badargs
+for pn = 0, 3 do
+    T.navTargets[pn] = { x = pn * 10, y = pn * 10 + 1 }
+    local gx, gy = API.getNavTarget(pn)
+    assert(gx == pn * 10 and gy == pn * 10 + 1,
+        "G0: 槽位 " .. pn .. " 須回該槽目標，實得 " .. tostring(gx) .. "," .. tostring(gy))
+end
+local outOfRange = { -1, 4, 100 }
+for i = 1, #outOfRange do
+    local gx, why = API.getNavTarget(outOfRange[i])
+    assert(gx == nil and why == "badargs",
+        "G0: 越界槽位須回 badargs（case " .. i .. "），實得 " .. tostring(why))
+end
+
+-- G1: 型別／NaN／±Infinity／非整數一律 badargs（從嚴同 requestRoute：壞槽位會
+--     靜靜讀到別人的槽位，錯得無聲）
+local badPn = { nil, "0", true, {}, function() end,
+    0 / 0, math.huge, -math.huge, 1.5, -0.5 }
+for i = 1, 10 do
+    local gx, why = API.getNavTarget(badPn[i])
+    assert(gx == nil and why == "badargs",
+        "G1: 壞 playerNum 須回 badargs（case " .. i .. "），實得 "
+        .. tostring(gx) .. "," .. tostring(why))
+end
+
+-- G2: 無目標＝(nil, "notarget")，且查詢不得憑空建出槽位條目（純讀取）
+T.navTargets[2] = nil
+local gx2, why2 = API.getNavTarget(2)
+assert(gx2 == nil and why2 == "notarget",
+    "G2: 無目標須回 notarget，實得 " .. tostring(why2))
+assert(T.navTargets[2] == nil, "G2: 查詢不得建出槽位條目")
+
+-- G3: 不查 player、不寫任何狀態（無 playerObj 的槽位仍讀得到目標；modData 與
+--     分享通道不得被碰）
+T.players[1] = nil
+T.navTargets[1] = { x = 7, y = 8 }
+local savedG, sharesG, halosG = #T.saved, #T.shares, #T.halos
+local px, py = API.getNavTarget(1)
+assert(px == 7 and py == 8, "G3: 不得查 player（無玩家的槽位仍須回目標）")
+assert(#T.saved == savedG and #T.shares == sharesG and #T.halos == halosG,
+    "G3: 查詢不得寫 modData／重播分享／送 halo")
+
+-- G4: identity protection——只交出純量，addon 拿不到內部 table 的參考，改回傳
+--     值不可能影響主 MOD 狀態（未來若有人改回傳 table，此段會炸）
+T.navTargets[0] = { x = 12, y = 34 }
+local ix, iy = API.getNavTarget(0)
+assert(type(ix) == "number" and type(iy) == "number", "G4: 兩回傳須皆為 number")
+assert(ix ~= T.navTargets[0] and iy ~= T.navTargets[0],
+    "G4: 不得交出 navTargets 內部 table 本體")
+ix, iy = -999, -888 -- 純量指派只動本地變數
+assert(T.navTargets[0].x == 12 and T.navTargets[0].y == 34,
+    "G4: 改動回傳值不得影響內部狀態")
+
+-- G5: 即時讀取（非快照）——內部狀態改了，下次查詢須跟上；navSetTarget 寫入後
+--     亦立刻可見（API 與主線讀同一份狀態）
+T.navTargets[0].x = 56
+assert(API.getNavTarget(0) == 56, "G5: 須即時反映內部狀態變更")
+resetGates()
+T.players[0] = { getX = function() return 0 end, getY = function() return 0 end }
+assert(Core.navSetTarget(0, 321, 654) == true, "G5: 前置寫入須成功")
+local sx, sy = API.getNavTarget(0)
+assert(sx == 321 and sy == 654, "G5: navSetTarget 寫入須立刻可查")
+
 print("test_nav_gate: OK（註冊 N0-N3＋判定 N4-N8＋navSetTarget 接入 N9-N13"
-    .. "＋被擋回饋 N14-N20＋draw 整合 D0-D6）")
+    .. "＋被擋回饋 N14-N20＋draw 整合 D0-D6＋getNavTarget G0-G5）")

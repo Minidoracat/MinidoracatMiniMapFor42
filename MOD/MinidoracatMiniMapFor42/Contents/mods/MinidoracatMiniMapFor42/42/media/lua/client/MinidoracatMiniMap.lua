@@ -3396,7 +3396,7 @@ Core.navShareColor = function(author)
     local c = SHARE_COLORS[(h % #SHARE_COLORS) + 1]
     return c[1], c[2], c[3]
 end
--- Addon 導航閘門（nav API v1；首個消費者＝MinidoracatAutoDriveFor42 的
+-- Addon 導航閘門（nav API；首個消費者＝MinidoracatAutoDriveFor42 的
 -- 「GPS 導航儀道具」gating，見 docs/plan-autodrive-addon.md M1）：註冊表與
 -- 錯誤旗標一律掛 Core／API 表——主檔主 chunk locvar 已頂 Kahlua 200 上限
 -- （LexState actvar[200] 固定陣列、頂層 local 永不出 scope），本節不得增頂層 local。
@@ -3410,7 +3410,10 @@ end
 -- 外部程式碼壞掉不得讓核心功能連坐，更不得每幀刷屏）。零註冊時行為與加
 -- API 前逐位元相同（addon 不裝零影響）。
 -- test:nav-gate:start
-MinidoracatMiniMapAPI.navApiVersion = 1
+-- v1→v2：新增 MinidoracatMiniMapAPI.getNavTarget（見本區段末）。既有
+-- registerNavGate／requestRoute／getNavGraph 簽名與語意皆未動，v1 消費者
+-- 的 `navApiVersion < 1` 相容判定照樣通過（addon 側判 `< 2` 才需 getNavTarget）。
+MinidoracatMiniMapAPI.navApiVersion = 2
 Core.navGates = {} -- { { owner=, fn=, errLogged= }, ... }
 function MinidoracatMiniMapAPI.registerNavGate(ownerModId, gateFn)
     if type(ownerModId) ~= "string" or ownerModId == "" or type(gateFn) ~= "function" then
@@ -3471,6 +3474,29 @@ Core.navSetTarget = function(pn, worldX, worldY)
     navSaveModData(playerObj, navTargets[pn])
     if navShared[pn] then Core.navShareTarget(pn) end -- 分享中：移動即重新廣播
     return true
+end
+-- 目前導航目標查詢（nav API v2；消費者＝MinidoracatAutoDriveFor42 M3 自駕核心，
+-- 見 docs/plan-autodrive-addon.md §5）。回「兩個純量」而非內部 table 是刻意的：
+-- navTargets[pn] 是主 MOD 的持久化狀態本體，交出參考等於讓 addon 能繞過
+-- Core.navSetTarget（唯一含 gate＋modData 持久化的寫入口）改目標——而且改了
+-- 還不會重播分享、不會存檔，是最難查的一類靜默不一致。複製一份 {x=,y=} 也不
+-- 行：自駕迴路每幀查目標，每幀配置一個 table＝白送 Kahlua GC 壓力。
+-- 回 (x, y)＝兩個 number；(nil, reason) 表無值，reason＝
+--   "badargs"（playerNum 非 0-3 整數）／"notarget"（該槽位目前無導航目標）
+-- badargs 從嚴同 requestRoute：非整數／越界槽位會靜靜讀到別人的（或不存在的）
+-- 槽位，錯得無聲。本函式不查 player（純狀態讀取，槽位無人時 navTargets 自然
+-- 是 nil＝notarget）、不寫任何狀態、零配置——自駕熱路徑可直接每幀呼叫。
+function MinidoracatMiniMapAPI.getNavTarget(playerNum)
+    -- 先擋 NaN（自比不等；範圍比較對 NaN 恆為 false 擋不住），再擋越界／非整數
+    -- （±Infinity 由範圍比較擋下，故 % 1 只需處理有限值）
+    if type(playerNum) ~= "number" or playerNum ~= playerNum
+        or playerNum < 0 or playerNum > 3 or playerNum % 1 ~= 0
+    then
+        return nil, "badargs"
+    end
+    local t = navTargets[playerNum]
+    if not t then return nil, "notarget" end
+    return t.x, t.y
 end
 -- test:nav-gate:end
 Core.navClearTarget = function(pn)
