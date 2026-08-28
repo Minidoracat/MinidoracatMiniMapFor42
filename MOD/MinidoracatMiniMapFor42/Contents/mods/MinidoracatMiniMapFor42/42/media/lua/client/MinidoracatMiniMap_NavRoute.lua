@@ -681,9 +681,26 @@ local function heapPop(hI, hF)
     return topI
 end
 
+-- 避讓軟封鎖（nav API v3 detour）：邊對堵點圈的線段距離判定。懲罰不是硬移除
+-- ——目標貼著堵點時 A* 仍要給路（吃罰照走），有替代路徑時罰額保證繞開。
+local AVOID_PENALTY = 100000 -- 十萬米：任何真實繞路都比它便宜
+local function segAvoidHit(x1, y1, x2, y2, ax, ay, ar2)
+    local dx, dy = x2 - x1, y2 - y1
+    local len2 = dx * dx + dy * dy
+    local t = 0
+    if len2 > 1e-9 then
+        t = ((ax - x1) * dx + (ay - y1) * dy) / len2
+        if t < 0 then t = 0 elseif t > 1 then t = 1 end
+    end
+    local qx, qy = x1 + dx * t, y1 + dy * t
+    local ddx, ddy = ax - qx, ay - qy
+    return ddx * ddx + ddy * ddy <= ar2
+end
+
 -- A*（雙源起點＝snap 段兩端；終點＝臨時節點注入 snap 段兩端後回滾）。
 -- 回 route { pts=扁平座標, len=路網長, sx,sy=起錨, ex,ey=終錨 } 或 nil。
-local function runAStar(g, startCand, endCand, tx, ty)
+-- avoidX/Y/R2（皆可 nil）＝避讓圈：經過圈內的邊加 AVOID_PENALTY 軟封鎖。
+local function runAStar(g, startCand, endCand, tx, ty, avoidX, avoidY, avoidR2)
     local Q = g.nodeCount + 1 -- 臨時終點節點（陣列尾暫存槽，用後回滾）
     g.nx[Q], g.ny[Q] = endCand.qx, endCand.qy
     g.adjHead[Q] = 0
@@ -692,6 +709,16 @@ local function runAStar(g, startCand, endCand, tx, ty)
     local savedC, savedD = g.adjHead[c], g.adjHead[d]
     local lenQC = sqrt(dist2(endCand.qx, endCand.qy, g.nx[c], g.ny[c]))
     local lenQD = sqrt(dist2(endCand.qx, endCand.qy, g.nx[d], g.ny[d]))
+    -- 注入邊與起點種子同樣要吃避讓罰：起點/終點 snap 段正好是堵點段時，
+    -- 種子與注入邊等於「免費走完整段」，A* 鬆弛罰不到（測試十四抓到）
+    if avoidR2 then
+        if segAvoidHit(endCand.qx, endCand.qy, g.nx[c], g.ny[c], avoidX, avoidY, avoidR2) then
+            lenQC = lenQC + AVOID_PENALTY
+        end
+        if segAvoidHit(endCand.qx, endCand.qy, g.nx[d], g.ny[d], avoidX, avoidY, avoidR2) then
+            lenQD = lenQD + AVOID_PENALTY
+        end
+    end
     g.adjTo[eBase + 1], g.adjLen[eBase + 1], g.adjNext[eBase + 1] = Q, lenQC, savedC
     g.adjHead[c] = eBase + 1
     g.adjTo[eBase + 2], g.adjLen[eBase + 2], g.adjNext[eBase + 2] = Q, lenQD, savedD
@@ -705,6 +732,14 @@ local function runAStar(g, startCand, endCand, tx, ty)
     local px, py = startCand.qx, startCand.qy
     local gA = sqrt(dist2(px, py, g.nx[a], g.ny[a]))
     local gB = sqrt(dist2(px, py, g.nx[b2], g.ny[b2]))
+    if avoidR2 then
+        if segAvoidHit(px, py, g.nx[a], g.ny[a], avoidX, avoidY, avoidR2) then
+            gA = gA + AVOID_PENALTY
+        end
+        if segAvoidHit(px, py, g.nx[b2], g.ny[b2], avoidX, avoidY, avoidR2) then
+            gB = gB + AVOID_PENALTY
+        end
+    end
     stamp[a], gS[a], fromN[a], closed[a] = gen, gA, 0, false
     stamp[b2], gS[b2], fromN[b2], closed[b2] = gen, gB, 0, false
     heapPush(hI, hF, a, gA + sqrt(dist2(g.nx[a], g.ny[a], endCand.qx, endCand.qy)))
@@ -729,6 +764,10 @@ local function runAStar(g, startCand, endCand, tx, ty)
                 while e ~= 0 do
                     local to = g.adjTo[e]
                     local ng = gn + g.adjLen[e]
+                    if avoidR2 and segAvoidHit(g.nx[n], g.ny[n], g.nx[to], g.ny[to],
+                            avoidX, avoidY, avoidR2) then
+                        ng = ng + AVOID_PENALTY
+                    end
                     if stamp[to] ~= gen or ng < gS[to] then
                         stamp[to], gS[to], fromN[to], closed[to] = gen, ng, n, false
                         heapPush(hI, hF, to, ng + sqrt(dist2(g.nx[to], g.ny[to], endCand.qx, endCand.qy)))
@@ -786,8 +825,13 @@ end
 -- 對外：找路。起、終點各取 2 候選（不同節點對）——起點防「玩家在兩路之間先走
 -- 反方向」，終點防「最近段是斷連孤島、次近段可達卻回 nil」（codex review）。
 -- 總代價含兩端 approach 距離，取最短。第二回傳＝A* 內部例外（呼叫端 log）
-function NavCore.findRoute(g, sx, sy, tx, ty)
+function NavCore.findRoute(g, sx, sy, tx, ty, avoidX, avoidY, avoidR)
     if not g or g.nodeCount == 0 then return nil end
+    local avoidR2 = nil
+    if type(avoidR) == "number" and avoidR > 0
+        and type(avoidX) == "number" and type(avoidY) == "number" then
+        avoidR2 = avoidR * avoidR
+    end
     local starts = snapCandidates(g, sx, sy, 2)
     if #starts == 0 then starts[1] = nearestSnap(g, sx, sy) end -- 深野外起點：導到路網最近點
     if not starts[1] then return nil end
@@ -802,14 +846,19 @@ function NavCore.findRoute(g, sx, sy, tx, ty)
             if sc.seg == ec.seg then
                 -- 起終 snap 同一路段：段內直達（A* 圖上無段中點間的邊，會繞經
                 -- 段端折返成 U 形——測試「gate 勝者段」抓到的路徑膨脹）
+                local dlen = sqrt(dist2(sc.qx, sc.qy, ec.qx, ec.qy))
+                if avoidR2 and segAvoidHit(sc.qx, sc.qy, ec.qx, ec.qy,
+                        avoidX, avoidY, avoidR2) then
+                    dlen = dlen + AVOID_PENALTY
+                end
                 r = {
                     pts = { sc.qx, sc.qy, ec.qx, ec.qy },
-                    len = sqrt(dist2(sc.qx, sc.qy, ec.qx, ec.qy)),
+                    len = dlen,
                     sx = sc.qx, sy = sc.qy, ex = ec.qx, ey = ec.qy,
                     tx = tx, ty = ty,
                 }
             else
-                r, err = runAStar(g, sc, ec, tx, ty)
+                r, err = runAStar(g, sc, ec, tx, ty, avoidX, avoidY, avoidR2)
                 if err and not firstErr then firstErr = err end
             end
             if r then
@@ -1454,6 +1503,45 @@ MinidoracatMiniMapAPI.requestRoute = function(playerNum, targetX, targetY)
     local route = ensureRoute(playerNum, apiTarget, playerObj:getX(), playerObj:getY())
     local rs = navRoutes[playerNum]
     return route, rs and rs.state or "noroad"
+end
+-- 繞開堵點重算（nav API v3；消費者＝AutoDrive addon 的 blocked 改道）。語意同
+-- requestRoute，多三個避讓參數：路徑經過 (avoidX,avoidY) 半徑 avoidR 內的路網
+-- 邊吃 AVOID_PENALTY 軟封鎖（仍可達：目標貼堵點時照樣給路，有替代就繞）。
+-- 成功時**覆寫**該玩家的路線快取——minimap 與後續 requestRoute 沿用 detour 線；
+-- target 未變、ensureRoute 不會立刻重算蓋回（偏航／冷卻規則照舊）。
+-- 回 (route, state)：state 字彙同 requestRoute。
+MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoidX, avoidY, avoidR)
+    if type(playerNum) ~= "number" or playerNum ~= playerNum
+        or playerNum < 0 or playerNum > 3 or playerNum % 1 ~= 0
+    then
+        return nil, "badargs"
+    end
+    if type(targetX) ~= "number" or type(targetY) ~= "number"
+        or targetX ~= targetX or targetY ~= targetY
+        or targetX == math.huge or targetX == -math.huge
+        or targetY == math.huge or targetY == -math.huge
+    then
+        return nil, "badargs"
+    end
+    if type(avoidX) ~= "number" or type(avoidY) ~= "number" or type(avoidR) ~= "number"
+        or avoidX ~= avoidX or avoidY ~= avoidY or avoidR ~= avoidR
+        or avoidX == math.huge or avoidX == -math.huge
+        or avoidY == math.huge or avoidY == -math.huge
+        or avoidR <= 0 or avoidR == math.huge
+    then
+        return nil, "badargs"
+    end
+    local playerObj = getSpecificPlayer(playerNum)
+    if not playerObj then return nil, "noplayer" end
+    if engine.state ~= "ready" then return nil, engine.state end
+    local px, py = playerObj:getX(), playerObj:getY()
+    local route, aerr = NavCore.findRoute(engine.graph, px, py, targetX, targetY,
+        avoidX, avoidY, avoidR)
+    if aerr then logf("astar", "detour search error: " .. tostring(aerr)) end
+    if not route then return nil, "noroad" end
+    navRoutes[playerNum] = { state = "ok", route = route, tx = targetX, ty = targetY,
+        progressIdx = 1, progX = route.sx, progY = route.sy, lastBuildMs = getTimestampMs() }
+    return route, "ok"
 end
 MinidoracatMiniMapAPI.getNavGraph = function()
     return engine.graph, engine.state

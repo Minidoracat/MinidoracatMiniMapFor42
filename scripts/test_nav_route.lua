@@ -421,4 +421,29 @@ local Core = {
     assert(#lines == 0, "段級剔除：全離屏路線零繪製（實得 " .. #lines .. " 條）")
 end
 
+--------------------------------------------------------------------------------
+-- 十四、避讓圈 detour（nav API v3：blocked 改道）——回字形雙路：直路 vs 繞路，
+-- 堵點蓋直路中段 → 繞路勝出；無堵點 → 直路。目標貼堵點（軟封鎖仍可達）。
+--------------------------------------------------------------------------------
+do
+    local g = buildAll({
+        { name = "Straight", src = "M", pts = { 0, 0, 200, 0 } },
+        { name = "DetourW", src = "M", pts = { 0, 0, 0, 60 } },
+        { name = "DetourN", src = "M", pts = { 0, 60, 200, 60 } },
+        { name = "DetourE", src = "M", pts = { 200, 60, 200, 0 } },
+    }, nil)
+    -- 無避讓：直路 ≈190
+    local r0 = mod.findRoute(g, 5, 0, 195, 0)
+    assert(r0, "避讓：基準路線存在")
+    assert(r0.len < 250, "避讓：無堵點走直路（len ≈190，實得 " .. tostring(r0.len) .. "）")
+    -- 堵點在直路中段 (100,0) r=12：繞北環 ≈310（190+120），必須勝過吃罰的直路
+    local r1 = mod.findRoute(g, 5, 0, 195, 0, 100, 0, 12)
+    assert(r1, "避讓：detour 路線存在")
+    assert(r1.len > 250 and r1.len < 400,
+        "避讓：堵點蓋直路 → 繞北環（len ≈310，實得 " .. tostring(r1.len) .. "）")
+    -- 目標貼堵點：軟封鎖不是硬移除，仍要給路（吃罰照走）
+    local r2 = mod.findRoute(g, 5, 0, 102, 0, 100, 0, 12)
+    assert(r2, "避讓：目標在堵點圈內仍可達（軟封鎖）")
+end
+
 print("test_nav_route: 全數通過")
