@@ -334,6 +334,20 @@ else:
         fail("Lua 單元測試（test_skin_adapter.lua）", ["無輸出"]) if not _lines \
             else ok(f"Lua 單元測試（test_skin_adapter.lua：{_lines[-1]}）")
 
+# ---- 13. Lua 單元測試：addon 設定 API ----
+if not _lua_bin:
+    skip("Lua 單元測試（test_addon_settings.lua）", "PATH 沒有 lua")
+else:
+    _r = subprocess.run([_lua_bin, "scripts/test_addon_settings.lua"],
+                        capture_output=True, cwd=REPO)
+    _lines = [l for l in (_r.stdout or b"").decode("utf-8", "replace").splitlines() if l.strip()]
+    _err_tail = (_r.stderr or b"").decode("utf-8", "replace").splitlines()[-3:]
+    if _r.returncode != 0:
+        fail("Lua 單元測試（test_addon_settings.lua）", (_lines[-3:] or []) + _err_tail)
+    else:
+        fail("Lua 單元測試（test_addon_settings.lua）", ["無輸出"]) if not _lines \
+            else ok(f"Lua 單元測試（test_addon_settings.lua：{_lines[-1]}）")
+
 # ---- 總結 ----
 print()
 print(f"PASS {len(passed)} / FAIL {len(failed)} / SKIP {len(skipped)}")

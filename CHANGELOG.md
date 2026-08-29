@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### 新增
+
+- 統一設定視窗新增 addon client-settings API v1；addon 可用自身 mod ID 註冊獨立收合分類、勾選與下拉選項，設定值仍由 addon 自己保存。安裝支援版本的 AutoDrive 後，齒輪視窗會出現「自動駕駛」分類，與 AutoDrive 的 MOD Options 共用同一份軌跡顯示設定
+
 ## [42.20.3-0.21.0] - 2026-08-26
 
 ### 新增

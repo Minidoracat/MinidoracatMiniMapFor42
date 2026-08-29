@@ -57,8 +57,9 @@ Project Zomboid Build 42 遊戲內世界地圖圖片化 MOD。
   輸入自動判別座標（`12895,3499` 等格式）／街道名（**中英雙語可搜**，英文原名
   隨 MOD 內建對照表）／設施類別（20 類），結果依距離排序；可跳大地圖（金色
   脈動標記 12 秒）或直接設為導航目標
-- **統一設定視窗**（齒輪鈕）：雙欄九區塊（圖層顯示／資源點／顯示距離／殭屍點位／動物圖標／
+- **統一設定視窗**（齒輪鈕）：雙欄九個內建區塊（圖層顯示／資源點／顯示距離／殭屍點位／動物圖標／
   載具圖標／世界地圖圖標／外觀與行為／效能說明——逐項效能等級與對策）可收合、全部展開／收合、收合時標題列顯示現況摘要；
+  支援 addon 動態註冊自己的 client 設定分類，例如安裝 AutoDrive 後會增加「自動駕駛」區塊，與該 addon 的 MOD Options 共用同一份設定；
   裝 Zones addon 時另有「自訂區域」區——依 zones.json 實際類別動態生成勾選篩選
   （全選／全不選）、「區域名稱不受縮放限制」開關、範本生成列，視窗開著時區域資料
   到貨自動刷新；各語系實測字寬
@@ -338,6 +339,35 @@ MinidoracatMiniMapFor42/        MinidoracatMiniMapModMapsFor42/    SomeMapMod/
 - **發佈準則**：常用地圖進官方地圖包；大型地圖（pyramid zip 動輒數百 MB）建議獨立
   地圖包或第三方相容路徑分開發佈，避免只玩部分地圖的玩家被迫下載全部。
 - 效能由引擎處理：LRU 紋理快取、多層級 LOD、非同步載入（相對 B41 per-cell 紋理方案）。
+
+## 第三方 client 設定分類 API
+
+需要把 addon 的玩家端設定整合進小地圖齒輪視窗時，可在 client Lua 註冊：
+
+```lua
+local api = MinidoracatMiniMapAPI
+if api and type(api.settingsApiVersion) == "number"
+        and api.settingsApiVersion >= 1
+        and type(api.registerSettingsSection) == "function" then
+    api.registerSettingsSection("AddonModId", {
+        label = "UI_Addon_Settings",
+        lane = 1,
+        ticks = {
+            { label = "UI_Addon_Show", get = getShow, set = setShow },
+        },
+        combos = {
+            { label = "UI_Addon_Width", items = {
+                "UI_Addon_Thin", "UI_Addon_Normal", "UI_Addon_Thick",
+            }, default = 2, get = getWidth, set = setWidth },
+        },
+    })
+end
+```
+
+- 第一參數必須是 addon 自身 mod ID；同 ID 重複註冊會更新原分類，不會新增重複區塊。
+- `get`／`set` 與選配 `summary` 都是 addon callback；MiniMap 只提供 UI，不保存第二份設定。
+- `summary` 在設定視窗可見時每幀呼叫，只能做 O(1) 記憶體讀取。
+- 壞 spec 會在註冊期回傳 `false`，不得影響 MiniMap 其他設定區塊。
 
 ## 第三方動物相容 API
 

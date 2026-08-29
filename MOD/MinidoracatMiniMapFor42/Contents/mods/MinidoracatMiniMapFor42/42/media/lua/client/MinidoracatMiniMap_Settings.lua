@@ -201,6 +201,8 @@ local unifiedExpand = {}
 local UNIFIED_LANE = { layers = 1, poicat = 1, distance = 1, appearance = 1,
     zombie = 2, animals = 2, vehicles = 2, worldmap = 2, perf = "full" }
 local settingsUI -- 單例；獨立頂層視窗，不隨小地圖 Recreate 消失（apply 自行重抓 mm）
+-- Addon client 設定區：addon 註冊純資料＋get/set callbacks；值仍由 addon 自己保存。
+local addonSettingsById = {}
 
 -- 地圖包 addon 專屬選項（有註冊才出現）：OnGameBoot＝所有 MOD lua 載入完
 -- （地圖包 require=本 MOD，其註冊呼叫已執行）、且早於 MainOptions 建立——
@@ -348,11 +350,23 @@ local function unifiedEngineSet(name, v, pn)
 end
 
 -- 區塊標題的現況摘要（panel:render 每幀現算——展開區的勾選改動、甚至 ESC
--- 選項頁改動都即時反映；≤6 區、純選項記憶體讀，每幀成本可忽略。實測回饋：
--- 舊版重建時算一次存字串，勾選後要再點收合/展開才更新）
+-- 選項頁改動都即時反映；內建區純選項讀。addon summary 若提供也每幀呼叫，
+-- API 契約要求 O(1)；單一 tick addon 不提供 summary 時自動顯示開／關）。
+local function unifiedOnOff(value)
+    return getText(value and "UI_MinidoracatMiniMap_On" or "UI_MinidoracatMiniMap_Off")
+end
 local function unifiedHeaderSummary(sec, pn)
-    local function onOff(v)
-        return getText(v and "UI_MinidoracatMiniMap_On" or "UI_MinidoracatMiniMap_Off")
+    if sec.addon then
+        if type(sec.addon.summary) == "function" then
+            local ok, value = pcall(sec.addon.summary)
+            if ok and type(value) == "string" then return value end
+        end
+        local ticks = sec.addon.ticks
+        if #ticks == 1 then
+            local ok, value = pcall(ticks[1].get)
+            return unifiedOnOff(ok and value == true)
+        end
+        return nil
     end
     if sec.id == "layers" then
         local n, on = 0, 0
@@ -366,14 +380,14 @@ local function unifiedHeaderSummary(sec, pn)
         end
         return on .. "/" .. n
     elseif sec.id == "zombie" then
-        return onOff(getBoolOption("ZombieDots", false)
+        return unifiedOnOff(getBoolOption("ZombieDots", false)
             and sandboxGate("AllowZombieDots", true) ~= false)
     elseif sec.id == "animals" then
         local allowed = sandboxGate("AllowAnimalDots", true) ~= false
         local livestock = getBoolOption("AnimalLivestock", false) and livestockVisibilityMode() ~= 4
-        return onOff(allowed and (getBoolOption("AnimalWild", false) or livestock))
+        return unifiedOnOff(allowed and (getBoolOption("AnimalWild", false) or livestock))
     elseif sec.id == "vehicles" then
-        return onOff(getBoolOption("VehicleDots", false)
+        return unifiedOnOff(getBoolOption("VehicleDots", false)
             and sandboxGate("AllowVehicleDots", true) ~= false)
     elseif sec.id == "worldmap" then
         -- 對等勾選清單＝計數摘要（同 layers；開/關會被誤讀成母開關——實測回饋）
@@ -467,6 +481,30 @@ local function unifiedAddComboRow(ctx, entry)
     unifiedAdd(ctx, combo)
     ctx.curY = ctx.curY + ctx.rowH
 end
+
+-- test:addon-settings-callbacks:start
+local function addonRead(fn, default)
+    if type(fn) ~= "function" then return default end
+    local ok, value = pcall(fn)
+    if not ok then return default end
+    return value
+end
+
+-- addon setter 一律隔離：第三方 set 拋錯只留診斷，不得炸掉設定窗的事件迴圈。
+local function addonWrite(entry, value)
+    if type(entry.set) ~= "function" then return end
+    local ok, err = pcall(entry.set, value)
+    if not ok then print("[MinidoracatMiniMap] addon setting failed: " .. tostring(err)) end
+end
+
+local function unifiedOnAddonTick(target, index, selected, entry)
+    addonWrite(entry, selected == true)
+end
+
+local function unifiedOnAddonCombo(target, combo, entry)
+    addonWrite(entry, combo.selected)
+end
+-- test:addon-settings-callbacks:end
 local function unifiedAddBtn(ctx, x, yy, w, labelText, fn, tooltip)
     local b = ISButton:new(x, yy, w, ctx.fontH + 4, labelText, ctx.win, fn)
     b:initialise()
@@ -978,6 +1016,49 @@ local function unifiedBuildZones(ctx)
     unifiedAddZoneActions(ctx)
 end
 
+-- test:addon-settings-builder:start
+local function unifiedBuildAddon(ctx)
+    local spec = ctx.sec and ctx.sec.addon
+    if type(spec) ~= "table" then return end
+    local ticks = spec.ticks
+    if type(ticks) == "table" then
+        for i = 1, #ticks do
+            local entry = ticks[i]
+            local tick = unifiedAddTick(ctx, ctx.curX + 4, ctx.curY,
+                ctx.laneW - 6, getText(entry.label),
+                addonRead(entry.get, entry.default == true) == true,
+                unifiedOnAddonTick, entry)
+            if entry.tooltip then tick.tooltip = getText(entry.tooltip) end
+            ctx.curY = ctx.curY + ctx.rowH
+        end
+    end
+    local combos = spec.combos
+    if type(combos) == "table" then
+        for i = 1, #combos do
+            local entry = combos[i]
+            unifiedAdd(ctx, ISLabel:new(ctx.curX, ctx.curY + 3, ctx.fontH,
+                getText(entry.label), 1, 1, 1, 1, UIFont.Small, true))
+            local combo = ISComboBox:new(ctx.curX + ctx.comboLabelW + 8, ctx.curY,
+                ctx.laneW - ctx.comboLabelW - 8, ctx.fontH + 6,
+                ctx.win, unifiedOnAddonCombo, entry)
+            combo:initialise()
+            local items = entry.items
+            if type(items) == "table" then
+                for j = 1, #items do combo:addOption(getText(items[j])) end
+            end
+            local default = entry.default or 1
+            local selected = addonRead(entry.get, default)
+            if type(selected) ~= "number" or selected ~= selected or selected < 1
+                    or not items or selected > #items then selected = default end
+            combo.selected = selected - selected % 1
+            if entry.tooltip then combo.tooltip = getText(entry.tooltip) end
+            unifiedAdd(ctx, combo)
+            ctx.curY = ctx.curY + ctx.rowH
+        end
+    end
+end
+-- test:addon-settings-builder:end
+
 local UNIFIED_BUILDERS = {
     layers = unifiedBuildLayers, poicat = unifiedBuildPoicat, zones = unifiedBuildZones,
     zombie = unifiedBuildZombie,
@@ -1020,6 +1101,15 @@ local function unifiedMeasureLayout()
     for i = 1, #UNIFIED_WM_TICKS do
         max2 = math.max(max2, tw(getText(UNIFIED_WM_TICKS[i].label)))
     end
+    for i = 1, #UNIFIED_SECTIONS do
+        local spec = UNIFIED_SECTIONS[i].addon
+        local ticks = spec and spec.ticks
+        if type(ticks) == "table" then
+            for j = 1, #ticks do
+                max2 = math.max(max2, tw(getText(ticks[j].label)))
+            end
+        end
+    end
     local need2 = max2 + TICK_W + 8       -- 2 欄群組單欄所需
     local max3 = 0                        -- 物種格（圖示＋勾選＋名）
     for i = 1, #ADOTS_SPECIES_UI do
@@ -1048,6 +1138,15 @@ local function unifiedMeasureLayout()
     for g = 1, #comboGroups do
         for i = 1, #comboGroups[g] do
             comboLabelW = math.max(comboLabelW, tw(getText(comboGroups[g][i].label)))
+        end
+    end
+    for i = 1, #UNIFIED_SECTIONS do
+        local spec = UNIFIED_SECTIONS[i].addon
+        local combos = spec and spec.combos
+        if type(combos) == "table" then
+            for j = 1, #combos do
+                comboLabelW = math.max(comboLabelW, tw(getText(combos[j].label)))
+            end
         end
     end
     -- lane 寬＝滿足 lane 內最寬需求（2 欄雙倍/3 欄三倍/combo 標籤＋最小下拉 130），
@@ -1167,13 +1266,15 @@ unifiedRebuild = function(win)
                     0.95, 0.55, 0.25, 1, UIFont.Small, true))
                 ctx.curY = ctx.curY + rowH
             end
-            local builder = UNIFIED_BUILDERS[sec.id]
+            local builder = sec.addon and unifiedBuildAddon or UNIFIED_BUILDERS[sec.id]
             if builder then
+                ctx.sec = sec
                 -- 跨欄區塊執行期把 ctx.laneW 放大（wrapped note 行寬／等級右貼齊
                 -- 皆讀 ctx.laneW），builder 返回即還原——防後續區塊吃到錯寬度
                 if cur == "full" then ctx.laneW = secW end
                 builder(ctx)
                 if cur == "full" then ctx.laneW = laneW end
+                ctx.sec = nil
             end
         end
         if cur == "full" then
@@ -1401,3 +1502,85 @@ Core.refreshSettingsWindow = function(pn)
         unifiedRebuild(settingsUI)
     end
 end
+
+-- 公開 addon client-settings API v1。ownerModId 是唯一身分：同 owner 重註冊
+-- 視為熱重載更新，不同 addon 即使自選同名 label 也不互相覆蓋。外部 spec
+-- 在註冊期完整驗證並複製；壞值 fail closed，不得把整個 MiniMap 設定窗炸掉。
+-- summary（若提供）會在設定窗可見期間每幀呼叫，必須是 O(1) 記憶體讀。
+-- test:addon-settings-registry:start
+local function normalizeAddonSettings(ownerModId, spec)
+    if type(ownerModId) ~= "string" or ownerModId == ""
+            or type(spec) ~= "table" or type(spec.label) ~= "string"
+            or spec.label == "" or (spec.summary ~= nil
+                and type(spec.summary) ~= "function") then return nil end
+    local lane = spec.lane
+    if lane ~= 1 and lane ~= 2 and lane ~= "full" then lane = 1 end
+    local out = { label = spec.label, lane = lane, summary = spec.summary,
+        ticks = {}, combos = {} }
+    local ticks = spec.ticks
+    if ticks ~= nil and type(ticks) ~= "table" then return nil end
+    local tickN = ticks and #ticks or 0
+    if tickN > 32 then return nil end
+    for i = 1, tickN do
+        local e = ticks[i]
+        if type(e) ~= "table" or type(e.label) ~= "string" or e.label == ""
+                or type(e.get) ~= "function" or type(e.set) ~= "function"
+                or (e.tooltip ~= nil and type(e.tooltip) ~= "string")
+                or (e.default ~= nil and type(e.default) ~= "boolean") then return nil end
+        out.ticks[i] = { label = e.label, tooltip = e.tooltip,
+            default = e.default == true, get = e.get, set = e.set }
+    end
+    local combos = spec.combos
+    if combos ~= nil and type(combos) ~= "table" then return nil end
+    local comboN = combos and #combos or 0
+    if comboN > 32 then return nil end
+    for i = 1, comboN do
+        local e = combos[i]
+        if type(e) ~= "table" then return nil end
+        local items = e.items
+        local itemN = type(items) == "table" and #items or 0
+        if type(e.label) ~= "string" or e.label == ""
+                or type(e.get) ~= "function" or type(e.set) ~= "function"
+                or (e.tooltip ~= nil and type(e.tooltip) ~= "string")
+                or (e.default ~= nil and type(e.default) ~= "number")
+                or itemN < 1 or itemN > 20 then return nil end
+        for j = 1, itemN do
+            if type(items[j]) ~= "string" or items[j] == "" then return nil end
+        end
+        local default = e.default or 1
+        if default % 1 ~= 0 or default < 1 or default > itemN then return nil end
+        local copyItems = {}
+        for j = 1, itemN do copyItems[j] = items[j] end
+        out.combos[i] = { label = e.label, tooltip = e.tooltip,
+            default = default, get = e.get, set = e.set, items = copyItems }
+    end
+    return out
+end
+
+MinidoracatMiniMapAPI.settingsApiVersion = 1
+function MinidoracatMiniMapAPI.registerSettingsSection(ownerModId, spec)
+    local normalized = normalizeAddonSettings(ownerModId, spec)
+    if not normalized then
+        print("[MinidoracatMiniMap] registerSettingsSection bad arguments: "
+            .. tostring(ownerModId))
+        return false
+    end
+    local sec = addonSettingsById[ownerModId]
+    local sectionId = "addon_" .. ownerModId
+    if sec then
+        sec.label = normalized.label
+        sec.addon = normalized
+    else
+        sec = { id = sectionId, label = normalized.label, addon = normalized }
+        addonSettingsById[ownerModId] = sec
+        local insertAt = #UNIFIED_SECTIONS + 1
+        for i = 1, #UNIFIED_SECTIONS do
+            if UNIFIED_SECTIONS[i].id == "perf" then insertAt = i; break end
+        end
+        table.insert(UNIFIED_SECTIONS, insertAt, sec)
+    end
+    UNIFIED_LANE[sectionId] = normalized.lane
+    if settingsUI and settingsUI:isVisible() then unifiedRebuild(settingsUI) end
+    return true
+end
+-- test:addon-settings-registry:end
