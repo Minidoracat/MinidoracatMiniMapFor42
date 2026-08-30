@@ -372,6 +372,18 @@ do
     zone.resetEdgeCount(); zone.lines(a11d)
     assert(a11d.textCount == 1 and zone.edgeCount() == 4,
         "A11 細節檔行為不變（text=" .. a11d.textCount .. " edges=" .. zone.edgeCount() .. "）")
+    zone.setBoolOverride("ZoneNames", false)
+    local a11e = makeInner(10)
+    zone.resetEdgeCount(); zone.lines(a11e)
+    assert(a11e.textCount == 0 and zone.edgeCount() == 4,
+        "A11 名稱總開關關閉：外部 zone 保留框線但隱藏文字")
+    zone.clearProviders()
+    zone.addProvider("intNamesUnaffected", extLodNamed, true)
+    local a11f = makeInner(10)
+    zone.resetEdgeCount(); zone.lines(a11f)
+    assert(a11f.textCount == 1 and zone.edgeCount() == 4,
+        "A11 名稱總開關只影響外部自訂區域，不影響 internal POI")
+    zone.setBoolOverride("ZoneNames", nil)
     zone.clearProviders()
     zone.resetLogs()
 

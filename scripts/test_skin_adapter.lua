@@ -1,25 +1,22 @@
 --[[
 皮膚 adapter 煙霧測試：MinidoracatMiniMap_Skin.lua 現為家族 UI 框架
-（MinidoracatUIFor42）的 thin adapter，本測試驗三態：
+（MinidoracatUIFor42）的 thin adapter，本測試驗四態：
 
     lua scripts/test_skin_adapter.lua        （repo 根目錄執行；標準 Lua 5.x）
 
-  A. 框架在場：fill/border 轉發到框架 Skin（9-slice 落點含絕對座標＋自身捲動
-     補償＋floor——Search 結果列高亮與 Settings 區段底的生產路徑）；fits 走框架
-     夾限；reset 轉發不炸。
-  B. 框架缺席（版本不合／框架 Lua 初始化失敗／離線 harness）：fill/border 落
-     adapter 自己的直角退回（相對座標、alphaScale 有效）、fits 恆 false、全程不炸。
-     注意：「玩家漏裝框架」不走這條——mod.info 已宣告 require=MinidoracatUIFor42，
-     缺 MOD 由引擎直接拒載本 MOD（見框架 repo docs/ARCHITECTURE.md §1 三層防線）。
-  C. Core 門檻：Core 缺席／未 ready 時 adapter 必須整檔早退、不掛 Core.Skin
-     （半初始化防線：主檔版本檢查未過時本節不該存在）。
-框架自身行為（NinePatch 生命週期、theme）由框架 repo 的 smoke_harness 覆蓋，
-此處只驗 adapter 的轉發與退回契約。
+  A. 框架在場：fill/border、rev3 toggle／slider painters 與 Studio icons 轉發；
+     9-slice 落點含絕對座標＋自身捲動補償＋floor。fits/reset 同步走框架。
+  B. 框架缺席：fill/border、toggle 與 slider 走直角退回，icon 回 false 讓
+     consumer 顯示純文字；fits 恆 false且全程不炸。
+  C. Core 門檻：Core 缺席／未 ready 時 adapter 早退、不掛 Core.Skin。
+  D. FloatIcon wrapper：框架浮鈕與 MiniMap 業務回呼、位置保存、顯示收斂。
+框架自身行為由框架 repo 的 smoke_harness 覆蓋；此處只驗 adapter 契約。
 ]]
 
 local SKIN = "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Skin.lua"
 local MUI_V1 = os.getenv("MUI_LUA")
     or "../MinidoracatUIFor42/MOD/MinidoracatUIFor42/Contents/mods/MinidoracatUIFor42/42/media/lua/client/MinidoracatUI/V1.lua"
+local MAIN = "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua"
 
 do
     local probe = io.open(MUI_V1, "rb")
@@ -44,7 +41,7 @@ local function nearly(a, b) return type(a) == "number" and math.abs(a - b) < 1e-
 _G.require = function() return nil end -- adapter 內 pcall(require,...) 安全空轉
 
 local function newElement(absX, absY, scrollX, scrollY)
-    local el = { rects = {}, borders = {} }
+    local el = { rects = {}, borders = {}, tex = {} }
     function el:getAbsoluteX() return absX end
     function el:getAbsoluteY() return absY end
     function el:getXScroll() return scrollX or 0 end
@@ -54,6 +51,10 @@ local function newElement(absX, absY, scrollX, scrollY)
     end
     function el:drawRectBorder(x, y, w, h, a, r, g, b)
         el.borders[#el.borders + 1] = { x = x, y = y, w = w, h = h, a = a, r = r, g = g, b = b }
+    end
+    function el:drawTextureScaled(texture, x, y, w, h, a, r, g, b)
+        el.tex[#el.tex + 1] = { texture = texture, x = x, y = y, w = w, h = h,
+            a = a, r = r, g = g, b = b }
     end
     return el
 end
@@ -105,6 +106,37 @@ do
         "態A border 轉發框架（round border 貼圖）")
     check(Skin.fits(12, 12, false) == true and Skin.fits(11, 12, false) == false
         and Skin.fits(12, 6, true) == true, "態A fits 走框架夾限（12x12／roundTop 12x6）")
+    _G.getTexture = function(path) return { path = path } end
+    Skin.reset()
+    local toggleOk = Skin.toggle(row, 0, 0, 38, 22, true)
+    check(toggleOk ~= false and patches[#patches - 1].path:find("mui_pill_fill.png", 1, true)
+        and patches[#patches].path:find("mui_pill_border.png", 1, true),
+        "態A toggle 轉發 rev3 專用 pill fill/border")
+    check(#row.tex >= 2 and row.tex[#row.tex].x == 20,
+        "態A toggle on 的圓形 knob 位於右側")
+    local iconOk = Skin.icon(row, "layers", 4, 5, 16, Skin.COLORS.TEXT_MUTED)
+    check(iconOk == true and row.tex[#row.tex].texture.path:find("mui_icon_layers.png", 1, true),
+        "態A Studio icon 轉發 rev3 Icons.draw")
+    local sliderEl = newElement(0, 0)
+    check(Skin.slider(sliderEl, 0, 0, 100, 20, 0.5) == true
+        and #sliderEl.rects == 2 and #sliderEl.borders == 1
+        and sliderEl.tex[#sliderEl.tex].x == 44,
+        "態A slider 轉發 rev3 現代 track/fill/圓形 knob")
+    local lockOk = Skin.icon(row, "lock", 4, 5, 16, Skin.COLORS.TEXT_MUTED)
+    check(lockOk == true and row.tex[#row.tex].texture.path:find("mui_icon_lock.png", 1, true),
+        "態A 視窗鎖頭轉發 rev3 lock icon")
+    local unlockOk = Skin.icon(row, "unlock", 4, 5, 16, Skin.COLORS.TEXT_MUTED)
+    check(unlockOk == true and row.tex[#row.tex].texture.path:find("mui_icon_unlock.png", 1, true),
+        "態A 視窗解鎖轉發 rev3 unlock icon")
+    local locateOk = Skin.icon(row, "locate", 4, 5, 16, Skin.COLORS.TEXT_MUTED)
+    check(locateOk == true and row.tex[#row.tex].texture.path:find("mui_icon_locate.png", 1, true),
+        "態A 小地圖定位玩家轉發 rev3 locate icon")
+    local copyOk = Skin.icon(row, "copy", 4, 5, 16, Skin.COLORS.TEXT_MUTED)
+    check(copyOk == true and row.tex[#row.tex].texture.path:find("mui_icon_copy.png", 1, true),
+        "態A 小地圖複製座標轉發 rev3 copy icon")
+    check(Skin.icon(row, "missing", 0, 0, 16) == false,
+        "態A 未知 icon fail-soft 供 consumer 退純文字")
+    _G.getTexture = nil
     _G.NinePatchTexture = nil
     Skin.reset()
 end
@@ -126,6 +158,18 @@ do
     check(el.rects[1].x == 1 and el.rects[1].w == 300 and nearly(el.rects[1].a, 0.8 * 0.5),
         "態B 退回矩形用相對座標且 alphaScale 有效")
     check(Skin.fits(500, 500, false) == false, "態B fits 恆 false（無貼圖可畫）")
+    local toggleEl = newElement(0, 0)
+    local fallbackOk, fallbackPainted = pcall(Skin.toggle, toggleEl, 0, 0, 38, 22, true)
+    check(fallbackOk and fallbackPainted == true
+        and #toggleEl.rects == 2 and #toggleEl.borders == 1,
+        "態B toggle 缺框架仍回 true 並畫直角 track/knob")
+    check(Skin.icon(toggleEl, "layers", 0, 0, 16) == false,
+        "態B icon 缺框架回 false，不留下空白功能")
+    local sliderEl = newElement(0, 0)
+    check(Skin.slider(sliderEl, 0, 0, 100, 20, 0.5,
+        { fill = { r = 1, g = 0.5, b = 0.2, a = 1 } }) == true
+        and #sliderEl.rects == 3,
+        "態B slider 缺框架／部分色票仍畫 track/fill/knob")
 end
 
 -- ============================================================
@@ -268,8 +312,74 @@ do
     check(icon:getIsVisible() == false, "態D 選項關閉：浮鈕隱藏")
 end
 print()
+print("態 E：小地圖工具列 icon consumer（定位狀態／複製／文字退回）")
+do
+    local fh = assert(io.open(MAIN, "rb"))
+    local source = fh:read("*a"):gsub("\r\n", "\n")
+    fh:close()
+    local body = assert(source:match(
+        "%-%- test:minimap%-toolbar%-icons:start\n(.-)\n%-%- test:minimap%-toolbar%-icons:end"),
+        "missing minimap toolbar icon test block")
+    local compile = loadstring or load
+    local chunk, err = compile([[
+local iconAvailable = true
+local amber, muted, primary = { id = "amber" }, { id = "muted" }, { id = "primary" }
+local ISButton = { render = function(self) self.baseRender = (self.baseRender or 0) + 1 end }
+local UIFont = { Small = "Small" }
+local function getTextManager()
+    return { getFontHeight = function() return 12 end }
+end
+local function getBoolOption() return true end
+local Core = { Skin = {
+    COLORS = { ACCENT_AMBER = amber, TEXT_MUTED = muted, TEXT_PRIMARY = primary },
+    icon = function(self, key, x, y, size, color)
+        self.iconKey, self.iconSize, self.iconColor = key, size, color
+        return iconAvailable
+    end,
+} }
+]] .. body .. "\n" .. [[
+return toolbarIconButtonRender, installToolbarIcon,
+    function(value) iconAvailable = value end, amber, muted, primary
+]])
+    assert(chunk, err)
+    local renderIcon, installIcon, setIconAvailable, amber, muted, primary = chunk()
+    local owner = { inner = {} }
+    local function button()
+        return {
+            title = "old", image = "old", width = 22, height = 22, mouseOver = false,
+            setTitle = function(self, value) self.title = value end,
+            setImage = function(self, value) self.image = value end,
+            drawTextCentre = function(self, text) self.fallback = text end,
+        }
+    end
+    local locate = button()
+    installIcon(locate, owner, "locate", "C")
+    check(locate.title == "" and locate.image == nil and locate.render == renderIcon
+        and locate._minidoracatFallback == "C",
+        "態E 定位鈕移除 C 標籤並安裝共用 renderer")
+    renderIcon(locate)
+    check(locate.iconKey == "locate" and locate.iconSize == 16
+        and locate.iconColor == muted and locate.baseRender == 1,
+        "態E 已置中時 locate icon 使用 muted 狀態")
+    owner.inner._minidoracatFreelook = true
+    renderIcon(locate)
+    check(locate.iconColor == amber, "態E 自由查看時 locate icon 轉琥珀")
+    setIconAvailable(false)
+    local fallback = button()
+    installIcon(fallback, owner, "locate", "C")
+    renderIcon(fallback)
+    check(fallback.fallback == "C", "態E 框架缺圖時定位鈕退回 C")
+    setIconAvailable(true)
+    local copy = button()
+    installIcon(copy, owner, "copy", "XY")
+    renderIcon(copy)
+    check(copy.iconKey == "copy" and copy.iconColor == primary
+        and copy._minidoracatFallback == "XY",
+        "態E 複製鈕使用 copy icon 並保留 XY 退回")
+end
+print()
 -- 條數守門（家族慣例）：整段被註解掉時數字變小但不會紅，靠這裡擋
-local EXPECTED_ASSERTIONS = 23
+local EXPECTED_ASSERTIONS = 40
 if assertionCount ~= EXPECTED_ASSERTIONS then
     print("斷言條數不符：預期 " .. EXPECTED_ASSERTIONS .. "、實際 " .. assertionCount
         .. "（有測試被刪掉或跳過？）")

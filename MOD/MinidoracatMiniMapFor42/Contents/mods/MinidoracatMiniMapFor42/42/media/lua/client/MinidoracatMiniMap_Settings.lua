@@ -1,7 +1,6 @@
 -- MinidoracatMiniMap_Settings.lua
--- 本檔範圍：統一控制視窗整節（自主檔 MinidoracatMiniMap.lua 拆出，內容原樣搬遷）——
--- UNIFIED_* 資料表、addon-conditional 選項的 OnGameBoot 追加、settingsApply 管線、
--- 篩選寫入、引擎選項直讀直寫、標題摘要、視窗重建/建立/開關。
+-- 本檔範圍：地圖顯示設定視窗——builder 資料表、addon-conditional 選項、
+-- settingsApply 管線、篩選寫入、搜尋索引、responsive 導覽/inspector 與視窗生命週期。
 -- 載入順序假設：PZ 依字母序載入同目錄 lua，'.'(0x2E) < '_'(0x5F) → 主檔必先載入並
 -- 建好 MinidoracatMiniMapCore 命名空間；本檔載入期只讀取其「一次性賦值」的穩定引用
 -- 並定義函式/掛事件，跨檔「函式呼叫」一律發生在事件/呼叫時。
@@ -36,14 +35,12 @@ local registeredZoneProviders = Core.registeredZoneProviders
 local hasExternalZoneProvider = Core.hasExternalZoneProvider
 
 --------------------------------------------------------------------------------
--- 統一控制視窗（免跑 ESC 選項頁）：
---   齒輪鈕開啟；五個可收合區塊（圖層/殭屍點位/動物/載具/外觀行為）整併
---   原設定視窗與圖層面板注入項——「=」鈕已退役，引擎原生三項
---   （等軸測/符號/遠端符號）移入「圖層顯示」區。
+-- 地圖顯示設定（免跑 ESC 選項頁）：分類導覽＋單一 inspector；搜尋非空時
+-- inspector 改列跨分類結果。原設定視窗與圖層面板注入項仍走相同 apply helper。
 -- 視窗以 ISCollapsableWindow 頂層呈現（標題拖曳＋關閉鈕內建，
 -- ISCollapsableWindow.lua:26-61），改值即寫回 ModOptions（同步 ESC 頁元件，
 -- ModOptions.lua:68-73）並走既有 modOptions:apply()——尺寸重建/開關即時/
--- 透明度一條龍，不另寫套用邏輯。收合/展開/全選採「全清重建」模式
+-- 透明度一條龍，不另寫套用邏輯。分類切換/搜尋/全選採「全清重建」模式
 -- （同原版 synchUI 全重建先例，ISMiniMap.lua:133-142），免逐元件同步。
 --------------------------------------------------------------------------------
 
@@ -169,6 +166,27 @@ local UNIFIED_WM_TICKS = {
     { id = "WMAnimalLivestock", label = "UI_MinidoracatMiniMap_WMAnimalLivestock", gate = "AllowAnimalDots" },
     { id = "WMVehicleDots", label = "UI_MinidoracatMiniMap_WMVehicleDots", gate = "AllowVehicleDots" },
 }
+local POI_MASTER_TICKS = {
+    { id = "PoiIcons", label = "UI_MinidoracatMiniMap_PoiIcons", default = true },
+    { id = "PoiBlocks", label = "UI_MinidoracatMiniMap_PoiBlocks", default = false },
+}
+local ANIMAL_MASTER_TICKS = {
+    { id = "AnimalWild", label = "UI_MinidoracatMiniMap_AnimalWild", default = false },
+    { id = "AnimalLivestock", label = "UI_MinidoracatMiniMap_AnimalLivestock", default = false },
+}
+local ANIMAL_NAV_MASTER = {
+    label = "UI_MinidoracatMiniMap_SecAnimals",
+    members = ANIMAL_MASTER_TICKS,
+}
+local ZOMBIE_MASTER = {
+    id = "ZombieDots", label = "UI_MinidoracatMiniMap_ZombieDots", default = false,
+}
+local VEHICLE_MASTER = {
+    id = "VehicleDots", label = "UI_MinidoracatMiniMap_VehicleDots", default = false,
+}
+local ZONE_MASTER = {
+    id = "ZoneLayer", label = "UI_MinidoracatMiniMap_ZoneLayer", default = true,
+}
 
 -- 標題摘要顯示有效狀態，不把已被伺服器閘門壓制的勾選算進去。
 -- test:worldmap-effective-tick:start
@@ -178,28 +196,22 @@ local function unifiedWorldMapTickOn(t)
     return t.id ~= "WMAnimalLivestock" or livestockVisibilityMode() ~= 4
 end
 -- test:worldmap-effective-tick:end
--- 區塊骨架：builder 依 id 分派（見 unifiedRebuild）；gate＝伺服器沙盒閘（停用時標示原因）
+-- 分類骨架：studioBuildInspector 依 id 分派 builder；gate＝伺服器沙盒閘
 local UNIFIED_SECTIONS = {
-    { id = "layers", label = "UI_MinidoracatMiniMap_SecLayers" },
-    { id = "poicat", label = "UI_MinidoracatMiniMap_SecPOI" },
-    { id = "distance", label = "UI_MinidoracatMiniMap_SecDistance" },
-    { id = "zombie", label = "UI_MinidoracatMiniMap_SecZombie", gate = "AllowZombieDots" },
-    { id = "animals", label = "UI_MinidoracatMiniMap_SecAnimals", gate = "AllowAnimalDots" },
-    { id = "vehicles", label = "UI_MinidoracatMiniMap_SecVehicles", gate = "AllowVehicleDots" },
-    { id = "worldmap", label = "UI_MinidoracatMiniMap_SecWorldMap" },
-    { id = "appearance", label = "UI_MinidoracatMiniMap_SecAppearance" },
-    { id = "perf", label = "UI_MinidoracatMiniMap_SecPerf" },
+    { id = "layers", label = "UI_MinidoracatMiniMap_SecLayers", icon = "layers" },
+    { id = "poicat", label = "UI_MinidoracatMiniMap_SecPOI",
+        icon = "pin", master = POI_MASTER_TICKS[1] },
+    { id = "distance", label = "UI_MinidoracatMiniMap_SecDistance", icon = "gauge" },
+    { id = "zombie", label = "UI_MinidoracatMiniMap_SecZombie",
+        gate = "AllowZombieDots", master = ZOMBIE_MASTER },
+    { id = "animals", label = "UI_MinidoracatMiniMap_SecAnimals",
+        gate = "AllowAnimalDots", master = ANIMAL_NAV_MASTER },
+    { id = "vehicles", label = "UI_MinidoracatMiniMap_SecVehicles",
+        gate = "AllowVehicleDots", master = VEHICLE_MASTER },
+    { id = "worldmap", label = "UI_MinidoracatMiniMap_SecWorldMap", icon = "globe" },
+    { id = "appearance", label = "UI_MinidoracatMiniMap_SecAppearance", icon = "sliders" },
+    { id = "perf", label = "UI_MinidoracatMiniMap_SecPerf", icon = "gauge" },
 }
--- ponytail: 展開狀態 session 記憶即可，跨場記憶（存 ModOptions）是升級路徑。
--- 預設全部收合（實測回饋：每次開窗都先展開圖層顯示很煩）
-local unifiedExpand = {}
--- 左欄＝圖層顯示/資源點/顯示距離/外觀與行為（＋動態自訂區域），右欄＝殭屍點位/
--- 動物圖標/載具圖標/世界地圖圖標。worldmap 置右欄：與同為「點位顯示」的
--- 殭屍/動物/載具同群（世界地圖圖標亦是這三類點位），且平衡兩欄全展開高度。
--- perf＝"full" 跨雙欄（實測回饋：長文字區塊塞單欄會把該欄撐得老高、另一欄
--- 大片留白；全寬行長加倍、行數減半），排在兩欄之下
-local UNIFIED_LANE = { layers = 1, poicat = 1, distance = 1, appearance = 1,
-    zombie = 2, animals = 2, vehicles = 2, worldmap = 2, perf = "full" }
 local settingsUI -- 單例；獨立頂層視窗，不隨小地圖 Recreate 消失（apply 自行重抓 mm）
 -- Addon client 設定區：addon 註冊純資料＋get/set callbacks；值仍由 addon 自己保存。
 local addonSettingsById = {}
@@ -267,7 +279,9 @@ Events.OnGameBoot.Add(function()
     end
     -- 自訂區域專屬設定（同本條件：有外部 provider 才出現）——
     -- 名稱遠距開關＋類別篩選 CSV（統一視窗類別勾選自動寫入；空/'-'＝全開）。
-    -- 統一視窗「自訂區域」區塊亦在此動態插入（插在資源點之後、左欄）
+    -- 地圖顯示設定的「自訂區域」分類亦在此動態插入（資源點之後、導覽第 3 項）
+    modOptions:addTickBox("ZoneNames", "UI_MinidoracatMiniMap_ZoneNames", true,
+        "UI_MinidoracatMiniMap_ZoneNames_tooltip")
     modOptions:addTickBox("ZoneNamesFar", "UI_MinidoracatMiniMap_ZoneNamesFar", true,
         "UI_MinidoracatMiniMap_ZoneNamesFar_tooltip")
     modOptions:addTextEntry("ZoneCategoryFilter", "UI_MinidoracatMiniMap_ZoneCategoryFilter", "",
@@ -288,8 +302,8 @@ Events.OnGameBoot.Add(function()
         label = "UI_MinidoracatMiniMap_DistZone", default = 0, min = 0, max = 2000,
         step = 1, fmt = "%d", zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited",
         capBy = "ZoneDisplayDistance" })
-    table.insert(UNIFIED_SECTIONS, 3, { id = "zones", label = "UI_MinidoracatMiniMap_SecZones" })
-    UNIFIED_LANE.zones = 1
+    table.insert(UNIFIED_SECTIONS, 3, { id = "zones",
+        label = "UI_MinidoracatMiniMap_SecZones", icon = "pin", master = ZONE_MASTER })
 end)
 
 local function settingsApply(entry, value)
@@ -301,6 +315,12 @@ local function settingsApply(entry, value)
     -- MapSize 的 apply() 會連帶清空 CustomSize，清除結果必須跟著落地
     if modOptions.apply then modOptions:apply() end
     PZAPI.ModOptions:save()
+    if settingsUI and settingsUI:isVisible() then
+        for i = 1, #settingsUI._pills do
+            local pill = settingsUI._pills[i]
+            if pill.entry.id == entry.id then pill.on = value == true end
+        end
+    end
 end
 
 -- 篩選寫入：單鍵切換／全選全不選；序列化依定義序（ini diff 穩定）。
@@ -349,83 +369,13 @@ local function unifiedEngineSet(name, v, pn)
     if api then api:setBoolean(name, v) end
 end
 
--- 區塊標題的現況摘要（panel:render 每幀現算——展開區的勾選改動、甚至 ESC
--- 選項頁改動都即時反映；內建區純選項讀。addon summary 若提供也每幀呼叫，
--- API 契約要求 O(1)；單一 tick addon 不提供 summary 時自動顯示開／關）。
-local function unifiedOnOff(value)
-    return getText(value and "UI_MinidoracatMiniMap_On" or "UI_MinidoracatMiniMap_Off")
-end
-local function unifiedHeaderSummary(sec, pn)
-    if sec.addon then
-        if type(sec.addon.summary) == "function" then
-            local ok, value = pcall(sec.addon.summary)
-            if ok and type(value) == "string" then return value end
-        end
-        local ticks = sec.addon.ticks
-        if #ticks == 1 then
-            local ok, value = pcall(ticks[1].get)
-            return unifiedOnOff(ok and value == true)
-        end
-        return nil
-    end
-    if sec.id == "layers" then
-        local n, on = 0, 0
-        for i = 1, #UNIFIED_LAYER_TICKS do
-            local t = UNIFIED_LAYER_TICKS[i]
-            if not (t.mpOnly and not isClient()) then
-                n = n + 1
-                local v = t.engine and unifiedEngineGet(t.id, pn) or (not t.engine and getBoolOption(t.id, t.default))
-                if v then on = on + 1 end
-            end
-        end
-        return on .. "/" .. n
-    elseif sec.id == "zombie" then
-        return unifiedOnOff(getBoolOption("ZombieDots", false)
-            and sandboxGate("AllowZombieDots", true) ~= false)
-    elseif sec.id == "animals" then
-        local allowed = sandboxGate("AllowAnimalDots", true) ~= false
-        local livestock = getBoolOption("AnimalLivestock", false) and livestockVisibilityMode() ~= 4
-        return unifiedOnOff(allowed and (getBoolOption("AnimalWild", false) or livestock))
-    elseif sec.id == "vehicles" then
-        return unifiedOnOff(getBoolOption("VehicleDots", false)
-            and sandboxGate("AllowVehicleDots", true) ~= false)
-    elseif sec.id == "worldmap" then
-        -- 對等勾選清單＝計數摘要（同 layers；開/關會被誤讀成母開關——實測回饋）
-        local on = 0
-        for i = 1, #UNIFIED_WM_TICKS do
-            local t = UNIFIED_WM_TICKS[i]
-            if unifiedWorldMapTickOn(t) then on = on + 1 end
-        end
-        return on .. "/" .. #UNIFIED_WM_TICKS
-    elseif sec.id == "poicat" then
-        local order = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.ORDER
-        if type(order) ~= "table" then return nil end
-        local on = 0
-        for i = 1, #order do
-            if getBoolOption("Cat_" .. order[i], true) then on = on + 1 end
-        end
-        return on .. "/" .. #order
-    elseif sec.id == "distance" then
-        -- 有距離限制生效（伺服器或玩家任一）之項目數；0/N＝全不限
-        -- （N＝#UNIFIED_SLIDERS.distance：裝區域 addon 時 6、否則 5）
-        if not displayDist then return nil end
-        local on = 0
-        for i = 1, #UNIFIED_SLIDERS.distance do
-            local capBy = UNIFIED_SLIDERS.distance[i].capBy
-            if capBy and displayDist(capBy) then on = on + 1 end
-        end
-        return on .. "/" .. #UNIFIED_SLIDERS.distance
-    end
-    return nil
-end
 
 --------------------------------------------------------------------------------
--- unifiedRebuild 分解（拆檔重構）：原單一函式自身曾撞 Kahlua 200 locvar 上限
--- （實測 211 → 整檔載入失敗）。現拆為：量測（unifiedMeasureLayout）＋通用列
--- helpers（unifiedAdd*）＋各區塊 builder（unifiedBuild*）——每個頂層函式自帶
--- 獨立 200 額度，unifiedRebuild 本體只留版面計算與分派。
--- ctx＝單次重建的共享狀態（原閉包上值改明取）：win/panel/pn/量測結果與
--- curX/curY 游標（builder 讀寫 curY，座標皆為 panel 內容座標，捲動由 panel 處理）。
+-- 地圖顯示設定拆分：量測（unifiedMeasureLayout）＋通用列 helpers（unifiedAdd*）
+-- ＋各分類 builder（unifiedBuild*）各自享有 Kahlua 200 locvar 額度；
+-- studioBuildInspector 負責 builder 分派，unifiedRebuild 只決定 pane 與組裝。
+-- ctx＝單次重建的共享狀態：win/panel/pn/量測結果與 curX/curY 游標
+-- （builder 讀寫 curY，座標皆為 panel 內容座標，捲動由 panel 處理）。
 --------------------------------------------------------------------------------
 local unifiedRebuild -- 前置宣告：helpers/builders 的回呼要遞迴重建（本體在下方）
 
@@ -449,8 +399,10 @@ end
 local function unifiedOnModTick(target, index, selected, e)
     settingsApply(e, selected)
     -- PlaceNames 開啟會連動強制 Symbols=true（applyToggleOptions 的耦合）：
-    -- 重建讓「符號」勾選框立即反映引擎現值，不留 UI/引擎分裂
-    if e.id == "PlaceNames" then unifiedRebuild(target) end
+    -- PlaceNames 會連動 Symbols；動物兩母項則共同投影成左欄 group pill。
+    if e.id == "PlaceNames" or e.id == "AnimalWild" or e.id == "AnimalLivestock" then
+        unifiedRebuild(target)
+    end
 end
 local function unifiedOnEngineTick(target, index, selected, e)
     unifiedEngineSet(e.id, selected, target._playerNum or 0)
@@ -542,8 +494,8 @@ end
 --     視窗第一次點擊軌道就會把存值永久截斷（ISSliderPanel 的 setCurrentValue
 --     一律夾到 maxValue；Claude review 抓出）。讓位後兩表面顯示一致、不毀偏好，
 --     且 displayDist 讀取端仍強制伺服器上限——放寬的只有 UI，不是實際可見範圍。
--- 僅於重建時計算（開窗／展開即刷新），不追蹤視窗開著期間的沙盒變動：與數值標
--- 的 cap 同步刷新，避免數字與軌道長度互相矛盾。
+-- 僅於重建時計算（開窗／切換分類／搜尋或結構刷新），不追蹤視窗開著期間的
+-- 沙盒變動；與數值標的 cap 同步刷新，避免數字與軌道長度互相矛盾。
 -- test:slider-range:start
 local function unifiedSliderRange(entry, cap, stored)
     local maxV = entry.max
@@ -552,15 +504,62 @@ local function unifiedSliderRange(entry, cap, stored)
     return maxV
 end
 -- test:slider-range:end
+-- test:settings-studio-slider:start
+local function studioSliderRatio(value, minValue, maxValue)
+    if type(value) ~= "number" or value ~= value or maxValue <= minValue then return 0 end
+    local ratio = (value - minValue) / (maxValue - minValue)
+    if ratio < 0 then return 0 elseif ratio > 1 then return 1 end
+    return ratio
+end
+-- test:settings-studio-slider:end
+-- 保留 ISSliderPanel 的 mouse/joypad/value 邏輯，只換 render（原版 render：
+-- RadioCom/ISUIRadio/ISSliderPanel.lua:137-158；互動：:38-130/:181-192）。
+local function unifiedSliderRender(self)
+    ISPanel.render(self)
+    local dim = self.sliderBarDim
+    if not dim or self.maxValue <= self.minValue then return end
+    local ratio = studioSliderRatio(self.currentValue, self.minValue, self.maxValue)
+    local Skin = Core.Skin
+    local scale = self.disabled and 0.4 or 1
+    local painted = Skin and Skin.slider
+        and Skin.slider(self, dim.x, 0, dim.w, self.height, ratio, nil, scale)
+    if not painted then
+        local trackY = math.floor(self.height / 2) - 2
+        local fillW = math.floor(dim.w * ratio + 0.5)
+        self:drawRect(dim.x, trackY, dim.w, 4, 0.35 * scale, 1, 1, 1)
+        self:drawRect(dim.x, trackY, fillW, 4, 0.85 * scale, 1, 0.85, 0.4)
+        local knobX = dim.x + fillW - 6
+        self:drawRect(knobX, math.floor((self.height - 12) / 2), 12, 12,
+            scale, 0.9, 0.9, 0.9)
+    end
+    if self.doButtons then
+        local colors = Skin and Skin.COLORS
+        local muted = colors and colors.TEXT_MUTED
+        local accent = colors and colors.ACCENT_AMBER
+        local left = self.leftPressed and accent or muted
+        local right = self.rightPressed and accent or muted
+        local textY = math.floor((self.height - getTextManager():getFontHeight(UIFont.Small)) / 2)
+        self:drawTextCentre("-", self.btnLeftDim.x + self.btnLeftDim.w / 2, textY,
+            left and left.r or 0.62, left and left.g or 0.62, left and left.b or 0.62,
+            scale, UIFont.Small)
+        self:drawTextCentre("+", self.btnRightDim.x + self.btnRightDim.w / 2, textY,
+            right and right.r or 0.62, right and right.g or 0.62, right and right.b or 0.62,
+            scale, UIFont.Small)
+    end
+    if self.joypadFocused then
+        self:drawRectBorder(0, 0, self.width, self.height, 0.55, 1, 0.85, 0.4)
+    end
+end
+
 local function unifiedAddSliderRows(ctx, list)
     for i = 1, #list do
         local entry = list[i]
         unifiedAdd(ctx, ISLabel:new(ctx.curX, ctx.curY + 3, ctx.fontH, getText(entry.label), 1, 1, 1, 1, UIFont.Small, true))
         -- capBy＝伺服器沙盒距離選項名：cap 供數值標顯示「/上限」，上限經
         -- unifiedSliderRange 動態計算（含全域上限 AllInfoDistance；存值超上限時
-        -- 讓位不截斷）。兩者都在重建時現算——開窗/展開即反映現值；視窗開著時
-        -- 管理員改沙盒須重開才更新（刻意與軌道長度同步：只更新數字會讓數字與
-        -- 軌道互相矛盾），讀取端 displayDist 每幀即時，不會因此放寬實際限制
+        -- 讓位不截斷）。兩者都在重建時現算——開窗／分類切換即反映現值；
+        -- 視窗開著時管理員改沙盒須觸發結構刷新或重開（刻意與軌道長度同步：
+        -- 只更新數字會讓數字與軌道互相矛盾），讀取端 displayDist 每幀即時
         local cap
         local maxV = entry.max
         if entry.capBy and sandboxDist then
@@ -578,14 +577,11 @@ local function unifiedAddSliderRows(ctx, list)
         end
         valW = valW + 10
         local valLabel = ISLabel:new(ctx.curX + ctx.laneW - valW, ctx.curY + 3, ctx.fontH, "", 1, 1, 1, 1, UIFont.Small, true)
-        -- 軌道寬下限（不得 <= 30）：laneW 的 420 上限是硬常數、不隨 PZ「字型大小」
-        -- 六檔（16/19/26/33/38/隨視窗）縮放，而 comboLabelW/valW 是縮放後的量測值
-        -- ——大字型下相減會逼近 0 甚至倒轉，而 ISSliderPanel 的 sliderBarDim.w
-        -- ＝寬-30（左右箭頭），onMouseDown 拿它當除數（ISSliderPanel.lua:55/80）：
-        -- 0 會得 nan 並經 setCurrentValue 把 nan 寫進選項落盤 ini。寧可該列右側與
-        -- 數值標重疊，也不能讓寬度倒轉——ponytail: 90＝bar 60，夠拖曳即可。
-        -- 上游根治是把 420 改成字型相對，但那會連動全視窗八個區塊的欄寬與視窗
-        -- 總寬（雙欄），風險高於本次變更本身，留給獨立的版面改版。
+        -- ISSliderPanel 的 sliderBarDim.w＝元件寬-30（左右箭頭），onMouseDown
+        -- 拿它當除數（ISSliderPanel.lua:55/80）：極小 viewport 或極長翻譯把列寬
+        -- 壓到 30 以下時會得 nan，並經 setCurrentValue 寫進 ini。地圖顯示設定已
+        -- 依字型實測需求在不足時切單 pane，這裡仍保留 90px 最終資料安全防線
+        -- （有效 bar 60px）；寧可個別極端語系列變擠，也不准產生 nan。
         local sliderW = ctx.laneW - ctx.comboLabelW - valW - 14
         if sliderW < 90 then sliderW = 90 end
         local slider = ISSliderPanel:new(ctx.curX + ctx.comboLabelW + 8, ctx.curY + 1,
@@ -597,6 +593,7 @@ local function unifiedAddSliderRows(ctx, list)
                 if opt then opt:setValue(value) end -- 同步 ESC 頁元件（ModOptions.lua slider setValue）
             end)
         slider:initialise()
+        slider.render = unifiedSliderRender
         slider.doToolTip = false
         -- setValues 第 5 參 _ignoreCurVal 必須為 true：否則它會拿「建構期初始
         -- currentValue（50）」觸發 onValueChange → 回呼把 50 夾限值寫進選項，
@@ -647,15 +644,12 @@ end
 local function unifiedBuildPoicat(ctx)
     -- 兩顆母開關（與 ZoneLayer 解耦，只控內部 POI provider）：顯示資源點（圖標）
     -- ＋顯示資源點區塊。同 animals 母開關版面（colW2 雙欄）。
-    local poiMasters = {
-        { id = "PoiIcons", label = "UI_MinidoracatMiniMap_PoiIcons", default = true },
-        { id = "PoiBlocks", label = "UI_MinidoracatMiniMap_PoiBlocks", default = false },
-    }
     local mcol = 0
-    for i = 1, #poiMasters do
+    for i = 1, #POI_MASTER_TICKS do
+        local master = POI_MASTER_TICKS[i]
         unifiedAddTick(ctx, ctx.curX + 4 + mcol * ctx.colW2, ctx.curY, ctx.colW2 - 8,
-            getTextOrNull(poiMasters[i].label) or poiMasters[i].id,
-            getBoolOption(poiMasters[i].id, poiMasters[i].default), unifiedOnModTick, poiMasters[i])
+            getTextOrNull(master.label) or master.id,
+            getBoolOption(master.id, master.default), unifiedOnModTick, master)
         mcol = mcol + 1
         if mcol == ctx.cols2 then mcol = 0; ctx.curY = ctx.curY + ctx.rowH end
     end
@@ -689,6 +683,7 @@ local function unifiedBuildPoicat(ctx)
                 local col = def.color or { r = 0.92, g = 0.92, b = 0.92 }
                 local icons = ctx.win._icons
                 icons[#icons + 1] = {
+                    panel = ctx.panel,
                     tex = adotsTexture and adotsTexture("media/ui/poi_icons/poi_" .. key .. ".png"),
                     x = cx, y = cy, size = ctx.fontH + 2, r = col.r, g = col.g, b = col.b }
                 unifiedAddTick(ctx, cx + ctx.fontH + 5, cy, ctx.colWpoi - ctx.fontH - 6, getText(def.nameKey),
@@ -714,22 +709,19 @@ local function unifiedBuildPoicat(ctx)
 end
 
 local function unifiedBuildZombie(ctx)
-    unifiedAddTick(ctx, ctx.curX + 4, ctx.curY, ctx.laneW - 6, getText("UI_MinidoracatMiniMap_ZombieDots"),
-        getBoolOption("ZombieDots", false), unifiedOnModTick, { id = "ZombieDots" })
-    ctx.curY = ctx.curY + ctx.rowH
     for i = 1, #UNIFIED_ZOMBIE_COMBOS do unifiedAddComboRow(ctx, UNIFIED_ZOMBIE_COMBOS[i]) end
     unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.zombie)
 end
 
 local function unifiedBuildAnimals(ctx)
-    local masters = {
-        { id = "AnimalWild", label = "UI_MinidoracatMiniMap_AnimalWild" },
-        { id = "AnimalLivestock", label = "UI_MinidoracatMiniMap_AnimalLivestock" },
-    }
     local col = 0
-    for i = 1, #masters do
-        unifiedAddTick(ctx, ctx.curX + 4 + col * ctx.colW2, ctx.curY, ctx.colW2 - 8, getText(masters[i].label),
-            getBoolOption(masters[i].id, false), unifiedOnModTick, { id = masters[i].id })
+    for i = 1, #ANIMAL_MASTER_TICKS do
+        local master = ANIMAL_MASTER_TICKS[i]
+        local tick = unifiedAddTick(ctx, ctx.curX + 4 + col * ctx.colW2, ctx.curY,
+            ctx.colW2 - 8, getText(master.label), getBoolOption(master.id, master.default),
+            unifiedOnModTick, master)
+        tick.enable = sandboxGate("AllowAnimalDots", true) ~= false
+            and (master.id ~= "AnimalLivestock" or ctx.livestockMode ~= 4)
         col = col + 1
         if col == ctx.cols2 then col = 0; ctx.curY = ctx.curY + ctx.rowH end
     end
@@ -749,7 +741,8 @@ local function unifiedBuildAnimals(ctx)
         local cy = ctx.curY + math.floor((i - 1) / ctx.cols3) * ctx.rowH
         local art = ADOTS_ART and ADOTS_ART[def.groups[1]]
         local icons = ctx.win._icons
-        icons[#icons + 1] = { name = art and art.sym, x = cx, y = cy, size = ctx.fontH + 2 }
+        icons[#icons + 1] = { panel = ctx.panel,
+            name = art and art.sym, x = cx, y = cy, size = ctx.fontH + 2 }
         unifiedAddTick(ctx, cx + ctx.fontH + 5, cy, ctx.colW3 - ctx.fontH - 6, getText(def.label), not dis[def.key],
             function(target, index, selected, e)
                 unifiedSetFilter("AnimalSpeciesFilter", ADOTS_SPECIES_UI, e.key, selected)
@@ -771,9 +764,6 @@ local function unifiedBuildAnimals(ctx)
 end
 
 local function unifiedBuildVehicles(ctx)
-    unifiedAddTick(ctx, ctx.curX + 4, ctx.curY, ctx.laneW - 6, getText("UI_MinidoracatMiniMap_VehicleDots"),
-        getBoolOption("VehicleDots", false), unifiedOnModTick, { id = "VehicleDots" })
-    ctx.curY = ctx.curY + ctx.rowH
     local disOpt = modOptions and modOptions:getOption("VehicleCategoryFilter")
     local dis = unifiedCsvSet(disOpt and disOpt:getValue() or "")
     for i = 1, #ADOTS_VEHCAT_UI do
@@ -794,8 +784,11 @@ local function unifiedBuildWorldmap(ctx)
     local col = 0
     for i = 1, #UNIFIED_WM_TICKS do
         local t = UNIFIED_WM_TICKS[i]
-        unifiedAddTick(ctx, ctx.curX + 4 + col * ctx.colW2, ctx.curY, ctx.colW2 - 8, getText(t.label),
-            getBoolOption(t.id, false), unifiedOnModTick, { id = t.id })
+        local tick = unifiedAddTick(ctx, ctx.curX + 4 + col * ctx.colW2, ctx.curY,
+            ctx.colW2 - 8, getText(t.label), getBoolOption(t.id, false),
+            unifiedOnModTick, t)
+        tick.enable = (not t.gate or sandboxGate(t.gate, true) ~= false)
+            and (t.id ~= "WMAnimalLivestock" or ctx.livestockMode ~= 4)
         col = col + 1
         if col == ctx.cols2 then col = 0; ctx.curY = ctx.curY + ctx.rowH end
     end
@@ -823,17 +816,6 @@ local function unifiedBuildAppearance(ctx)
     end
     if col ~= 0 then ctx.curY = ctx.curY + ctx.rowH end
     unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.appearance) -- 穿透模式地圖不透明度
-    -- 恢復預設尺寸：清 CustomSize 回下拉正方形（apply→save 順序同 settingsApply）
-    unifiedAddBtn(ctx, ctx.curX + 4, ctx.curY + 2, ctx.laneW - 6, getText("UI_MinidoracatMiniMap_ResetSize"),
-        function()
-            if not modOptions then return end
-            local opt = modOptions:getOption("CustomSize")
-            if not opt then return end
-            opt:setValue("")
-            if modOptions.apply then modOptions:apply() end
-            PZAPI.ModOptions:save()
-        end, getText("UI_MinidoracatMiniMap_ResetSize_tooltip"))
-    ctx.curY = ctx.curY + ctx.rowH + 4
 end
 
 -- 長提示句斷行（ISLabel 無自動換行，長句會溢出 lane——實測「無類別提示」
@@ -890,8 +872,8 @@ local function unifiedBuildDistance(ctx)
     unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.distance)
 end
 
--- 效能說明區（實測回饋 0.19.0：一行標語塞在顯示距離區尾不易發現、也放不下逐項
--- 說明——升級為獨立收合區塊）。版式＝逐項「名稱（白）＋等級（彩色右對齊）」
+-- 效能說明分類（實測回饋 0.19.0：一行標語塞在顯示距離尾端不易發現，也放不下
+-- 逐項說明）。版式＝逐項「名稱（白）＋等級（彩色右對齊）」
 -- 標題列＋縮排描述行（懸掛式；取代舊「- 」前綴純文字清單——貪婪斷行會把
 -- 前綴孤立成整行、續行頂格難讀，實測截圖回饋）。等級色沿家族 Okabe-Ito
 -- 色盲友善向（綠／黃／橘）。等級是機制推導＋整包實測錨點（AGENTS.md
@@ -911,15 +893,24 @@ local PERF_ITEMS = {
     { name = "UI_MinidoracatMiniMap_PerfItemAnimal", lvl = 1, desc = "UI_MinidoracatMiniMap_PerfDescAnimal" },
     { name = "UI_MinidoracatMiniMap_PerfItemMisc", lvl = 1, desc = "UI_MinidoracatMiniMap_PerfDescMisc" },
 }
+local function unifiedAddDivider(ctx)
+    local line = ISPanel:new(ctx.curX + 4, ctx.curY + 2, ctx.laneW - 8, 1)
+    line:initialise()
+    line.backgroundColor = { r = 1, g = 1, b = 1, a = 0.12 }
+    line.borderColor = { r = 0, g = 0, b = 0, a = 0 }
+    unifiedAdd(ctx, line)
+    ctx.curY = ctx.curY + 6
+end
+
 local function unifiedBuildPerf(ctx)
     unifiedAddWrappedNote(ctx, getText("UI_MinidoracatMiniMap_PerfIntro"))
     ctx.curY = ctx.curY + 4
+    unifiedAddDivider(ctx)
     local tm = getTextManager()
     for i = 1, #PERF_ITEMS do
         local item = PERF_ITEMS[i]
         local lv = PERF_LEVELS[item.lvl]
-        -- 標題列：名稱白字靠左＋等級彩字右貼齊（名稱鍵刻意精簡確保單行；極端
-        -- 字型倍率下重疊優於裁字——slider 段同款取捨）
+        -- 標題列：名稱白字靠左＋等級彩字右貼齊；下方描述縮排，項目間有分隔。
         unifiedAdd(ctx, ISLabel:new(ctx.curX + 4, ctx.curY + 3, ctx.fontH,
             getText(item.name), 0.92, 0.92, 0.92, 1, UIFont.Small, true))
         local lvText = getText(lv.key)
@@ -928,11 +919,14 @@ local function unifiedBuildPerf(ctx)
             lvText, lv.r, lv.g, lv.b, 1, UIFont.Small, true))
         ctx.curY = ctx.curY + ctx.rowH
         unifiedAddWrappedNote(ctx, getText(item.desc), 12)
-        ctx.curY = ctx.curY + 2
+        ctx.curY = ctx.curY + 4
+        if i < #PERF_ITEMS then unifiedAddDivider(ctx) end
     end
+    ctx.curY = ctx.curY + 4
+    unifiedAddDivider(ctx)
     unifiedAddWrappedNote(ctx, getText("UI_MinidoracatMiniMap_PerfNoteWorldmap"))
-    ctx.curY = ctx.curY + 2
-    -- 收尾行動建議提亮（0.85 暖白）——整區唯一的「該做什麼」，值得跳出灰階
+    ctx.curY = ctx.curY + 4
+    -- 收尾行動建議提亮（整區唯一的「該做什麼」）
     unifiedAddWrappedNote(ctx, getText("UI_MinidoracatMiniMap_PerfAdvice"), 0, 0.88, 0.85, 0.70)
 end
 
@@ -976,6 +970,11 @@ end
 -- 已停用但暫不在清單的類別（伺服器移除該類全部區域期間改勾選）會被序列化丟出
 -- ——影響僅「該類別回歸時恢復顯示」，可再手動關
 local function unifiedBuildZones(ctx)
+    unifiedAddTick(ctx, ctx.curX + 4, ctx.curY, ctx.laneW - 6,
+        getText("UI_MinidoracatMiniMap_ZoneNames"),
+        getBoolOption("ZoneNames", true), unifiedOnModTick,
+        { id = "ZoneNames", default = true })
+    ctx.curY = ctx.curY + ctx.rowH
     unifiedAddTick(ctx, ctx.curX + 4, ctx.curY, ctx.laneW - 6,
         getTextOrNull("UI_MinidoracatMiniMap_ZoneNamesFar") or "ZoneNamesFar",
         getBoolOption("ZoneNamesFar", true), unifiedOnModTick, { id = "ZoneNamesFar" })
@@ -1094,7 +1093,7 @@ local function unifiedMeasureLayout()
         max2 = math.max(max2, tw(getText(ADOTS_VEHCAT_UI[i].label)))
     end
     -- 動態區域類別標籤（zones 區塊插入時才有；長類別名不納量測會跨欄裁切）
-    if UNIFIED_LANE.zones and Core.zoneExternalCategories then
+    if Core.zoneExternalCategories then
         local zcats = Core.zoneExternalCategories()
         for i = 1, #zcats do max2 = math.max(max2, tw(zcats[i])) end
     end
@@ -1173,146 +1172,642 @@ local function unifiedMeasureLayout()
     }
 end
 
--- 全清重建：收合/展開/全選類操作直接重建所有列（值變動一律讀現值，免同步邏輯）。
--- v3 版面：雙欄 lane（區塊固定分欄）＋內容捲動容器
--- （高度夾 viewport，永不超出螢幕——先前全展開高於螢幕、底部被切＝疊字/消失根因）
+-- test:settings-studio-layout:start
+local function studioPaneLayout(viewportW, desiredInspectorW, fontH, desiredNavW)
+    local available = math.max(1, math.floor(viewportW or 0) - 8)
+    local navW = math.max((fontH or 12) * 13, desiredNavW or 0)
+    local inspectorW = math.max(300, desiredInspectorW or 300)
+    if navW + 10 + inspectorW <= available then
+        return { mode = "wide", navW = navW, inspectorW = inspectorW,
+            windowW = navW + 10 + inspectorW }
+    end
+    return { mode = "narrow", navW = 0, inspectorW = available, windowW = available }
+end
+-- test:settings-studio-layout:end
+
+-- test:settings-studio-query:start
+local function studioNormalizeQuery(text)
+    return (tostring(text or ""):match("^%s*(.-)%s*$") or ""):lower()
+end
+local function studioQuery(index, text)
+    local q = studioNormalizeQuery(text)
+    if q == "" then return nil end
+    local out = {}
+    for i = 1, #index do
+        if index[i].low:find(q, 1, true) then out[#out + 1] = index[i] end
+    end
+    return out
+end
+-- test:settings-studio-query:end
+
+local function studioIndexAdd(index, sec, labelKey, kind, mode, entry)
+    local label = getTextOrNull(labelKey) or labelKey
+    index[#index + 1] = { sec = sec, label = label, low = label:lower(),
+        kind = kind or "navigate", mode = mode, entry = entry }
+end
+local function studioIndexList(index, sec, list, kind, mode)
+    for i = 1, #list do studioIndexAdd(index, sec, list[i].label, kind, mode, list[i]) end
+end
+local function studioBuildIndex()
+    local index = {}
+    for i = 1, #UNIFIED_SECTIONS do
+        local sec = UNIFIED_SECTIONS[i]
+        studioIndexAdd(index, sec, sec.label, "category")
+        if sec.addon then
+            studioIndexList(index, sec, sec.addon.ticks or {}, "boolean", "addon")
+            studioIndexList(index, sec, sec.addon.combos or {}, "navigate")
+        elseif sec.id == "layers" then
+            for j = 1, #UNIFIED_LAYER_TICKS do
+                local e = UNIFIED_LAYER_TICKS[j]
+                -- ZoneLayer 的 canonical 搜尋歸「自訂區域」分類；它也存在圖層表，
+                -- 若兩邊都建 hit，同一 option 會出現兩顆不同步 checkbox。
+                if e.id ~= "ZoneLayer" and not (e.mpOnly and not isClient()) then
+                    studioIndexAdd(index, sec, e.label, "boolean",
+                        e.engine and "engine" or "mod", e)
+                end
+            end
+        elseif sec.id == "poicat" then
+            studioIndexList(index, sec, POI_MASTER_TICKS, "boolean", "mod")
+            studioIndexAdd(index, sec, "UI_MinidoracatMiniMap_PoiColorIcons", "boolean", "mod",
+                { id = "PoiColorIcons", default = false })
+            studioIndexAdd(index, sec, "UI_MinidoracatMiniMap_PoiWholeBuilding", "boolean", "mod",
+                { id = "PoiWholeBuilding", default = true })
+            local order = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.ORDER
+            local cats = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.CATEGORIES
+            if type(order) == "table" and type(cats) == "table" then
+                for j = 1, #order do
+                    local def = cats[order[j]]
+                    if def then studioIndexAdd(index, sec, def.nameKey, "navigate") end
+                end
+            end
+            studioIndexList(index, sec, UNIFIED_SLIDERS.poi, "navigate")
+        elseif sec.id == "zombie" then
+            studioIndexAdd(index, sec, ZOMBIE_MASTER.label, "boolean", "mod", ZOMBIE_MASTER)
+            studioIndexList(index, sec, UNIFIED_ZOMBIE_COMBOS, "navigate")
+            studioIndexList(index, sec, UNIFIED_SLIDERS.zombie, "navigate")
+        elseif sec.id == "animals" then
+            studioIndexList(index, sec, ANIMAL_MASTER_TICKS, "boolean", "mod")
+            studioIndexList(index, sec, ADOTS_SPECIES_UI, "navigate")
+            studioIndexList(index, sec, UNIFIED_ANIMAL_COMBOS, "navigate")
+            studioIndexList(index, sec, UNIFIED_SLIDERS.animals, "navigate")
+        elseif sec.id == "vehicles" then
+            studioIndexAdd(index, sec, VEHICLE_MASTER.label, "boolean", "mod", VEHICLE_MASTER)
+            studioIndexList(index, sec, ADOTS_VEHCAT_UI, "navigate")
+            studioIndexList(index, sec, UNIFIED_VEHICLE_COMBOS, "navigate")
+            studioIndexList(index, sec, UNIFIED_SLIDERS.vehicles, "navigate")
+        elseif sec.id == "worldmap" then
+            studioIndexList(index, sec, UNIFIED_WM_TICKS, "boolean", "mod")
+        elseif sec.id == "appearance" then
+            studioIndexList(index, sec, UNIFIED_APPEAR_COMBOS, "navigate")
+            studioIndexList(index, sec, UNIFIED_APPEAR_TICKS, "boolean", "mod")
+            studioIndexList(index, sec, UNIFIED_SLIDERS.appearance, "navigate")
+            studioIndexAdd(index, sec, "UI_MinidoracatMiniMap_ResetSize", "navigate")
+        elseif sec.id == "distance" then
+            studioIndexList(index, sec, UNIFIED_SLIDERS.distance, "navigate")
+        elseif sec.id == "zones" then
+            studioIndexAdd(index, sec, ZONE_MASTER.label, "boolean", "mod", ZONE_MASTER)
+            studioIndexAdd(index, sec, "UI_MinidoracatMiniMap_ZoneNames", "boolean", "mod",
+                { id = "ZoneNames", default = true })
+            studioIndexAdd(index, sec, "UI_MinidoracatMiniMap_ZoneNamesFar", "boolean", "mod",
+                { id = "ZoneNamesFar", default = true })
+            local cats = Core.zoneExternalCategories and Core.zoneExternalCategories() or {}
+            for j = 1, #cats do
+                index[#index + 1] = { sec = sec, label = cats[j], low = cats[j]:lower(),
+                    kind = "navigate" }
+            end
+            for j = 1, #registeredZoneActions do
+                studioIndexAdd(index, sec, registeredZoneActions[j].labelKey, "navigate")
+            end
+        elseif sec.id == "perf" then
+            for j = 1, #PERF_ITEMS do studioIndexAdd(index, sec, PERF_ITEMS[j].name, "navigate") end
+        end
+    end
+    return index
+end
+
+
+local function studioBoolValue(hit, pn)
+    if hit.mode == "engine" then return unifiedEngineGet(hit.entry.id, pn) end
+    if hit.mode == "addon" then
+        return addonRead(hit.entry.get, hit.entry.default == true) == true
+    end
+    return getBoolOption(hit.entry.id, hit.entry.default == true)
+end
+-- test:settings-studio-effective:start
+local function studioSearchEnabled(hit)
+    local entry = hit.entry
+    if hit.sec.gate and sandboxGate(hit.sec.gate, true) == false then return false end
+    if entry and entry.gate and sandboxGate(entry.gate, true) == false then return false end
+    local id = entry and entry.id
+    if (id == "AnimalLivestock" or id == "WMAnimalLivestock")
+            and livestockVisibilityMode() == 4 then return false end
+    return true
+end
+-- test:settings-studio-effective:end
+
+local function studioSearchDisabledText(hit)
+    local id = hit.entry and hit.entry.id
+    if (id == "AnimalLivestock" or id == "WMAnimalLivestock")
+            and livestockVisibilityMode() == 4 then
+        return getText("UI_MinidoracatMiniMap_LivestockHiddenBySandbox")
+    end
+    return getText("UI_MinidoracatMiniMap_ServerDisabled")
+end
+local function studioOnSearchTick(target, index, selected, hit)
+    if not studioSearchEnabled(hit) then return end
+    if hit.mode == "engine" then
+        unifiedEngineSet(hit.entry.id, selected, target._playerNum or 0)
+    elseif hit.mode == "addon" then
+        addonWrite(hit.entry, selected == true)
+    else
+        settingsApply(hit.entry, selected)
+    end
+    if hit.mode == "mod" and (hit.entry.id == "PlaceNames"
+            or hit.entry.id == "AnimalWild" or hit.entry.id == "AnimalLivestock") then
+        unifiedRebuild(target)
+    end
+end
+local function studioSelectSection(win, sec)
+    win._selectedSec = sec.id
+    win._narrowPage = "inspector"
+    if win._searchEntry and win._searchEntry:getInternalText() ~= "" then
+        win._searchEntry:setText("")
+        win._lastQuery = ""
+    end
+    unifiedRebuild(win)
+end
+local function studioOnNav(target, button)
+    studioSelectSection(target, button._studioSec)
+end
+local function studioOnNavigateResult(target, button)
+    studioSelectSection(target, button._studioHit.sec)
+end
+local function studioBack(target)
+    if target._searchEntry then target._searchEntry:setText("") end
+    target._lastQuery = ""
+    target._narrowPage = "nav"
+    unifiedRebuild(target)
+end
+local function studioSectionEnabled(sec)
+    return not sec.gate or sandboxGate(sec.gate, true) ~= false
+end
+-- test:settings-studio-master:start
+local function studioMasterValue(entry)
+    if entry.members then
+        for i = 1, #entry.members do
+            local member = entry.members[i]
+            if getBoolOption(member.id, member.default == true) then return true end
+        end
+        return false
+    end
+    return getBoolOption(entry.id, entry.default == true)
+end
+
+local function studioOnMaster(target, button)
+    if not button.enable then return end
+    local entry = button._studioMaster
+    local value = not studioMasterValue(entry)
+    if entry.members then
+        if not modOptions then return end
+        for i = 1, #entry.members do
+            local option = modOptions:getOption(entry.members[i].id)
+            if option then option:setValue(value) end
+        end
+        if modOptions.apply then modOptions:apply() end
+        PZAPI.ModOptions:save()
+    else
+        settingsApply(entry, value)
+    end
+    unifiedRebuild(target)
+end
+-- test:settings-studio-master:end
+local function studioAddMasterPill(ctx, x, y, entry, enabled)
+    local button = ISButton:new(x, y, 38, 22, "", ctx.win, studioOnMaster)
+    button._studioMaster = entry
+    button:initialise()
+    button:setEnable(enabled ~= false) -- 原版 ISButton.lua:416-426
+    button.borderColor = { r = 0, g = 0, b = 0, a = 0 }
+    button.backgroundColor = { r = 0, g = 0, b = 0, a = 0 }
+    button.backgroundColorMouseOver = { r = 0, g = 0, b = 0, a = 0 }
+    unifiedAdd(ctx, button)
+    ctx.win._pills[#ctx.win._pills + 1] = { panel = ctx.panel, button = button,
+        x = x, y = y, w = 38, h = 22, entry = entry, enabled = enabled ~= false,
+        on = studioMasterValue(entry) }
+end
+
+-- test:settings-studio-reset:start
+local function studioResetId(id, value)
+    if not modOptions then return false end
+    local option = modOptions:getOption(id)
+    if not option then return false end
+    option:setValue(value)
+    return true
+end
+
+local function studioResetList(list, fallback)
+    local changed = false
+    for i = 1, #list do
+        local entry = list[i]
+        if not entry.engine and entry.id then
+            local value = entry.default
+            if value == nil then value = fallback end
+            if studioResetId(entry.id, value) then changed = true end
+        end
+    end
+    return changed
+end
+
+local function studioSnapshotEngineStates()
+    local states = {}
+    for pn = 0, 3 do
+        local playerObj = getSpecificPlayer(pn)
+        if playerObj and getPlayerMiniMap(pn) then
+            states[#states + 1] = { pn = pn,
+                isometric = unifiedEngineGet("Isometric", pn),
+                symbols = unifiedEngineGet("Symbols", pn),
+                remoteSymbols = unifiedEngineGet("RemoteSymbols", pn) }
+        end
+    end
+    return states
+end
+
+local function studioRestoreEngineStates(states)
+    for i = 1, #states do
+        local state = states[i]
+        unifiedEngineSet("Isometric", state.isometric, state.pn)
+        unifiedEngineSet("Symbols", state.symbols, state.pn)
+        unifiedEngineSet("RemoteSymbols", state.remoteSymbols, state.pn)
+    end
+end
+
+local function studioResetSection(target, button)
+    local sec = button._studioSec
+    if not sec or sec.id == "perf" then return end
+    local changed = false
+    if sec.addon then
+        for i = 1, #sec.addon.ticks do
+            local entry = sec.addon.ticks[i]
+            addonWrite(entry, entry.default == true)
+        end
+        for i = 1, #sec.addon.combos do
+            local entry = sec.addon.combos[i]
+            addonWrite(entry, entry.default or 1)
+        end
+    elseif sec.id == "layers" then
+        changed = studioResetList(UNIFIED_LAYER_TICKS, false)
+    elseif sec.id == "poicat" then
+        changed = studioResetList(POI_MASTER_TICKS, false)
+        if studioResetId("PoiColorIcons", false) then changed = true end
+        if studioResetId("PoiWholeBuilding", true) then changed = true end
+        local order = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.ORDER
+        if type(order) == "table" then
+            for i = 1, #order do
+                if studioResetId("Cat_" .. order[i], true) then changed = true end
+            end
+        end
+        if studioResetList(UNIFIED_SLIDERS.poi, 0) then changed = true end
+    elseif sec.id == "zombie" then
+        changed = studioResetId(ZOMBIE_MASTER.id, ZOMBIE_MASTER.default)
+        if studioResetList(UNIFIED_ZOMBIE_COMBOS, 1) then changed = true end
+        if studioResetList(UNIFIED_SLIDERS.zombie, 0) then changed = true end
+    elseif sec.id == "animals" then
+        changed = studioResetList(ANIMAL_MASTER_TICKS, false)
+        if studioResetId("AnimalSpeciesFilter", "-") then changed = true end
+        if studioResetList(UNIFIED_ANIMAL_COMBOS, 1) then changed = true end
+        if studioResetList(UNIFIED_SLIDERS.animals, 0) then changed = true end
+    elseif sec.id == "vehicles" then
+        changed = studioResetId(VEHICLE_MASTER.id, VEHICLE_MASTER.default)
+        if studioResetId("VehicleCategoryFilter", "-") then changed = true end
+        if studioResetList(UNIFIED_VEHICLE_COMBOS, 1) then changed = true end
+        if studioResetList(UNIFIED_SLIDERS.vehicles, 0) then changed = true end
+    elseif sec.id == "worldmap" then
+        changed = studioResetList(UNIFIED_WM_TICKS, false)
+    elseif sec.id == "appearance" then
+        changed = studioResetList(UNIFIED_APPEAR_COMBOS, 1)
+        if studioResetList(UNIFIED_APPEAR_TICKS, false) then changed = true end
+        if studioResetList(UNIFIED_SLIDERS.appearance, 0) then changed = true end
+        if studioResetId("CustomSize", "") then changed = true end
+    elseif sec.id == "distance" then
+        changed = studioResetList(UNIFIED_SLIDERS.distance, 0)
+    elseif sec.id == "zones" then
+        changed = studioResetId(ZONE_MASTER.id, ZONE_MASTER.default)
+        if studioResetId("ZoneNames", true) then changed = true end
+        if studioResetId("ZoneNamesFar", true) then changed = true end
+        if studioResetId("ZoneCategoryFilter", "-") then changed = true end
+    end
+    if changed then
+        -- apply() 目前只重建／套用 P0，但 reset 可由任一 split-screen 玩家觸發。
+        -- 快照所有現存 local mini-map，避免 P2 操作後 P0 的原生 flags 被連帶改寫。
+        local engineStates = studioSnapshotEngineStates()
+        if modOptions.apply then modOptions:apply() end
+        studioRestoreEngineStates(engineStates)
+        PZAPI.ModOptions:save()
+    end
+    unifiedRebuild(target)
+end
+-- test:settings-studio-reset:end
+
+local function studioClearRows(win)
+    if win._nav then win._navScroll = win._nav:getYScroll() end
+    if win._renderedScrollKey and win._content then
+        win._scrollBySection[win._renderedScrollKey] = win._content:getYScroll()
+    end
+    for i = 1, #win._rows do
+        local row = win._rows[i]
+        if row.parent then row.parent:removeChild(row) end
+    end
+    win._rows, win._navRows, win._pills, win._icons, win._cards = {}, {}, {}, {}, {}
+end
+
+local function studioSetupPanel(win)
+    local panel = ISPanel:new(0, win:titleBarHeight(), win.width, 100)
+    panel:initialise()
+    panel.backgroundColor = { r = 0, g = 0, b = 0, a = 0 }
+    panel.borderColor = { r = 0, g = 0, b = 0, a = 0 }
+    panel:instantiate()
+    panel:setScrollChildren(true)
+    panel:addScrollBars()
+    function panel:onMouseWheel(del)
+        local maxScroll = math.max(0, (self:getScrollHeight() or 0) - self.height)
+        local ys = self:getYScroll() - del * 48
+        if ys < -maxScroll then ys = -maxScroll end
+        if ys > 0 then ys = 0 end
+        self:setYScroll(ys)
+        return true
+    end
+    function panel:prerender()
+        self:setStencilRect(0, 0, self.width, self.height)
+        ISPanel.prerender(self)
+        local w, Skin = self.parent, Core.Skin
+        if Skin then
+            for i = 1, #w._cards do
+                local card = w._cards[i]
+                if card.panel == self then
+                    Skin.fill(self, card.x, card.y, card.w, card.h, Skin.COLORS.ROW_HOVER)
+                    Skin.border(self, card.x, card.y, card.w, card.h,
+                        Skin.COLORS.BORDER, false, 0.35)
+                end
+            end
+        end
+    end
+    function panel:render()
+        ISPanel.render(self)
+        local w = self.parent
+        local Skin = Core.Skin
+        for i = 1, #w._navRows do
+            local row = w._navRows[i]
+            if row.button.parent == self then
+                local selected = w._selectedSec == row.sec.id
+                local hover = row.button.mouseOver
+                if Skin then
+                    Skin.fill(self, row.x, row.y, row.w, row.h,
+                        selected and Skin.COLORS.ROW_SELECTED or Skin.COLORS.ROW_HOVER,
+                        false, hover and 1.5 or 1)
+                elseif selected or hover then
+                    self:drawRect(row.x, row.y, row.w, row.h,
+                        selected and 0.12 or 0.06, 1, 1, 1)
+                end
+                local color = selected and Skin and Skin.COLORS.ACCENT_AMBER or nil
+                local textX = row.x + 10
+                if row.sec.icon and Skin and Skin.icon
+                        and Skin.icon(self, row.sec.icon, row.x + 8, row.y + 5, 16,
+                            color or Skin.COLORS.TEXT_MUTED) then
+                    textX = row.x + 30
+                end
+                self:drawText(getText(row.sec.label), textX, row.y + 7,
+                    color and color.r or 0.9, color and color.g or 0.9,
+                    color and color.b or 0.9, 1, UIFont.Small)
+            end
+        end
+        for i = 1, #w._pills do
+            local p = w._pills[i]
+            if p.panel == self then
+                local painted = Skin and Skin.toggle
+                    and Skin.toggle(self, p.x, p.y, p.w, p.h, p.on, nil,
+                        p.enabled and 1 or 0.4)
+                if not painted then
+                    local scale = p.enabled and 1 or 0.4
+                    self:drawRect(p.x, p.y, p.w, p.h, (p.on and 0.35 or 0.12) * scale,
+                        p.on and 1 or 0.5, p.on and 0.85 or 0.5, p.on and 0.4 or 0.5)
+                    local knobX = p.on and (p.x + p.w - 18) or (p.x + 4)
+                    self:drawRect(knobX, p.y + 4, 14, 14, scale, 0.9, 0.9, 0.9)
+                end
+            end
+        end
+        for i = 1, #w._icons do
+            local ic = w._icons[i]
+            if ic.panel == self then
+                local tex = ic.tex or (ic.name and adotsTexture and adotsTexture(ic.name))
+                if tex then
+                    self:drawTextureScaled(tex, ic.x, ic.y + 1, ic.size, ic.size, 1,
+                        ic.r or 0.92, ic.g or 0.92, ic.b or 0.92)
+                end
+            end
+        end
+        self:clearStencilRect()
+    end
+    win:addChild(panel)
+    return panel
+end
+local function studioSetScroll(panel, contentH, panelH, wanted)
+    panel:setHeight(panelH)
+    panel:setScrollHeight(math.max(contentH, panelH))
+    local maxScroll = math.max(0, contentH - panelH)
+    local ys = wanted or 0
+    if ys < -maxScroll then ys = -maxScroll end
+    if ys > 0 then ys = 0 end
+    panel:setYScroll(ys)
+    if panel.vscroll then
+        panel.vscroll:setHeight(panelH)
+        panel.vscroll:setX(panel.width - 12)
+    end
+end
+local function studioBuildNav(ctx)
+    ctx.curX, ctx.curY = 8, 4
+    for i = 1, #UNIFIED_SECTIONS do
+        local sec = UNIFIED_SECTIONS[i]
+        local pillW = sec.master and 48 or 0
+        local button = ISButton:new(ctx.curX, ctx.curY, ctx.laneW - pillW,
+            ctx.rowH + 8, "", ctx.win, studioOnNav)
+        button._studioSec = sec
+        button:initialise()
+        button.borderColor = { r = 0, g = 0, b = 0, a = 0 }
+        button.backgroundColor = { r = 0, g = 0, b = 0, a = 0 }
+        button.backgroundColorMouseOver = { r = 0, g = 0, b = 0, a = 0 }
+        unifiedAdd(ctx, button)
+        ctx.win._navRows[#ctx.win._navRows + 1] = { button = button, sec = sec,
+            x = ctx.curX, y = ctx.curY, w = ctx.laneW - 4, h = ctx.rowH + 8 }
+        if sec.master then
+            studioAddMasterPill(ctx, ctx.curX + ctx.laneW - 46,
+                ctx.curY + math.floor((ctx.rowH - 14) / 2), sec.master,
+                studioSectionEnabled(sec))
+        end
+        ctx.curY = ctx.curY + ctx.rowH + 10
+    end
+    return ctx.curY + 4
+end
+local function studioBuildSearchResults(ctx, hits)
+    ctx.curX, ctx.curY = 10, 8
+    if ctx.showBack then
+        unifiedAddBtn(ctx, ctx.curX, ctx.curY, math.min(100, ctx.laneW),
+            getText("UI_MinidoracatMiniMap_StudioBack"), studioBack)
+        ctx.curY = ctx.curY + ctx.rowH + 8
+    end
+    if #hits == 0 then
+        unifiedAddWrappedNote(ctx, getText("UI_MinidoracatMiniMap_StudioNoResults"))
+        return ctx.curY + 8
+    end
+    local cardY = ctx.curY - 4
+    for i = 1, #hits do
+        local hit = hits[i]
+        local text = getText(hit.sec.label) .. " / " .. hit.label
+        if hit.kind == "boolean" then
+            local enabled = studioSearchEnabled(hit)
+            if not enabled then text = text .. " - " .. studioSearchDisabledText(hit) end
+            local tick = unifiedAddTick(ctx, ctx.curX + 4, ctx.curY, ctx.laneW - 8, text,
+                studioBoolValue(hit, ctx.pn), studioOnSearchTick, hit)
+            tick.enable = enabled -- ISTickBox.lua:72-76/142-164
+        else
+            local button = unifiedAddBtn(ctx, ctx.curX + 4, ctx.curY,
+                ctx.laneW - 8, text, studioOnNavigateResult)
+            button._studioHit = hit
+        end
+        ctx.curY = ctx.curY + ctx.rowH + 2
+    end
+    ctx.win._cards[#ctx.win._cards + 1] = { panel = ctx.panel, x = 6, y = cardY,
+        w = ctx.laneW + 8, h = math.max(ctx.rowH, ctx.curY - cardY + 2) }
+    return ctx.curY + 8
+end
+
+local function studioFindSection(id)
+    for i = 1, #UNIFIED_SECTIONS do
+        if UNIFIED_SECTIONS[i].id == id then return UNIFIED_SECTIONS[i] end
+    end
+    return UNIFIED_SECTIONS[1]
+end
+
+local function studioBuildInspector(ctx, sec)
+    ctx.curX, ctx.curY = 10, 6
+    if ctx.showBack then
+        unifiedAddBtn(ctx, ctx.curX, ctx.curY, math.min(100, ctx.laneW),
+            getText("UI_MinidoracatMiniMap_StudioBack"), studioBack)
+        ctx.curY = ctx.curY + ctx.rowH + 8
+    end
+    unifiedAdd(ctx, ISLabel:new(ctx.curX + 2, ctx.curY + 2, ctx.fontH,
+        getText(sec.label), 1, 0.85, 0.4, 1, UIFont.Medium, true))
+    if sec.master then
+        studioAddMasterPill(ctx, ctx.curX + ctx.laneW - 44, ctx.curY, sec.master,
+            studioSectionEnabled(sec))
+    end
+    ctx.curY = ctx.curY + getTextManager():getFontHeight(UIFont.Medium) + 10
+    local cardY = ctx.curY - 4
+    if sec.gate and sandboxGate(sec.gate, true) == false then
+        unifiedAdd(ctx, ISLabel:new(ctx.curX + 4, ctx.curY, ctx.fontH,
+            getText("UI_MinidoracatMiniMap_ServerDisabled"),
+            0.95, 0.55, 0.25, 1, UIFont.Small, true))
+        ctx.curY = ctx.curY + ctx.rowH
+    end
+    local builder = sec.addon and unifiedBuildAddon or UNIFIED_BUILDERS[sec.id]
+    if builder then ctx.sec = sec; builder(ctx); ctx.sec = nil end
+    if sec.id ~= "perf" then
+        ctx.curY = ctx.curY + 8
+        local resetText = getText("UI_MinidoracatMiniMap_StudioResetCategory")
+        local resetW = math.min(ctx.laneW, math.max(120, utw(resetText) + 20))
+        local reset = unifiedAddBtn(ctx, ctx.curX + ctx.laneW - resetW,
+            ctx.curY, resetW, resetText, studioResetSection,
+            getText("UI_MinidoracatMiniMap_StudioResetCategory_tooltip"))
+        reset._studioSec = sec
+        ctx.curY = ctx.curY + ctx.rowH + 4
+    end
+    ctx.win._cards[#ctx.win._cards + 1] = { panel = ctx.panel, x = 6, y = cardY,
+        w = ctx.laneW + 8, h = math.max(ctx.rowH, ctx.curY - cardY + 2) }
+    return ctx.curY + 8
+end
+
+-- 全清重建仍是唯一同步模型；只保存選取分類與各分類/搜尋的 yScroll。
 unifiedRebuild = function(win)
-    local panel = win._content
-    for i = 1, #win._rows do panel:removeChild(win._rows[i]) end
-    win._rows = {}
-    win._headers = {}
-    win._icons = {}
-    local pn = win._playerNum or 0 -- 視窗擁有者（分割畫面 P2+ 不能讀寫到 P1）
-    local livestockMode = livestockVisibilityMode()
-    win._minidoracatLivestockMode = livestockMode
-    local pad = 10
-    -- 量測＋版面參數（拆出為 unifiedMeasureLayout）→ ctx 供 helpers/builders 共享
-    local ctx = unifiedMeasureLayout()
-    ctx.win = win
-    ctx.panel = panel
-    ctx.pn = pn
-    ctx.livestockMode = livestockMode
-    local laneW, fontH, rowH = ctx.laneW, ctx.fontH, ctx.rowH
-    local W = pad * 2 + laneW * 2 + 12 + 14 -- 雙 lane＋中縫＋右側捲軸預留
+    studioClearRows(win)
+    local pn = win._playerNum or 0
+    local viewportW = getPlayerScreenWidth(pn)
+    local viewportH = getPlayerScreenHeight(pn)
+    local measure = unifiedMeasureLayout()
+    local tm = getTextManager()
+    local navNeed = measure.fontH * 13
+    for i = 1, #UNIFIED_SECTIONS do
+        local sec = UNIFIED_SECTIONS[i]
+        local labelW = tm:MeasureStringX(UIFont.Small, getText(sec.label))
+        local chromeW = (sec.master and 52 or 8) + (sec.icon and 24 or 0)
+        navNeed = math.max(navNeed, labelW + chromeW + 20)
+    end
+    local desiredInspectorW = math.max(measure.laneW + 34, measure.fontH * 34)
+    local pane = studioPaneLayout(viewportW, desiredInspectorW, measure.fontH, navNeed)
+    local titleH = win:titleBarHeight()
+    local searchH = measure.fontH + 10
+    local toolbarH = searchH + 16
+    local preferredBodyH = math.max(540, measure.rowH * 24)
+    local bodyH = math.min(preferredBodyH,
+        math.max(1, viewportH - titleH - toolbarH - 8))
+    local W = pane.windowW
+    win._minidoracatLivestockMode = livestockVisibilityMode()
     win:setWidth(W)
-    panel:setWidth(W)
-    -- 標題列右側鈕補位：釘選/收合鈕以「建立當下」寬度定位（ISCollapsableWindow.lua:72/83，
-    -- anchorRight 對 Lua setWidth 不生效——實測釘選卡在舊寬度處），改寬後手動跟上
+    win:setHeight(titleH + toolbarH + bodyH)
     local tbBtn = win.pinButton or win.collapseButton
     local tbH = tbBtn and tbBtn.height or 16
     if win.pinButton then win.pinButton:setX(W - 1 - tbH) end
     if win.collapseButton then win.collapseButton:setX(W - 1 - tbH) end
-    -- 雙欄游標：ctx.curX/curY＝目前 lane 的基準 x 與游標 y（helpers/builders 讀寫）；
-    -- 座標皆為 panel 內容座標（捲動由 panel 處理）
-    local laneX = { pad, pad + laneW + 12 }
-    local laneY = { 0, 0 }
+    win._searchEntry:setX(10)
+    win._searchEntry:setY(titleH + 8)
+    win._searchEntry:setHeight(searchH)
+    win._searchEntry:setWidth(math.max(1, W - 20))
+    local bodyY = titleH + toolbarH
+    local query = studioNormalizeQuery(win._searchEntry:getInternalText())
+    local hits = studioQuery(win._searchIndex, query)
+    local selected = studioFindSection(win._selectedSec)
+    win._selectedSec = selected.id
 
-    -- 一鍵全展開/全收合（實測回饋）：頂列橫跨兩 lane
-    ctx.curX, ctx.curY = laneX[1], 0
-    local halfTop = math.floor((W - pad * 2 - 4) / 2)
-    unifiedAddBtn(ctx, pad, 0, halfTop, getText("UI_MinidoracatMiniMap_ExpandAll"), function()
-        for i = 1, #UNIFIED_SECTIONS do unifiedExpand[UNIFIED_SECTIONS[i].id] = true end
-        unifiedRebuild(win)
-    end)
-    unifiedAddBtn(ctx, pad + halfTop + 4, 0, halfTop, getText("UI_MinidoracatMiniMap_CollapseAll"), function()
-        for i = 1, #UNIFIED_SECTIONS do unifiedExpand[UNIFIED_SECTIONS[i].id] = nil end
-        unifiedRebuild(win)
-    end)
-    laneY[1] = rowH + 8 -- 頂鈕列與首區段間留呼吸（皮膚化 UX 微調）
-    laneY[2] = rowH + 8
+    local nav, content = win._nav, win._content
+    nav:setVisible(false)
+    content:setVisible(false)
+    -- 導覽欄只排分類列與母開關 pill，量測欄寬/欄數一概用不到
+    local navCtx = { win = win, panel = nav, rowH = measure.rowH }
+    local inspectorW = pane.inspectorW
+    local contentCtx = { win = win, panel = content, pn = pn, livestockMode = win._minidoracatLivestockMode,
+        fontH = measure.fontH, rowH = measure.rowH, laneW = math.max(1, inspectorW - 34),
+        comboLabelW = math.min(measure.comboLabelW, math.max(0, inspectorW - 150)),
+        cols2 = measure.cols2, cols3 = measure.cols3, poiCols = measure.poiCols,
+        showBack = pane.mode == "narrow" }
+    contentCtx.colW2 = math.floor((contentCtx.laneW - 6) / contentCtx.cols2)
+    contentCtx.colW3 = math.floor((contentCtx.laneW - 6) / contentCtx.cols3)
+    contentCtx.colWpoi = math.floor((contentCtx.laneW - 6) / contentCtx.poiCols)
 
-    for s = 1, #UNIFIED_SECTIONS do
-        local sec = UNIFIED_SECTIONS[s]
-        local expanded = unifiedExpand[sec.id] and true or false
-        local cur = UNIFIED_LANE[sec.id] or 1 -- 固定分欄；"full"＝跨雙欄全寬（效能說明）
-        local secW = laneW
-        if cur == "full" then
-            secW = laneW * 2 + 12
-            ctx.curX = laneX[1]
-            ctx.curY = math.max(laneY[1], laneY[2])
-        else
-            ctx.curX = laneX[cur]
-            ctx.curY = laneY[cur]
-        end
-        -- 標題列＝空字 ISButton（點擊 hit-target），視覺全自畫（panel:render 畫
-        -- 圓角列底＋文字——ISButton 標題強制置中，左對齊＋右側摘要只能自畫）；
-        -- 原生框底全透明（alpha 0：ISButton:prerender :117-133 fade 混色兩端皆 0、
-        -- pressed 分支 :118-125 抄 backgroundColorMouseOver.a 同為 0、border 守衛
-        -- shouldDrawBorder :99-100 hover/pressed 時畫的也是 a=0——全路徑隱形；
-        -- hover 亮階改由自畫層讀 mouseOver 欄位（ISButton.lua:12/:19）決定）
-        local hdr = ISButton:new(ctx.curX - 4, ctx.curY, secW + 8, fontH + 6, "", win,
-            function(target, btn)
-                unifiedExpand[btn._minidoracatSec] = not unifiedExpand[btn._minidoracatSec]
-                unifiedRebuild(win)
-            end)
-        hdr._minidoracatSec = sec.id
-        hdr:initialise()
-        hdr.borderColor = { r = 0, g = 0, b = 0, a = 0 }
-        hdr.backgroundColor = { r = 0, g = 0, b = 0, a = 0 }
-        hdr.backgroundColorMouseOver = { r = 0, g = 0, b = 0, a = 0 }
-        unifiedAdd(ctx, hdr)
-        win._headers[#win._headers + 1] = {
-            btn = hdr, -- 自畫層 hover 判定用（讀 .mouseOver，零呼叫成本）
-            bx = ctx.curX - 4, by = ctx.curY, bw = secW + 8, bh = fontH + 6,
-            x = ctx.curX + 2, y = ctx.curY + 3, rx = ctx.curX + secW - 2,
-            text = (expanded and "- " or "+ ") .. getText(sec.label),
-            sec = sec, -- 摘要由 panel:render 每幀現算（見 unifiedHeaderSummary）
-        }
-        ctx.curY = ctx.curY + fontH + 10
-        if expanded then
-            if sec.gate and sandboxGate(sec.gate, true) == false then
-                unifiedAdd(ctx, ISLabel:new(ctx.curX + 4, ctx.curY, fontH,
-                    getText("UI_MinidoracatMiniMap_ServerDisabled"),
-                    0.95, 0.55, 0.25, 1, UIFont.Small, true))
-                ctx.curY = ctx.curY + rowH
-            end
-            local builder = sec.addon and unifiedBuildAddon or UNIFIED_BUILDERS[sec.id]
-            if builder then
-                ctx.sec = sec
-                -- 跨欄區塊執行期把 ctx.laneW 放大（wrapped note 行寬／等級右貼齊
-                -- 皆讀 ctx.laneW），builder 返回即還原——防後續區塊吃到錯寬度
-                if cur == "full" then ctx.laneW = secW end
-                builder(ctx)
-                if cur == "full" then ctx.laneW = laneW end
-                ctx.sec = nil
-            end
-        end
-        if cur == "full" then
-            laneY[1] = ctx.curY + 8
-            laneY[2] = laneY[1]
-        else
-            laneY[cur] = ctx.curY + 8 -- 區段間距（皮膚化 UX 微調：6→8）
-        end
+    -- wide＝導覽與 inspector 併排；narrow＝單頁，搜尋結果或選定分類優先於導覽
+    local showInspector = pane.mode == "wide" or hits ~= nil or win._narrowPage == "inspector"
+    local showNav = pane.mode == "wide" or not showInspector
+    if showNav then
+        local navW = pane.mode == "wide" and pane.navW or W
+        navCtx.laneW = navW - 16
+        nav:setX(0); nav:setY(bodyY); nav:setWidth(navW); nav:setVisible(true)
+        studioSetScroll(nav, studioBuildNav(navCtx), bodyH, win._navScroll or 0)
     end
-    -- 內容高＝較長 lane；面板高夾玩家 viewport，超出開捲動
-    -- （setScrollHeight/getScrollHeight＝ISUIElement 內建捲動 API）
-    local contentH = math.max(laneY[1], laneY[2]) + 4
-    local vh = getPlayerScreenHeight(pn)
-    local maxPanelH = math.floor(vh * 0.9) - win:titleBarHeight() - 8
-    local panelH = math.min(contentH, maxPanelH)
-    panel:setHeight(panelH)
-    panel:setScrollHeight(contentH)
-    -- 內容縮短時把捲動位置夾回有效範圍（否則留白/內容跑出上緣）
-    local maxScroll = math.max(0, contentH - panelH)
-    local ys = panel:getYScroll()
-    if ys < -maxScroll then panel:setYScroll(-maxScroll) end
-    if ys > 0 then panel:setYScroll(0) end
-    if panel.vscroll then
-        panel.vscroll:setHeight(panelH)
-        panel.vscroll:setX(W - 12)
+    win._renderedScrollKey = nil
+    if showInspector then
+        content:setX(showNav and pane.navW + 10 or 0)
+        content:setY(bodyY); content:setWidth(inspectorW); content:setVisible(true)
+        local contentH = hits and studioBuildSearchResults(contentCtx, hits)
+            or studioBuildInspector(contentCtx, selected)
+        local scrollKey = hits and "__search" or selected.id
+        studioSetScroll(content, contentH, bodyH, win._scrollBySection[scrollKey] or 0)
+        win._renderedScrollKey = scrollKey
     end
-    win:setHeight(win:titleBarHeight() + panelH + 4)
-    -- 重建會改變寬高：視窗開著時重新夾回擁有者 viewport（底部上推、右緣不溢出）
     if win:isVisible() then
         local sx, sy = getPlayerScreenLeft(pn), getPlayerScreenTop(pn)
-        local sw, sh = getPlayerScreenWidth(pn), getPlayerScreenHeight(pn)
-        local x, wy = win:getX(), win:getY()
+        local sw, sh = viewportW, viewportH
+        local x, y = win:getX(), win:getY()
         if x + win.width > sx + sw then x = sx + sw - win.width end
         if x < sx then x = sx end
-        if wy + win.height > sy + sh then wy = sy + sh - win.height end
-        if wy < sy then wy = sy end
-        win:setX(x)
-        win:setY(wy)
+        if y + win.height > sy + sh then y = sy + sh - win.height end
+        if y < sy then y = sy end
+        win:setX(x); win:setY(y)
     end
 end
 
@@ -1343,11 +1838,89 @@ local function unifiedZoneRefsDirty(win)
     return dirty
 end
 
+-- test:settings-studio-live:start
+local function studioLiveSettingsDirty(win)
+    local zombie = sandboxGate("AllowZombieDots", true) ~= false
+    local animals = sandboxGate("AllowAnimalDots", true) ~= false
+    local vehicles = sandboxGate("AllowVehicleDots", true) ~= false
+    local livestock = livestockVisibilityMode()
+    local dirty = win._liveZombie ~= zombie or win._liveAnimals ~= animals
+        or win._liveVehicles ~= vehicles or win._liveLivestock ~= livestock
+    win._liveZombie, win._liveAnimals = zombie, animals
+    win._liveVehicles, win._liveLivestock = vehicles, livestock
+    local caps = win._liveDistanceCaps
+    if not caps then caps = {}; win._liveDistanceCaps = caps; dirty = true end
+    for i = 1, #UNIFIED_SLIDERS.distance do
+        local capBy = UNIFIED_SLIDERS.distance[i].capBy
+        if capBy then
+            local cap = sandboxDist and sandboxDist(capBy) or nil
+            if caps[i] ~= cap then caps[i] = cap; dirty = true end
+        end
+    end
+    return dirty
+end
+-- test:settings-studio-live:end
+
+-- test:settings-studio-titlebar:start
+-- 標題列 chrome 共用繪製：原生按鈕底框 ＋ 20px 上限的 UI framework 圖示，缺資產退回單字母。
+-- 上限與置中算式只留這一份，兩顆按鈕才不會日後各長各的。
+local function studioTitleBarIcon(self, key, fallback, color)
+    ISButton.render(self)
+    local size = math.max(10, math.min(20, self.width - 4, self.height - 4))
+    local x, y = math.floor((self.width - size) / 2), math.floor((self.height - size) / 2)
+    local Skin = Core.Skin
+    if Skin and Skin.icon and Skin.icon(self, key, x, y, size, color) then return end
+    self:drawTextCentre(fallback, self.width / 2,
+        math.floor((self.height - getTextManager():getFontHeight(UIFont.Medium)) / 2),
+        color and color.r or 0.8, color and color.g or 0.8,
+        color and color.b or 0.8, 1, UIFont.Medium)
+end
+
+-- 鎖定＝lock 圖示＋琥珀，解鎖＝unlock 圖示＋灰；hover 一律 primary。
+local function studioLockButtonRender(self)
+    local Skin = Core.Skin
+    local color = Skin and (self._studioLocked
+        and Skin.COLORS.ACCENT_AMBER or Skin.COLORS.TEXT_MUTED)
+    if self.mouseOver and Skin then color = Skin.COLORS.TEXT_PRIMARY end
+    studioTitleBarIcon(self, self._studioLocked and "lock" or "unlock",
+        self._studioLocked and "L" or "U", color)
+end
+
+local function studioStyleLockButton(button, locked)
+    if not button then return end
+    button:setImage(nil) -- 原版 ISButton.lua:179-180
+    button._studioLocked = locked
+    button.render = studioLockButtonRender
+    button.tooltip = getText(locked and "UI_MinidoracatMiniMap_StudioUnlock"
+        or "UI_MinidoracatMiniMap_StudioLock")
+end
+
+local function studioCloseButtonRender(self)
+    local Skin = Core.Skin
+    local color = Skin and (self.mouseOver
+        and Skin.COLORS.ACCENT_AMBER or Skin.COLORS.TEXT_MUTED)
+    studioTitleBarIcon(self, "close", "X", color)
+end
+
+local function studioStyleCloseButton(button)
+    if not button then return end
+    button:setImage(nil)
+    button.render = studioCloseButtonRender
+    button.tooltip = getText("UI_MinidoracatMiniMap_StudioClose")
+end
+-- test:settings-studio-titlebar:end
+
+
 local function buildSettingsWindow()
     local win = ISCollapsableWindow:new(0, 0, 700, 200) -- 寬高由 unifiedRebuild 重算
+    -- Medium font 同時提高 titleBarHeight；原生 createChildren 會據此放大三顆標題列按鈕。
+    win.titleFont = UIFont.Medium
+    win.titleBarFont = UIFont.Medium
+    win.titleFontHgt = getTextManager():getFontHeight(UIFont.Medium)
     win.resizable = false -- 同圖層面板做法（ISMiniMap.lua:187）
-    win:setTitle(getText("UI_MinidoracatMiniMap_Options")) -- setTitle＝ISCollapsableWindow.lua:18-20
+    win:setTitle(getText("UI_MinidoracatMiniMap_StudioTitle"))
     win:initialise()
+    -- titlebar children 由 addToUIManager/instantiate 建立，換 chrome 必須在其後執行。
     -- 家族圓角皮膚（Core.Skin，同搜尋視窗；移植自 NoticeBoard NBSkin）：
     -- 關掉原生框改自畫。drawFrame 用欄位賦值、不走 setDrawFrame——那個 setter
     -- 會連 closeButton 一起藏（ISCollapsableWindow.lua:356-360）。原生 prerender
@@ -1368,98 +1941,64 @@ local function buildSettingsWindow()
             self:drawRect(0, 0, self.width, h, 0.8, 0, 0, 0)
             self:drawRectBorder(0, 0, self.width, h, 1, 0.4, 0.4, 0.4)
         end
-        if self.title then -- 原生置中標題（ISCollapsableWindow.lua:173-174 同款）
-            self:drawTextCentre(self.title, self.width / 2, 1, 1, 1, 1, 1, self.titleBarFont)
+        if self.title then
+            local titleY = math.floor((th - self.titleFontHgt) / 2)
+            self:drawTextCentre(self.title, self.width / 2, titleY,
+                1, 1, 1, 1, self.titleBarFont)
         end
         origWinPrerender(self)
     end
     win:addToUIManager()
+    -- 保留 ISCollapsableWindow 原生 close／pin／collapse 狀態機，只換 UI framework
+    -- 的 modern chrome（ISCollapsableWindow.lua:55-91/138-149）。
+    studioStyleCloseButton(win.closeButton)
+    studioStyleLockButton(win.collapseButton, true)
+    studioStyleLockButton(win.pinButton, false)
     win:setVisible(false)
-    win._rows = {}
-    win._headers = {}
-    win._icons = {}
+    win._rows, win._navRows, win._pills, win._icons, win._cards = {}, {}, {}, {}, {}
+    win._scrollBySection = {}
+    win._selectedSec = UNIFIED_SECTIONS[1].id
+    win._narrowPage = "nav"
+    win._lastQuery = ""
     win._playerNum = 0
-    -- 內容捲動容器：所有列掛在這層；內容高超過 viewport 出捲軸。
-    -- setScrollChildren/addScrollBars/setScrollHeight＝ISUIElement 內建；
-    -- stencil 於 prerender 設、render 尾清＝原版滾動清單慣例（ISScrollingListBox 同構）
-    local panel = ISPanel:new(0, win:titleBarHeight(), win.width, 100)
-    panel:initialise()
-    panel.backgroundColor = { r = 0, g = 0, b = 0, a = 0 }
-    panel.borderColor = { r = 0, g = 0, b = 0, a = 0 }
-    -- 必須先 instantiate 再 setScrollChildren：後者在 javaObject 尚未建立時「靜默 no-op」
-    -- （ISUIElement.lua:1647-1649 直接 return）——旗標沒落到 java 端＝子元件渲染不吃
-    -- panel 捲動位移（UIElement.java:918-926 getAbsoluteY 的 scrollChildren 分支），
-    -- 症狀為勾選/下拉/按鈕固定不動、只有自畫標題/圖標（手動 +getYScroll）會捲。
-    panel:instantiate()
-    panel:setScrollChildren(true)
-    panel:addScrollBars()
-    function panel:onMouseWheel(del)
-        local maxScroll = math.max(0, (self:getScrollHeight() or 0) - self.height)
-        local ys = self:getYScroll() - del * 48
-        if ys < -maxScroll then ys = -maxScroll end
-        if ys > 0 then ys = 0 end
-        self:setYScroll(ys)
-        return true
+    win._lastRawQuery = ""
+    win._searchEntry = ISTextEntryBox:new("", 10, win:titleBarHeight() + 8, 300, 24)
+    win._searchEntry:initialise()
+    win._searchEntry:instantiate()
+    if win._searchEntry.setClearButton then win._searchEntry:setClearButton(true) end
+    if win._searchEntry.setPlaceholderText then
+        win._searchEntry:setPlaceholderText(getText("UI_MinidoracatMiniMap_StudioSearchHint"))
     end
-    function panel:prerender()
-        self:setStencilRect(0, 0, self.width, self.height)
-        ISPanel.prerender(self)
-    end
-    -- 自畫層：區塊標題（左對齊＋右側摘要）與物種小圖（drawText＝ISUIElement.lua:1293）。
-    -- 畫在 panel 的 render＝子元件之後（文字疊在 header 鈕 hover 底色之上——
-    -- 掛 prerender 會被 hover 蓋掉，實測回饋）；且在 stencil 內＝跟內容一起裁切。
-    -- 直繪「勿」手動加 getYScroll：DrawText/DrawTexture 於 java 端已自加 this.yScroll
-    -- （UIElement.java:190-194/331-334），再加一次＝2× 速度、與子元件錯位；
-    -- 視窗收合時 panel 不繪＝無穿透
-    function panel:render()
-        ISPanel.render(self)
-        local w = self.parent
-        local tm = getTextManager()
-        local Skin = Core.Skin
-        for i = 1, #w._headers do
-            local h = w._headers[i]
-            -- 圓角區段列底（文字之前）：平時 ROW_HOVER 淡底、hover 亮一階
-            -- （ROW_SELECTED）；hover 讀 ISButton.mouseOver 欄位（ISButton.lua:12/:19）。
-            -- Skin 缺席（貼圖壞/離線）退 drawRect 直角同色，零配置（引用色票常量）
-            local hov = h.btn and h.btn.mouseOver
-            if Skin then
-                Skin.fill(self, h.bx, h.by, h.bw, h.bh,
-                    hov and Skin.COLORS.ROW_SELECTED or Skin.COLORS.ROW_HOVER)
-            else
-                self:drawRect(h.bx, h.by, h.bw, h.bh, hov and 0.12 or 0.06, 1, 1, 1)
-            end
-            self:drawText(h.text, h.x, h.y, 0.92, 0.72, 0.25, 1, UIFont.Small)
-            local right = h.sec and unifiedHeaderSummary(h.sec, w._playerNum or 0)
-            if right then
-                local tww = tm:MeasureStringX(UIFont.Small, right)
-                self:drawText(right, h.rx - tww, h.y, 0.62, 0.62, 0.62, 1, UIFont.Small)
-            end
-        end
-        for i = 1, #w._icons do
-            local ic = w._icons[i]
-            -- tex 預解（POI 類別格）或以 name 惰解（動物物種）；tint 缺省近白（沿動物）
-            local tex = ic.tex or (ic.name and adotsTexture and adotsTexture(ic.name))
-            if tex then
-                self:drawTextureScaled(tex, ic.x, ic.y + 1, ic.size, ic.size, 1,
-                    ic.r or 0.92, ic.g or 0.92, ic.b or 0.92)
-            end
-        end
-        self:clearStencilRect()
-    end
-    win:addChild(panel)
-    win._content = panel
+    win:addChild(win._searchEntry)
+    win._nav = studioSetupPanel(win)
+    win._content = studioSetupPanel(win)
+    win._searchIndex = studioBuildIndex()
     unifiedRebuild(win)
     unifiedZoneRefsDirty(win) -- 播種參照快照（避免首幀誤判 dirty 多重建一次）
-    -- 視窗保持開啟時也追蹤伺服器 live sandbox 更新；只在有效模式改變時重建，
-    -- 平常 prerender 不增加配置或子元件 churn。
+    studioLiveSettingsDirty(win) -- 播種 sandbox/effective-distance signature
+    -- 視窗開啟期間只在 query、結構或 live sandbox signature 改變時重建；
+    -- raw query 未變時不重做 match/lower，signature table 只在首輪配置。
     local originalSettingsPrerender = win.prerender
     function win:prerender()
-        -- 區域資料到貨（見 unifiedZoneRefsDirty）或 livestock 有效模式改變才重建
-        if unifiedZoneRefsDirty(self)
-            or self._minidoracatLivestockMode ~= livestockVisibilityMode() then
+        local rawQuery = self._searchEntry:getInternalText()
+        local query = self._lastQuery
+        if rawQuery ~= self._lastRawQuery then
+            self._lastRawQuery = rawQuery
+            query = studioNormalizeQuery(rawQuery)
+        end
+        local structuralDirty = unifiedZoneRefsDirty(self)
+        local liveDirty = studioLiveSettingsDirty(self)
+        if structuralDirty then self._searchIndex = studioBuildIndex() end
+        if query ~= self._lastQuery or structuralDirty or liveDirty then
+            self._lastQuery = query
             unifiedRebuild(self)
         end
         originalSettingsPrerender(self)
+    end
+    local originalClose = win.close
+    function win:close()
+        if self._searchEntry and self._searchEntry.unfocus then self._searchEntry:unfocus() end
+        originalClose(self)
     end
     return win
 end
@@ -1472,8 +2011,11 @@ local function toggleSettingsWindow(outer)
         -- 都會轉呼此處）＝改掛新擁有者重建重定位，而不是把前一位的視窗關掉——
         -- 否則 P2 第一按只會關 P1 的窗，或直接沿用 P1 身分讀寫引擎選項
         if settingsUI._playerNum == pn then
-            settingsUI:setVisible(false)
+            settingsUI:close()
             return
+        end
+        if settingsUI._searchEntry and settingsUI._searchEntry.unfocus then
+            settingsUI._searchEntry:unfocus()
         end
     end
     settingsUI._playerNum = pn -- 視窗擁有者（分割畫面各自讀寫自己的小地圖）
@@ -1506,17 +2048,15 @@ end
 -- 公開 addon client-settings API v1。ownerModId 是唯一身分：同 owner 重註冊
 -- 視為熱重載更新，不同 addon 即使自選同名 label 也不互相覆蓋。外部 spec
 -- 在註冊期完整驗證並複製；壞值 fail closed，不得把整個 MiniMap 設定窗炸掉。
--- summary（若提供）會在設定窗可見期間每幀呼叫，必須是 O(1) 記憶體讀。
+-- 導覽列只顯示分類名稱與主開關，不讀取、保存或計算摘要／數量 callback。
 -- test:addon-settings-registry:start
 local function normalizeAddonSettings(ownerModId, spec)
     if type(ownerModId) ~= "string" or ownerModId == ""
             or type(spec) ~= "table" or type(spec.label) ~= "string"
-            or spec.label == "" or (spec.summary ~= nil
-                and type(spec.summary) ~= "function") then return nil end
-    local lane = spec.lane
-    if lane ~= 1 and lane ~= 2 and lane ~= "full" then lane = 1 end
-    local out = { label = spec.label, lane = lane, summary = spec.summary,
-        ticks = {}, combos = {} }
+            or spec.label == "" then return nil end
+    -- API v1 相容：舊呼叫端可繼續傳 spec.lane，但地圖顯示設定不讀、不正規化、
+    -- 不複製也不保存它；分類順序只由註冊順序決定。
+    local out = { label = spec.label, ticks = {}, combos = {} }
     local ticks = spec.ticks
     if ticks ~= nil and type(ticks) ~= "table" then return nil end
     local tickN = ticks and #ticks or 0
@@ -1571,7 +2111,7 @@ function MinidoracatMiniMapAPI.registerSettingsSection(ownerModId, spec)
         sec.label = normalized.label
         sec.addon = normalized
     else
-        sec = { id = sectionId, label = normalized.label, addon = normalized }
+        sec = { id = sectionId, label = normalized.label, addon = normalized, icon = "layers" }
         addonSettingsById[ownerModId] = sec
         local insertAt = #UNIFIED_SECTIONS + 1
         for i = 1, #UNIFIED_SECTIONS do
@@ -1579,8 +2119,19 @@ function MinidoracatMiniMapAPI.registerSettingsSection(ownerModId, spec)
         end
         table.insert(UNIFIED_SECTIONS, insertAt, sec)
     end
-    UNIFIED_LANE[sectionId] = normalized.lane
+    if settingsUI then settingsUI._searchIndex = studioBuildIndex() end
     if settingsUI and settingsUI:isVisible() then unifiedRebuild(settingsUI) end
     return true
 end
 -- test:addon-settings-registry:end
+
+Events.OnGameStart.Add(function()
+    if settingsUI then
+        if settingsUI._searchEntry and settingsUI._searchEntry.unfocus then
+            pcall(function() settingsUI._searchEntry:unfocus() end)
+        end
+        settingsUI:setVisible(false)
+        settingsUI:removeFromUIManager()
+        settingsUI = nil
+    end
+end)

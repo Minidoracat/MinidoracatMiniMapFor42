@@ -22,10 +22,10 @@ Overlays "map images rendered from the actual in-game view" onto the B42 world m
 [*] [b]Animal & vehicle icons[/b] (off by default): separate wild/livestock toggles, species and vehicle-category filters (the compatibility pack adds dogs, horses and more); two icon styles, colorblind-friendly palette
 [*] [b]World-map icons[/b]: the same zombie/animal/vehicle icons on the world map (M), four independent toggles
 [*] [b]Street names + safehouse outlines[/b]: street names on the corner mini-map (vanilla never had them); your safehouse green, others red
-[*] [b]Player coordinates + one-click copy[/b]: x, y, z at the bottom of both maps; XY button copies, right-click copies any pointed spot — paste straight into /teleportto
+[*] [b]Player coordinates + one-click copy[/b]: x, y, z at the bottom of both maps; the toolbar copy icon copies your position, while right-click copies any pointed spot — paste straight into /teleportto
 [*] [b]Ghost mode[/b]: clicks and wheel pass through to the game while the map turns semi-transparent — enlarge it into a permanent overlay that never blocks play; hotkey '
 [*] [b]Free look[/b]: drag to inspect and stay there, click once to snap back to the player
-[*] [b]Unified settings window[/b] (gear button): collapsible two-column sections, every change applies and saves instantly — no ESC menu needed. The whole UI set (settings/search windows, minimap frame & button bar) wears the family rounded dark skin; built-in "Performance notes" section (per-feature levels + remedies)
+[*] [b]Map Display Settings[/b] (gear button): category navigation on the left, the current inspector on the right, plus cross-category search; split-screen and large fonts fall back to one pane automatically. Every change applies and saves instantly — no ESC menu needed. The whole UI set uses the family rounded dark skin; built-in Performance notes
 [*] [b]Server sandbox controls[/b]: disable individual icons, cap display distances, four livestock-visibility levels, faction-sharing toggle — changes apply live
 [*] [b]Singleplayer & multiplayer[/b]: only visualizes data the client already receives — no extra intel; Traditional/Simplified Chinese, English, Japanese
 [/list]
@@ -47,6 +47,7 @@ This is the [b]main mod[/b] — fully functional on its own; addons are optional
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps[/url] — images + outlines for map mods
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]MOD Compatibility[/url] — adds dogs, horses and more to animal icons
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones[/url] — server-defined zone display
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3792675881]AutoDrive[/url] — GPS navigation, driver HUD and road-network autodrive
 [/list]
 
 [h2]📋 Mod info[/h2]

@@ -25,17 +25,16 @@ local messages = {}
 local function print(message) messages[#messages + 1] = message end
 local addonSettingsById = {}
 local UNIFIED_SECTIONS = { { id = "layers" }, { id = "perf" } }
-local UNIFIED_LANE = { perf = "full" }
 local settingsUI = { visible = false }
 function settingsUI:isVisible() return self.visible end
 local rebuildCalls = 0
 local function unifiedRebuild() rebuildCalls = rebuildCalls + 1 end
+local function studioBuildIndex() return {} end
 MinidoracatMiniMapAPI = {}
 ]] .. registryBody .. "\n" .. [=[
 return {
     api = MinidoracatMiniMapAPI,
     sections = UNIFIED_SECTIONS,
-    lanes = UNIFIED_LANE,
     registry = addonSettingsById,
     ui = settingsUI,
     rebuilds = function() return rebuildCalls end,
@@ -67,7 +66,7 @@ checkEq(#registry.sections, 2, "invalid registrations do not append sections")
 local visible = true
 local width = 2
 local specA = {
-    label = "UI_A", lane = 2,
+    label = "UI_A", lane = 2, summary = function() return "1/1" end,
     ticks = { { label = "UI_Show", tooltip = "UI_Show_tip",
         get = function() return visible end,
         set = function(v) visible = v end } },
@@ -79,7 +78,8 @@ check(api.registerSettingsSection("OwnerA", specA), "valid owner A registers")
 checkEq(#registry.sections, 3, "one valid section appended")
 checkEq(registry.sections[2].id, "addon_OwnerA", "addon inserted before perf")
 checkEq(registry.sections[3].id, "perf", "perf stays last")
-checkEq(registry.lanes.addon_OwnerA, 2, "requested lane stored")
+checkEq(registry.registry.OwnerA.addon.lane, nil, "lane ignored and not stored")
+checkEq(registry.registry.OwnerA.addon.summary, nil, "summary ignored and not stored")
 check(registry.registry.OwnerA.addon ~= specA, "external spec copied")
 specA.label = "MUTATED"
 specA.combos[1].items[1] = "MUTATED_ITEM"
@@ -104,7 +104,7 @@ check(api.registerSettingsSection("OwnerA", {
 checkEq(#registry.sections, 4, "same owner replacement is idempotent")
 checkEq(registry.registry.OwnerA, oldSection, "same section identity retained")
 checkEq(oldSection.label, "UI_A2", "same owner updates label")
-checkEq(registry.lanes.addon_OwnerA, "full", "same owner updates lane")
+checkEq(oldSection.addon.lane, nil, "re-registration still ignores lane")
 registry.ui.visible = true
 local beforeRebuild = registry.rebuilds()
 check(api.registerSettingsSection("OwnerA", {
@@ -188,5 +188,11 @@ tick.arg.set = function() error("bad setter") end
 local setterOk = pcall(tick.callback, nil, 1, true, tick.arg)
 check(setterOk and #builder.errors == 1, "throwing setter is isolated and diagnosed")
 
+local EXPECTED_ASSERTIONS = 39
+if assertions ~= EXPECTED_ASSERTIONS then
+    print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
+        .. ", actual " .. assertions)
+    os.exit(1)
+end
 print("addon settings assertions " .. assertions .. ", failures " .. failures)
 if failures > 0 then os.exit(1) end

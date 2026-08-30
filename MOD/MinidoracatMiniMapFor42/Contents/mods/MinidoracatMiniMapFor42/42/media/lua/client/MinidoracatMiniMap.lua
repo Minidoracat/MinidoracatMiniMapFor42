@@ -148,10 +148,10 @@ end
 --       使該開關純屬外觀、不改變可見距離。不要求含於 lodRect——有給時距離
 --       判定不用 lodRect 快排，逐矩形直判),
 --   ⚠ 註冊時機：provider 應於 OnGameBoot 前註冊（檔案載入期，family addon 慣例）
---     ——ZoneLayer/ZoneNamesFar/ZoneCategoryFilter/ClientZoneDisplayDistance 選項
---     與統一視窗「自訂區域」區塊、「顯示距離」區第 6 條滑條都在 OnGameBoot 依
+--     ——ZoneLayer/ZoneNames/ZoneNamesFar/ZoneCategoryFilter/ClientZoneDisplayDistance 選項
+--     與地圖顯示設定的「自訂區域」分類、「顯示距離」分類第 6 條滑條都在 OnGameBoot 依
 --     「有無外部 provider」一次性建立。之後才註冊者仍會被渲染（fail-visible：
---     名稱遠距與玩家距離滑條依預設值生效；沙盒 ZoneDisplayDistance 仍照裁），
+--     名稱總閘／遠距與玩家距離依預設值生效；沙盒 ZoneDisplayDistance 仍照裁），
 --     但本場沒有對應 UI 可調。
 --   zones「表本身」可帶選配聚合旗標 hasFill/hasLine/hasIcon（ZR-1）：false＝
 --     provider 聲明該 pass 無任何可畫內容，renderer 整段跳過迴圈（內建 POI 預設
@@ -1843,13 +1843,51 @@ if ISMiniMap and ISMiniMap.Recreate then
 end
 
 --------------------------------------------------------------------------------
--- 按鈕列擴充（C＝回中、⚙＝設定視窗入口）
+-- 按鈕列擴充（定位玩家／複製座標改用共用 icon；缺框架退回 C／XY）
 -- 統一設定視窗整節（UNIFIED_* 資料表、unifiedRebuild、buildSettingsWindow、
 -- toggleSettingsWindow 等）已拆至 MinidoracatMiniMap_Settings.lua（Kahlua 每原型
 -- locvar 上限 200 對策）；主檔僅留按鈕列與開窗入口，呼叫時查
 -- Core.toggleSettingsWindow＋nil 防呆（模組檔載入序在本檔之後）。
 --------------------------------------------------------------------------------
--- 按鈕列重排：9 顆（M - + ◇視角 C XY 尋 ⚙ X）以動態間距塞進 inner 寬度
+-- test:minimap-toolbar-icons:start
+local function toolbarIconButtonRender(self)
+    ISButton.render(self)
+    local Skin = Core.Skin
+    local key = self._minidoracatIconKey
+    local owner = self._minidoracatIconOwner
+    local active = key == "locate" and owner and owner.inner
+        and owner.inner._minidoracatFreelook and getBoolOption("FreeLook", true)
+    local color
+    if Skin then
+        if active then
+            color = Skin.COLORS.ACCENT_AMBER
+        elseif key == "locate" and not self.mouseOver then
+            color = Skin.COLORS.TEXT_MUTED
+        else
+            color = self.mouseOver and Skin.COLORS.ACCENT_AMBER or Skin.COLORS.TEXT_PRIMARY
+        end
+    end
+    local size = math.max(8, math.min(16, self.width - 6, self.height - 6))
+    local x, y = math.floor((self.width - size) / 2), math.floor((self.height - size) / 2)
+    if Skin and Skin.icon and Skin.icon(self, key, x, y, size, color) then return end
+    local fontH = getTextManager():getFontHeight(UIFont.Small)
+    self:drawTextCentre(self._minidoracatFallback, self.width / 2,
+        math.floor((self.height - fontH) / 2),
+        color and color.r or 0.8, color and color.g or 0.8,
+        color and color.b or 0.8, 1, UIFont.Small)
+end
+
+local function installToolbarIcon(button, owner, key, fallback)
+    button:setTitle("")
+    button:setImage(nil)
+    button._minidoracatIconKey = key
+    button._minidoracatIconOwner = owner
+    button._minidoracatFallback = fallback
+    button.render = toolbarIconButtonRender
+end
+-- test:minimap-toolbar-icons:end
+
+-- 按鈕列重排：9 顆（M - + ◇視角 定位 複製 尋 ⚙ X）以動態間距塞進 inner 寬度
 -- （原版置中排版只按 5 顆算，ISMiniMap.lua:417）
 local function relayoutBottomButtons(mm)
     -- 逐鈕 append＋顯式計數：候選含可缺席鈕（perspBtn 材質降級＝nil），
@@ -1904,16 +1942,17 @@ end
 installMinidoracatButtons = function(mm)
     if not (mm and mm.bottomPanel and mm.button4 and ISButton) then return end
     local ref = mm.button4
-    -- 「C」回到玩家：清自由查看旗標，下一幀 prerenderHack 恢復回中
+    -- 定位玩家（缺框架退回「C」）：清自由查看旗標，下一幀 prerenderHack 恢復回中
     local cBtn = ISButton:new(0, ref.y, ref.width, ref.height, "C", mm, function(target)
         if target.inner then target.inner._minidoracatFreelook = nil end
     end)
     cBtn:initialise()
     -- 樣式由本函式尾端「按鈕列皮膚化」迴圈統一覆蓋（單一真相源）
     cBtn.tooltip = getText("UI_MinidoracatMiniMap_BtnCenter") -- ISButton 內建 tooltip（ISButton.lua:317-321）
+    installToolbarIcon(cBtn, mm, "locate", "C")
     mm.bottomPanel:addChild(cBtn)
     mm._minidoracatCenterBtn = cBtn
-    -- 「XY」複製玩家座標：格式 x,y,z（原版 /teleportto x,y,0 相容；vanilla 貼上端
+    -- 複製座標（缺框架退回「XY」）：格式 x,y,z（原版 /teleportto x,y,0 相容；
     -- ISTeleportDebugUI 解析吃任意分隔符——但負號也被當分隔符，地下室負 z 貼回
     -- 原版傳送 UI 會解析失敗；此處保留真實 z 不謊報 0，限制註記於此）
     local copyBtn = ISButton:new(0, ref.y, ref.width, ref.height, "XY", mm, function(target)
@@ -1925,6 +1964,7 @@ installMinidoracatButtons = function(mm)
     end)
     copyBtn:initialise()
     copyBtn.tooltip = getText("UI_MinidoracatMiniMap_BtnCopyCoords")
+    installToolbarIcon(copyBtn, mm, "copy", "XY")
     mm.bottomPanel:addChild(copyBtn)
     mm._minidoracatCopyBtn = copyBtn
     -- 視角切換（等軸測↔俯視）：同世界地圖 perspectiveBtn（ISWorldMap.lua:329-332、
@@ -2894,11 +2934,12 @@ local function drawZoneLines(inner)
             zoneProviderErrorOnce(inner, provider.owner, zones)
         elseif type(zones) == "table" and zones.hasLine ~= false then -- ZR-1（同 fill pass）
             local disCats = not provider.internal and zoneDisabledCats() or nil
-            -- 名稱遠距顯示（ZoneNamesFar，預設開；僅外部 zone）：lodRect zone 的
-            -- 名稱不再鎖細節檔——區域數量級小（幾十筆 vs POI 1669），名稱是玩家
-            -- 「找區域」的主要手段，鎖細節檔會造成可尋性回退（實測回饋）；框線
-            -- 仍維持細節檔限定。POI（internal）不受影響，名稱照鎖細節檔防洗版
-            local nameFar = not provider.internal and getBoolOption("ZoneNamesFar", true)
+            -- 外部自訂區域名稱總開關；internal POI 名稱不受影響。
+            local namesOn = provider.internal or getBoolOption("ZoneNames", true)
+            -- 名稱遠距顯示（ZoneNamesFar，預設開；僅外部 zone）：總開關關閉時
+            -- 不再量測／繪製任何外部名稱，框線與圖標維持原狀。
+            local nameFar = namesOn and not provider.internal
+                and getBoolOption("ZoneNamesFar", true)
             local cand = zcCandidates(inner, provider, zones, disCats, scale,
                 vMinX, vMaxX, vMinY, vMaxY, ppx, ppy, gd2)
             for ci = 1, #cand do
@@ -2917,7 +2958,7 @@ local function drawZoneLines(inner)
                 -- 中/遠距檔（lodRect zone）：框線恆不畫；名稱僅 nameFar 時放行
                 local midFar = lod ~= nil and scale < ZONE_LOD_DETAIL
                 local drawEdges = border and z.borderAlpha ~= 0 and not midFar
-                if rects and (drawEdges or z.name)
+                if rects and (drawEdges or (namesOn and z.name))
                     and not (disCats and z.category and disCats[z.category])
                     and (not midFar or (nameFar and z.name ~= nil))
                     and (not gd2 or zoneWithinDist(z, ppx, ppy, gd2, provider.internal)) then
@@ -2972,7 +3013,7 @@ local function drawZoneLines(inner)
                     -- 名稱畫在第一個 rect 的中心，僅中心落在視窗內才畫（同 drawMapBounds）；
                     -- 整區離屏（無 rect 在窗內）連名稱測量都省——名稱中心落在窗內必然使該
                     -- rect AABB 與視窗相交，故 zoneVisible 為真，不影響應畫的名稱
-                    local name = z.name
+                    local name = namesOn and z.name or nil
                     local rc = rects[1]
                     -- 名稱檔位閘：內部（POI）僅細節檔（20 類全開時中/遠距洗版即此治）；
                     -- 外部 zone 由 nameFar 放行任何縮放（找區域的主要手段）
@@ -3855,8 +3896,8 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
             log("animal icons draw failed: " .. tostring(adErr))
         end
         -- 自由查看「已離開跟隨」提示（導航軟體回中提示的同款模式）：拖離後地圖
-        -- 底部浮出琥珀色膠囊＋C 鈕同步高亮——點地圖本就會回中（onMouseUp 清旗標），
-        -- 這裡只補視覺提醒，回中即消失（實測回饋：玩家不知道為何地圖不跟人）
+        -- 底部浮出琥珀色膠囊＋定位圖示同步高亮——點地圖本就會回中（onMouseUp
+        -- 清旗標），這裡只補視覺提醒，回中即消失（實測回饋：玩家不知道為何地圖不跟人）
         local flOn = self._minidoracatFreelook and getBoolOption("FreeLook", true)
         if flOn then
             local hint = getText("UI_MinidoracatMiniMap_FreelookHint")
@@ -3869,7 +3910,7 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
             self:drawText(hint, hx, hy, 1, 0.85, 0.4, 1, UIFont.Small)
         end
         local cBtn = self.parent and self.parent._minidoracatCenterBtn
-        if cBtn then -- C 鈕琥珀高亮＝次要提示；還原值同皮膚化基準（skinBtn
+        if cBtn then -- 定位 icon 琥珀高亮＝次要提示；還原值同皮膚化基準（skinBtn
             -- 0.55 a0.35，見 installMinidoracatButtons）；琥珀時 a 拉滿保持醒目
             cBtn.borderColor.r = flOn and 1 or 0.55
             cBtn.borderColor.g = flOn and 0.85 or 0.55

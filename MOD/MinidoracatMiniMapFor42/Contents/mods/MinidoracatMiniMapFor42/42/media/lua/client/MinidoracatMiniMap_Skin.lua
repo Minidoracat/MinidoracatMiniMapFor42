@@ -11,8 +11,8 @@
 -- 一律退直角 drawRect/drawRectBorder，絕不 error。正式發佈以 mod.info 的
 -- `require=MinidoracatUIFor42` 保證框架先載入（ZomboidFileSystem.java:807-833）。
 --
--- 【API 契約】需要框架 API v1 rev>=1（fill/border/fits/_resetForTests）；
--- 版本不合＝當框架不存在處理。
+-- 【API 契約】核心圓角需要框架 API v1 rev>=1；rev>=3 時額外轉發 toggle／slider
+-- painters 與 Studio chrome icons。版本不合或資產缺失＝走本檔直角／純文字退回。
 local Core = MinidoracatMiniMapCore
 if not (Core and Core.ready) then return end
 
@@ -42,11 +42,13 @@ Skin.COLORS = {
 }
 
 -- 載入期綁定：本檔字母序在主檔之後、且 mod.info require= 保證框架 MOD 先載入
-local FW = nil
+local FW, FWIcons, FWRevision = nil, nil, 0
 do
     local ui = MinidoracatUI and MinidoracatUI.v1
     if ui and ui.API_MAJOR == 1 and ui.API_REVISION >= 1 and ui.Skin then
         FW = ui.Skin
+        FWRevision = ui.API_REVISION
+        if ui.API_REVISION >= 2 and ui.Icons then FWIcons = ui.Icons end
     end
 end
 
@@ -81,6 +83,84 @@ function Skin.border(element, x, y, width, height, color, topOnly, alphaScale)
     end
     element:drawRectBorder(x, y, width, height,
         (color.a or 1) * (alphaScale or 1), color.r, color.g, color.b)
+end
+
+local TOGGLE_COLORS = {
+    off = Skin.COLORS.ROW_SELECTED,
+    on = Skin.COLORS.ACCENT_AMBER,
+    knob = Skin.COLORS.TEXT_PRIMARY,
+    border = Skin.COLORS.BORDER,
+}
+local SLIDER_COLORS = {
+    track = Skin.COLORS.FIELD_BG,
+    fill = Skin.COLORS.ACCENT_AMBER,
+    knob = Skin.COLORS.TEXT_PRIMARY,
+    border = Skin.COLORS.BORDER,
+}
+local function adapterColor(colors, key, fallback)
+    local color = type(colors) == "table" and colors[key] or nil
+    if type(color) ~= "table" or color.r == nil or color.g == nil or color.b == nil then
+        return fallback
+    end
+    return color
+end
+
+-- Studio 的共用繪製縫：rev 3 走框架一致的 20px pill；舊框架／離線 harness
+-- 仍畫得出可辨識開關。element 的互動與狀態歸 consumer，框架只負責視覺。
+function Skin.toggle(element, x, y, width, height, on, colors, alphaScale)
+    colors = colors or TOGGLE_COLORS
+    if FWRevision >= 3 and type(FW.toggle) == "function" then
+        return FW.toggle(element, x, y, width, height, on, colors, alphaScale)
+    end
+    local scale = alphaScale or 1
+    local trackH = math.min(20, height)
+    local trackY = y + math.floor((height - trackH) / 2)
+    local track = adapterColor(colors, on and "on" or "off",
+        on and TOGGLE_COLORS.on or TOGGLE_COLORS.off)
+    local border = adapterColor(colors, "border", TOGGLE_COLORS.border)
+    local knobColor = adapterColor(colors, "knob", TOGGLE_COLORS.knob)
+    Skin.fill(element, x, trackY, width, trackH, track, false, scale)
+    Skin.border(element, x, trackY, width, trackH, border, false, scale)
+    local knob = math.max(8, trackH - 6)
+    local knobX = on and (x + width - knob - 3) or (x + 3)
+    local knobY = trackY + math.floor((trackH - knob) / 2)
+    Skin.fill(element, knobX, knobY, knob, knob, knobColor, false, scale)
+    return true
+end
+
+function Skin.slider(element, x, y, width, height, ratio, colors, alphaScale)
+    colors = colors or SLIDER_COLORS
+    if FWRevision >= 3 and type(FW.slider) == "function" then
+        return FW.slider(element, x, y, width, height, ratio, colors, alphaScale)
+    end
+    if type(ratio) ~= "number" or ratio ~= ratio or width < 12 or height < 12 then return false end
+    if ratio < 0 then ratio = 0 elseif ratio > 1 then ratio = 1 end
+    local scale = alphaScale or 1
+    local trackY = y + math.floor((height - 4) / 2)
+    local track = adapterColor(colors, "track", SLIDER_COLORS.track)
+    local fill = adapterColor(colors, "fill", SLIDER_COLORS.fill)
+    local knob = adapterColor(colors, "knob", SLIDER_COLORS.knob)
+    local border = adapterColor(colors, "border", SLIDER_COLORS.border)
+    element:drawRect(x, trackY, width, 4, (track.a or 1) * scale,
+        track.r, track.g, track.b)
+    element:drawRectBorder(x, trackY - 1, width, 6, (border.a or 1) * scale,
+        border.r, border.g, border.b)
+    local fillW = math.floor(width * ratio + 0.5)
+    if fillW > 0 then
+        element:drawRect(x, trackY, fillW, 4, (fill.a or 1) * scale,
+            fill.r, fill.g, fill.b)
+    end
+    local knobX = x + fillW - 6
+    Skin.fill(element, knobX, y + math.floor((height - 12) / 2), 12, 12,
+        knob, false, scale)
+    return true
+end
+
+function Skin.icon(element, name, x, y, size, color, alpha)
+    if FWRevision >= 3 and FWIcons and type(FWIcons.draw) == "function" then
+        return FWIcons.draw(element, name, x, y, size, color, alpha)
+    end
+    return false
 end
 
 Core.Skin = Skin
