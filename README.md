@@ -383,7 +383,7 @@ local api = MinidoracatMiniMapAPI
 if api and type(api.settingsApiVersion) == "number"
         and api.settingsApiVersion >= 1
         and type(api.registerSettingsSection) == "function" then
-    api.registerSettingsSection("AddonModId", {
+    local spec = {
         label = "UI_Addon_Settings",
         ticks = {
             { label = "UI_Addon_Show", get = getShow, set = setShow },
@@ -393,7 +393,15 @@ if api and type(api.settingsApiVersion) == "number"
                 "UI_Addon_Thin", "UI_Addon_Normal", "UI_Addon_Thick",
             }, default = 2, get = getWidth, set = setWidth },
         },
-    })
+    }
+    if api.settingsApiVersion >= 2 then
+        spec.actions = {
+            { label = "UI_Addon_Copy", tooltip = "UI_Addon_Copy_tip",
+                run = function(playerNum) copyLatest(playerNum) end,
+                enabled = function(playerNum) return hasLatest() end },
+        }
+    end
+    api.registerSettingsSection("AddonModId", spec)
 end
 ```
 
@@ -402,6 +410,10 @@ end
 - `get`／`set` 是 addon callback；MiniMap 只提供 UI，不保存第二份設定。
 - 導覽列只顯示分類名稱與主開關；API 不讀取、保存或計算 `summary`／數量 callback。
 - 壞 spec 會在註冊期回傳 `false`，不得影響 MiniMap 其他設定。
+- **v2 `actions`**（最多 16）：每項 `label`／`tooltip`／`run` 必填，`enabled` 可選。
+  `run(playerNum)` 與 `enabled(playerNum)` 收到設定窗擁有者；`enabled` 回 `false` 時按鈕停用。
+  執行錯誤以 pcall 隔離。超過 16 項或任一項無效時，整次註冊回傳 `false`，ticks／combos 也不更新；未傳 `actions` 的 v1 spec 完全相容。
+- `enabled` 只控制按鈕可用狀態，拋錯時會 fail closed；它不是權限邊界。addon 與 MiniMap 共用 Lua VM，`run` 涉及權限或可變狀態時仍須在 callback 內重驗。
 
 ## 第三方動物相容 API
 

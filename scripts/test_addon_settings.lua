@@ -29,7 +29,8 @@ local settingsUI = { visible = false }
 function settingsUI:isVisible() return self.visible end
 local rebuildCalls = 0
 local function unifiedRebuild() rebuildCalls = rebuildCalls + 1 end
-local function studioBuildIndex() return {} end
+local indexCalls = 0
+local function studioBuildIndex() indexCalls = indexCalls + 1; return {} end
 MinidoracatMiniMapAPI = {}
 ]] .. registryBody .. "\n" .. [=[
 return {
@@ -38,6 +39,7 @@ return {
     registry = addonSettingsById,
     ui = settingsUI,
     rebuilds = function() return rebuildCalls end,
+    indexBuilds = function() return indexCalls end,
     messages = messages,
 }
 ]=])
@@ -45,7 +47,7 @@ assert(registryChunk, registryErr)
 local registry = registryChunk()
 local api = registry.api
 
-checkEq(api.settingsApiVersion, 1, "settings API version")
+checkEq(api.settingsApiVersion, 2, "settings API version")
 check(not api.registerSettingsSection(nil, {}), "nil owner rejected")
 check(not api.registerSettingsSection("A", {}), "missing label rejected")
 check(not api.registerSettingsSection("A", { label = "UI_A", ticks = {
@@ -86,6 +88,7 @@ specA.combos[1].items[1] = "MUTATED_ITEM"
 checkEq(registry.registry.OwnerA.label, "UI_A", "later label mutation isolated")
 checkEq(registry.registry.OwnerA.addon.combos[1].items[1], "UI_Thin",
     "later items mutation isolated")
+checkEq(#registry.registry.OwnerA.addon.actions, 0, "v1 spec stores empty actions")
 
 check(api.registerSettingsSection("OwnerB", {
     label = "UI_A", ticks = { { label = "UI_B", get = function() return false end,
@@ -115,6 +118,62 @@ check(api.registerSettingsSection("OwnerA", {
 checkEq(registry.rebuilds(), beforeRebuild + 1, "visible window rebuilds on registration")
 check(#registry.messages >= 4, "invalid registrations leave diagnostics")
 
+check(not api.registerSettingsSection("A", { label = "UI_A", actions = "no" }),
+    "non-table actions rejected")
+check(not api.registerSettingsSection("A", { label = "UI_A", actions = { 1 } }),
+    "non-table action entry rejected without throwing")
+check(not api.registerSettingsSection("A", { label = "UI_A", actions = {
+    { label = "UI_Copy", run = function() end },
+} }), "action missing tooltip rejected")
+check(not api.registerSettingsSection("A", { label = "UI_A", actions = {
+    { label = "UI_Copy", tooltip = "", run = function() end },
+} }), "empty action tooltip rejected")
+check(not api.registerSettingsSection("A", { label = "UI_A", actions = {
+    { label = "UI_Copy", tooltip = "UI_Copy_tip" },
+} }), "action missing run rejected")
+check(not api.registerSettingsSection("A", { label = "UI_A", actions = {
+    { tooltip = "UI_Copy_tip", run = function() end },
+} }), "action missing label rejected")
+check(not api.registerSettingsSection("A", { label = "UI_A", actions = {
+    { label = "UI_Copy", tooltip = "UI_Copy_tip", run = function() end,
+        enabled = true },
+} }), "non-function action enabled rejected")
+local tooMany = {}
+for i = 1, 17 do
+    tooMany[i] = { label = "UI_A", tooltip = "UI_T", run = function() end }
+end
+check(not api.registerSettingsSection("A", { label = "UI_A", actions = tooMany }),
+    "17 actions rejected")
+checkEq(#registry.sections, 4, "invalid actions do not append sections")
+
+local specC = {
+    label = "UI_C",
+    actions = {
+        { label = "UI_Copy", tooltip = "UI_Copy_tip",
+            run = function() end, enabled = function() return true end },
+    },
+}
+local beforeIndex = registry.indexBuilds()
+check(api.registerSettingsSection("OwnerC", specC), "valid action registers")
+checkEq(registry.indexBuilds(), beforeIndex + 1,
+    "action registration rebuilds search index")
+local act = registry.registry.OwnerC.addon.actions[1]
+checkEq(act.label, "UI_Copy", "action label stored")
+checkEq(act.tooltip, "UI_Copy_tip", "action tooltip stored")
+check(act.run == specC.actions[1].run, "action run kept")
+check(act.enabled == specC.actions[1].enabled, "action enabled kept")
+check(registry.registry.OwnerC.addon.actions ~= specC.actions, "actions array copied")
+specC.actions[1].label = "MUTATED"
+checkEq(act.label, "UI_Copy", "later action label mutation isolated")
+check(api.registerSettingsSection("OwnerC", {
+    label = "UI_C2",
+    actions = { { label = "UI_Copy2", tooltip = "UI_Copy2_tip", run = function() end } },
+}), "action hot reload succeeds")
+checkEq(registry.registry.OwnerC.addon.actions[1].label, "UI_Copy2",
+    "hot reload updates action")
+checkEq(#registry.registry.OwnerC.addon.actions, 1, "hot reload action count")
+checkEq(#registry.registry.OwnerC.addon.ticks, 0, "hot reload clears omitted ticks")
+
 local callbacksBody = assert(source:match(
     "%-%- test:addon%-settings%-callbacks:start\n(.-)\n%-%- test:addon%-settings%-callbacks:end"),
     "missing addon callbacks test block")
@@ -142,6 +201,12 @@ function ISComboBox:new(x, y, w, h, target, callback, arg)
     function combo:initialise() end
     function combo:addOption(text) self.options[#self.options + 1] = text end
     return combo
+end
+local function unifiedAddBtn(ctx, x, yy, w, labelText, fn, tooltip)
+    local b = { kind = "btn", label = labelText, callback = fn, tooltip = tooltip,
+        enable = true }
+    rows[#rows + 1] = b
+    return b
 end
 ]] .. callbacksBody .. "\n" .. builderBody .. "\n" .. [=[
 return {
@@ -188,7 +253,73 @@ tick.arg.set = function() error("bad setter") end
 local setterOk = pcall(tick.callback, nil, 1, true, tick.arg)
 check(setterOk and #builder.errors == 1, "throwing setter is isolated and diagnosed")
 
-local EXPECTED_ASSERTIONS = 39
+local runPn, enabledPn, allow = nil, nil, true
+spec.actions = {
+    { label = "UI_Copy", tooltip = "UI_Copy_tip",
+        run = function(pn) runPn = pn end,
+        enabled = function(pn) enabledPn = pn; return allow end },
+}
+ctx.pn = 2
+ctx.win._playerNum = 2
+local rows = builder.rows
+local function rebuildAddon()
+    for i = #rows, 1, -1 do rows[i] = nil end
+    builder.build(ctx)
+end
+rebuildAddon()
+checkEq(#rows, 4, "builder adds action button after tick and combo")
+local btn = rows[4]
+check(btn.kind == "btn" and btn.label == "T:UI_Copy", "action button label")
+checkEq(btn.tooltip, "T:UI_Copy_tip", "action button tooltip")
+checkEq(btn.enable, true, "enabled true keeps button on")
+checkEq(enabledPn, 2, "enabled receives window playerNum")
+btn.callback(ctx.win, btn)
+checkEq(runPn, 2, "run receives window playerNum")
+allow = false
+rebuildAddon()
+btn = rows[4]
+checkEq(btn.enable, false, "enabled false disables button")
+runPn = "unset"
+btn.callback(ctx.win, btn)
+checkEq(runPn, "unset", "disabled action does not run")
+spec.actions[1].enabled = function() error("bad enabled") end
+rebuildAddon()
+btn = rows[4]
+checkEq(btn.enable, false, "throwing enabled fails closed")
+runPn = "unset"
+local enabledOk = pcall(btn.callback, ctx.win, btn)
+check(enabledOk and runPn == "unset", "throwing enabled cannot reach run")
+spec.actions[1].enabled = nil
+spec.actions[1].run = function()
+    error(setmetatable({}, { __tostring = function() error("bad tostring") end }))
+end
+rebuildAddon()
+local errCount = #builder.errors
+local runOk = pcall(rows[4].callback, ctx.win, rows[4])
+check(runOk and #builder.errors == errCount + 1,
+    "throwing run is isolated and diagnosed")
+
+local indexBody = assert(source:match(
+    "%-%- test:addon%-settings%-index:start\n(.-)\n%s*%-%- test:addon%-settings%-index:end"),
+    "missing addon settings index test block")
+local indexChunk, indexErr = compile([[
+local added = {}
+local function studioIndexList(index, sec, list, kind, mode)
+    added[#added + 1] = { n = #list, kind = kind, mode = mode, first = list[1] }
+end
+local index = {}
+local sec = { addon = {
+    ticks = { { label = "UI_T" } },
+    combos = { { label = "UI_C" } },
+    actions = { { label = "UI_Copy" } },
+} }
+]] .. indexBody .. "\nreturn added")
+assert(indexChunk, indexErr)
+local added = indexChunk()
+checkEq(#added, 3, "addon index covers ticks, combos, actions")
+checkEq(added[3].kind, "navigate", "actions are searchable navigate hits")
+checkEq(added[3].first.label, "UI_Copy", "action label indexed")
+local EXPECTED_ASSERTIONS = 75
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
         .. ", actual " .. assertions)

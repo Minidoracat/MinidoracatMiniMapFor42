@@ -476,18 +476,33 @@ local function unifiedAddComboRow(ctx, entry)
 end
 
 -- test:addon-settings-callbacks:start
-local function addonRead(fn, default)
+local function addonRead(fn, default, pn)
     if type(fn) ~= "function" then return default end
-    local ok, value = pcall(fn)
+    local ok, value = pcall(fn, pn)
     if not ok then return default end
     return value
+end
+
+local function addonActionEnabled(entry, pn)
+    if entry.enabled == nil then return true end
+    local ok, value = pcall(entry.enabled, pn)
+    return ok and value ~= false
+end
+
+local function addonErrorText(err)
+    local kind = type(err)
+    if kind == "string" then return err end
+    if kind == "number" or kind == "boolean" or kind == "nil" then
+        return tostring(err)
+    end
+    return "<non-scalar addon error>"
 end
 
 -- addon setter 一律隔離：第三方 set 拋錯只留診斷，不得炸掉設定窗的事件迴圈。
 local function addonWrite(entry, value)
     if type(entry.set) ~= "function" then return end
     local ok, err = pcall(entry.set, value)
-    if not ok then print("[MinidoracatMiniMap] addon setting failed: " .. tostring(err)) end
+    if not ok then print("[MinidoracatMiniMap] addon setting failed: " .. addonErrorText(err)) end
 end
 
 local function unifiedOnAddonTick(target, index, selected, entry)
@@ -496,6 +511,17 @@ end
 
 local function unifiedOnAddonCombo(target, combo, entry)
     addonWrite(entry, combo.selected)
+end
+
+-- action 按鈕：把視窗擁有者 pn 交給 run/enabled；enabled 回 false 不跑；
+-- run 拋錯只留一則診斷，不得炸掉設定窗。
+local function unifiedOnAddonAction(target, button)
+    local entry = button._addonAction
+    if type(entry) ~= "table" or type(entry.run) ~= "function" then return end
+    local pn = target._playerNum or 0
+    if not addonActionEnabled(entry, pn) then return end
+    local ok, err = pcall(entry.run, pn)
+    if not ok then print("[MinidoracatMiniMap] addon action failed: " .. addonErrorText(err)) end
 end
 -- test:addon-settings-callbacks:end
 local function unifiedAddBtn(ctx, x, yy, w, labelText, fn, tooltip)
@@ -1096,6 +1122,18 @@ local function unifiedBuildAddon(ctx)
             ctx.curY = ctx.curY + ctx.rowH
         end
     end
+    local actions = spec.actions
+    if type(actions) == "table" then
+        local pn = ctx.pn or 0
+        for i = 1, #actions do
+            local entry = actions[i]
+            local btn = unifiedAddBtn(ctx, ctx.curX + 4, ctx.curY, ctx.laneW - 6,
+                getText(entry.label), unifiedOnAddonAction, getText(entry.tooltip))
+            btn._addonAction = entry
+            btn.enable = addonActionEnabled(entry, pn)
+            ctx.curY = ctx.curY + ctx.rowH
+        end
+    end
 end
 -- test:addon-settings-builder:end
 
@@ -1296,8 +1334,11 @@ local function studioBuildIndex()
         local sec = UNIFIED_SECTIONS[i]
         studioIndexAdd(index, sec, sec.label, "category")
         if sec.addon then
+            -- test:addon-settings-index:start
             studioIndexList(index, sec, sec.addon.ticks or {}, "boolean", "addon")
             studioIndexList(index, sec, sec.addon.combos or {}, "navigate")
+            studioIndexList(index, sec, sec.addon.actions or {}, "navigate")
+            -- test:addon-settings-index:end
         elseif sec.id == "layers" then
             for j = 1, #UNIFIED_LAYER_TICKS do
                 local e = UNIFIED_LAYER_TICKS[j]
@@ -2165,7 +2206,7 @@ Core.refreshSettingsWindow = function(pn)
     end
 end
 
--- 公開 addon client-settings API v1。ownerModId 是唯一身分：同 owner 重註冊
+-- 公開 addon client-settings API v2。ownerModId 是唯一身分：同 owner 重註冊
 -- 視為熱重載更新，不同 addon 即使自選同名 label 也不互相覆蓋。外部 spec
 -- 在註冊期完整驗證並複製；壞值 fail closed，不得把整個 MiniMap 設定窗炸掉。
 -- 導覽列只顯示分類名稱與主開關，不讀取、保存或計算摘要／數量 callback。
@@ -2175,8 +2216,8 @@ local function normalizeAddonSettings(ownerModId, spec)
             or type(spec) ~= "table" or type(spec.label) ~= "string"
             or spec.label == "" then return nil end
     -- API v1 相容：舊呼叫端可繼續傳 spec.lane，但地圖顯示設定不讀、不正規化、
-    -- 不複製也不保存它；分類順序只由註冊順序決定。
-    local out = { label = spec.label, ticks = {}, combos = {} }
+    -- 不複製也不保存它；分類順序只由註冊順序決定。v2 另複製 actions（最多 16）。
+    local out = { label = spec.label, ticks = {}, combos = {}, actions = {} }
     local ticks = spec.ticks
     if ticks ~= nil and type(ticks) ~= "table" then return nil end
     local tickN = ticks and #ticks or 0
@@ -2214,10 +2255,23 @@ local function normalizeAddonSettings(ownerModId, spec)
         out.combos[i] = { label = e.label, tooltip = e.tooltip,
             default = default, get = e.get, set = e.set, items = copyItems }
     end
+    local actions = spec.actions
+    if actions ~= nil and type(actions) ~= "table" then return nil end
+    local actionN = actions and #actions or 0
+    if actionN > 16 then return nil end
+    for i = 1, actionN do
+        local e = actions[i]
+        if type(e) ~= "table" or type(e.label) ~= "string" or e.label == ""
+                or type(e.tooltip) ~= "string" or e.tooltip == ""
+                or type(e.run) ~= "function"
+                or (e.enabled ~= nil and type(e.enabled) ~= "function") then return nil end
+        out.actions[i] = { label = e.label, tooltip = e.tooltip,
+            run = e.run, enabled = e.enabled }
+    end
     return out
 end
 
-MinidoracatMiniMapAPI.settingsApiVersion = 1
+MinidoracatMiniMapAPI.settingsApiVersion = 2
 function MinidoracatMiniMapAPI.registerSettingsSection(ownerModId, spec)
     local normalized = normalizeAddonSettings(ownerModId, spec)
     if not normalized then
