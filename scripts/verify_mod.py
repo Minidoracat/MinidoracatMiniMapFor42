@@ -27,6 +27,8 @@
                            管理員政策 facade／牲畜與 per-slot 顯示／玩家匯出權威／
                            server 導航分享 never-bypass／ADMIN VIEW 標記。缺 lua 時
                            列 SKIP 而非 PASS——SKIP＝這條防線根本沒跑到
+ 20. 路網稽核契約測試      — 以目前 Python 實際執行 test_audit_streets.py，並要求
+                           `test_audit_streets: OK` sentinel（Phase B 唯讀，無 runtime patch）
 
 新增檢查時：同步把對應的坑記進 AGENTS.md 踩坑錄，並依「踩坑進化協議」回流到
 pz-mod-template（見 AGENTS.md）。
@@ -405,6 +407,21 @@ for _script, _label in _extra_lua_tests:
         fail(_gate, (_lines[-3:] or []) + _err_tail)
     else:
         fail(_gate, ["無輸出"]) if not _lines else ok(f"{_gate}：{_lines[-1]}")
+
+# ---- 20. Phase B 路網稽核契約測試 ----
+_audit_gate = "路網稽核契約測試（test_audit_streets.py）"
+_audit_sentinel = "test_audit_streets: OK"
+_r = subprocess.run(
+    [sys.executable, os.path.join("scripts", "tests", "test_audit_streets.py")],
+    capture_output=True, text=True, cwd=REPO)
+_lines = [line for line in (_r.stdout or "").splitlines() if line.strip()]
+_err_tail = (_r.stderr or "").splitlines()[-3:]
+if _r.returncode != 0:
+    fail(_audit_gate, (_lines[-3:] or []) + _err_tail)
+elif not _lines or _lines[-1] != _audit_sentinel:
+    fail(_audit_gate, ["缺少預期 sentinel：%s" % _audit_sentinel] + _lines[-3:])
+else:
+    ok("%s：%s" % (_audit_gate, _audit_sentinel))
 
 # ---- 總結 ----
 print()
