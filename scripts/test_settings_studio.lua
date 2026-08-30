@@ -69,6 +69,55 @@ checkEq(#hits, 2, "non-empty query searches across categories")
 checkEq(hits[1].id, "animals", "query keeps category order")
 checkEq(#query(index, "missing"), 0, "non-empty miss returns empty results")
 
+local adminChunk, adminErr = compile([[
+local state = { can = false, allowed = false, lastPn = nil }
+local UNIFIED_SECTIONS = { { id = "layers" }, { id = "perf" } }
+local Policy = {
+    hasCanSeeAll = function(pn) state.lastPn = pn; return state.can end,
+    readBool = function(name, default)
+        if name == "AllowAdminTacticalView" then return state.allowed end
+        return default
+    end,
+}
+]] .. extract("settings%-studio%-admin") .. "\n" .. [[
+return adminSectionEligible, adminSectionSync, UNIFIED_SECTIONS, state
+]])
+assert(adminChunk, adminErr)
+local adminEligible, adminSync, adminSections, adminState = adminChunk()
+check(not adminEligible(0) and not adminSync(0),
+    "admin section stays absent without CanSeeAll")
+adminState.can = true
+check(not adminEligible(0) and not adminSync(0),
+    "admin section stays absent while server policy denies it")
+adminState.allowed = true
+check(adminSync(1) and adminSections[2].id == "admin"
+    and adminSections[3].id == "perf" and adminState.lastPn == 1,
+    "eligible split-screen slot inserts admin section before performance")
+check(not adminSync(1), "admin section insertion is idempotent")
+adminState.allowed = false
+check(adminSync(1) and adminSections[2].id == "perf",
+    "revoked server permission removes admin section live")
+check(not adminSync(1), "admin section removal is idempotent")
+check(source:find("Policy.setLocalTactical", 1, true) ~= nil
+    and source:find("Policy.setLocalPrivacy", 1, true) ~= nil
+    and source:find("sub.enable = privacyAllowed and tacticalOn", 1, true) ~= nil,
+    "admin builder wires tactical master and gated privacy child")
+check(source:find("Policy.getRevision", 1, true) ~= nil
+    and source:find("adminSectionEligible(pn)", 1, true) ~= nil,
+    "live dirty signature tracks policy revision and role eligibility")
+check(source:find("sandboxDist(entry.capBy, ctx.pn)", 1, true) ~= nil,
+    "admin distance bypass remains per-player and client slider still tightens")
+check(source:find("if adminSectionSync(pn) and win._searchIndex then", 1, true) ~= nil,
+    "unified rebuild synchronizes dynamic admin membership before rebuilding rows")
+check(source:find('studioIndexAdd(index, sec, "UI_MinidoracatMiniMap_AdminTactical", "navigate")', 1, true) ~= nil
+    and source:find('studioIndexAdd(index, sec, "UI_MinidoracatMiniMap_AdminPrivacy", "navigate")', 1, true) ~= nil,
+    "admin search results navigate to the gated section instead of exposing raw checkboxes")
+check(source:find("Policy.setLocalTactical(target._playerNum or 0, false)", 1, true) ~= nil,
+    "admin category reset clears only the owning split-screen slot")
+check(source:find("studioSearchEnabled(hit, target._playerNum or 0)", 1, true) ~= nil
+    and source:find("studioSearchEnabled(hit, ctx.pn)", 1, true) ~= nil,
+    "admin-aware search enablement receives the active player slot")
+
 local effectiveChunk, effectiveErr = compile([[
 local gates, livestock = {}, 2
 local function sandboxGate(name, default)
@@ -172,6 +221,12 @@ check(closeButton.iconKey == "close" and closeButton.iconColor == muted,
 local liveChunk, liveErr = compile([[
 local gates = { AllowZombieDots = true, AllowAnimalDots = true, AllowVehicleDots = true }
 local caps, livestock = {}, 2
+local revision, adminEligible, lastAdminPn = 0, false, nil
+local Policy = { getRevision = function() return revision end }
+local function adminSectionEligible(pn)
+    lastAdminPn = pn
+    return adminEligible
+end
 local UNIFIED_SLIDERS = { distance = { { capBy = "A" }, { capBy = "B" } } }
 local function sandboxGate(name, default)
     if gates[name] == nil then return default end
@@ -183,10 +238,14 @@ local function livestockVisibilityMode() return livestock end
 return studioLiveSettingsDirty,
     function(name, value) gates[name] = value end,
     function(name, value) caps[name] = value end,
-    function(value) livestock = value end
+    function(value) livestock = value end,
+    function(value) revision = value end,
+    function(value) adminEligible = value end,
+    function() return lastAdminPn end
 ]])
 assert(liveChunk, liveErr)
-local liveDirty, setLiveGate, setCap, setLiveLivestock = liveChunk()
+local liveDirty, setLiveGate, setCap, setLiveLivestock, setRevision,
+    setLiveAdmin, getLastAdminPn = liveChunk()
 local liveWin = {}
 check(liveDirty(liveWin), "live signature seeds once")
 check(not liveDirty(liveWin), "unchanged live signature does not rebuild")
@@ -196,6 +255,16 @@ setCap("A", 300)
 check(liveDirty(liveWin) and not liveDirty(liveWin), "distance cap transition dirties exactly once")
 setLiveLivestock(4)
 check(liveDirty(liveWin) and not liveDirty(liveWin), "livestock transition dirties exactly once")
+setRevision(1)
+check(liveDirty(liveWin) and not liveDirty(liveWin),
+    "policy revision transition dirties exactly once")
+setLiveAdmin(true)
+check(liveDirty(liveWin) and not liveDirty(liveWin),
+    "role/admin eligibility transition dirties exactly once")
+liveWin._playerNum = 2
+setLiveAdmin(false)
+check(liveDirty(liveWin) and getLastAdminPn() == 2,
+    "live admin eligibility uses the settings window owner slot")
 
 local resetChunk, resetErr = compile([[
 local values, addonValues = {}, {}
@@ -343,7 +412,10 @@ check(source:find('addTickBox("ZoneNames"', 1, true) ~= nil
     "custom-zone text toggle is registered, searchable, and resettable")
 check(source:find("_scrollBySection%[win._renderedScrollKey%]", 1) ~= nil,
     "live rebuild preserves inspector/search scroll")
-local EXPECTED_ASSERTIONS = 85
+check(source:find("pcall(studioRebuildDirty, self, structuralDirty)", 1, true) ~= nil
+    and source:find("or self._studioRebuildRetry", 1, true) ~= nil,
+    "failed live rebuild is logged and retried instead of consuming the dirty signature")
+local EXPECTED_ASSERTIONS = 102
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
         .. ", actual " .. assertions)

@@ -476,7 +476,22 @@ local saveVal = "servertest"
 local playersList = {}
 local sandbox = { ExportPlayerPositions = true, PlayerExportInterval = 5,
     ExportOfflinePlayers = true }
+local policyValues = { ExportPlayerPositions = true, PlayerExportInterval = 5,
+    ExportOfflinePlayers = true }
 local SandboxVars = { MinidoracatMiniMap = sandbox }
+local policyObject = {
+    readBool = function(name, default)
+        local value = policyValues[name]
+        if type(value) == "boolean" then return value end
+        return default
+    end,
+    readNumber = function(name, default)
+        local value = policyValues[name]
+        if type(value) == "number" then return value end
+        return default
+    end,
+}
+local MinidoracatMiniMapPolicy = policyObject
 local onServerStarted, onGameStart, onTick, onClientCmd = {}, {}, {}, {}
 local serverCommands = {}
 local Events = {
@@ -608,7 +623,13 @@ return {
         elseif k == "writeSilentFail" then writeSilentFail = v
         elseif k == "writePartial" then writePartial = v
         elseif k == "sandbox" then
+            for kk, vv in pairs(v) do sandbox[kk] = vv; policyValues[kk] = vv end
+        elseif k == "sandboxMirror" then
             for kk, vv in pairs(v) do sandbox[kk] = vv end
+        elseif k == "policy" then
+            for kk, vv in pairs(v) do policyValues[kk] = vv end
+        elseif k == "policyAvailable" then
+            MinidoracatMiniMapPolicy = v and policyObject or nil
         end
     end,
 }
@@ -668,6 +689,35 @@ check("S1 座標取整", byKey and byKey["alice#0"] ~= nil
     and byKey["alice#0"].online == true and byKey["alice#0"].seen == 1000000)
 check("S1 armed log", hasLog(h, "player position export armed"))
 check("S1 無舊檔 log", hasLog(h, "no previous players file"))
+
+-- S2a 政策 facade 才是權威：鏡像被第三方改成 true 也不能覆寫政策 false
+h = makeHarness()
+h.set("sandboxMirror", { ExportPlayerPositions = true })
+h.set("policy", { ExportPlayerPositions = false })
+h.fireServer()
+h.tick()
+check("S2a 匯出讀 Policy 而非 SandboxVars 鏡像",
+    h.written[PATH] == nil and h.writeCount() == 0)
+
+-- S2b facade 缺席 fail-closed，且每個 harness 只記一次診斷
+h = makeHarness()
+h.set("policyAvailable", false)
+h.fireServer()
+h.tick()
+h.tick()
+check("S2b Policy 缺席不寫玩家座標",
+    h.written[PATH] == nil and h.writeCount() == 0)
+check("S2b Policy 缺席 log-once", countLog(h, "policy facade missing") == 1)
+
+-- S2c 數值同樣以 Policy 為準：鏡像 300 秒、Policy 1 秒，1.5 秒後必須重寫
+h = makeHarness()
+h.set("sandboxMirror", { PlayerExportInterval = 300 })
+h.set("policy", { PlayerExportInterval = 1 })
+h.fireServer()
+h.tick()
+h.set("now", 1001500)
+h.tick()
+check("S2c 匯出間隔讀 Policy 而非 SandboxVars 鏡像", h.writeCount() == 2)
 
 -- S2 沙盒關閉：掛了 tick 但不寫任何東西
 h = makeHarness()

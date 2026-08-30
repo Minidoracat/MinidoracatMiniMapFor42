@@ -305,7 +305,10 @@ end
 SafeHouse = { getSafehouseList = function() return javaList(houses) end }
 local function getBoolOption() return true end
 local function displayDist() return distance end
-local function sandboxGate() return 3 end
+-- 安全屋顯示模式改由主檔 safehouseDisplayMode(pn) 供給（Policy 隱私檢視生效時
+-- 回最寬的 3）。harness 直接注入合成後的模式值＝「政策 ＋ 旁路」的唯一輸入
+local shMode = 3
+local function safehouseDisplayMode() return shMode end
 local defaultPlayer = {
     getX = function() return px end,
     getY = function() return py end,
@@ -339,6 +342,7 @@ return {
     setPlayerPresent = function(value) playerPresent = value end,
     setPlayerPosition = function(x, y) px, py = x, y end,
     setHouses = function(value) houses = value end,
+    setMode = function(value) shMode = value end,
     safehouse = safehouse,
 }
 ]=]
@@ -355,7 +359,7 @@ local allowed = true
 local navShared = { [0] = true }
 local sharedTargets = { A = { x = 1, y = 1 } }
 local lastAllowNavShare = true
-local function sandboxGate() return allowed end
+local Core = { navShareAllowed = function() return allowed end }
 ]] .. navBody .. "\n" .. [[return {
     tick = navShareGateTick,
     receive = navAcceptShared,
@@ -475,10 +479,12 @@ assert(settingsSource:find("if sliderW < %d+ then sliderW = %d+ end"),
 local DIST_NAMES = { "ZombieDotDistance", "AnimalIconDistance", "VehicleIconDistance",
     "SafehouseDisplayDistance", "PoiDisplayDistance", "ZoneDisplayDistance" }
 for _, n in ipairs(DIST_NAMES) do
-    -- 消費端呼叫點可在主檔或 _Dots.lua（點雲距離閘門隨拆檔遷移）
-    assert(source:find('displayDist%("' .. n .. '"%)')
-        or dotsSource:find('displayDist%("' .. n .. '"%)'),
-        "主檔/_Dots 缺 displayDist(\"" .. n .. "\") 呼叫點")
+    -- 消費端呼叫點可在主檔或 _Dots.lua（點雲距離閘門隨拆檔遷移）。第二參 pn
+    -- 是管理員檢視旁路的逐 slot 依據——漏傳＝該呼叫點永遠不旁路且靜默不報錯，
+    -- 故守衛連「必須帶 pn」一起釘住（右括號改成逗號＋空白）
+    assert(source:find('displayDist%("' .. n .. '", pn%)')
+        or dotsSource:find('displayDist%("' .. n .. '", pn%)'),
+        "主檔/_Dots 缺 displayDist(\"" .. n .. "\", pn) 精確逐 slot 呼叫點")
     -- ESC 註冊點可在主檔（本體恆存選項，值域用 CLIENT_DIST_MAX 常數）或
     -- _Settings.lua（addon 條件選項 OnGameBoot 尾端追加，字面 2000＝同值——
     -- 該檔無 CLIENT_DIST_MAX local；值域對齊由本守衛釘住）
@@ -490,6 +496,21 @@ for _, n in ipairs(DIST_NAMES) do
     assert(settingsSource:find('id = "Client' .. n .. '"'),
         "統一視窗 distance 區缺 id=Client" .. n)
 end
+assert(source:find('local shMode = safehouseDisplayMode%(pn%)'),
+    "安全屋顯示模式必須使用目前 surface 的 pn")
+assert(source:find('sandboxGate%("AllowZombieIntensity", true, self%.playerNum or 0%)'),
+    "殭屍熱度閘門不得借用 slot 0")
+assert(dotsSource:find('sandboxGate%("AllowZombieDots", true, el%.playerNum or 0%)'),
+    "殭屍點位閘門不得借用 slot 0")
+assert(dotsSource:find('sandboxGate%("AllowAnimalDots", true, pn%)')
+    and dotsSource:find('sandboxGate%("AllowVehicleDots", true, pn%)'),
+    "動物／載具閘門必須使用目前 surface 的 pn")
+assert(dotsSource:find('livestockVisibilityMode%(pn%)'),
+    "牲畜隱私模式必須使用目前 surface 的 pn")
+assert(settingsSource:find('sandboxGate%("AllowZombieDots", true, pn%)')
+    and settingsSource:find('sandboxGate%("AllowAnimalDots", true, pn%)')
+    and settingsSource:find('sandboxGate%("AllowVehicleDots", true, pn%)'),
+    "設定視窗 live gate 必須使用持有者 pn")
 local stepOneCount = select(2, settingsSource:gsub('step = 1, fmt = "%%d"', ""))
 assert(stepOneCount == 6, "統一視窗 distance 滑條 step 應全為 1（得 " .. stepOneCount .. "）")
 
@@ -678,6 +699,16 @@ safehouseHarness.setPlayerPresent(true)
 safehouseHarness.setPlayerPosition(15, 15)
 safehouseHarness.setDistance(1)
 assert(safehouseHarness.draw() == 4, "玩家位於安全屋矩形內時應顯示")
+-- 顯示模式三檔（隱私旁路生效時 safehouseDisplayMode 回 3＝與此處模式3同路徑）
+safehouseHarness.setDistance(nil)
+safehouseHarness.setHouses({ safehouseHarness.safehouse(10, 10, 20, 20, false),
+    safehouseHarness.safehouse(30, 30, 40, 40, true) })
+safehouseHarness.setMode(1)
+assert(safehouseHarness.draw() == 0, "安全屋模式1未關閉全部框線")
+safehouseHarness.setMode(2)
+assert(safehouseHarness.draw() == 4, "安全屋模式2應只畫我方安全屋")
+safehouseHarness.setMode(3)
+assert(safehouseHarness.draw() == 8, "安全屋模式3應畫全部安全屋（隱私旁路同路徑）")
 
 assert(not navHarness.cacheEmpty(), "導航測試初始快取缺失")
 navHarness.setAllowed(false)

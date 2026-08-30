@@ -259,5 +259,13 @@
     "UI_MinidoracatMiniMap_PerfItemMisc": "安全屋范围／街名／导航路线",
     "UI_MinidoracatMiniMap_PerfDescMisc": "数量级小或一次性计算",
     "UI_MinidoracatMiniMap_PerfNoteWorldmap": "世界地图（M）开启期间的叠加成本高于角落小地图，关闭地图即回收。",
-    "UI_MinidoracatMiniMap_PerfAdvice": "觉得卡时：先关丧尸点位或调低其上限，再缩小各显示距离、关闭不用的图层与类别。"
+    "UI_MinidoracatMiniMap_PerfAdvice": "觉得卡时：先关丧尸点位或调低其上限，再缩小各显示距离、关闭不用的图层与类别。",
+    "UI_MinidoracatMiniMap_SecAdmin": "管理员查看",
+    "UI_MinidoracatMiniMap_AdminNote": "本服务器已允许管理员查看旁路。这里的开关只改变你这台客户端画什么，不会改动全服设置，也不是防作弊机制；离开服务器或重新连线后会自动关闭。",
+    "UI_MinidoracatMiniMap_AdminTactical": "战术查看（忽略服务器显示限制）",
+    "UI_MinidoracatMiniMap_AdminTactical_tooltip": "开启后暂时忽略丧尸点位、丧尸热度图、动物图标、载具图标的全服开关，以及丧尸／动物／载具／资源点／自定义区域的显示距离与全局距离上限。\n需要服务器开启“允许管理员战术查看旁路”，且你具备“看见全部”（CanSeeAll）权限。\n关闭时会一并关闭隐私查看。",
+    "UI_MinidoracatMiniMap_AdminPrivacy": "隐私查看（忽略他人隐私限制）",
+    "UI_MinidoracatMiniMap_AdminPrivacy_tooltip": "在战术查看之上，再忽略会揭露其他玩家私密信息的限制：安全屋范围显示与其距离限制、牲畜图标可见性。\n需要服务器另外开启“允许管理员隐私查看旁路”，且战术查看已经开启。",
+    "UI_MinidoracatMiniMap_AdminPrivacyDisabled": "本服务器未开放管理员隐私查看",
+    "UI_MinidoracatMiniMap_AdminViewMarker": "管理员查看"
 }

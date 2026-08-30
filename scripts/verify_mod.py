@@ -23,6 +23,10 @@
  11. CHANGELOG 洩漏掃描     — bullet 會被整段貼到公開的 Workshop 更新說明；掃基礎設施
                            樣式（/home/ 路徑、IP、SteamID64、ssh、主機名）當最後防線。
                            攻擊配方與玩家識別資訊機器認不出來，靠撰寫規則（AGENTS.md）
+ 12-19. Lua 離線單元測試   — 皮膚 adapter／addon 設定 API／Map Display Settings／
+                           管理員政策 facade／牲畜與 per-slot 顯示／玩家匯出權威／
+                           server 導航分享 never-bypass／ADMIN VIEW 標記。缺 lua 時
+                           列 SKIP 而非 PASS——SKIP＝這條防線根本沒跑到
 
 新增檢查時：同步把對應的坑記進 AGENTS.md 踩坑錄，並依「踩坑進化協議」回流到
 pz-mod-template（見 AGENTS.md）。
@@ -360,6 +364,47 @@ else:
     else:
         fail("Lua 單元測試（test_settings_studio.lua）", ["無輸出"]) if not _lines \
             else ok(f"Lua 單元測試（test_settings_studio.lua：{_lines[-1]}）")
+
+# ---- 15. Lua 單元測試：管理員政策 facade ----
+# 權限判定的單一事實來源（shared/MinidoracatMiniMap_Policy.lua）。
+# test_admin_policy.lua 抽整份原檔、只換 6 個 PZ 全域為假物件，驗：Java 真相源
+# 優先於 SandboxVars 鏡像、缺鍵退 SCHEMA 預設（舊伺服器＝旁路 fail-closed）、
+# 三把鑰匙（全服政策＋Role CanSeeAll＋本機旗標）、戰術層與隱私層分離、旁路白名單
+# （AllowNavShare／座標匯出／旁路開關自身永不旁路）、逐 slot 隔離。
+# 這條是「顯示層政策」的回歸，不是防作弊。
+if not _lua_bin:
+    skip("Lua 單元測試（test_admin_policy.lua）", "PATH 沒有 lua")
+else:
+    _r = subprocess.run([_lua_bin, "scripts/test_admin_policy.lua"],
+                        capture_output=True, cwd=REPO)
+    _lines = [l for l in (_r.stdout or b"").decode("utf-8", "replace").splitlines() if l.strip()]
+    _err_tail = (_r.stderr or b"").decode("utf-8", "replace").splitlines()[-3:]
+    if _r.returncode != 0:
+        fail("Lua 單元測試（test_admin_policy.lua）", (_lines[-3:] or []) + _err_tail)
+    else:
+        fail("Lua 單元測試（test_admin_policy.lua）", ["無輸出"]) if not _lines \
+            else ok(f"Lua 單元測試（test_admin_policy.lua：{_lines[-1]}）")
+
+# ---- 16-19. 管理員政策的跨模組 server/client 守衛 ----
+_extra_lua_tests = [
+    ("test_livestock_visibility.lua", "牲畜／安全屋 per-slot 顯示"),
+    ("test_player_export.lua", "玩家匯出 Policy 權威"),
+    ("test_server_nav_share.lua", "伺服器導航分享 never-bypass"),
+    ("test_admin_view_marker.lua", "ADMIN VIEW 標記與 fallback"),
+]
+for _script, _label in _extra_lua_tests:
+    _gate = f"Lua 單元測試（{_script}：{_label}）"
+    if not _lua_bin:
+        skip(_gate, "PATH 沒有 lua")
+        continue
+    _r = subprocess.run([_lua_bin, f"scripts/{_script}"], capture_output=True, cwd=REPO)
+    _lines = [l for l in (_r.stdout or b"").decode("utf-8", "replace").splitlines()
+              if l.strip()]
+    _err_tail = (_r.stderr or b"").decode("utf-8", "replace").splitlines()[-3:]
+    if _r.returncode != 0:
+        fail(_gate, (_lines[-3:] or []) + _err_tail)
+    else:
+        fail(_gate, ["無輸出"]) if not _lines else ok(f"{_gate}：{_lines[-1]}")
 
 # ---- 總結 ----
 print()

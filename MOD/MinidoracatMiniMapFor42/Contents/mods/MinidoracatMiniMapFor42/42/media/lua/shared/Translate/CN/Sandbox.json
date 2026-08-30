@@ -40,5 +40,9 @@
     "Sandbox_MinidoracatMiniMapPlayerExportInterval": "玩家坐标导出周期（秒）",
     "Sandbox_MinidoracatMiniMapPlayerExportInterval_tooltip": "每隔几秒重写一次玩家坐标文件（默认 5 秒）。\n仅在“导出玩家坐标文件”开启时有作用。\n写入量小，5 秒对服务器负担可忽略。\n值越大越省 I/O，但外部工具读到的坐标越旧——重置工具会用文件内时间戳判断新鲜度，过旧即拒绝动作。\n管理员点击“应用”后立即生效。",
     "Sandbox_MinidoracatMiniMapExportOfflinePlayers": "一并导出离线玩家最后坐标",
-    "Sandbox_MinidoracatMiniMapExportOfflinePlayers_tooltip": "除在线玩家外，也把已离线玩家最后一次被观测到的坐标写进同一个文件。\n重置工具用它避开“有玩家在里面登出”的区域——那些角色下次上线仍在原地。\n注意：离线清单只是本 MOD 观测到的子集（开始记录前就登出的角色不会出现），只能用来确认“这里有人”，不能用来证明“这里没人”。\n关闭后只导出在线玩家。\n管理员点击“应用”后立即生效。"
+    "Sandbox_MinidoracatMiniMapExportOfflinePlayers_tooltip": "除在线玩家外，也把已离线玩家最后一次被观测到的坐标写进同一个文件。\n重置工具用它避开“有玩家在里面登出”的区域——那些角色下次上线仍在原地。\n注意：离线清单只是本 MOD 观测到的子集（开始记录前就登出的角色不会出现），只能用来确认“这里有人”，不能用来证明“这里没人”。\n关闭后只导出在线玩家。\n管理员点击“应用”后立即生效。",
+    "Sandbox_MinidoracatMiniMapAllowAdminTacticalView": "允许管理员战术查看旁路",
+    "Sandbox_MinidoracatMiniMapAllowAdminTacticalView_tooltip": "默认关闭。\n开启后，具备“看见全部”权限（CanSeeAll）的管理员可在小地图设置窗口自行开启“战术查看”，暂时忽略这些全服限制：僵尸点位、僵尸热度图、动物图标、载具图标，以及僵尸／动物／载具／资源点／自定义区域的显示距离与全局距离上限。\n三个条件同时成立才生效：本选项开启、该玩家具备 CanSeeAll 权限、该玩家自己在设置窗口按下开关（默认关闭，不会自动开）。\n不受本选项影响（永远按全服设置）：安全屋范围与牲畜可见性（属隐私查看）、阵营目标分享、玩家坐标导出。\n开关只存在该玩家本机，不影响其他玩家，也不写进全服设置。\n管理员点击“应用”后立即生效。",
+    "Sandbox_MinidoracatMiniMapAllowAdminPrivacyView": "允许管理员隐私查看旁路",
+    "Sandbox_MinidoracatMiniMapAllowAdminPrivacyView_tooltip": "默认关闭。必须同时开启“允许管理员战术查看旁路”才有作用。\n开启后，管理员可在战术查看之上再加开“隐私查看”，暂时忽略这些会揭露其他玩家私密信息的限制：安全屋范围显示与其距离限制、牲畜图标可见性。\n四个条件同时成立才生效：两个管理员选项都开启、该玩家具备 CanSeeAll 权限、该玩家自己开启战术查看与隐私查看。\n关掉战术查看时隐私查看一并失效。\n阵营目标分享与玩家坐标导出永远不在旁路范围内。\n建议只在处理纠纷或协助找回牲畜时短暂开启。\n管理员点击“应用”后立即生效。"
 }

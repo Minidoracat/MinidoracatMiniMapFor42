@@ -33,6 +33,9 @@ local registeredZoneActions = Core.registeredZoneActions
 local registeredPacks = Core.registeredPacks
 local registeredZoneProviders = Core.registeredZoneProviders
 local hasExternalZoneProvider = Core.hasExternalZoneProvider
+-- 管理員檢視政策 facade（shared/_Policy.lua，主檔載入期快照）。nil＝舊版共用檔
+-- 或載入失敗：整組管理員檢視不存在（fail-closed），既有設定照常運作
+local Policy = Core.policy
 
 --------------------------------------------------------------------------------
 -- 地圖顯示設定（免跑 ESC 選項頁）：分類導覽＋單一 inspector；搜尋非空時
@@ -190,10 +193,10 @@ local ZONE_MASTER = {
 
 -- 標題摘要顯示有效狀態，不把已被伺服器閘門壓制的勾選算進去。
 -- test:worldmap-effective-tick:start
-local function unifiedWorldMapTickOn(t)
+local function unifiedWorldMapTickOn(t, pn)
     if not getBoolOption(t.id, false) then return false end
-    if t.gate and sandboxGate(t.gate, true) == false then return false end
-    return t.id ~= "WMAnimalLivestock" or livestockVisibilityMode() ~= 4
+    if t.gate and sandboxGate(t.gate, true, pn) == false then return false end
+    return t.id ~= "WMAnimalLivestock" or livestockVisibilityMode(pn) ~= 4
 end
 -- test:worldmap-effective-tick:end
 -- 分類骨架：studioBuildInspector 依 id 分派 builder；gate＝伺服器沙盒閘
@@ -212,6 +215,44 @@ local UNIFIED_SECTIONS = {
     { id = "appearance", label = "UI_MinidoracatMiniMap_SecAppearance", icon = "sliders" },
     { id = "perf", label = "UI_MinidoracatMiniMap_SecPerf", icon = "gauge" },
 }
+
+-- 「管理員檢視」分類：三把鑰匙的第三把（玩家自己的本機旗標）唯一的操作面。
+-- 分類本身也是三選一才存在——Policy 缺席、玩家沒有 CanSeeAll、或伺服器沒開
+-- 戰術政策時整個分類不出現：不合格的玩家連「有這個東西」都不該看到。
+-- 刻意不在 OnGameBoot 一次性插入：三個條件全是 live 值（政策可即時改、權限
+-- 可被升降、分割畫面每個 slot 各自判定），一次性插入會把首幀狀態凍住。
+-- test:settings-studio-admin:start
+local ADMIN_SECTION = { id = "admin", label = "UI_MinidoracatMiniMap_SecAdmin", icon = "sliders" }
+
+local function adminSectionEligible(pn)
+    if not Policy then return false end
+    if Policy.hasCanSeeAll(pn) ~= true then return false end
+    return Policy.readBool("AllowAdminTacticalView", false) == true
+end
+
+-- 依資格把 ADMIN_SECTION 插在 perf 之前／自 UNIFIED_SECTIONS 移除；回 true＝
+-- 成員有變（呼叫端要重建搜尋索引，否則索引留著已消失分類的 hit）。成員比對用
+-- table identity 而非 id 字串：addon 分類的 id 由第三方帶入，字串比對會認錯。
+local function adminSectionSync(pn)
+    local at
+    for i = 1, #UNIFIED_SECTIONS do
+        if UNIFIED_SECTIONS[i] == ADMIN_SECTION then at = i; break end
+    end
+    if adminSectionEligible(pn) then
+        if at then return false end
+        local insertAt = #UNIFIED_SECTIONS + 1
+        for i = 1, #UNIFIED_SECTIONS do
+            if UNIFIED_SECTIONS[i].id == "perf" then insertAt = i; break end
+        end
+        table.insert(UNIFIED_SECTIONS, insertAt, ADMIN_SECTION)
+        return true
+    end
+    if not at then return false end
+    table.remove(UNIFIED_SECTIONS, at)
+    return true
+end
+-- test:settings-studio-admin:end
+
 local settingsUI -- 單例；獨立頂層視窗，不隨小地圖 Recreate 消失（apply 自行重抓 mm）
 -- Addon client 設定區：addon 註冊純資料＋get/set callbacks；值仍由 addon 自己保存。
 local addonSettingsById = {}
@@ -563,7 +604,7 @@ local function unifiedAddSliderRows(ctx, list)
         local cap
         local maxV = entry.max
         if entry.capBy and sandboxDist then
-            cap = sandboxDist(entry.capBy)
+            cap = sandboxDist(entry.capBy, ctx.pn)
             maxV = unifiedSliderRange(entry, cap,
                 getSliderValue(entry.id, entry.default, entry.min, entry.max))
         end
@@ -720,7 +761,7 @@ local function unifiedBuildAnimals(ctx)
         local tick = unifiedAddTick(ctx, ctx.curX + 4 + col * ctx.colW2, ctx.curY,
             ctx.colW2 - 8, getText(master.label), getBoolOption(master.id, master.default),
             unifiedOnModTick, master)
-        tick.enable = sandboxGate("AllowAnimalDots", true) ~= false
+        tick.enable = sandboxGate("AllowAnimalDots", true, ctx.pn) ~= false
             and (master.id ~= "AnimalLivestock" or ctx.livestockMode ~= 4)
         col = col + 1
         if col == ctx.cols2 then col = 0; ctx.curY = ctx.curY + ctx.rowH end
@@ -787,7 +828,7 @@ local function unifiedBuildWorldmap(ctx)
         local tick = unifiedAddTick(ctx, ctx.curX + 4 + col * ctx.colW2, ctx.curY,
             ctx.colW2 - 8, getText(t.label), getBoolOption(t.id, false),
             unifiedOnModTick, t)
-        tick.enable = (not t.gate or sandboxGate(t.gate, true) ~= false)
+        tick.enable = (not t.gate or sandboxGate(t.gate, true, ctx.pn) ~= false)
             and (t.id ~= "WMAnimalLivestock" or ctx.livestockMode ~= 4)
         col = col + 1
         if col == ctx.cols2 then col = 0; ctx.curY = ctx.curY + ctx.rowH end
@@ -1058,11 +1099,52 @@ local function unifiedBuildAddon(ctx)
 end
 -- test:addon-settings-builder:end
 
+-- 管理員檢視 builder（必須定義在 unifiedAddWrappedNote 之後：local 前向引用
+-- 會編成全域查找、執行期 nil）。兩個 callback 一律「setter 之後重建」——setter
+-- 回的是**實際存下的值**，伺服器不允許或權限已被收回時勾選框在重建時彈回真值，
+-- 而不是留下一個看起來開著、實際沒生效的假開關。
+local function unifiedOnAdminTactical(target, index, selected)
+    if Policy then Policy.setLocalTactical(target._playerNum or 0, selected == true) end
+    unifiedRebuild(target)
+end
+local function unifiedOnAdminPrivacy(target, index, selected)
+    if Policy then Policy.setLocalPrivacy(target._playerNum or 0, selected == true) end
+    unifiedRebuild(target)
+end
+
+local function unifiedBuildAdmin(ctx)
+    if not Policy then return end
+    local pn = ctx.pn or 0
+    unifiedAddWrappedNote(ctx, getText("UI_MinidoracatMiniMap_AdminNote"))
+    ctx.curY = ctx.curY + 4
+    local tacticalOn = Policy.localTactical(pn) == true
+    local tick = unifiedAddTick(ctx, ctx.curX + 4, ctx.curY, ctx.laneW - 6,
+        getText("UI_MinidoracatMiniMap_AdminTactical"), tacticalOn, unifiedOnAdminTactical)
+    tick.tooltip = getText("UI_MinidoracatMiniMap_AdminTactical_tooltip")
+    ctx.curY = ctx.curY + ctx.rowH
+    -- 隱私層是戰術層的子開關：版面用縮排表達依賴，行為由 enable 釘住——伺服器
+    -- 沒開第二把政策鑰匙、或戰術層還沒打開，都不可勾（勾了 setter 也會回 false）
+    local privacyAllowed = Policy.readBool("AllowAdminPrivacyView", false) == true
+    local sub = unifiedAddTick(ctx, ctx.curX + 20, ctx.curY, ctx.laneW - 22,
+        getText("UI_MinidoracatMiniMap_AdminPrivacy"),
+        Policy.localPrivacy(pn) == true, unifiedOnAdminPrivacy)
+    sub.tooltip = getText("UI_MinidoracatMiniMap_AdminPrivacy_tooltip")
+    sub.enable = privacyAllowed and tacticalOn
+    ctx.curY = ctx.curY + ctx.rowH
+    if not privacyAllowed then
+        unifiedAdd(ctx, ISLabel:new(ctx.curX + 20, ctx.curY, ctx.fontH,
+            getText("UI_MinidoracatMiniMap_AdminPrivacyDisabled"),
+            0.95, 0.55, 0.25, 1, UIFont.Small, true))
+        ctx.curY = ctx.curY + ctx.rowH
+    end
+end
+
 local UNIFIED_BUILDERS = {
     layers = unifiedBuildLayers, poicat = unifiedBuildPoicat, zones = unifiedBuildZones,
     zombie = unifiedBuildZombie,
     animals = unifiedBuildAnimals, vehicles = unifiedBuildVehicles, distance = unifiedBuildDistance,
     worldmap = unifiedBuildWorldmap, appearance = unifiedBuildAppearance,
+    admin = unifiedBuildAdmin,
     perf = unifiedBuildPerf,
 }
 
@@ -1278,6 +1360,11 @@ local function studioBuildIndex()
             for j = 1, #registeredZoneActions do
                 studioIndexAdd(index, sec, registeredZoneActions[j].labelKey, "navigate")
             end
+        elseif sec.id == "admin" then
+            -- 只收 kind="navigate"：搜尋結果列沒有版面承載「伺服器允許＋主開關
+            -- 已開」這層閘門，直接給 checkbox 會做出點了沒反應的開關
+            studioIndexAdd(index, sec, "UI_MinidoracatMiniMap_AdminTactical", "navigate")
+            studioIndexAdd(index, sec, "UI_MinidoracatMiniMap_AdminPrivacy", "navigate")
         elseif sec.id == "perf" then
             for j = 1, #PERF_ITEMS do studioIndexAdd(index, sec, PERF_ITEMS[j].name, "navigate") end
         end
@@ -1294,27 +1381,27 @@ local function studioBoolValue(hit, pn)
     return getBoolOption(hit.entry.id, hit.entry.default == true)
 end
 -- test:settings-studio-effective:start
-local function studioSearchEnabled(hit)
+local function studioSearchEnabled(hit, pn)
     local entry = hit.entry
-    if hit.sec.gate and sandboxGate(hit.sec.gate, true) == false then return false end
-    if entry and entry.gate and sandboxGate(entry.gate, true) == false then return false end
+    if hit.sec.gate and sandboxGate(hit.sec.gate, true, pn) == false then return false end
+    if entry and entry.gate and sandboxGate(entry.gate, true, pn) == false then return false end
     local id = entry and entry.id
     if (id == "AnimalLivestock" or id == "WMAnimalLivestock")
-            and livestockVisibilityMode() == 4 then return false end
+            and livestockVisibilityMode(pn) == 4 then return false end
     return true
 end
 -- test:settings-studio-effective:end
 
-local function studioSearchDisabledText(hit)
+local function studioSearchDisabledText(hit, pn)
     local id = hit.entry and hit.entry.id
     if (id == "AnimalLivestock" or id == "WMAnimalLivestock")
-            and livestockVisibilityMode() == 4 then
+            and livestockVisibilityMode(pn) == 4 then
         return getText("UI_MinidoracatMiniMap_LivestockHiddenBySandbox")
     end
     return getText("UI_MinidoracatMiniMap_ServerDisabled")
 end
 local function studioOnSearchTick(target, index, selected, hit)
-    if not studioSearchEnabled(hit) then return end
+    if not studioSearchEnabled(hit, target._playerNum or 0) then return end
     if hit.mode == "engine" then
         unifiedEngineSet(hit.entry.id, selected, target._playerNum or 0)
     elseif hit.mode == "addon" then
@@ -1348,8 +1435,8 @@ local function studioBack(target)
     target._narrowPage = "nav"
     unifiedRebuild(target)
 end
-local function studioSectionEnabled(sec)
-    return not sec.gate or sandboxGate(sec.gate, true) ~= false
+local function studioSectionEnabled(sec, pn)
+    return not sec.gate or sandboxGate(sec.gate, true, pn) ~= false
 end
 -- test:settings-studio-master:start
 local function studioMasterValue(entry)
@@ -1494,6 +1581,11 @@ local function studioResetSection(target, button)
         if studioResetId("ZoneNames", true) then changed = true end
         if studioResetId("ZoneNamesFar", true) then changed = true end
         if studioResetId("ZoneCategoryFilter", "-") then changed = true end
+    elseif sec.id == "admin" then
+        -- 只清本機旗標（依 facade 契約連帶清隱私）。刻意不碰沙盒、也不進
+        -- changed／modOptions:apply 路徑：這兩個值不在 ModOptions，
+        -- 「重設此分類」更不該把全服政策一起改掉
+        if Policy then Policy.setLocalTactical(target._playerNum or 0, false) end
     end
     if changed then
         -- apply() 目前只重建／套用 P0，但 reset 可由任一 split-screen 玩家觸發。
@@ -1640,7 +1732,7 @@ local function studioBuildNav(ctx)
         if sec.master then
             studioAddMasterPill(ctx, ctx.curX + ctx.laneW - 46,
                 ctx.curY + math.floor((ctx.rowH - 14) / 2), sec.master,
-                studioSectionEnabled(sec))
+                studioSectionEnabled(sec, ctx.pn))
         end
         ctx.curY = ctx.curY + ctx.rowH + 10
     end
@@ -1662,8 +1754,8 @@ local function studioBuildSearchResults(ctx, hits)
         local hit = hits[i]
         local text = getText(hit.sec.label) .. " / " .. hit.label
         if hit.kind == "boolean" then
-            local enabled = studioSearchEnabled(hit)
-            if not enabled then text = text .. " - " .. studioSearchDisabledText(hit) end
+            local enabled = studioSearchEnabled(hit, ctx.pn)
+            if not enabled then text = text .. " - " .. studioSearchDisabledText(hit, ctx.pn) end
             local tick = unifiedAddTick(ctx, ctx.curX + 4, ctx.curY, ctx.laneW - 8, text,
                 studioBoolValue(hit, ctx.pn), studioOnSearchTick, hit)
             tick.enable = enabled -- ISTickBox.lua:72-76/142-164
@@ -1697,11 +1789,11 @@ local function studioBuildInspector(ctx, sec)
         getText(sec.label), 1, 0.85, 0.4, 1, UIFont.Medium, true))
     if sec.master then
         studioAddMasterPill(ctx, ctx.curX + ctx.laneW - 44, ctx.curY, sec.master,
-            studioSectionEnabled(sec))
+            studioSectionEnabled(sec, ctx.pn))
     end
     ctx.curY = ctx.curY + getTextManager():getFontHeight(UIFont.Medium) + 10
     local cardY = ctx.curY - 4
-    if sec.gate and sandboxGate(sec.gate, true) == false then
+    if sec.gate and sandboxGate(sec.gate, true, ctx.pn) == false then
         unifiedAdd(ctx, ISLabel:new(ctx.curX + 4, ctx.curY, ctx.fontH,
             getText("UI_MinidoracatMiniMap_ServerDisabled"),
             0.95, 0.55, 0.25, 1, UIFont.Small, true))
@@ -1726,8 +1818,13 @@ end
 
 -- 全清重建仍是唯一同步模型；只保存選取分類與各分類/搜尋的 yScroll。
 unifiedRebuild = function(win)
-    studioClearRows(win)
     local pn = win._playerNum or 0
+    -- 分類成員是 live 值（政策、引擎權限、本機旗標都可能在視窗開著時變）：
+    -- 先同步成員再清列，成員有變時搜尋索引必須一併重建
+    if adminSectionSync(pn) and win._searchIndex then
+        win._searchIndex = studioBuildIndex()
+    end
+    studioClearRows(win)
     local viewportW = getPlayerScreenWidth(pn)
     local viewportH = getPlayerScreenHeight(pn)
     local measure = unifiedMeasureLayout()
@@ -1748,7 +1845,7 @@ unifiedRebuild = function(win)
     local bodyH = math.min(preferredBodyH,
         math.max(1, viewportH - titleH - toolbarH - 8))
     local W = pane.windowW
-    win._minidoracatLivestockMode = livestockVisibilityMode()
+    win._minidoracatLivestockMode = livestockVisibilityMode(pn)
     win:setWidth(W)
     win:setHeight(titleH + toolbarH + bodyH)
     local tbBtn = win.pinButton or win.collapseButton
@@ -1769,7 +1866,7 @@ unifiedRebuild = function(win)
     nav:setVisible(false)
     content:setVisible(false)
     -- 導覽欄只排分類列與母開關 pill，量測欄寬/欄數一概用不到
-    local navCtx = { win = win, panel = nav, rowH = measure.rowH }
+    local navCtx = { win = win, panel = nav, pn = pn, rowH = measure.rowH }
     local inspectorW = pane.inspectorW
     local contentCtx = { win = win, panel = content, pn = pn, livestockMode = win._minidoracatLivestockMode,
         fontH = measure.fontH, rowH = measure.rowH, laneW = math.max(1, inspectorW - 34),
@@ -1840,10 +1937,11 @@ end
 
 -- test:settings-studio-live:start
 local function studioLiveSettingsDirty(win)
-    local zombie = sandboxGate("AllowZombieDots", true) ~= false
-    local animals = sandboxGate("AllowAnimalDots", true) ~= false
-    local vehicles = sandboxGate("AllowVehicleDots", true) ~= false
-    local livestock = livestockVisibilityMode()
+    local pn = win._playerNum or 0
+    local zombie = sandboxGate("AllowZombieDots", true, pn) ~= false
+    local animals = sandboxGate("AllowAnimalDots", true, pn) ~= false
+    local vehicles = sandboxGate("AllowVehicleDots", true, pn) ~= false
+    local livestock = livestockVisibilityMode(pn)
     local dirty = win._liveZombie ~= zombie or win._liveAnimals ~= animals
         or win._liveVehicles ~= vehicles or win._liveLivestock ~= livestock
     win._liveZombie, win._liveAnimals = zombie, animals
@@ -1853,13 +1951,24 @@ local function studioLiveSettingsDirty(win)
     for i = 1, #UNIFIED_SLIDERS.distance do
         local capBy = UNIFIED_SLIDERS.distance[i].capBy
         if capBy then
-            local cap = sandboxDist and sandboxDist(capBy) or nil
+            local cap = sandboxDist and sandboxDist(capBy, pn) or nil
             if caps[i] ~= cap then caps[i] = cap; dirty = true end
         end
     end
+    -- policy revision＝沙盒值或本機旗標的變動計數；role eligibility 另需逐幀
+    -- 輪詢——管理員被升／降權不經任何寫入路徑，revision 不會動，只能直接比資格
+    local rev = Policy and Policy.getRevision() or 0
+    local admin = adminSectionEligible(pn)
+    if win._liveRev ~= rev or win._liveAdmin ~= admin then dirty = true end
+    win._liveRev, win._liveAdmin = rev, admin
     return dirty
 end
 -- test:settings-studio-live:end
+
+local function studioRebuildDirty(win, structuralDirty)
+    if structuralDirty then win._searchIndex = studioBuildIndex() end
+    unifiedRebuild(win)
+end
 
 -- test:settings-studio-titlebar:start
 -- 標題列 chrome 共用繪製：原生按鈕底框 ＋ 20px 上限的 UI framework 圖示，缺資產退回單字母。
@@ -1988,10 +2097,21 @@ local function buildSettingsWindow()
         end
         local structuralDirty = unifiedZoneRefsDirty(self)
         local liveDirty = studioLiveSettingsDirty(self)
-        if structuralDirty then self._searchIndex = studioBuildIndex() end
-        if query ~= self._lastQuery or structuralDirty or liveDirty then
+        if query ~= self._lastQuery or structuralDirty or liveDirty
+                or self._studioRebuildRetry then
             self._lastQuery = query
-            unifiedRebuild(self)
+            local ok, err = pcall(studioRebuildDirty, self, structuralDirty)
+            if ok then
+                self._studioRebuildRetry = nil
+                self._studioRebuildErrLogged = nil
+            else
+                self._studioRebuildRetry = true
+                if not self._studioRebuildErrLogged then
+                    self._studioRebuildErrLogged = true
+                    print("[MinidoracatMiniMap] settings rebuild failed, retrying: "
+                        .. tostring(err))
+                end
+            end
         end
         originalSettingsPrerender(self)
     end

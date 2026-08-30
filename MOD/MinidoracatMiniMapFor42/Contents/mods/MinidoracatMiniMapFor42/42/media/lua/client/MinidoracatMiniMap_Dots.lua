@@ -102,7 +102,7 @@ end
 local function sampleZombieDots(inner)
     local pn = inner.playerNum or 0
     local st = zdotsStateFor(inner)
-    local dist = displayDist("ZombieDotDistance")
+    local dist = displayDist("ZombieDotDistance", pn)
     local now = getTimestampMs()
     local playerObj = getSpecificPlayer(pn)
     local hasPlayer = playerObj ~= nil
@@ -203,7 +203,9 @@ end
 -- 顏色/大小/上限與伺服器沙盒閘兩表面共用
 local function drawZombieDotsOn(el, optId)
     if not getBoolOption(optId, false) then return end -- 關閉＝零成本
-    if sandboxGate("AllowZombieDots", true) == false then return end -- 伺服器沙盒禁用
+    -- 伺服器沙盒禁用（管理員戰術檢視生效時 Policy 對此鍵回 true＝旁路）：
+    -- 兩表面共用同一判定，pn 取該表面目前的擁有者（世界地圖 singleton 會換人）
+    if sandboxGate("AllowZombieDots", true, el.playerNum or 0) == false then return end
     local st = sampleZombieDots(el)
     local c = ZDOTS_COLORS[getComboIndex("ZombieDotColor", 1)] or ZDOTS_COLORS[1]
     local size = getSliderValue("ZombieDotSize", 3, 1, 16)
@@ -393,9 +395,9 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
         st.errLogged = nil
     end
     local now = getTimestampMs()
-    local da = displayDist("AnimalIconDistance")
-    local dv = displayDist("VehicleIconDistance")
-    local livestockMode = livestockVisibilityMode()
+    local da = displayDist("AnimalIconDistance", pn)
+    local dv = displayDist("VehicleIconDistance", pn)
+    local livestockMode = livestockVisibilityMode(pn)
     -- cache key 逐欄位比較（perf 稽核 ICON-3，殭屍側 st.distance 既有寫法）：
     -- 原每幀組 flags 字串（5 次 tostring＋串接）＝穩定的 GC churn 來源。開關組合
     -- ＋篩選逐欄入 key：節流窗內任一變了就立即重取樣，否則剛關掉的類別/物種會
@@ -555,11 +557,13 @@ end
 -- wildOpt/liveOpt/vehOpt＝該表面的開關選項（小地圖 AnimalWild…／世界地圖 WM 前綴）；
 -- 風格/大小/顏色/物種與類別篩選、伺服器沙盒閘皆兩表面共用
 local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
-    local allowAnimals = sandboxGate("AllowAnimalDots", true) ~= false -- 伺服器沙盒閘門
+    -- 沙盒閘門逐玩家判定（管理員戰術檢視生效時 Policy 對這兩鍵回 true＝旁路）
+    local pn = inner.playerNum or 0
+    local allowAnimals = sandboxGate("AllowAnimalDots", true, pn) ~= false
     local wantWild = allowAnimals and getBoolOption(wildOpt, false)
     local wantLive = allowAnimals and getBoolOption(liveOpt, false)
     local wantVeh = getBoolOption(vehOpt, false)
-        and sandboxGate("AllowVehicleDots", true) ~= false
+        and sandboxGate("AllowVehicleDots", true, pn) ~= false
     if not (wantWild or wantLive or wantVeh) then return end -- 全關＝零成本
     local st = sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
     if st.count == 0 then return end

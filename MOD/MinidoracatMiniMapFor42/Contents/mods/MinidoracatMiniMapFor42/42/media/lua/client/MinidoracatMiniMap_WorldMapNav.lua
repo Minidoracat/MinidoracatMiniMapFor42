@@ -91,7 +91,9 @@ if ISWorldMap and ISWorldMap.onRightMouseUp then
             context:addOption(getText("UI_MinidoracatMiniMap_ClearTarget"), self,
                 self.onMinidoracatClearTarget)
             if isClient() and Faction and Faction.getPlayerFaction(playerObj)
-                and Core.sandboxGate("AllowNavShare", true) ~= false then
+                -- ⚠ 不傳 pn＝AllowNavShare 永不列入管理員旁路白名單（會影響其他
+                -- 玩家、需伺服器轉送的功能閘；主檔 navShareGateTick 註解同義）
+                and Core.navShareAllowed and Core.navShareAllowed() then
                 -- Faction.getPlayerFaction 用例 ISFactionUI.lua:408
                 context:addOption(getText("UI_MinidoracatMiniMap_ShareTarget"), self,
                     self.onMinidoracatShareTarget)
@@ -123,6 +125,13 @@ if ISWorldMap and ISWorldMap.prerender then
         if not ok and not self._minidoracatWMNavErrLogged then
             self._minidoracatWMNavErrLogged = true
             print("[MinidoracatMiniMap] worldmap nav draw failed: " .. tostring(err))
+        end
+        -- 管理員檢視標記：本檔的 prerender wrap 是最外層，畫在全部世界地圖加繪
+        -- 之上。缺函式／繪製錯誤都 log-once，避免旁路生效卻沒有安全提示。
+        ok, err = pcall(Core.drawAdminViewMarker, self)
+        if not ok and not self._minidoracatWMAdminMarkErrLogged then
+            self._minidoracatWMAdminMarkErrLogged = true
+            print("[MinidoracatMiniMap] worldmap admin marker draw failed: " .. tostring(err))
         end
     end
 end

@@ -259,5 +259,13 @@
     "UI_MinidoracatMiniMap_PerfItemMisc": "セーフハウス範囲／通り名／ナビルート",
     "UI_MinidoracatMiniMap_PerfDescMisc": "数が少ないか一度きりの計算",
     "UI_MinidoracatMiniMap_PerfNoteWorldmap": "ワールドマップ（M）を開いている間はミニマップよりオーバーレイ負荷が高く、閉じれば解消します。",
-    "UI_MinidoracatMiniMap_PerfAdvice": "重いと感じたら：まずゾンビ表示をオフにするか上限を下げ、次に表示距離を縮めて不要なレイヤーやカテゴリーをオフにしてください。"
+    "UI_MinidoracatMiniMap_PerfAdvice": "重いと感じたら：まずゾンビ表示をオフにするか上限を下げ、次に表示距離を縮めて不要なレイヤーやカテゴリーをオフにしてください。",
+    "UI_MinidoracatMiniMap_SecAdmin": "管理者ビュー",
+    "UI_MinidoracatMiniMap_AdminNote": "このサーバーは管理者ビューの特例を許可しています。ここのスイッチはあなたのクライアントの描画だけを変更し、サーバー設定は変わりません。チート対策機能でもありません。サーバーを離れる／再接続すると自動的にオフになります。",
+    "UI_MinidoracatMiniMap_AdminTactical": "戦術ビュー（サーバーの表示制限を無視）",
+    "UI_MinidoracatMiniMap_AdminTactical_tooltip": "ゾンビドット、ゾンビ密度マップ、動物アイコン、車両アイコンのサーバー全体スイッチと、ゾンビ／動物／車両／資源ポイント／カスタムエリアの表示距離および全体距離上限を一時的に無視します。\nサーバー側で「管理者の戦術ビュー特例を許可」が有効で、かつ CanSeeAll 権限が必要です。\nオフにするとプライバシービューも同時にオフになります。",
+    "UI_MinidoracatMiniMap_AdminPrivacy": "プライバシービュー（他プレイヤーのプライバシー制限を無視）",
+    "UI_MinidoracatMiniMap_AdminPrivacy_tooltip": "戦術ビューに加えて、他のプレイヤーの私的な情報を隠すための制限も無視します：セーフハウス範囲の表示とその距離制限、家畜アイコンの表示。\nサーバー側で「管理者のプライバシービュー特例を許可」が別途有効で、かつ戦術ビューがオンである必要があります。",
+    "UI_MinidoracatMiniMap_AdminPrivacyDisabled": "このサーバーは管理者プライバシービューを許可していません",
+    "UI_MinidoracatMiniMap_AdminViewMarker": "管理者ビュー"
 }

@@ -259,5 +259,13 @@
     "UI_MinidoracatMiniMap_PerfItemMisc": "Safehouse / street names / nav route",
     "UI_MinidoracatMiniMap_PerfDescMisc": "Small counts or one-off computation",
     "UI_MinidoracatMiniMap_PerfNoteWorldmap": "The world map (M) adds more overlay cost than the corner minimap while open; closing it reclaims the cost.",
-    "UI_MinidoracatMiniMap_PerfAdvice": "If it feels laggy: turn off zombie dots or lower their cap first, then shrink display distances and disable unused layers and categories."
+    "UI_MinidoracatMiniMap_PerfAdvice": "If it feels laggy: turn off zombie dots or lower their cap first, then shrink display distances and disable unused layers and categories.",
+    "UI_MinidoracatMiniMap_SecAdmin": "Admin view",
+    "UI_MinidoracatMiniMap_AdminNote": "This server allows admin view overrides. These switches only change what your own client draws; they never change server settings and are not an anti-cheat feature. They reset when you leave or reconnect.",
+    "UI_MinidoracatMiniMap_AdminTactical": "Tactical view (ignore server display limits)",
+    "UI_MinidoracatMiniMap_AdminTactical_tooltip": "Temporarily ignores the server-wide switches for zombie dots, the zombie heatmap, animal icons and vehicle icons, plus the zombie / animal / vehicle / POI / custom zone display distances and the global distance cap.\nRequires the server option \"Allow admin tactical view override\" and the CanSeeAll capability.\nTurning this off also turns off Privacy view.",
+    "UI_MinidoracatMiniMap_AdminPrivacy": "Privacy view (ignore other players' privacy limits)",
+    "UI_MinidoracatMiniMap_AdminPrivacy_tooltip": "On top of Tactical view, also ignores the limits that hide other players' private information: safehouse area display and its distance limit, and livestock icon visibility.\nRequires the server option \"Allow admin privacy view override\" and Tactical view already on.",
+    "UI_MinidoracatMiniMap_AdminPrivacyDisabled": "This server does not allow admin privacy view",
+    "UI_MinidoracatMiniMap_AdminViewMarker": "ADMIN VIEW"
 }

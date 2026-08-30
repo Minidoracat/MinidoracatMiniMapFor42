@@ -25,6 +25,25 @@ local function sameFactionMembers(player)
     return members
 end
 
+-- 全服政策一律走 shared facade（MinidoracatMiniMap_Policy.lua）：Java
+-- SandboxOptions 是真相源，SandboxVars 只是任何 MOD 都能寫的鏡像表，權限判定
+-- 不能建在它上面。facade 缺席＝安裝不完整（shared 檔沒載到），此時**拒收**而
+-- 不是退回直讀鏡像表——本路徑會請伺服器代發座標給其他玩家，寧可停用。
+-- 刻意不傳 playerNum：AllowNavShare 不在任何管理員旁路白名單上（見 facade
+-- 檔頭「永不旁路」），連呼叫形式上都不給旁路的機會。
+local policyWarned = false
+local function policyAllows(name, default)
+    local P = MinidoracatMiniMapPolicy
+    if not P then
+        if not policyWarned then
+            policyWarned = true
+            print("[MinidoracatMiniMap] policy facade missing, nav share refused")
+        end
+        return false
+    end
+    return P.readBool(name, default)
+end
+
 local Commands = {}
 
 -- payload 帶 to（收件角色名）：sendServerCommand(player,...) 定位的是該玩家的
@@ -32,8 +51,7 @@ local Commands = {}
 -- 客戶端按 to 分桶，才不會讓同機的非同陣營玩家看到座標
 function Commands.shareTarget(player, args)
     -- 沙盒閘門（伺服器端權威判定；客戶端 UI 亦有同步隱藏，這裡防繞過）
-    local sb = SandboxVars and SandboxVars.MinidoracatMiniMap
-    if sb and sb.AllowNavShare == false then return end
+    if not policyAllows("AllowNavShare", true) then return end
     if not (args and type(args.x) == "number" and type(args.y) == "number") then return end
     local members = sameFactionMembers(player)
     if not members then return end
@@ -45,6 +63,8 @@ function Commands.shareTarget(player, args)
 end
 
 function Commands.clearShared(player, args)
+    -- 清除同樣是跨玩家封包；政策缺席／關閉時不可讓手工 ClientCommand 繞過。
+    if not policyAllows("AllowNavShare", true) then return end
     local members = sameFactionMembers(player)
     if not members then return end
     local author = player:getUsername()

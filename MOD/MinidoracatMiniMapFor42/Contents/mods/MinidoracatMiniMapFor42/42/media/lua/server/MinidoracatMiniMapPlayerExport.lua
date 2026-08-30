@@ -527,22 +527,34 @@ local function log(msg)
     print("[MinidoracatMiniMap] " .. msg)
 end
 
-local function sandboxTable()
-    return SandboxVars and SandboxVars.MinidoracatMiniMap
+-- 沙盒讀值一律走 shared facade（MinidoracatMiniMap_Policy.lua）：Java
+-- SandboxOptions 是真相源，SandboxVars 只是任何 MOD 都能寫的鏡像表——匯出開關
+-- 決定玩家座標要不要落地成檔案，不能建在可被任意改寫的表上。
+-- 三把匯出鍵（ExportPlayerPositions／PlayerExportInterval／ExportOfflinePlayers）
+-- 都**不在**任何管理員旁路白名單上（見 facade 檔頭），且這裡刻意只用 read 系
+-- API、不傳 playerNum＝形式上也拿不到旁路。
+-- facade 缺席＝安裝不完整，此時退回呼叫端 default（主開關的 default 是 false，
+-- 即不寫檔），並記一次 log；不退回直讀鏡像表。
+local policyWarned = false
+local function policyFacade()
+    local P = MinidoracatMiniMapPolicy
+    if not P and not policyWarned then
+        policyWarned = true
+        log("policy facade missing, player export uses built-in defaults")
+    end
+    return P
 end
 
 local function sbBool(name, default)
-    local sb = sandboxTable()
-    local v = sb and sb[name]
-    if type(v) == "boolean" then return v end
-    return default
+    local P = policyFacade()
+    if not P then return default end
+    return P.readBool(name, default)
 end
 
 local function sbNumber(name, default)
-    local sb = sandboxTable()
-    local v = sb and sb[name]
-    if type(v) == "number" then return v end
-    return default
+    local P = policyFacade()
+    if not P then return default end
+    return P.readNumber(name, default)
 end
 
 local registry = {}         -- regKey(name, idx) → {name, idx, steamId, x, y, z, seen}

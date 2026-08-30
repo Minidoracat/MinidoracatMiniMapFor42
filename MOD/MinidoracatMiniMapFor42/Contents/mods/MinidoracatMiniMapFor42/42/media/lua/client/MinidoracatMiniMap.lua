@@ -780,9 +780,22 @@ getBoolOption = function(id, default) -- 本體（前置宣告見檔案上方）
     return opt:getValue()
 end
 
+-- 政策 facade（全域 MinidoracatMiniMapPolicy，shared/ 於檔尾發布）：Java
+-- SandboxOptions 為真相源（含 250ms 快取），並負責「管理員個人旁路」的白名單
+-- 裁決。shared 目錄先於 client 載入（LuaManager.java:1243-1246
+-- LoadDirBase("shared")→LoadDirBase("client")），故載入期取到的即完整表。
+-- 缺席（舊版共用檔／載入失敗）＝下方全部讀取退回既有 SandboxVars 直讀，
+-- 管理員旁路整組不存在＝fail closed。
+local Policy = MinidoracatMiniMapPolicy
+
 -- 沙盒管理閘門（media/sandbox-options.txt 定義）：客戶端每幀讀值——
--- 管理員沙盒面板改動同步後即時生效；缺表/缺鍵時回呼叫端提供的 default
-local function sandboxGate(name, default)
+-- 管理員沙盒面板改動同步後即時生效；缺表/缺鍵時回呼叫端提供的 default。
+-- pn＝這次要判定的顯示對象（分割畫面各自判定，不得借 player 0 的權限）：
+-- 戰術白名單鍵在該玩家的管理員戰術檢視生效時由 Policy 回 true。白名單外
+-- （AllowNavShare／Export*／全部 AutoDrive gameplay）永不旁路，傳不傳 pn
+-- 結果都一樣——那些呼叫點刻意「不傳 pn」以在程式碼上表明不旁路。
+local function sandboxGate(name, default, pn)
+    if Policy then return Policy.gate(name, default, pn) end
     local sb = SandboxVars and SandboxVars.MinidoracatMiniMap
     local v = sb and sb[name]
     if v == nil then return default end
@@ -791,9 +804,12 @@ end
 
 -- 距離沙盒值 0 或缺值＝不限制；僅正數啟用距離閘門。AllInfoDistance＝全域距離
 -- 上限（最優先）：與個別距離取較小的正值——個別值只能更嚴、不能放寬全域上限；
--- 只設全域時全部距離項目（殭屍/動物/載具/安全屋/POI/自訂區域）一體生效
+-- 只設全域時全部距離項目（殭屍/動物/載具/安全屋/POI/自訂區域）一體生效。
+-- 戰術檢視生效時 Policy 對白名單距離鍵回 nil（不限制）＝旁路伺服器上限；
+-- 玩家自訂滑條仍在 displayDist 收緊（旁路只解伺服器閘，不解自己的偏好）
 -- test:sandbox-distance:start
-local function sandboxDist(name)
+local function sandboxDist(name, pn)
+    if Policy then return Policy.sandboxDistance(name, pn) end
     local v = sandboxGate(name, 0)
     if type(v) ~= "number" or v <= 0 then v = nil end
     local g = sandboxGate("AllInfoDistance", 0)
@@ -804,14 +820,23 @@ end
 
 -- 牲畜可見性：1=全部、2=隱藏其他安全屋內、3=僅我方安全屋內、4=全部隱藏。
 -- 單機沒有可用的玩家間安全屋歸屬語意，前 3 檔等同全部顯示；第 4 檔仍有效。
+-- 隱私檢視生效時 Policy 回 1（取最寬模式）；單機收斂亦由 Policy 內處理
 -- test:livestock-effective-mode:start
-local function livestockVisibilityMode()
+local function livestockVisibilityMode(pn)
+    if Policy then return Policy.livestockMode(pn) end
     local mode = sandboxGate("LivestockVisibility", 2)
     if type(mode) ~= "number" or mode < 1 or mode > 4 then mode = 2 end
     if not isClient() and mode ~= 4 then return 1 end
     return mode
 end
 -- test:livestock-effective-mode:end
+
+-- 安全屋範圍顯示模式：1=關閉、2=僅自己所屬、3=全部（預設；缺表視為 3）。
+-- 隱私檢視生效時 Policy 回 3（取最寬模式，與距離閘一併放行）
+local function safehouseDisplayMode(pn)
+    if Policy then return Policy.safehouseMode(pn) end
+    return sandboxGate("SafehouseDisplay", 3)
+end
 
 -- combobox 值＝選中項索引（同 AdornMode 用法）；超界或無選項回預設
 local function getComboIndex(id, default)
@@ -835,13 +860,15 @@ local function getSliderValue(id, default, min, max)
 end
 
 -- 顯示距離合成（取樣/繪製端一律經此取距離）：伺服器個別值（sandboxDist 內已
--- 併全域上限 AllInfoDistance）與玩家自訂值（Client<沙盒選項名>，ESC 頁與統一
--- 視窗「顯示距離」區同一滑條）取較小正值——玩家只能收緊、不能放寬伺服器閘；
--- 0/缺值＝該層不限制
+-- 併全域上限 AllInfoDistance，並套管理員戰術旁路）與玩家自訂值（Client<沙盒
+-- 選項名>，ESC 頁與統一視窗「顯示距離」區同一滑條）取較小正值——玩家只能
+-- 收緊、不能放寬伺服器閘；0/缺值＝該層不限制。
+-- pn＝顯示對象（分割畫面各自判定）；管理員旁路把 server 端拿掉後，玩家自己
+-- 的 Client* 滑條照舊生效（旁路不解自己的偏好）
 -- test:display-distance:start
 local CLIENT_DIST_MAX = 2000 -- 客戶端滑條值域上限（ESC 頁/統一視窗/夾限同值）
-local function displayDist(name)
-    local server = sandboxDist(name)
+local function displayDist(name, pn)
+    local server = sandboxDist(name, pn)
     local mine = getSliderValue("Client" .. name, 0, 0, CLIENT_DIST_MAX)
     if mine > 0 and (not server or mine < server) then return mine end
     return server
@@ -1640,7 +1667,9 @@ if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.createChildren
         -- 面板重建路徑（synchUI 全清子元件重跑 createChildren，ISMiniMap.lua:133-142）：
         -- 舊 tickbox 已被 removeChild，這裡蓋掉引用表＝不重複、不殘留
         self._minidoracatTicks = {}
-        local livestockMode = livestockVisibilityMode()
+        -- 齒輪面板屬於 self.map（＝ISMiniMapInner，ISMiniMap.lua:186/583）那位玩家：
+        -- 分割畫面 P2+ 的面板不得借 player 0 的管理員權限判牲畜模式
+        local livestockMode = livestockVisibilityMode(self.map and self.map.playerNum or 0)
         self._minidoracatLivestockMode = livestockMode
         local maxRight = self.width
         for i = 1, #GEAR_TICKS do
@@ -1681,11 +1710,11 @@ if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.createChildren
         end
     end
 
-    -- 沙盒值可由管理員即時同步；模式跨入/離開 4 時強制走原版重建路徑，
-    -- 避免已開啟的齒輪面板沿用 createChildren 當下的舊警示文字。
+    -- 沙盒值可由管理員即時同步（管理員自己的隱私旁路開關亦同）；模式跨入/離開 4
+    -- 時強制走原版重建路徑，避免已開啟的齒輪面板沿用 createChildren 當下的舊警示文字。
     local originalPanelPrerender = ISMiniMapOptionsPanel.prerender
     function ISMiniMapOptionsPanel:prerender()
-        local mode = livestockVisibilityMode()
+        local mode = livestockVisibilityMode(self.map and self.map.playerNum or 0)
         if self._minidoracatLivestockMode ~= nil and self._minidoracatLivestockMode ~= mode then
             self.screenHeight = -1 -- 讓 originalPanelSynchUI 清子元件並重跑 createChildren
             self:synchUI()
@@ -2327,15 +2356,17 @@ end
 local function drawSafehouses(inner)
     if not (SafeHouse and SafeHouse.getSafehouseList) then return end
     if not getBoolOption("Safehouses", true) then return end
-    local dist = displayDist("SafehouseDisplayDistance")
-    -- 沙盒顯示模式：1=關閉、2=僅自己的、3=全部（預設；缺表視為 3）
-    local shMode = sandboxGate("SafehouseDisplay", 3)
+    local pn = inner.playerNum or 0
+    local dist = displayDist("SafehouseDisplayDistance", pn)
+    -- 顯示模式：1=關閉、2=僅自己的、3=全部（預設；缺表視為 3）。管理員隱私檢視
+    -- 生效時取最寬模式（3）且距離閘一併放行——旁路只影響「這台客戶端畫什麼」
+    local shMode = safehouseDisplayMode(pn)
     if shMode == 1 then return end
     local list = SafeHouse.getSafehouseList()
     if not list or list:size() == 0 then return end
     -- getSpecificPlayer/getX/getY 原版用例 ISMiniMap.lua:216-222；getUsername 原版用例
     -- ISScoreboard.lua:108。距離啟用但缺玩家時全部 fail closed
-    local playerObj = getSpecificPlayer(inner.playerNum or 0)
+    local playerObj = getSpecificPlayer(pn)
     if dist and not playerObj then return end
     local px = playerObj and playerObj:getX()
     local py = playerObj and playerObj:getY()
@@ -2527,13 +2558,14 @@ end
 -- poiBlocked/zoneBlocked（該類距離啟用但缺玩家：fail closed，該類 provider
 -- 整段不畫——同 drawSafehouses 的缺玩家語意）。
 local function distGateParams(inner)
-    local pdist = displayDist("PoiDisplayDistance")
+    local pn = inner.playerNum or 0
+    local pdist = displayDist("PoiDisplayDistance", pn)
     -- zdist 僅在有外部 provider 時求值：displayDist 內含 "Client"..name 字串
     -- 配置＋選項/沙盒查找，純本體（無 zone addon）每幀 3 pass×2 表面全屬浪費
     -- （三 lane review 同報）；hasExternalZoneProvider 是 ≤2 項純 Lua 迴圈
-    local zdist = hasExternalZoneProvider() and displayDist("ZoneDisplayDistance") or nil
+    local zdist = hasExternalZoneProvider() and displayDist("ZoneDisplayDistance", pn) or nil
     if not pdist and not zdist then return nil, nil, nil, nil, false, false end
-    local playerObj = getSpecificPlayer(inner.playerNum or 0)
+    local playerObj = getSpecificPlayer(pn)
     if not playerObj then
         return nil, nil, nil, nil, pdist ~= nil, zdist ~= nil
     end
@@ -3353,10 +3385,23 @@ local NAV_ARRIVE_DIST = 5  -- 抵達判定（世界格）
 
 -- 沙盒關閉時清掉送、收兩側本機 cache；持續為 false 時也會清除延遲抵達的封包。
 -- Events.OnTick.Add 原版用例 client/Chat/ISChat.lua:943。
-local lastAllowNavShare = sandboxGate("AllowNavShare", true) ~= false
+-- ⚠ AllowNavShare 是「會影響其他玩家／需伺服器轉送」的功能閘，**永不**列入管理員
+-- 旁路白名單；政策模組缺席時與伺服器端同樣 fail-closed，避免客戶端顯示可分享、
+-- 伺服器卻拒絕的靜默不一致。匿名掛 Core，避免增加主 chunk local。
+-- test:nav-share-policy:start
+Core.navShareAllowed = function()
+    if Policy then return Policy.readBool("AllowNavShare", true) == true end
+    if not Core.navPolicyMissingLogged then
+        Core.navPolicyMissingLogged = true
+        log("policy facade missing; navigation sharing disabled")
+    end
+    return false
+end
+-- test:nav-share-policy:end
+local lastAllowNavShare = Core.navShareAllowed()
 -- test:nav-share-gate:start
 local function navShareGateTick()
-    local allowed = sandboxGate("AllowNavShare", true) ~= false
+    local allowed = Core.navShareAllowed()
     if not allowed then
         -- 每 tick 跑：非空才重建表，避免持續 false 期間每 tick 配置兩張空表。
         -- 空表偵測用 pairs 探測（PZ Kahlua 無 next，見 getLoadedMapDirs 註解）
@@ -3377,7 +3422,7 @@ end
 
 -- 關閉期間到達的舊封包直接丟棄，避免「最後一個 false tick 後收到、重開前未清」復活。
 local function navAcceptShared(to, author, x, y)
-    if sandboxGate("AllowNavShare", true) == false then return end
+    if not Core.navShareAllowed() then return end
     sharedTargets[to] = sharedTargets[to] or {}
     sharedTargets[to][author] = { x = x, y = y }
 end
@@ -3412,7 +3457,7 @@ Core.navGetTarget = function(pn) return navTargets[pn] end
 -- NavRoute 分享路線用：回「給此玩家的分享目標桶」（[author]={x,y}）；沙盒
 -- 閘門與旗標繪製同源——閘門關閉時旗與路線一起消失，不會旗滅線存
 Core.navGetShared = function(pn)
-    if sandboxGate("AllowNavShare", true) == false then return nil end
+    if not Core.navShareAllowed() then return nil end
     local playerObj = getSpecificPlayer(pn)
     return playerObj and sharedTargets[playerObj:getUsername()] or nil
 end
@@ -3548,7 +3593,7 @@ Core.navShareTarget = function(pn)
     local playerObj = getSpecificPlayer(pn)
     local t = navTargets[pn]
     if not (playerObj and t and isClient()) then return end
-    if sandboxGate("AllowNavShare", true) == false then return end -- 伺服器沙盒禁用
+    if not Core.navShareAllowed() then return end -- 伺服器沙盒禁用／政策模組缺席
     navShared[pn] = true
     sendClientCommand(playerObj, "MinidoracatMiniMap", "shareTarget", { x = t.x, y = t.y })
 end
@@ -3785,6 +3830,67 @@ local function drawPlayerCoords(inner)
     end
 end
 
+-- 管理員檢視常駐標記（左上角琥珀膠囊）：只要該玩家的戰術或隱私旁路正在生效
+-- 就一直畫——管理員必須「看得出自己看到的不是普通玩家看到的」，否則會把旁路
+-- 結果當成一般玩家可見資訊回報。零旁路＝首行即返回（普通玩家零成本）。
+-- 文字與寬度以元件為單位 memo（同座標列 MISC-3 快取策略）：文字是常數字串，
+-- 只在語系/字型倍率變動後首幀重量測，逐幀零配置、零跨界量測。
+-- 皮膚（Core.Skin＝家族 UI 框架 adapter，載入序在本檔之後故動態查）缺席時退回
+-- 原生直角 drawRect（同設定視窗 prerender 的退回紅線）
+-- test:admin-view-marker:start
+local function drawAdminMarkerSkin(Skin, inner, w, h)
+    Skin.fill(inner, 6, 6, w + 12, h + 6, Skin.COLORS.BG_PANEL)
+    Skin.border(inner, 6, 6, w + 12, h + 6, Skin.COLORS.ACCENT_AMBER)
+end
+
+local function drawAdminViewMarker(inner)
+    if not Policy then return end
+    local pn = inner.playerNum or 0
+    if not (Policy.tacticalActive(pn) or Policy.privacyActive(pn)) then return end
+    local mk = inner._minidoracatAdminMark
+    local txt = getText("UI_MinidoracatMiniMap_AdminViewMarker")
+    if not mk then
+        mk = {}
+        inner._minidoracatAdminMark = mk
+    end
+    if mk.txt ~= txt then
+        -- 尺寸先在 pcall 內完整量完、驗型，再提交 cache。跨 Lua/Java bridge
+        -- 若拋錯或回 nil，仍以保守尺寸畫出安全標記；不可先寫 txt 讓半成品
+        -- cache 永久卡住、旁路生效卻沒有 ADMIN VIEW 提示。
+        local ok, w, h = pcall(function()
+            local tm = getTextManager()
+            return tm:MeasureStringX(UIFont.Small, txt), tm:getFontHeight(UIFont.Small)
+        end)
+        if not ok or type(w) ~= "number" or w ~= w or w < 0
+                or type(h) ~= "number" or h ~= h or h <= 0 then
+            if not inner._minidoracatAdminMarkMeasureErrLogged then
+                inner._minidoracatAdminMarkMeasureErrLogged = true
+                log("admin view marker measurement failed, using fixed metrics: "
+                    .. tostring(ok and "invalid metrics" or w))
+            end
+            w = math.min(240, math.max(60, type(txt) == "string" and #txt * 6 or 80))
+            h = 14
+        end
+        mk.w, mk.h, mk.txt = w, h, txt
+    end
+    local Skin = Core.Skin
+    local painted = false
+    if Skin then
+        local ok, err = pcall(drawAdminMarkerSkin, Skin, inner, mk.w, mk.h)
+        painted = ok
+        if not ok and not inner._minidoracatAdminMarkSkinErrLogged then
+            inner._minidoracatAdminMarkSkinErrLogged = true
+            log("admin view marker skin failed, using rectangular fallback: " .. tostring(err))
+        end
+    end
+    if not painted then
+        inner:drawRect(6, 6, mk.w + 12, mk.h + 6, 0.72, 0, 0, 0)
+        inner:drawRectBorder(6, 6, mk.w + 12, mk.h + 6, 1, 1, 0.85, 0.4)
+    end
+    inner:drawText(mk.txt, 12, 9, 1, 0.85, 0.4, 1, UIFont.Small)
+end
+-- test:admin-view-marker:end
+
 -- 複製選定點座標到剪貼簿（右鍵選單回呼）。z 固定 0＝地面層：小地圖是平面俯視、
 -- 點擊格無樓層資訊，同原版 debug 傳送 /teleportto x,y,0 慣例。回饋沿用座標列琥珀提示
 function ISMiniMapInner:onMinidoracatCopyCoords(wx, wy)
@@ -3822,7 +3928,7 @@ if ISMiniMapInner and ISMiniMapInner.onRightMouseUp then
             context:addOption(getText("UI_MinidoracatMiniMap_ClearTarget"), self,
                 self.onMinidoracatClearTarget)
             if isClient() and Faction and Faction.getPlayerFaction(playerObj)
-                and sandboxGate("AllowNavShare", true) ~= false then
+                and Core.navShareAllowed() then
                 -- Faction.getPlayerFaction 用例 ISFactionUI.lua:408
                 context:addOption(getText("UI_MinidoracatMiniMap_ShareTarget"), self,
                     self.onMinidoracatShareTarget)
@@ -3856,7 +3962,7 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         -- 無 PZAPI（面板不回寫）時維持舊行為：恢復為開。
         -- （置於 WM-1 早退之前：沙盒不變式須每幀維持，且引擎側小地圖 Java render
         -- 在遮蔽下照跑，本段只設引擎旗標、不繪製，順序與 zone 填色互不影響）
-        if sandboxGate("AllowZombieIntensity", true) == false then
+        if sandboxGate("AllowZombieIntensity", true, self.playerNum or 0) == false then
             if self.mapAPI:getBoolean("ZombieIntensity") then
                 self._minidoracatZISuppressed = true
                 self.mapAPI:setBoolean("ZombieIntensity", false)
@@ -3919,6 +4025,13 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         end
         if Core.drawZombieDotsOn then -- 繪製本體在 _Dots.lua（世界地圖用 WMZombieDots）
             Core.drawZombieDotsOn(self, "ZombieDots")
+        end
+        -- 管理員檢視標記畫在全部加繪之上（最後呼叫）：它是「你正在看旁路資料」
+        -- 的提示，不得被點雲/圖標蓋掉；失敗 log-once 且下一幀重試
+        local adminOk, adminErr = pcall(drawAdminViewMarker, self)
+        if not adminOk and not self._minidoracatAdminMarkErrLogged then
+            self._minidoracatAdminMarkErrLogged = true
+            log("admin view marker draw failed: " .. tostring(adminErr))
         end
     end
 end
@@ -4392,6 +4505,10 @@ Core.sandboxDist = sandboxDist
 Core.displayDist = displayDist
 Core.livestockVisibilityMode = livestockVisibilityMode
 Core.unifiedCsvSet = unifiedCsvSet
+-- 管理員檢視（雙層政策的客戶端讀取面）：Policy 為 nil＝舊版共用檔／載入失敗，
+-- 模組檔沿用「Core.policy 為 nil ⇒ 沒有管理員檢視」的 fail-closed 判斷
+Core.policy = Policy
+Core.drawAdminViewMarker = drawAdminViewMarker -- _WorldMapNav.lua：世界地圖側同款標記
 local zoneCatErrLogged = {} -- zoneExternalCategories 的 provider 失敗 log-once（依 owner）
 -- 統一視窗「自訂區域」區塊用：收集外部 provider 當前 zone 的 distinct category
 -- （排序穩定；無 category 的 zone 不列——類別是伺服器 zones.json 選配欄位）。

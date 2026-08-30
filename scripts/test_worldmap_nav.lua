@@ -83,7 +83,7 @@ Core.navSetTarget = function(pn, wx, wy) calls[#calls + 1] = string.format("navS
 Core.navClearTarget = function(pn) calls[#calls + 1] = "navClear:" .. pn end
 Core.navShareTarget = function(pn) calls[#calls + 1] = "navShare:" .. pn end
 Core.copyCoordsText = function(el, text) calls[#calls + 1] = "copy:" .. text end
-Core.sandboxGate = function(name, dflt) return sandboxAllow end
+Core.navShareAllowed = function() return sandboxAllow end
 local drawCoordsFail, drawNavFail = false, false
 Core.drawPlayerCoords = function(el)
     calls[#calls + 1] = "drawCoords"
@@ -93,6 +93,7 @@ Core.drawNavTargets = function(el)
     calls[#calls + 1] = "drawNav"
     if drawNavFail then error("injected nav failure") end
 end
+Core.drawAdminViewMarker = function() end
 
 -- 回呼方法（主檔/本檔於載入期定義；此處以等價 stub 供 addOption target 呼叫）
 function ISWorldMap:onMinidoracatSetTarget(wx, wy) Core.navSetTarget(self.playerNum or 0, wx, wy) end

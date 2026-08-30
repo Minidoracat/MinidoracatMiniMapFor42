@@ -50,3 +50,9 @@ option MinidoracatMiniMap.PlayerExportInterval
 
 option MinidoracatMiniMap.ExportOfflinePlayers
 {type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapExportOfflinePlayers,}
+
+option MinidoracatMiniMap.AllowAdminTacticalView
+{type = boolean, default = false, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowAdminTacticalView,}
+
+option MinidoracatMiniMap.AllowAdminPrivacyView
+{type = boolean, default = false, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowAdminPrivacyView,}

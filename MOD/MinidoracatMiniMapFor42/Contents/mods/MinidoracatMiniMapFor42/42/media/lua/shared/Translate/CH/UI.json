@@ -259,5 +259,13 @@
     "UI_MinidoracatMiniMap_PerfItemMisc": "安全屋範圍／街名／導航路線",
     "UI_MinidoracatMiniMap_PerfDescMisc": "數量級小或一次性計算",
     "UI_MinidoracatMiniMap_PerfNoteWorldmap": "世界地圖（M）開啟期間的疊加成本高於角落小地圖，關閉地圖即回收。",
-    "UI_MinidoracatMiniMap_PerfAdvice": "覺得卡時：先關殭屍點位或調低其上限，再縮小各顯示距離、關閉不用的圖層與類別。"
+    "UI_MinidoracatMiniMap_PerfAdvice": "覺得卡時：先關殭屍點位或調低其上限，再縮小各顯示距離、關閉不用的圖層與類別。",
+    "UI_MinidoracatMiniMap_SecAdmin": "管理員檢視",
+    "UI_MinidoracatMiniMap_AdminNote": "本伺服器已允許管理員檢視旁路。這裡的開關只改變你這台客戶端畫什麼，不會改動全服設定，也不是防作弊機制；離開伺服器或重新連線後會自動關閉。",
+    "UI_MinidoracatMiniMap_AdminTactical": "戰術檢視（忽略伺服器顯示限制）",
+    "UI_MinidoracatMiniMap_AdminTactical_tooltip": "開啟後暫時忽略殭屍點位、殭屍熱度圖、動物圖標、載具圖標的全服開關，以及殭屍／動物／載具／資源點／自訂區域的顯示距離與全域距離上限。\n需要伺服器開啟「允許管理員戰術檢視旁路」，且你具備「看見全部」（CanSeeAll）權限。\n關閉時會一併關閉隱私檢視。",
+    "UI_MinidoracatMiniMap_AdminPrivacy": "隱私檢視（忽略他人隱私限制）",
+    "UI_MinidoracatMiniMap_AdminPrivacy_tooltip": "在戰術檢視之上，再忽略會揭露其他玩家私密資訊的限制：安全屋範圍顯示與其距離限制、牲畜圖標可見性。\n需要伺服器另外開啟「允許管理員隱私檢視旁路」，且戰術檢視已經開啟。",
+    "UI_MinidoracatMiniMap_AdminPrivacyDisabled": "本伺服器未開放管理員隱私檢視",
+    "UI_MinidoracatMiniMap_AdminViewMarker": "管理員檢視"
 }
