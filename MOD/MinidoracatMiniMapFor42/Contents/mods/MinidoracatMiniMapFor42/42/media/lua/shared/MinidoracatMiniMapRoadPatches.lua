@@ -1,4 +1,4 @@
--- generated-body-sha256: 7561c70f48ebcf1c31b960ff24470b3a70838913e3b73afd81d40fa9cf42e10c
+-- generated-body-sha256: 75c8f50a65a0746964025c3900c668d526fb0a46ca34cae42186ecbdc58a4764
 -- MinidoracatMiniMapRoadPatches.lua
 -- 由 scripts/gen_road_patches.py 從 road-audit-v1 與人工批准清單產生；請勿手改。
 -- 重生：python scripts/gen_road_patches.py --audit <road-audit-full-total-work-pass.json>
@@ -13,10 +13,10 @@ MinidoracatMiniMapRoadPatches = {
     surfaceFingerprint = "644a794043569231e550a16d17269925ec095dba671d1149b0cf52da815f81a9",
     auditSha256 = "4af9617a6193d76c63ff454def311aada68813b132743f8317379982ad582377",
     rejectedCandidateCount = 0,
-    approvalsSha256 = "11b72906c6aa029f44ab702e60700b7eac406fa562e3e764913f046819f7f7e0",
-    generatorSha256 = "d762607d9b26b380028bc281f8db638e5ea1e7b763ff0764452d86de2e43f819",
+    approvalsSha256 = "817fecfef05dfce9e58db24810660ca827c7b040197867b331681e890738bcac",
+    generatorSha256 = "a572dba56f95593327e88f5e64efc17217f0a02012dfd32cc39f9aa49ec7a7f3",
     rejectedEvidenceHash = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-    tag = "0742e87f5de73d743b22ec908199b8bf7851ccbdc3ddc984cf50c5af75137902",
+    tag = "7df7143742ea4fe75ec13a185247d8a94f44832549c3a09b1b3c5435e3399a7a",
     geometryCount = 1089,
     geometrySet = {
         ["10:12630:10566:13634:10566:13656:10576:13667:10587:13672:10597:13672:10878:13686:10906:13702:10922:13732:10938:13750:10938|w:20"] = "958371c8dd485b7fd054bdeac5e0b677d0a7bf8454095329c599f5ccca199f28",
@@ -1112,8 +1112,9 @@ MinidoracatMiniMapRoadPatches = {
     removeCount = 0,
     remove = {
     },
-    addCount = 0,
+    addCount = 1,
     add = {
+        { id = "m:muldraugh-lakehouse-trail", src = "Muldraugh, KY", width = 4, surface = "dirt", searchable = false, reason = "使用者人工描線（2026-09-01）：湖畔小屋（約 10050,8250）聯外土徑，東端接河畔路縱段（x=10781）。表面 class 與周圍曠野同為 dirt，row-span 稽核無訊號；折線自基底 pyramid 影像描取並經路帶疊圖驗證。西端止於小屋私人駛道（非官方街道），懸空端屬預期。", pts = { 10098, 8218, 10132, 8250, 10170, 8282, 10195, 8310, 10222, 8332, 10237, 8286, 10252, 8236, 10288, 8190, 10340, 8172, 10388, 8190, 10410, 8210, 10433, 8228, 10466, 8250, 10510, 8258, 10700, 8257, 10781, 8255 } },
     },
     bridgeCount = 6,
     bridge = {

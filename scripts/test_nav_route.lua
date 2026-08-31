@@ -928,11 +928,11 @@ end
                 "正式 RoadPatch：每個官方非鐵路 segment 有 metadata")
         end
     end
-    assert(metadataCount == patch.surfaceCount and patch.addCount == 0
+    assert(metadataCount == patch.surfaceCount and patch.addCount == 1
         and patch.bridgeCount == 6 and patch.rejectedCandidateCount == 0,
-        "正式 RoadPatch：3343 surface overrides、6 bridge（2026-09-01 使用者翻案）、零 reject")
-    assert(#streets == patch.geometryCount + 1 + patch.bridgeCount,
-        "正式 RoadPatch：bridge 條目 append 至 patched 表尾")
+        "正式 RoadPatch：3343 surface overrides、6 bridge 翻案＋1 manual add、零 reject")
+    assert(#streets == patch.geometryCount + 1 + patch.addCount + patch.bridgeCount,
+        "正式 RoadPatch：add/bridge 條目 append 至 patched 表尾")
     local officialBuilder = mod.newBuild(streets, nil)
     for _ = 1, 100000 do
         if mod.step(officialBuilder, 5000) then break end
