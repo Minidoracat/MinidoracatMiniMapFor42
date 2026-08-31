@@ -21,7 +21,6 @@ local getComboIndex = Core.getComboIndex
 local getSliderValue = Core.getSliderValue
 local sandboxGate = Core.sandboxGate
 local sandboxDist = Core.sandboxDist
-local displayDist = Core.displayDist
 local livestockVisibilityMode = Core.livestockVisibilityMode
 local unifiedCsvSet = Core.unifiedCsvSet
 local adotsTexture = Core.adotsTexture
@@ -191,14 +190,6 @@ local ZONE_MASTER = {
     id = "ZoneLayer", label = "UI_MinidoracatMiniMap_ZoneLayer", default = true,
 }
 
--- 標題摘要顯示有效狀態，不把已被伺服器閘門壓制的勾選算進去。
--- test:worldmap-effective-tick:start
-local function unifiedWorldMapTickOn(t, pn)
-    if not getBoolOption(t.id, false) then return false end
-    if t.gate and sandboxGate(t.gate, true, pn) == false then return false end
-    return t.id ~= "WMAnimalLivestock" or livestockVisibilityMode(pn) ~= 4
-end
--- test:worldmap-effective-tick:end
 -- 分類骨架：studioBuildInspector 依 id 分派 builder；gate＝伺服器沙盒閘
 local UNIFIED_SECTIONS = {
     { id = "layers", label = "UI_MinidoracatMiniMap_SecLayers", icon = "layers" },
@@ -269,31 +260,26 @@ Events.OnGameBoot.Add(function()
         "UI_MinidoracatMiniMap_MapPackLayers_tooltip")
     modOptions:addTickBox("MapBounds", "UI_MinidoracatMiniMap_MapBounds", true,
         "UI_MinidoracatMiniMap_MapBounds_tooltip")
+    local MAPB_COLOR_ITEMS = { "UI_MinidoracatMiniMap_MBColor_Green", -- 順序須同 MAPB_COLORS
+        "UI_MinidoracatMiniMap_MBColor_Cyan", "UI_MinidoracatMiniMap_MBColor_Yellow",
+        "UI_MinidoracatMiniMap_MBColor_Purple", "UI_MinidoracatMiniMap_MBColor_White" }
+    -- 框線透明度：三檔沿用小地圖 Opacity 的翻譯鍵與語意；順序須同 MAPB_ALPHAS
+    local MAPB_ALPHA_ITEMS = { "UI_MinidoracatMiniMap_Opacity_Full",
+        "UI_MinidoracatMiniMap_Opacity_Half", "UI_MinidoracatMiniMap_Opacity_Faint" }
     local mbColor = modOptions:addComboBox("MapBoundsColor", "UI_MinidoracatMiniMap_MapBoundsColor")
-    mbColor:addItem("UI_MinidoracatMiniMap_MBColor_Green", true) -- 順序須同 MAPB_COLORS
-    mbColor:addItem("UI_MinidoracatMiniMap_MBColor_Cyan", false)
-    mbColor:addItem("UI_MinidoracatMiniMap_MBColor_Yellow", false)
-    mbColor:addItem("UI_MinidoracatMiniMap_MBColor_Purple", false)
-    mbColor:addItem("UI_MinidoracatMiniMap_MBColor_White", false)
-    -- 框線透明度：三檔沿用小地圖 Opacity 的翻譯鍵與語意
+    for i = 1, #MAPB_COLOR_ITEMS do mbColor:addItem(MAPB_COLOR_ITEMS[i], i == 1) end
     local mbAlpha = modOptions:addComboBox("MapBoundsAlpha", "UI_MinidoracatMiniMap_MapBoundsAlpha")
-    mbAlpha:addItem("UI_MinidoracatMiniMap_Opacity_Full", true) -- 順序須同 MAPB_ALPHAS
-    mbAlpha:addItem("UI_MinidoracatMiniMap_Opacity_Half", false)
-    mbAlpha:addItem("UI_MinidoracatMiniMap_Opacity_Faint", false)
-    -- 統一視窗同步加項：圖層區兩顆勾選＋外觀區框線顏色下拉
+    for i = 1, #MAPB_ALPHA_ITEMS do mbAlpha:addItem(MAPB_ALPHA_ITEMS[i], i == 1) end
+    -- 統一視窗同步加項：圖層區兩顆勾選＋外觀區框線顏色/透明度下拉（items 與
+    -- ESC 頁 addItem 共用同一份表，雙源自此收斂）
     table.insert(UNIFIED_LAYER_TICKS, { id = "MapPackLayers",
         label = "UI_MinidoracatMiniMap_MapPackLayers", default = true })
     table.insert(UNIFIED_LAYER_TICKS, { id = "MapBounds",
         label = "UI_MinidoracatMiniMap_MapBounds", default = true })
     table.insert(UNIFIED_APPEAR_COMBOS, { id = "MapBoundsColor",
-        label = "UI_MinidoracatMiniMap_MapBoundsColor", default = 1,
-        items = { "UI_MinidoracatMiniMap_MBColor_Green", "UI_MinidoracatMiniMap_MBColor_Cyan",
-            "UI_MinidoracatMiniMap_MBColor_Yellow", "UI_MinidoracatMiniMap_MBColor_Purple",
-            "UI_MinidoracatMiniMap_MBColor_White" } })
+        label = "UI_MinidoracatMiniMap_MapBoundsColor", default = 1, items = MAPB_COLOR_ITEMS })
     table.insert(UNIFIED_APPEAR_COMBOS, { id = "MapBoundsAlpha",
-        label = "UI_MinidoracatMiniMap_MapBoundsAlpha", default = 1,
-        items = { "UI_MinidoracatMiniMap_Opacity_Full", "UI_MinidoracatMiniMap_Opacity_Half",
-            "UI_MinidoracatMiniMap_Opacity_Faint" } })
+        label = "UI_MinidoracatMiniMap_MapBoundsAlpha", default = 1, items = MAPB_ALPHA_ITEMS })
 end)
 
 -- Zone 圖層總開關（有「外部」zone provider 註冊才出現；內建 POI 不算——它繞過此閘）：
@@ -690,17 +676,11 @@ local function unifiedAddSliderRows(ctx, list)
     end
 end
 
--- ── 各區塊 builder（原 unifiedRebuild 的 if sec.id == ... 分支逐一拆出）──
-local function unifiedBuildLayers(ctx)
+-- colW2 雙欄網格骨架（六個 builder 共用）：add(i, x, y, w) 建格；回 false＝跳過不佔格
+local function unifiedAddTickCols(ctx, n, add)
     local col = 0
-    for i = 1, #UNIFIED_LAYER_TICKS do
-        local t = UNIFIED_LAYER_TICKS[i]
-        if not (t.mpOnly and not isClient()) then
-            local checked = t.engine and unifiedEngineGet(t.id, ctx.pn)
-                or (not t.engine and getBoolOption(t.id, t.default))
-            unifiedAddTick(ctx, ctx.curX + 4 + col * ctx.colW2, ctx.curY, ctx.colW2 - 8,
-                getTextOrNull(t.label) or t.id, checked,
-                t.engine and unifiedOnEngineTick or unifiedOnModTick, t)
+    for i = 1, n do
+        if add(i, ctx.curX + 4 + col * ctx.colW2, ctx.curY, ctx.colW2 - 8) ~= false then
             col = col + 1
             if col == ctx.cols2 then col = 0; ctx.curY = ctx.curY + ctx.rowH end
         end
@@ -708,19 +688,36 @@ local function unifiedBuildLayers(ctx)
     if col ~= 0 then ctx.curY = ctx.curY + ctx.rowH end
 end
 
+-- 全選／全不選按鈕列（poicat/animals/zones 三處同版面）
+local function unifiedAddSelectAllNone(ctx, onAll, onNone)
+    local halfW = math.floor((ctx.laneW - 10) / 2)
+    unifiedAddBtn(ctx, ctx.curX + 4, ctx.curY, halfW,
+        getText("UI_MinidoracatMiniMap_SelectAll"), onAll)
+    unifiedAddBtn(ctx, ctx.curX + 4 + halfW + 4, ctx.curY, halfW,
+        getText("UI_MinidoracatMiniMap_SelectNone"), onNone)
+    ctx.curY = ctx.curY + ctx.rowH
+end
+
+-- ── 各區塊 builder（原 unifiedRebuild 的 if sec.id == ... 分支逐一拆出）──
+local function unifiedBuildLayers(ctx)
+    unifiedAddTickCols(ctx, #UNIFIED_LAYER_TICKS, function(i, x, y, w)
+        local t = UNIFIED_LAYER_TICKS[i]
+        if t.mpOnly and not isClient() then return false end
+        local checked = t.engine and unifiedEngineGet(t.id, ctx.pn)
+            or (not t.engine and getBoolOption(t.id, t.default))
+        unifiedAddTick(ctx, x, y, w, getTextOrNull(t.label) or t.id, checked,
+            t.engine and unifiedOnEngineTick or unifiedOnModTick, t)
+    end)
+end
+
 local function unifiedBuildPoicat(ctx)
     -- 兩顆母開關（與 ZoneLayer 解耦，只控內部 POI provider）：顯示資源點（圖標）
     -- ＋顯示資源點區塊。同 animals 母開關版面（colW2 雙欄）。
-    local mcol = 0
-    for i = 1, #POI_MASTER_TICKS do
+    unifiedAddTickCols(ctx, #POI_MASTER_TICKS, function(i, x, y, w)
         local master = POI_MASTER_TICKS[i]
-        unifiedAddTick(ctx, ctx.curX + 4 + mcol * ctx.colW2, ctx.curY, ctx.colW2 - 8,
-            getTextOrNull(master.label) or master.id,
+        unifiedAddTick(ctx, x, y, w, getTextOrNull(master.label) or master.id,
             getBoolOption(master.id, master.default), unifiedOnModTick, master)
-        mcol = mcol + 1
-        if mcol == ctx.cols2 then mcol = 0; ctx.curY = ctx.curY + ctx.rowH end
-    end
-    if mcol ~= 0 then ctx.curY = ctx.curY + ctx.rowH end
+    end)
     -- 圖標樣式切換（整列，與母開關區分）：勾＝彩色全彩圖標，不勾＝類別色單色剪影。
     unifiedAddTick(ctx, ctx.curX + 4, ctx.curY, ctx.laneW - 6,
         getTextOrNull("UI_MinidoracatMiniMap_PoiColorIcons") or "PoiColorIcons",
@@ -761,16 +758,13 @@ local function unifiedBuildPoicat(ctx)
             end
         end
         ctx.curY = ctx.curY + math.ceil(n / ctx.poiCols) * ctx.rowH + 2
-        local halfW = math.floor((ctx.laneW - 10) / 2)
-        unifiedAddBtn(ctx, ctx.curX + 4, ctx.curY, halfW, getText("UI_MinidoracatMiniMap_SelectAll"), function()
+        unifiedAddSelectAllNone(ctx, function()
             for i = 1, n do settingsApply({ id = "Cat_" .. order[i] }, true) end
             unifiedRebuild(ctx.win)
-        end)
-        unifiedAddBtn(ctx, ctx.curX + 4 + halfW + 4, ctx.curY, halfW, getText("UI_MinidoracatMiniMap_SelectNone"), function()
+        end, function()
             for i = 1, n do settingsApply({ id = "Cat_" .. order[i] }, false) end
             unifiedRebuild(ctx.win)
         end)
-        ctx.curY = ctx.curY + ctx.rowH
     end
     unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.poi)
 end
@@ -781,18 +775,13 @@ local function unifiedBuildZombie(ctx)
 end
 
 local function unifiedBuildAnimals(ctx)
-    local col = 0
-    for i = 1, #ANIMAL_MASTER_TICKS do
+    unifiedAddTickCols(ctx, #ANIMAL_MASTER_TICKS, function(i, x, y, w)
         local master = ANIMAL_MASTER_TICKS[i]
-        local tick = unifiedAddTick(ctx, ctx.curX + 4 + col * ctx.colW2, ctx.curY,
-            ctx.colW2 - 8, getText(master.label), getBoolOption(master.id, master.default),
-            unifiedOnModTick, master)
+        local tick = unifiedAddTick(ctx, x, y, w, getText(master.label),
+            getBoolOption(master.id, master.default), unifiedOnModTick, master)
         tick.enable = sandboxGate("AllowAnimalDots", true, ctx.pn) ~= false
             and (master.id ~= "AnimalLivestock" or ctx.livestockMode ~= 4)
-        col = col + 1
-        if col == ctx.cols2 then col = 0; ctx.curY = ctx.curY + ctx.rowH end
-    end
-    if col ~= 0 then ctx.curY = ctx.curY + ctx.rowH end
+    end)
     if ctx.livestockMode == 4 then
         unifiedAdd(ctx, ISLabel:new(ctx.curX + 4, ctx.curY, ctx.fontH,
             getText("UI_MinidoracatMiniMap_LivestockHiddenBySandbox"),
@@ -816,16 +805,13 @@ local function unifiedBuildAnimals(ctx)
             end, def)
     end
     ctx.curY = ctx.curY + math.ceil(#ADOTS_SPECIES_UI / ctx.cols3) * ctx.rowH + 2
-    local halfW = math.floor((ctx.laneW - 10) / 2)
-    unifiedAddBtn(ctx, ctx.curX + 4, ctx.curY, halfW, getText("UI_MinidoracatMiniMap_SelectAll"), function()
+    unifiedAddSelectAllNone(ctx, function()
         unifiedSetAllFilter("AnimalSpeciesFilter", ADOTS_SPECIES_UI, true)
         unifiedRebuild(ctx.win)
-    end)
-    unifiedAddBtn(ctx, ctx.curX + 4 + halfW + 4, ctx.curY, halfW, getText("UI_MinidoracatMiniMap_SelectNone"), function()
+    end, function()
         unifiedSetAllFilter("AnimalSpeciesFilter", ADOTS_SPECIES_UI, false)
         unifiedRebuild(ctx.win)
     end)
-    ctx.curY = ctx.curY + ctx.rowH
     for i = 1, #UNIFIED_ANIMAL_COMBOS do unifiedAddComboRow(ctx, UNIFIED_ANIMAL_COMBOS[i]) end
     unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.animals)
 end
@@ -848,18 +834,13 @@ local function unifiedBuildVehicles(ctx)
 end
 
 local function unifiedBuildWorldmap(ctx)
-    local col = 0
-    for i = 1, #UNIFIED_WM_TICKS do
+    unifiedAddTickCols(ctx, #UNIFIED_WM_TICKS, function(i, x, y, w)
         local t = UNIFIED_WM_TICKS[i]
-        local tick = unifiedAddTick(ctx, ctx.curX + 4 + col * ctx.colW2, ctx.curY,
-            ctx.colW2 - 8, getText(t.label), getBoolOption(t.id, false),
-            unifiedOnModTick, t)
+        local tick = unifiedAddTick(ctx, x, y, w, getText(t.label),
+            getBoolOption(t.id, false), unifiedOnModTick, t)
         tick.enable = (not t.gate or sandboxGate(t.gate, true, ctx.pn) ~= false)
             and (t.id ~= "WMAnimalLivestock" or ctx.livestockMode ~= 4)
-        col = col + 1
-        if col == ctx.cols2 then col = 0; ctx.curY = ctx.curY + ctx.rowH end
-    end
-    if col ~= 0 then ctx.curY = ctx.curY + ctx.rowH end
+    end)
     if ctx.livestockMode == 4 then
         unifiedAdd(ctx, ISLabel:new(ctx.curX + 4, ctx.curY, ctx.fontH,
             getText("UI_MinidoracatMiniMap_LivestockHiddenBySandbox"),
@@ -873,15 +854,11 @@ end
 
 local function unifiedBuildAppearance(ctx)
     for i = 1, #UNIFIED_APPEAR_COMBOS do unifiedAddComboRow(ctx, UNIFIED_APPEAR_COMBOS[i]) end
-    local col = 0
-    for i = 1, #UNIFIED_APPEAR_TICKS do
+    unifiedAddTickCols(ctx, #UNIFIED_APPEAR_TICKS, function(i, x, y, w)
         local t = UNIFIED_APPEAR_TICKS[i]
-        unifiedAddTick(ctx, ctx.curX + 4 + col * ctx.colW2, ctx.curY, ctx.colW2 - 8, getText(t.label),
-            getBoolOption(t.id, t.default), unifiedOnModTick, t)
-        col = col + 1
-        if col == ctx.cols2 then col = 0; ctx.curY = ctx.curY + ctx.rowH end
-    end
-    if col ~= 0 then ctx.curY = ctx.curY + ctx.rowH end
+        unifiedAddTick(ctx, x, y, w, getText(t.label), getBoolOption(t.id, t.default),
+            unifiedOnModTick, t)
+    end)
     unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.appearance) -- 穿透模式地圖不透明度
 end
 
@@ -1056,29 +1033,22 @@ local function unifiedBuildZones(ctx)
     for i = 1, #cats do defs[i] = { key = cats[i] } end
     local disOpt = modOptions and modOptions:getOption("ZoneCategoryFilter")
     local dis = unifiedCsvSet(disOpt and disOpt:getValue() or "")
-    local col = 0
-    for i = 1, #cats do
+    unifiedAddTickCols(ctx, #cats, function(i, x, y, w)
         local key = cats[i]
-        unifiedAddTick(ctx, ctx.curX + 4 + col * ctx.colW2, ctx.curY, ctx.colW2 - 8,
-            key, not dis[key],
+        unifiedAddTick(ctx, x, y, w, key, not dis[key],
             function(target, index, selected)
                 unifiedSetFilter("ZoneCategoryFilter", defs, key, selected)
             end)
-        col = col + 1
-        if col == ctx.cols2 then col = 0; ctx.curY = ctx.curY + ctx.rowH end
-    end
-    if col ~= 0 then ctx.curY = ctx.curY + ctx.rowH end
+    end)
     ctx.curY = ctx.curY + 2
-    local halfW = math.floor((ctx.laneW - 10) / 2)
-    unifiedAddBtn(ctx, ctx.curX + 4, ctx.curY, halfW, getText("UI_MinidoracatMiniMap_SelectAll"), function()
+    unifiedAddSelectAllNone(ctx, function()
         unifiedSetAllFilter("ZoneCategoryFilter", defs, true)
         unifiedRebuild(ctx.win)
-    end)
-    unifiedAddBtn(ctx, ctx.curX + 8 + halfW, ctx.curY, halfW, getText("UI_MinidoracatMiniMap_SelectNone"), function()
+    end, function()
         unifiedSetAllFilter("ZoneCategoryFilter", defs, false)
         unifiedRebuild(ctx.win)
     end)
-    ctx.curY = ctx.curY + ctx.rowH + 4
+    ctx.curY = ctx.curY + 4
     unifiedAddZoneActions(ctx)
 end
 

@@ -134,7 +134,7 @@ end
 
 local function ensureIndex()
     if byDirCache then return byDirCache end
-    local packs = Core.getRegisteredPacks and Core.getRegisteredPacks()
+    local packs = Core.registeredPacks
     byDirCache = buildStreetI18nIndex(packs, log)
     return byDirCache
 end

@@ -65,6 +65,7 @@ end
 local poiZones = {}   -- 轉好的 zone 陣列（provider 每幀回傳此參照）
 local lastSig = nil   -- 上次建置時的開關/類別簽章；OnTick 比對變動才重建
 
+-- log 是離線測試接縫（test_zone_render 抽 test:poi-icon 區段注入 stub 驗 log-once）
 local function log(msg)
     print("[" .. MODULE .. "] " .. tostring(msg))
 end
@@ -278,14 +279,10 @@ local function currentSig()
 end
 
 -- providerFn（主 MOD 每幀呼叫：世界＋小地圖）：只回快取，不重建。
-local function zoneProvider()
-    return poiZones
-end
-
 -- internal=true：本體內部 provider，不受主檔 ZoneLayer 總閘連坐，由自家開關控制；
 -- 另受主檔的 POI 顯示距離閘連坐（沙盒 PoiDisplayDistance／全域上限 AllInfoDistance
 -- ＋玩家自訂距離，取最小正值）——距離啟用時 zone 依玩家距離被裁，非本檔可見的邏輯。
-MinidoracatMiniMapAPI.registerZoneProvider(OWN_PROVIDER_ID, zoneProvider, nil, true)
+MinidoracatMiniMapAPI.registerZoneProvider(OWN_PROVIDER_ID, function() return poiZones end, nil, true)
 
 Events.OnGameStart.Add(function()
     -- 翻譯已載入、ModOptions 存檔值已套用 → 首建帶正確名稱與開關狀態

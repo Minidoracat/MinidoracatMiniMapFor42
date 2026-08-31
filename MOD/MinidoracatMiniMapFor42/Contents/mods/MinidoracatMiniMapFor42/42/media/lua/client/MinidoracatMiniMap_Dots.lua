@@ -64,7 +64,6 @@ local ZDOTS_COLORS = {
 }
 -- （舊三檔大小 combobox 的像素換算表已隨遷移程式碼移至 MinidoracatMiniMap_Migrate.lua）
 local ZDOTS_MAXES = { 100, 200, 400, 800 } -- 上限檔位（索引對應 ZombieDotMax combobox）
-local ZDOTS_A = 1.0
 local ZDOTS_EDGE_A = 0.8      -- 描邊透明度（黑）；隨 ZombieDotAlpha 滑條等比縮放
 
 -- ponytail: 掃描硬上限 4000——超過的清單尾端不掃（輪替起點掃描是升級路徑），
@@ -230,7 +229,7 @@ local function drawZombieDotsOn(el, optId)
             -- drawRect＝ISUIElement.lua:1191（引數 x,y,w,h,a,r,g,b）
             if ux >= 2 and uy >= 2 and ux <= el.width - size and uy <= el.height - size then
                 el:drawRect(ux - 2, uy - 2, size + 2, size + 2, ZDOTS_EDGE_A * af, 0, 0, 0)
-                el:drawRect(ux - 1, uy - 1, size, size, ZDOTS_A * af, c[1], c[2], c[3])
+                el:drawRect(ux - 1, uy - 1, size, size, af, c[1], c[2], c[3])
             end
         end
     end

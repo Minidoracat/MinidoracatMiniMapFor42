@@ -52,19 +52,14 @@ local function stop(reason)
     print("[MinidoracatMiniMap] steamId report stopped: " .. reason)
 end
 
-local function readSteamId()
-    local ok, s = pcall(getCurrentUserSteamID)
-    if ok and type(s) == "string" and s ~= "" then return s end
-    return nil
-end
-
 local function reportTick()
     if stopped then return end
     if not isClient() then return end
     local now = getTimestampMs()
     if now < nextMs then return end
     if steamId == nil then
-        steamId = readSteamId()
+        local ok, s = pcall(getCurrentUserSteamID)
+        if ok and type(s) == "string" and s ~= "" then steamId = s end
         if steamId == nil then
             -- 可能是 Steam 還沒初始化，也可能根本是 -nosteam 客戶端；此處無法區分，
             -- 所以先有限重試，用盡才停（並 log 讓管理員分辨）

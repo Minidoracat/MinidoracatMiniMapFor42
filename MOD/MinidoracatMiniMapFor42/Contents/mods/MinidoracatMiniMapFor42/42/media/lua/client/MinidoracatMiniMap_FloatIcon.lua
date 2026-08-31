@@ -21,7 +21,6 @@ if not (Core and Core.ready) then return end
 local modOptions = Core.modOptions -- 無 PZAPI（版本過舊）時為 nil，沿用原 nil 檢查
 local getBoolOption = Core.getBoolOption
 local debugWarn = Core.debugWarn -- -debug 渲染警告（tooltip 顯示 text/renderMode）
-local function togglePlayerMiniMap() Core.togglePlayerMiniMap() end
 
 local floatIcon -- 單例
 local FLOAT_ICON_SIZE = 32
@@ -137,7 +136,7 @@ local function ensureFloatIcon()
         },
         drawContent = drawContent,
         getTooltip = tooltipText,
-        onClick = togglePlayerMiniMap,
+        onClick = Core.togglePlayerMiniMap,
         -- 右鍵＝穿透模式開關（本體在 _Ghost.lua，載入序在後——事件時查表）。
         -- FloatIcon 是頂層獨立元件、不隨小地圖穿透失效＝穿透中保證存在的滑鼠
         -- 回頭路（防鎖死鏈第二層；第一層熱鍵、第三層 ESC 選項頁）

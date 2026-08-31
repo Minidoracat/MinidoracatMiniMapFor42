@@ -131,32 +131,6 @@ local function getText(key) return key == "ZERO" and "不限" or key end
 assert(textChunk, textErr)
 local sliderText = textChunk()
 
-local worldMapBody = assert(settingsSource:match(
-    "%-%- test:worldmap%-effective%-tick:start\n(.-)\n%-%- test:worldmap%-effective%-tick:end"),
-    "找不到 unifiedWorldMapTickOn 測試區段")
-local worldMapChunk, worldMapErr = compile([[
-local options, gates, mode = {}, {}, 2
-local function getBoolOption(id, default)
-    local value = options[id]
-    if value == nil then return default end
-    return value
-end
-local function sandboxGate(id, default)
-    local value = gates[id]
-    if value == nil then return default end
-    return value
-end
-local function livestockVisibilityMode() return mode end
-]] .. worldMapBody .. "\n" .. [[return {
-    enabled = unifiedWorldMapTickOn,
-    setOption = function(id, value) options[id] = value end,
-    setGate = function(id, value) gates[id] = value end,
-    setMode = function(value) mode = value end,
-}
-]])
-assert(worldMapChunk, worldMapErr)
-local worldMap = worldMapChunk()
-
 local sampleBody = assert(dotsSource:match(
     "%-%- test:animal%-sampling:start\n(.-)\n%-%- test:animal%-sampling:end"),
     "找不到 sampleAnimalDots 測試區段")
@@ -520,27 +494,13 @@ local worldMapMappings = {
     { "WMAnimalLivestock", "AllowAnimalDots" },
     { "WMVehicleDots", "AllowVehicleDots" },
 }
+-- 死函式 unifiedWorldMapTickOn 已刪；綁定宣告守衛保留（builder 現場判等價邏輯
+-- 在 Settings 的 tick.enable 與 studioBoolEnabled，id-gate 對應仍由此釘住）
 for _, mapping in ipairs(worldMapMappings) do
     local id, gate = mapping[1], mapping[2]
     assert(settingsSource:match('id = "' .. id .. '".-gate = "' .. gate .. '"'),
         id .. " 未綁定正確伺服器閘門")
-    worldMap.setOption(id, true)
-    worldMap.setGate(gate, true)
-    worldMap.setMode(2)
-    assert(worldMap.enabled({ id = id, gate = gate }), id .. " 啟用狀態判斷失敗")
-    worldMap.setGate(gate, false)
-    assert(not worldMap.enabled({ id = id, gate = gate }), id .. " 未受伺服器閘門壓制")
-    worldMap.setGate(gate, true)
 end
-worldMap.setOption("WMZombieDots", false)
-assert(not worldMap.enabled({ id = "WMZombieDots", gate = "AllowZombieDots" }),
-    "未勾選的世界地圖項目不應計入摘要")
-worldMap.setOption("WMZombieDots", true)
-worldMap.setMode(4)
-assert(worldMap.enabled({ id = "WMAnimalWild", gate = "AllowAnimalDots" }),
-    "牲畜模式4不應壓制野生動物")
-assert(not worldMap.enabled({ id = "WMAnimalLivestock", gate = "AllowAnimalDots" }),
-    "牲畜模式4未壓制世界地圖牲畜摘要")
 
 local inner = {}
 local own = { { x1 = 0, y1 = 0, x2 = 10, y2 = 10, allowed = true } }
