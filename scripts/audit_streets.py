@@ -22,6 +22,8 @@ curb 單獨（中位寬 < 2 格）亦不得 accepted。
 from __future__ import annotations
 
 import argparse
+import bisect
+import collections
 import hashlib
 import itertools
 import json
@@ -598,16 +600,9 @@ class SurfaceIndex:
         if runs is None:
             return MISSING
         start = ly * cs + lx
-        lo = 0
-        hi = len(runs)
-        while lo < hi:
-            mid = (lo + hi) // 2
-            if runs[mid][1] <= start:
-                lo = mid + 1
-            else:
-                hi = mid
-        if lo < len(runs):
-            a, b, cid = runs[lo]
+        i = bisect.bisect_right(runs, start, key=lambda run: run[1])
+        if i < len(runs):
+            a, b, cid = runs[i]
             if a <= start < b:
                 return cid
         raise AuditError("validated RLE lookup failed at cell (%d,%d)" % (cx, cy))
@@ -1510,13 +1505,8 @@ def _consume_candidate_graph_work(work):
     work["candidateGraphWorkCount"] = next_count
 
 
-def nearest_graph_segment(px, py, graph, nearby_only=False, work=None):
-    if nearby_only:
-        size = graph["bucketSize"]
-        key = (int(math.floor(px / size)), int(math.floor(py / size)))
-        indices = graph["buckets"].get(key, ())
-    else:
-        indices = range(len(graph["segments"]))
+def nearest_graph_segment(px, py, graph, work=None):
+    indices = range(len(graph["segments"]))
     best_distance = math.inf
     best_segment = None
     best_tie = None
@@ -1732,21 +1722,17 @@ def build_report(streets, surfaces_loaded, surface, xml_sha, surface_sha,
     coverage_status = "partial" if scope["mode"] == "region" else "full"
     widths = [st["width"] for st in streets]
     point_count = sum(len(st["pts"]) for st in streets)
-    empty_n = sum(1 for st in streets if not str(st["name"]).strip())
-    short_n = sum(1 for st in streets if len(st["pts"]) < 2)
-    zero_n = 0
-    railroad_n = 0
-    for st in streets:
-        pts = st["pts"]
-        if len(pts) >= 2 and is_railroad(st["name"], pts[0][0], pts[0][1]):
-            railroad_n += 1
-        for k in range(len(pts) - 1):
-            a, b = pts[k], pts[k + 1]
-            if math.hypot(b[0] - a[0], b[1] - a[1]) <= 1e-4:
-                zero_n += 1
+    railroad_n = sum(
+        1 for st in streets
+        if len(st["pts"]) >= 2
+        and is_railroad(st["name"], st["pts"][0][0], st["pts"][0][1]))
     topology_work = {}
     findings = topology_findings(streets, topology_work)
-    dup_n = sum(1 for finding in findings if finding["kind"] == "duplicate")
+    kind_n = collections.Counter(finding["kind"] for finding in findings)
+    empty_n = kind_n["emptyName"]
+    short_n = kind_n["short"]
+    zero_n = kind_n["zeroLength"]
+    dup_n = kind_n["duplicate"]
     comp_count, comp_sizes = raw_exact_vertex_components(streets)
 
     samples = []
@@ -1992,24 +1978,6 @@ def reject_path_aliases(streets, surfaces, out, preview=None):
                     first_label, second_label))
 
 
-def atomic_write_bytes(path, data):
-    target = Path(path)
-    fd, temp_name = tempfile.mkstemp(
-        prefix=".%s." % target.name, suffix=".tmp", dir=str(target.parent))
-    temp_path = Path(temp_name)
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(data)
-        os.replace(temp_path, target)
-    finally:
-        if temp_path.exists():
-            temp_path.unlink()
-
-
-def write_canonical_file(obj, path):
-    atomic_write_bytes(path, dumps_canonical(obj).encode("utf-8"))
-
-
 def render_preview_bytes(report):
     features = []
     for cand in report.get("candidates", []):
@@ -2036,10 +2004,6 @@ def render_preview_bytes(report):
         })
     doc = {"type": "FeatureCollection", "features": features}
     return dumps_canonical(doc).encode("utf-8")
-
-
-def write_preview(report, path):
-    atomic_write_bytes(path, render_preview_bytes(report))
 
 
 def _stage_bytes(path, data):

@@ -536,26 +536,19 @@ end
 -- facade 缺席＝安裝不完整，此時退回呼叫端 default（主開關的 default 是 false，
 -- 即不寫檔），並記一次 log；不退回直讀鏡像表。
 local policyWarned = false
-local function policyFacade()
+local function sb(method, name, default)
     local P = MinidoracatMiniMapPolicy
-    if not P and not policyWarned then
-        policyWarned = true
-        log("policy facade missing, player export uses built-in defaults")
+    if not P then
+        if not policyWarned then
+            policyWarned = true
+            log("policy facade missing, player export uses built-in defaults")
+        end
+        return default
     end
-    return P
+    return P[method](name, default)
 end
-
-local function sbBool(name, default)
-    local P = policyFacade()
-    if not P then return default end
-    return P.readBool(name, default)
-end
-
-local function sbNumber(name, default)
-    local P = policyFacade()
-    if not P then return default end
-    return P.readNumber(name, default)
-end
+local function sbBool(name, default) return sb("readBool", name, default) end
+local function sbNumber(name, default) return sb("readNumber", name, default) end
 
 local registry = {}         -- regKey(name, idx) → {name, idx, steamId, x, y, z, seen}
 local reportedSteamIds = {} -- regKey(name, idx) → 已通過一致性檢查的 Steam64 字串

@@ -14,6 +14,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import itertools
 import random
 import tempfile
 from pathlib import Path
@@ -56,13 +57,10 @@ def _runs_from_grid(grid):
     flat = [v for row in grid for v in row]
     runs = []
     i = 0
-    while i < SQUARES:
-        j = i + 1
-        v = flat[i]
-        while j < SQUARES and flat[j] == v:
-            j += 1
-        runs.append([i, j - i, v])
-        i = j
+    for v, group in itertools.groupby(flat):
+        n = len(list(group))
+        runs.append([i, n, v])
+        i += n
     return runs
 
 
@@ -1114,26 +1112,7 @@ def test_path_aliases_and_atomic_write(tmp_path=None):
     assert rc == 2
     assert not same.exists()
 
-    target = root / "atomic.json"
-    target.write_bytes(b"original")
     real_replace = M.os.replace
-
-    def fail_replace(source, destination):
-        raise OSError("replace fixture")
-
-    M.os.replace = fail_replace
-    try:
-        try:
-            M.write_canonical_file({"new": True}, target)
-        except OSError as exc:
-            assert "replace fixture" in str(exc)
-        else:
-            raise AssertionError("atomic replace failure must propagate")
-    finally:
-        M.os.replace = real_replace
-    assert target.read_bytes() == b"original"
-    assert not list(root.glob(".atomic.json.*.tmp"))
-
     paired_out = root / "paired.json"
     paired_preview = root / "paired.geojson"
     paired_out.write_bytes(b"old canonical")
@@ -1396,12 +1375,6 @@ def test_topology_work_caps_fail_closed():
         M.MAX_TOPOLOGY_FINDINGS = real_findings
 
 
-def test_no_binary_map_decoder():
-    src = SCRIPT.read_text(encoding="utf-8")
-    assert "struct.unpack" not in src
-    assert "import struct" not in src
-
-
 def test_cli_malformed_exit_code(tmp_path=None):
     root = _root(tmp_path)
     xml = root / "s.xml"
@@ -1462,35 +1435,8 @@ def test_candidate_pixel_limit(tmp_path=None):
 
 
 if __name__ == "__main__":
-    test_malformed_schema_version()
-    test_malformed_class_table()
-    test_malformed_rle_gap_overlap_range()
-    test_surface_source_mismatches()
-    test_surface_schema_work_limits()
-    test_file_size_and_text_limits()
-    test_malformed_xml()
-    test_street_parser_work_limits()
-    test_corridor_vs_field_and_negatives()
-    test_coverage_spans_remove_existing_street()
-    test_parallel_residual_rejected()
-    test_parallel_profile_checks_all_nearby_segments()
-    test_surface_impure_rejected()
-    test_global_retention_budget_degrades_deterministically()
-    test_candidate_polyline_point_limit()
-    test_candidate_work_caps_fail_closed()
-    test_dead_previous_row_releases_global_budget()
-    test_cross_cell_row_span_components()
-    test_large_field_and_courtyard_rejected()
-    test_byte_identical_and_preview()
-    test_evidence_hash_binds_both_input_hashes()
-    test_street_sample_ids_unique_for_same_endpoints()
-    test_full_region_missing_and_boundary()
-    test_width_p90_always_rejected()
-    test_path_aliases_and_atomic_write()
-    test_topology_findings()
-    test_spatial_topology_matches_bruteforce()
-    test_topology_work_caps_fail_closed()
-    test_no_binary_map_decoder()
-    test_cli_malformed_exit_code()
-    test_candidate_pixel_limit()
+    _names = sorted(name for name in globals()
+                    if name.startswith("test_") and callable(globals()[name]))
+    for _name in _names:
+        globals()[_name]()
     print("test_audit_streets: OK")

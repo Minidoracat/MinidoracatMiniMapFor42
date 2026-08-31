@@ -32,7 +32,7 @@ end
 -- 刻意不傳 playerNum：AllowNavShare 不在任何管理員旁路白名單上（見 facade
 -- 檔頭「永不旁路」），連呼叫形式上都不給旁路的機會。
 local policyWarned = false
-local function policyAllows(name, default)
+local function navShareAllowed()
     local P = MinidoracatMiniMapPolicy
     if not P then
         if not policyWarned then
@@ -41,7 +41,7 @@ local function policyAllows(name, default)
         end
         return false
     end
-    return P.readBool(name, default)
+    return P.readBool("AllowNavShare", true)
 end
 
 local Commands = {}
@@ -51,7 +51,7 @@ local Commands = {}
 -- 客戶端按 to 分桶，才不會讓同機的非同陣營玩家看到座標
 function Commands.shareTarget(player, args)
     -- 沙盒閘門（伺服器端權威判定；客戶端 UI 亦有同步隱藏，這裡防繞過）
-    if not policyAllows("AllowNavShare", true) then return end
+    if not navShareAllowed() then return end
     if not (args and type(args.x) == "number" and type(args.y) == "number") then return end
     local members = sameFactionMembers(player)
     if not members then return end
@@ -64,7 +64,7 @@ end
 
 function Commands.clearShared(player, args)
     -- 清除同樣是跨玩家封包；政策缺席／關閉時不可讓手工 ClientCommand 繞過。
-    if not policyAllows("AllowNavShare", true) then return end
+    if not navShareAllowed() then return end
     local members = sameFactionMembers(player)
     if not members then return end
     local author = player:getUsername()

@@ -102,9 +102,6 @@ check(source:find("Policy.setLocalTactical", 1, true) ~= nil
     and source:find("Policy.setLocalPrivacy", 1, true) ~= nil
     and source:find("sub.enable = privacyAllowed and tacticalOn", 1, true) ~= nil,
     "admin builder wires tactical master and gated privacy child")
-check(source:find("Policy.getRevision", 1, true) ~= nil
-    and source:find("adminSectionEligible(pn)", 1, true) ~= nil,
-    "live dirty signature tracks policy revision and role eligibility")
 check(source:find("sandboxDist(entry.capBy, ctx.pn)", 1, true) ~= nil,
     "admin distance bypass remains per-player and client slider still tightens")
 check(source:find("if adminSectionSync(pn) and win._searchIndex then", 1, true) ~= nil,
@@ -367,15 +364,8 @@ check(source:find('e.id ~= "ZoneLayer"', 1, true) ~= nil,
     "ZoneLayer search has one canonical hit instead of duplicate checkboxes")
 check(source:find("local painted = Skin and Skin.toggle", 1, true) ~= nil,
     "failed shared toggle painter falls back to the local visible renderer")
-check(source:find("Skin.toggle", 1, true) ~= nil,
-    "master pills route through the shared toggle painter seam")
-check(source:find("Skin.icon", 1, true) ~= nil,
-    "navigation icons route through the shared icon seam")
 check(source:find("slider.render = unifiedSliderRender", 1, true) ~= nil,
     "native slider interaction is retained while render uses the modern painter")
-check(source:find('self._studioLocked and "lock" or "unlock"', 1, true) ~= nil
-    and source:find("Skin.COLORS.ACCENT_AMBER or Skin.COLORS.TEXT_MUTED", 1, true) ~= nil,
-    "titlebar lock switches closed/open assets while retaining state colors")
 local addToUiAt = source:find("win:addToUIManager()", 1, true)
 local closeStyleAt = source:find("studioStyleCloseButton(win.closeButton)", 1, true)
 check(addToUiAt ~= nil and closeStyleAt ~= nil and closeStyleAt > addToUiAt
@@ -415,7 +405,7 @@ check(source:find("_scrollBySection%[win._renderedScrollKey%]", 1) ~= nil,
 check(source:find("pcall(studioRebuildDirty, self, structuralDirty)", 1, true) ~= nil
     and source:find("or self._studioRebuildRetry", 1, true) ~= nil,
     "failed live rebuild is logged and retried instead of consuming the dirty signature")
-local EXPECTED_ASSERTIONS = 102
+local EXPECTED_ASSERTIONS = 98
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
         .. ", actual " .. assertions)

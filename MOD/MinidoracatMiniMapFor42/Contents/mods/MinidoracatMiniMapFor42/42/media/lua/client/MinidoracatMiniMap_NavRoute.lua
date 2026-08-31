@@ -1361,7 +1361,6 @@ local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR)
             end
         end
     end
-    if best then best.queryWork = query.n end
     return best
 end
 
@@ -1450,8 +1449,8 @@ end
 -- 換檔不重置會把上一世界的 graph／failed 帶進新世界（codex/grok review）
 local engine = {
     state = "idle", extract = nil, builder = nil, graph = nil,
-    patchState = "raw", patchError = nil,
-    searchState = "ok", omittedSearchNames = 0,
+    patchState = "raw",
+    searchState = "ok",
 }
 local navRoutes = {} -- [pn] = { state="ok|noroad", route=, tx=, ty=, progressIdx=,
                      --          progX=, progY=, lastBuildMs=, failX=, failY= }
@@ -1653,7 +1652,6 @@ Events.OnTick.Add(function()
                 logf("empty", "no usable streets extracted")
                 engine.state = "failed"
             else
-                engine.omittedSearchNames = ex.omittedSearchNames
                 engine.searchState = ex.omittedSearchNames > 0 and "degraded" or "ok"
                 if ex.omittedSearchNames > 0 then
                     logf("searchdegraded", string.format(
@@ -1668,13 +1666,15 @@ Events.OnTick.Add(function()
                 local patchOk, applied, patchErr = pcall(
                     NavCore.applyRoadPatches, ex.out, MinidoracatMiniMapRoadPatches)
                 if not patchOk then
-                    engine.patchState, engine.patchError = "raw", tostring(applied)
-                    logf("roadpatch", "patch exception; using raw streets: " .. engine.patchError)
+                    engine.patchState = "raw"
+                    logf("roadpatch", "patch exception; using raw streets: "
+                        .. tostring(applied))
                 elseif not applied then
-                    engine.patchState, engine.patchError = "raw", tostring(patchErr)
-                    logf("roadpatch", "patch skipped; using raw streets: " .. engine.patchError)
+                    engine.patchState = "raw"
+                    logf("roadpatch", "patch skipped; using raw streets: "
+                        .. tostring(patchErr))
                 else
-                    engine.patchState, engine.patchError = "applied", nil
+                    engine.patchState = "applied"
                     ex.outN = #ex.out
                 end
                 -- 街名索引（_Search.lua 搜尋用）：每街 {name, low, x, y}（首點）——
@@ -1754,8 +1754,8 @@ end
 -- 引擎單例會把上一世界的 graph／failed 終態帶進新世界（幽靈路網或永久直線）
 Events.OnGameStart.Add(function()
     engine.state, engine.extract, engine.builder, engine.graph = "idle", nil, nil, nil
-    engine.patchState, engine.patchError = "raw", nil
-    engine.searchState, engine.omittedSearchNames = "ok", 0
+    engine.patchState = "raw"
+    engine.searchState = "ok"
     engine.streetIndex = nil
     for pn in pairs(navRoutes) do navRoutes[pn] = nil end
     for k in pairs(logOnce) do logOnce[k] = nil end
@@ -2052,21 +2052,20 @@ Core.NavRouteCore = NavCore -- 除錯/測試面（離線測試另行抽取原始
 --   approach，cost 不含 avoidPenalty；raw 表示未套 RoadPatch、仍以原始 streets 導航。
 --   state＝"ok"｜"noroad"｜"badargs"｜"noplayer"｜engine 狀態（idle／extracting／
 --          building／failed）——皆穩定字串，addon 可直接分支。
--- badargs 從嚴（review 指認）：playerNum 須是 0-3 的整數（分割畫面槽位——非整數
--- 或越界會讓 getSpecificPlayer 拿錯槽／回 nil，錯得無聲）；targetX/Y 須是有限
--- 數——NaN／±Infinity 進 A* 後所有距離比較恆為 false，節點永不出 open set，會
--- 白跑完一張 ~4k 節點路網才回 nil（每次呼叫都燒一輪，addon 還看不出傳了壞值）。
+-- badargs 從嚴（review 指認）：playerNum 須是 0-3 整數（非整數／越界會讓
+-- getSpecificPlayer 拿錯槽／回 nil，錯得無聲）；targetX/Y 須是有限數——NaN／
+-- ±Infinity 進 A* 後所有距離比較恆為 false，會白跑完整張路網才回 nil。
 -- test:nav-api:start（scripts/test_nav_api.lua 抽本區段跑查詢面回歸測試）
 local apiTarget = { x = 0, y = 0 } -- 餵 ensureRoute 的重用暫存（它只讀 x/y、不留參考）
-MinidoracatMiniMapAPI.requestRoute = function(playerNum, targetX, targetY)
-    -- 槽位：先擋 NaN（自比不等，範圍比較對 NaN 恆為 false 擋不住），再擋越界／
-    -- 非整數（±Infinity 由範圍比較擋下；% 1 只剩有限值要判，實作差異無關）
+-- 槽位／目標驗證＋玩家與 engine 就緒（requestRoute 與 requestDetour 共用）。
+-- NaN 自比不等先擋；±Infinity 由範圍比較擋。engine idle 不在此冷啟動：kickEngine
+-- 需要 mapAPI 的 streets 容器，查詢面沒有繪製表面；主線設目標的首個繪製幀會啟動。
+local function apiPlayer(playerNum, targetX, targetY)
     if type(playerNum) ~= "number" or playerNum ~= playerNum
         or playerNum < 0 or playerNum > 3 or playerNum % 1 ~= 0
     then
         return nil, "badargs"
     end
-    -- 有限值：x ~= x 抓 NaN（IEEE-754 自比不等）、與 ±math.huge 比抓無窮
     if type(targetX) ~= "number" or type(targetY) ~= "number"
         or targetX ~= targetX or targetY ~= targetY
         or targetX == math.huge or targetX == -math.huge
@@ -2076,9 +2075,12 @@ MinidoracatMiniMapAPI.requestRoute = function(playerNum, targetX, targetY)
     end
     local playerObj = getSpecificPlayer(playerNum)
     if not playerObj then return nil, "noplayer" end
-    -- engine 未 ready＝沒有 graph 可查（idle 亦不在此冷啟動：kickEngine 需要
-    -- mapAPI 的 streets 容器，本函式無繪製表面；主線設目標的首個繪製幀會啟動）
     if engine.state ~= "ready" then return nil, engine.state end
+    return playerObj
+end
+MinidoracatMiniMapAPI.requestRoute = function(playerNum, targetX, targetY)
+    local playerObj, argState = apiPlayer(playerNum, targetX, targetY)
+    if not playerObj then return nil, argState end
     apiTarget.x, apiTarget.y = targetX, targetY
     local route, routeState =
         ensureRoute(playerNum, apiTarget, playerObj:getX(), playerObj:getY())
@@ -2095,18 +2097,6 @@ end
 -- target 未變、ensureRoute 不會立刻重算蓋回（偏航／冷卻規則照舊）。
 -- 回 (route, state)：state 字彙同 requestRoute。
 MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoidX, avoidY, avoidR)
-    if type(playerNum) ~= "number" or playerNum ~= playerNum
-        or playerNum < 0 or playerNum > 3 or playerNum % 1 ~= 0
-    then
-        return nil, "badargs"
-    end
-    if type(targetX) ~= "number" or type(targetY) ~= "number"
-        or targetX ~= targetX or targetY ~= targetY
-        or targetX == math.huge or targetX == -math.huge
-        or targetY == math.huge or targetY == -math.huge
-    then
-        return nil, "badargs"
-    end
     if type(avoidX) ~= "number" or type(avoidY) ~= "number" or type(avoidR) ~= "number"
         or avoidX ~= avoidX or avoidY ~= avoidY or avoidR ~= avoidR
         or avoidX == math.huge or avoidX == -math.huge
@@ -2115,9 +2105,8 @@ MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoi
     then
         return nil, "badargs"
     end
-    local playerObj = getSpecificPlayer(playerNum)
-    if not playerObj then return nil, "noplayer" end
-    if engine.state ~= "ready" then return nil, engine.state end
+    local playerObj, argState = apiPlayer(playerNum, targetX, targetY)
+    if not playerObj then return nil, argState end
     local px, py = playerObj:getX(), playerObj:getY()
     local route, aerr = NavCore.findRoute(engine.graph, px, py, targetX, targetY,
         avoidX, avoidY, avoidR)

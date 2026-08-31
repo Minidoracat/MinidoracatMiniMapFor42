@@ -432,81 +432,25 @@ if os.path.isfile(_cl):
                     leaks.append(f"CHANGELOG.md:{lineno} {desc}（{mm.group()[:40]}）")
     fail("CHANGELOG 無基礎設施洩漏樣式", leaks) if leaks else ok("CHANGELOG 無基礎設施洩漏樣式")
 
-# ---- 12. Lua 單元測試：皮膚 adapter ----
-# _Skin.lua 是家族 UI 框架的 thin adapter。test_skin_adapter.lua 驗四態：
-# framework rev3 轉發、缺席退回、Core 門檻與 FloatIcon wrapper；缺 lua 或缺同層
-# framework repo 時列 SKIP 而非 PASS（SKIP＝防線沒跑到）。
+# ---- 12-19. Lua 單元測試 ----
+# _Skin.lua 是家族 UI 框架的 thin adapter：test_skin_adapter.lua 驗四態，缺同層
+# framework repo 時腳本自印 SKIP（SKIP＝防線沒跑到，不能列 PASS）。
+# test_admin_policy.lua 抽整份 Policy 原檔、只換 PZ 全域為假物件，驗 Java 真相源
+# 優先、缺鍵退 SCHEMA 預設（舊伺服器＝旁路 fail-closed）、三把鑰匙與旁路白名單；
+# 這條是「顯示層政策」的回歸，不是防作弊。其餘為 addon 設定 API、Settings Studio
+# 與跨模組 server/client 守衛。
 _lua_bin = shutil.which("lua")
-if not _lua_bin:
-    skip("Lua 單元測試（test_skin_adapter.lua）", "PATH 沒有 lua")
-else:
-    _r = subprocess.run([_lua_bin, "scripts/test_skin_adapter.lua"], capture_output=True, cwd=REPO)
-    _lines = [l for l in (_r.stdout or b"").decode("utf-8", "replace").splitlines() if l.strip()]
-    _err_tail = (_r.stderr or b"").decode("utf-8", "replace").splitlines()[-3:]
-    if _r.returncode != 0:
-        fail("Lua 單元測試（test_skin_adapter.lua）", (_lines[-3:] or []) + _err_tail)
-    elif _lines and _lines[0].startswith("SKIP"):
-        skip("Lua 單元測試（test_skin_adapter.lua）", _lines[0])
-    else:
-        fail("Lua 單元測試（test_skin_adapter.lua）", ["無輸出"]) if not _lines \
-            else ok(f"Lua 單元測試（test_skin_adapter.lua：{_lines[-1]}）")
-
-# ---- 13. Lua 單元測試：addon 設定 API ----
-if not _lua_bin:
-    skip("Lua 單元測試（test_addon_settings.lua）", "PATH 沒有 lua")
-else:
-    _r = subprocess.run([_lua_bin, "scripts/test_addon_settings.lua"],
-                        capture_output=True, cwd=REPO)
-    _lines = [l for l in (_r.stdout or b"").decode("utf-8", "replace").splitlines() if l.strip()]
-    _err_tail = (_r.stderr or b"").decode("utf-8", "replace").splitlines()[-3:]
-    if _r.returncode != 0:
-        fail("Lua 單元測試（test_addon_settings.lua）", (_lines[-3:] or []) + _err_tail)
-    else:
-        fail("Lua 單元測試（test_addon_settings.lua）", ["無輸出"]) if not _lines \
-            else ok(f"Lua 單元測試（test_addon_settings.lua：{_lines[-1]}）")
-
-# ---- 14. Lua 單元測試：Map Display Settings ----
-if not _lua_bin:
-    skip("Lua 單元測試（test_settings_studio.lua）", "PATH 沒有 lua")
-else:
-    _r = subprocess.run([_lua_bin, "scripts/test_settings_studio.lua"],
-                        capture_output=True, cwd=REPO)
-    _lines = [l for l in (_r.stdout or b"").decode("utf-8", "replace").splitlines() if l.strip()]
-    _err_tail = (_r.stderr or b"").decode("utf-8", "replace").splitlines()[-3:]
-    if _r.returncode != 0:
-        fail("Lua 單元測試（test_settings_studio.lua）", (_lines[-3:] or []) + _err_tail)
-    else:
-        fail("Lua 單元測試（test_settings_studio.lua）", ["無輸出"]) if not _lines \
-            else ok(f"Lua 單元測試（test_settings_studio.lua：{_lines[-1]}）")
-
-# ---- 15. Lua 單元測試：管理員政策 facade ----
-# 權限判定的單一事實來源（shared/MinidoracatMiniMap_Policy.lua）。
-# test_admin_policy.lua 抽整份原檔、只換 6 個 PZ 全域為假物件，驗：Java 真相源
-# 優先於 SandboxVars 鏡像、缺鍵退 SCHEMA 預設（舊伺服器＝旁路 fail-closed）、
-# 三把鑰匙（全服政策＋Role CanSeeAll＋本機旗標）、戰術層與隱私層分離、旁路白名單
-# （AllowNavShare／座標匯出／旁路開關自身永不旁路）、逐 slot 隔離。
-# 這條是「顯示層政策」的回歸，不是防作弊。
-if not _lua_bin:
-    skip("Lua 單元測試（test_admin_policy.lua）", "PATH 沒有 lua")
-else:
-    _r = subprocess.run([_lua_bin, "scripts/test_admin_policy.lua"],
-                        capture_output=True, cwd=REPO)
-    _lines = [l for l in (_r.stdout or b"").decode("utf-8", "replace").splitlines() if l.strip()]
-    _err_tail = (_r.stderr or b"").decode("utf-8", "replace").splitlines()[-3:]
-    if _r.returncode != 0:
-        fail("Lua 單元測試（test_admin_policy.lua）", (_lines[-3:] or []) + _err_tail)
-    else:
-        fail("Lua 單元測試（test_admin_policy.lua）", ["無輸出"]) if not _lines \
-            else ok(f"Lua 單元測試（test_admin_policy.lua：{_lines[-1]}）")
-
-# ---- 16-19. 管理員政策的跨模組 server/client 守衛 ----
-_extra_lua_tests = [
-    ("test_livestock_visibility.lua", "牲畜／安全屋 per-slot 顯示"),
-    ("test_player_export.lua", "玩家匯出 Policy 權威"),
-    ("test_server_nav_share.lua", "伺服器導航分享 never-bypass"),
-    ("test_admin_view_marker.lua", "ADMIN VIEW 標記與 fallback"),
+_lua_tests = [
+    ("test_skin_adapter.lua", "皮膚 adapter 四態", True),
+    ("test_addon_settings.lua", "addon 設定 API", False),
+    ("test_settings_studio.lua", "Map Display Settings", False),
+    ("test_admin_policy.lua", "管理員政策 facade", False),
+    ("test_livestock_visibility.lua", "牲畜／安全屋 per-slot 顯示", False),
+    ("test_player_export.lua", "玩家匯出 Policy 權威", False),
+    ("test_server_nav_share.lua", "伺服器導航分享 never-bypass", False),
+    ("test_admin_view_marker.lua", "ADMIN VIEW 標記與 fallback", False),
 ]
-for _script, _label in _extra_lua_tests:
+for _script, _label, _may_skip in _lua_tests:
     _gate = f"Lua 單元測試（{_script}：{_label}）"
     if not _lua_bin:
         skip(_gate, "PATH 沒有 lua")
@@ -517,6 +461,8 @@ for _script, _label in _extra_lua_tests:
     _err_tail = (_r.stderr or b"").decode("utf-8", "replace").splitlines()[-3:]
     if _r.returncode != 0:
         fail(_gate, (_lines[-3:] or []) + _err_tail)
+    elif _may_skip and _lines and _lines[0].startswith("SKIP"):
+        skip(_gate, _lines[0])
     else:
         fail(_gate, ["無輸出"]) if not _lines else ok(f"{_gate}：{_lines[-1]}")
 

@@ -543,7 +543,8 @@ for key in pairs(N.privacyKeys) do
     if kinds[key] == nil then unknownWhitelisted = unknownWhitelisted + 1 end
 end
 checkEq(tacticalCount, 10, "戰術白名單成員數（4 布林＋6 距離）")
-checkEq(privacyCount, 3, "隱私白名單成員數（安全屋顯示／距離＋牲畜）")
+checkEq(privacyCount, 1,
+    "隱私白名單只含距離鍵（模式鍵的旁路在 safehouseMode／livestockMode 內判）")
 checkEq(overlap, 0, "兩張白名單不重疊")
 checkEq(unknownWhitelisted, 0, "白名單沒有 schema 外的鍵（打錯字＝永遠不命中）")
 

@@ -51,7 +51,7 @@ local tail = [==[
 return {
     draw = drawAdminViewMarker,
     setActive = function(t, p) tactical, privacy = t, p end,
-    setSkin = function(mode) skinMode = mode; if mode == "none" then Core.Skin = nil end end,
+    setSkin = function(mode) skinMode = mode end,
     setMeasure = function(mode) measureMode = mode end,
     measures = function() return measureCount end,
     logs = logs,

@@ -114,26 +114,18 @@ do
         "態A toggle 轉發 rev3 專用 pill fill/border")
     check(#row.tex >= 2 and row.tex[#row.tex].x == 20,
         "態A toggle on 的圓形 knob 位於右側")
-    local iconOk = Skin.icon(row, "layers", 4, 5, 16, Skin.COLORS.TEXT_MUTED)
-    check(iconOk == true and row.tex[#row.tex].texture.path:find("mui_icon_layers.png", 1, true),
-        "態A Studio icon 轉發 rev3 Icons.draw")
     local sliderEl = newElement(0, 0)
     check(Skin.slider(sliderEl, 0, 0, 100, 20, 0.5) == true
         and #sliderEl.rects == 2 and #sliderEl.borders == 1
         and sliderEl.tex[#sliderEl.tex].x == 44,
         "態A slider 轉發 rev3 現代 track/fill/圓形 knob")
-    local lockOk = Skin.icon(row, "lock", 4, 5, 16, Skin.COLORS.TEXT_MUTED)
-    check(lockOk == true and row.tex[#row.tex].texture.path:find("mui_icon_lock.png", 1, true),
-        "態A 視窗鎖頭轉發 rev3 lock icon")
-    local unlockOk = Skin.icon(row, "unlock", 4, 5, 16, Skin.COLORS.TEXT_MUTED)
-    check(unlockOk == true and row.tex[#row.tex].texture.path:find("mui_icon_unlock.png", 1, true),
-        "態A 視窗解鎖轉發 rev3 unlock icon")
-    local locateOk = Skin.icon(row, "locate", 4, 5, 16, Skin.COLORS.TEXT_MUTED)
-    check(locateOk == true and row.tex[#row.tex].texture.path:find("mui_icon_locate.png", 1, true),
-        "態A 小地圖定位玩家轉發 rev3 locate icon")
-    local copyOk = Skin.icon(row, "copy", 4, 5, 16, Skin.COLORS.TEXT_MUTED)
-    check(copyOk == true and row.tex[#row.tex].texture.path:find("mui_icon_copy.png", 1, true),
-        "態A 小地圖複製座標轉發 rev3 copy icon")
+    for _, key in ipairs({ "layers", "lock", "unlock", "locate", "copy" }) do
+        local iconOk = Skin.icon(row, key, 4, 5, 16, Skin.COLORS.TEXT_MUTED)
+        check(iconOk == true
+            and row.tex[#row.tex].texture.path:find(
+                "mui_icon_" .. key .. ".png", 1, true),
+            "態A Studio icon 轉發 rev3 Icons.draw：" .. key)
+    end
     check(Skin.icon(row, "missing", 0, 0, 16) == false,
         "態A 未知 icon fail-soft 供 consumer 退純文字")
     _G.getTexture = nil

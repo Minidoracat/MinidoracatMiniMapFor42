@@ -138,10 +138,14 @@ end
 
 -- 逐 slot 取玩家（分割畫面 0-3）。槽位驗證從嚴：非整數／越界一律 nil，
 -- 絕不退回 slot 0——借用別人的權限就是權限洩漏。
+-- 槽位鍵不變式（0-3 整數）：playerOf 與 clearLocalSlot 共用同一份驗證。
+local function validSlot(pn)
+    return type(pn) == "number" and pn == pn and pn >= 0 and pn <= 3
+        and pn == math.floor(pn)
+end
+
 local function playerOf(pn)
-    if type(pn) ~= "number" or pn ~= pn then return nil end
-    if pn < 0 or pn > 3 then return nil end
-    if pn ~= math.floor(pn) then return nil end
+    if not validSlot(pn) then return nil end
     local ok, p = pcall(getSpecificPlayer, pn)
     if ok and p then return p end
     return nil
@@ -203,11 +207,8 @@ local SCHEMA = {
 local SCHEMA_N = 19 -- 顯式筆數（家規：不用 # 依賴隱性長度）
 
 local KIND = {}
-local DEFAULTS = {}
 for i = 1, SCHEMA_N do
-    local row = SCHEMA[i]
-    KIND[row[1]] = row[2]
-    DEFAULTS[row[1]] = row[3]
+    KIND[SCHEMA[i][1]] = SCHEMA[i][2]
 end
 
 -- 旁路白名單（見檔頭）。名單外的鍵沒有任何路徑可以旁路。
@@ -223,15 +224,14 @@ local TACTICAL_KEYS = {
     ZoneDisplayDistance = true,
     AllInfoDistance = true,
 }
+-- 隱私層唯一走通用距離閘的鍵。SafehouseDisplay／LivestockVisibility 是模式鍵：
+-- 其隱私旁路在 safehouseMode／livestockMode 內自行判定，不經此名單，也到不了
+-- policyGate（KIND 非 boolean）。
 local PRIVACY_KEYS = {
-    SafehouseDisplay = true,
     SafehouseDisplayDistance = true,
-    LivestockVisibility = true,
 }
 
 -- 本機檢視旗標只存在此 closure；不進 player modData（任何導航存檔同步都碰不到）。
-local FLAG_TACTICAL = "tactical"
-local FLAG_PRIVACY = "privacy"
 local localFlags = {} -- [playerNum] = { tactical=bool, privacy=bool }
 
 local snapshot = {}   -- 鍵 → 已驗型的政策值
@@ -352,8 +352,7 @@ end
 
 -- 玩家建立／換角時清該 slot；離線／新局時清全部。只有真值被撤銷才推 revision。
 local function clearLocalSlot(pn)
-    if type(pn) ~= "number" or pn ~= pn or pn < 0 or pn > 3
-            or pn ~= math.floor(pn) then return end
+    if not validSlot(pn) then return end
     local state = localFlags[pn]
     if state and (state.tactical == true or state.privacy == true) then
         revision = revision + 1
@@ -372,23 +371,23 @@ local function clearLocalFlags()
 end
 
 local function localTactical(pn)
-    return readFlag(pn, FLAG_TACTICAL)
+    return readFlag(pn, "tactical")
 end
 
 local function localPrivacy(pn)
-    return readFlag(pn, FLAG_PRIVACY)
+    return readFlag(pn, "privacy")
 end
 
 -- 三把鑰匙的快照版：呼叫端須先 refreshPolicy。複合查詢共用它，避免重複時鐘橋接。
 local function tacticalActiveCached(pn)
     if snapshotRead("AllowAdminTacticalView", false) ~= true then return false end
-    if not readFlag(pn, FLAG_TACTICAL) then return false end
+    if not readFlag(pn, "tactical") then return false end
     return hasCanSeeAll(pn)
 end
 
 local function privacyActiveCached(pn, tactical)
     if snapshotRead("AllowAdminPrivacyView", false) ~= true then return false end
-    if not readFlag(pn, FLAG_PRIVACY) then return false end
+    if not readFlag(pn, "privacy") then return false end
     if tactical ~= nil then return tactical end
     return tacticalActiveCached(pn)
 end
@@ -410,10 +409,10 @@ local function setLocalTactical(pn, v)
         refreshPolicy(false)
         if snapshotRead("AllowAdminTacticalView", false) ~= true then return false end
         if not hasCanSeeAll(pn) then return false end
-        return writeFlag(pn, FLAG_TACTICAL, true)
+        return writeFlag(pn, "tactical", true)
     end
-    writeFlag(pn, FLAG_TACTICAL, false)
-    writeFlag(pn, FLAG_PRIVACY, false)
+    writeFlag(pn, "tactical", false)
+    writeFlag(pn, "privacy", false)
     return false
 end
 
@@ -423,9 +422,9 @@ local function setLocalPrivacy(pn, v)
         refreshPolicy(false)
         if snapshotRead("AllowAdminPrivacyView", false) ~= true then return false end
         if not tacticalActiveCached(pn) then return false end
-        return writeFlag(pn, FLAG_PRIVACY, true)
+        return writeFlag(pn, "privacy", true)
     end
-    writeFlag(pn, FLAG_PRIVACY, false)
+    writeFlag(pn, "privacy", false)
     return false
 end
 
