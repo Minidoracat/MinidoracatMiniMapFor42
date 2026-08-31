@@ -709,7 +709,7 @@ def test_candidate_polyline_point_limit():
 
 
 def test_candidate_work_caps_fail_closed(tmp_path=None):
-    assert M.MAX_COMPONENTS == 50000
+    assert M.MAX_COMPONENTS == 500000  # edge 獨輪碎片 5-40 萬（recon 實證）
     assert M.MAX_REPORTED_CANDIDATES == 10000
     assert M.MAX_CANDIDATE_GRAPH_WORK == 100000000
     assert M.MAX_CANDIDATE_GRAPH_BUCKET_REFS == 250000

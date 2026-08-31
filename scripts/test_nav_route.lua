@@ -864,8 +864,8 @@ do
     dofile(patchPath)
     local patch = MinidoracatMiniMapRoadPatches
     assert(patch and patch.auditSha256
-        == "4af9617a6193d76c63ff454def311aada68813b132743f8317379982ad582377",
-        "正式 RoadPatch：綁定 final total-work audit")
+        == "ef3e998ad3ac78d5535ff38d9eb7be28f970a7bc2790bd11b01a48c045ee137d",
+        "正式 RoadPatch：綁定 dirt-edge v2 audit")
     local streets = {}
 -- map priority 全域取得失敗必 terminal；僅 carrier/per-cell 維持 fail-open。
 do
@@ -929,8 +929,8 @@ end
         end
     end
     assert(metadataCount == patch.surfaceCount and patch.addCount == 1
-        and patch.bridgeCount == 6 and patch.rejectedCandidateCount == 0,
-        "正式 RoadPatch：3343 surface overrides、6 bridge 翻案＋1 manual add、零 reject")
+        and patch.bridgeCount == 8 and patch.rejectedCandidateCount == 6,
+        "正式 RoadPatch：surface overrides＋8 bridge（6 翻案＋2 dirt-edge 新增）＋1 manual add")
     assert(#streets == patch.geometryCount + 1 + patch.addCount + patch.bridgeCount,
         "正式 RoadPatch：add/bridge 條目 append 至 patched 表尾")
     local officialBuilder = mod.newBuild(streets, nil)

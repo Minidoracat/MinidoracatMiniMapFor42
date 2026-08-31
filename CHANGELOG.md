@@ -48,6 +48,18 @@
   不進街名搜尋（searchable=false）。烘焙器對 add/bridge 幾何新增 Douglas-Peucker
   簡化（ε=0.25，同 CUT_MERGE 量級）——稽核骨架的逐格點（169 格＝169 點）直接
   入圖會讓建圖切割爆限；證據雜湊仍綁原始點，僅 operation 輸出簡化。
+- **dirt-edge 訊號：隱形土路自動偵測**：與周圍曠野同 dirt 材質的土路，其可靠
+  身分在路帶兩側連續的 dirt→grass 過渡邊 tile（`blends_natural_01_{64..71}`，
+  逐格 lotpack 實證）——MapRendering 分類表新增 `dirt-edge` class（surfaces
+  schema classes 第 6 項），稽核端以「edge 獨輪」收集（與 dirt-candidate 同輪
+  連通會把 edge 帶融進曠野大面被 gate 拒；primary 輪維持全集保 v1 連通形狀）。
+  edge 輪被 gate 拒者只計數不入報告（全圖裸泥塊邊緣圈上萬）；bbox 對角
+  < GATE_LENGTH 預過濾；MAX_COMPONENTS 50000→500000（edge 碎片實測量級）。
+  全圖重稽核抓出 8 筆 edge 候選，人工高倍裁決：2 筆真土路入網（兩公路間
+  646 格土路、社區南側 319 格土徑，bridge）、6 筆拒（路肩帶×3、田緣帶、
+  社區邊界帶、侵蝕溝）。原 6 筆翻案候選以 v2 證據 hash 重新核准。斷頭土徑
+  （單端接路網，如湖畔小屋徑）仍由 manualRoads 人工描線——connection gate
+  要求兩端接路網屬既定語意。
 - **人工描線道路入口（manualRoads）**：表面 class 與周圍地形同質的路（如穿越
   曠野的土徑，與整片 dirt 同類、row-span 稽核無訊號可用）可由人工提供折線入
   路網——approvals 新增 `manualRoads` 區段（`m:` 前綴 id 與稽核證據空間分離，

@@ -37,9 +37,18 @@ from pathlib import Path
 SCHEMA_VERSION = 1
 CELL_SIZE = 256
 CELL_SQUARES = CELL_SIZE * CELL_SIZE
-CLASSES = ("unknown", "paved", "gravel", "dirt-candidate", "natural")
+CLASSES = ("unknown", "paved", "gravel", "dirt-candidate", "natural", "dirt-edge")
 CLASS_ID = {name: i for i, name in enumerate(CLASSES)}
-CANDIDATE_IDS = {CLASS_ID["paved"], CLASS_ID["gravel"], CLASS_ID["dirt-candidate"]}
+# dirt-edge（blends_natural_01_{64..71}，dirt→grass 過渡邊）：窄土徑的線性
+# 訊號——路面本體與曠野裸泥同 tile 無法區分，但窄路帶每格貼草緣連成 edge 帶。
+# edge 必須「獨輪」收集：與 dirt-candidate 同輪連通會把 edge 帶融進曠野大面
+# component 一起被 gate 拒（v2 首跑實證：加入同一集合後候選數零變化）。
+# 農田犁溝同類橫紋彼此連通成面，靠 width/area gate 拒（與 gravel 農地同機制）。
+PRIMARY_CANDIDATE_IDS = frozenset(
+    {CLASS_ID["paved"], CLASS_ID["gravel"], CLASS_ID["dirt-candidate"]})
+EDGE_CANDIDATE_IDS = frozenset({CLASS_ID["dirt-edge"]})
+# 全集：pixel 統計與候選 coverage（土徑候選的路徑點常落在路心 dirt-candidate）
+CANDIDATE_IDS = PRIMARY_CANDIDATE_IDS | EDGE_CANDIDATE_IDS
 MISSING = object()
 
 # 與 NavCore.isRailroadStreet 同源：英文子串 ∪ vanilla 9 條鐵路首點幾何簽名
@@ -65,7 +74,7 @@ GATE_CONNECT = 8.0
 MIN_COMPONENT_AREA = 16
 MAX_CANDIDATE_PIXELS = 2000000
 DEFAULT_MAX_CANDIDATE_PIXELS = MAX_CANDIDATE_PIXELS
-MAX_COMPONENTS = 50000
+MAX_COMPONENTS = 500000  # edge 獨輪的碎片 component 全圖 5-40 萬（recon 實證）
 MAX_REPORTED_CANDIDATES = 10000
 MAX_CANDIDATE_GRAPH_WORK = 100000000
 MAX_CANDIDATE_POLYLINE_POINTS = 8192
@@ -1138,7 +1147,7 @@ def _subtract_coverage(spans, covered):
     return out
 
 
-def candidate_rows(surface, covered, work):
+def candidate_rows(surface, covered, work, candidate_ids):
     """依 world y 產生 uncovered candidate spans；同列跨 cell 自然相接。"""
     cs = surface.cell_size
     items = sorted(
@@ -1149,7 +1158,7 @@ def candidate_rows(surface, covered, work):
         for (cx, _), runs in group:
             ox = cx * cs
             for start, end, cid in runs:
-                if cid not in CANDIDATE_IDS:
+                if cid not in candidate_ids:
                     continue
                 pos = start
                 while pos < end:
@@ -1795,49 +1804,73 @@ def build_report(streets, surfaces_loaded, surface, xml_sha, surface_sha,
         "candidateGraphWorkCount": 0,
         "profileWorkCount": 0,
         "candidatePolylinePointCount": 0,
+        "edgeRejectedCandidateCount": 0,
     }
     candidates = []
-    rows = candidate_rows(surface, covered, work)
-    for component in connected_components(rows, max_candidate_pixels, work):
-        next_component_count = work["componentCount"] + 1
-        if next_component_count > MAX_COMPONENTS:
-            raise AuditError("candidate components 最多 %d，得到 %d" % (
-                MAX_COMPONENTS, next_component_count))
-        work["componentCount"] = next_component_count
-        work["maxComponentArea"] = max(
-            work["maxComponentArea"], component.area)
-        if component.storage_limited:
-            work["storageLimitedComponentCount"] += 1
-            if component.storage_limit_kind == "global":
-                work["globalBudgetLimitedComponentCount"] += 1
+    # 兩輪收集：
+    #   pass 1（primary）＝全 candidate 集（含 dirt-edge）——edge 格必須照舊
+    #   收進 span，否則 v1 的 dirt 大面被 edge 帶挖洞碎裂、候選數 ×5（22319，
+    #   recon 實證）且審計報告灌爆；連通形狀與 v1 逐格相同。
+    #   pass 2（edge 獨輪）＝只認 dirt-edge——窄土徑帶不與曠野 dirt 連通，
+    #   才能成為獨立窄帶 component（與 primary 同輪收集時零新候選，首跑實證）。
+    # work 計數與各上限跨輪累計；候選 id=證據 hash，兩輪幾何不同不相撞。
+    for edge_pass, pass_ids in (
+            (False, CANDIDATE_IDS), (True, EDGE_CANDIDATE_IDS)):
+        rows = candidate_rows(surface, covered, work, pass_ids)
+        for component in connected_components(rows, max_candidate_pixels, work):
+            next_component_count = work["componentCount"] + 1
+            if next_component_count > MAX_COMPONENTS:
+                raise AuditError("candidate components 最多 %d，得到 %d" % (
+                    MAX_COMPONENTS, next_component_count))
+            work["componentCount"] = next_component_count
+            work["maxComponentArea"] = max(
+                work["maxComponentArea"], component.area)
+            if component.storage_limited:
+                work["storageLimitedComponentCount"] += 1
+                if component.storage_limit_kind == "global":
+                    work["globalBudgetLimitedComponentCount"] += 1
+                else:
+                    work["componentLimitedComponentCount"] += 1
+            # edge 輪線性預過濾：bbox 對角 < GATE_LENGTH 的團塊（裸泥塊邊緣圈、
+            # 小 patch）不可能過 accepted 的 length gate，提前釋放。
+            if edge_pass and component.minx is not None:
+                bw = component.maxx - component.minx + 1
+                bh = component.maxy - component.miny + 1
+                if bw * bw + bh * bh < GATE_LENGTH * GATE_LENGTH:
+                    release_component_detail(component, work)
+                    work["smallComponentCount"] += 1
+                    continue
+            if (component.area >= MIN_COMPONENT_AREA
+                    and len(candidates) >= MAX_REPORTED_CANDIDATES):
+                raise AuditError("reported candidates 最多 %d，得到 %d" % (
+                    MAX_REPORTED_CANDIDATES, len(candidates) + 1))
+            if component.spans is not None:
+                next_profile_work = work["profileWorkCount"] + component.area
+                if next_profile_work > MAX_TOTAL_PROFILE_WORK:
+                    raise AuditError("candidate profile work 最多 %d，得到 %d" % (
+                        MAX_TOTAL_PROFILE_WORK, next_profile_work))
+                work["profileWorkCount"] = next_profile_work
+            item = analyze_component(
+                component, surface, graph, surface_sha, xml_sha, work=work,
+                region_bounds=region_bounds)
+            release_component_detail(component, work)
+            if item is None:
+                work["smallComponentCount"] += 1
+            elif edge_pass and not item["accepted"]:
+                # edge 輪被 gate 拒者只計數不入報告：全圖裸泥塊邊緣圈上萬
+                # （寬 1-2 格、被 medianWidth gate 拒），全報會撞 reported
+                # 上限並灌爆 JSON。primary 輪維持全報（審計完整性不變）。
+                work["edgeRejectedCandidateCount"] += 1
             else:
-                work["componentLimitedComponentCount"] += 1
-        if (component.area >= MIN_COMPONENT_AREA
-                and len(candidates) >= MAX_REPORTED_CANDIDATES):
-            raise AuditError("reported candidates 最多 %d，得到 %d" % (
-                MAX_REPORTED_CANDIDATES, len(candidates) + 1))
-        if component.spans is not None:
-            next_profile_work = work["profileWorkCount"] + component.area
-            if next_profile_work > MAX_TOTAL_PROFILE_WORK:
-                raise AuditError("candidate profile work 最多 %d，得到 %d" % (
-                    MAX_TOTAL_PROFILE_WORK, next_profile_work))
-            work["profileWorkCount"] = next_profile_work
-        item = analyze_component(
-            component, surface, graph, surface_sha, xml_sha, work=work,
-            region_bounds=region_bounds)
-        release_component_detail(component, work)
-        if item is None:
-            work["smallComponentCount"] += 1
-        else:
-            next_polyline_points = (
-                work["candidatePolylinePointCount"] + len(item["polyline"]))
-            if next_polyline_points > MAX_TOTAL_CANDIDATE_POLYLINE_POINTS:
-                raise AuditError(
-                    "candidate polyline points 最多 %d，得到 %d" % (
-                        MAX_TOTAL_CANDIDATE_POLYLINE_POINTS,
-                        next_polyline_points))
-            work["candidatePolylinePointCount"] = next_polyline_points
-            candidates.append(item)
+                next_polyline_points = (
+                    work["candidatePolylinePointCount"] + len(item["polyline"]))
+                if next_polyline_points > MAX_TOTAL_CANDIDATE_POLYLINE_POINTS:
+                    raise AuditError(
+                        "candidate polyline points 最多 %d，得到 %d" % (
+                            MAX_TOTAL_CANDIDATE_POLYLINE_POINTS,
+                            next_polyline_points))
+                work["candidatePolylinePointCount"] = next_polyline_points
+                candidates.append(item)
     candidates.sort(key=lambda c: (c["id"], c["bbox"]["y0"], c["bbox"]["x0"]))
     accepted_count = sum(1 for item in candidates if item["accepted"])
     aggregate_count = sum(
@@ -1854,6 +1887,7 @@ def build_report(streets, surfaces_loaded, surface, xml_sha, surface_sha,
         "maskedPixelCount": pixel_count - work["uncoveredPixelCount"],
         "rowSpanCount": work["rowSpanCount"],
         "componentCount": work["componentCount"],
+        "edgeRejectedCandidateCount": work["edgeRejectedCandidateCount"],
         "componentLimit": MAX_COMPONENTS,
         "reportedCandidateLimit": MAX_REPORTED_CANDIDATES,
         "candidateGraphWorkCount": work["candidateGraphWorkCount"],

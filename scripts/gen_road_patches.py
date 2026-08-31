@@ -31,7 +31,8 @@ DEFAULT_OUT = (
 )
 SHA256_HEX_LEN = 64
 SURFACES = frozenset({"paved", "gravel", "dirt", "unknown"})
-AUDIT_SURFACES = ("paved", "gravel", "dirt-candidate", "natural", "unknown")
+AUDIT_SURFACES = (
+    "paved", "gravel", "dirt-candidate", "natural", "unknown", "dirt-edge")
 AUDIT_REJECTION_REASONS = frozenset({
     "length", "medianWidth", "widthP90", "widthSpread", "coverage",
     "surfaceImpure", "unconnected", "unverifiedTerminus", "sameAttachment",

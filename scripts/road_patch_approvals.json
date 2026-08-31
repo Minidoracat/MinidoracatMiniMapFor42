@@ -3,13 +3,31 @@
   "targetSrc": "Muldraugh, KY",
   "mapId": "Muldraugh, KY",
   "sourceBuild": "42.20.4",
-  "auditSha256": "4af9617a6193d76c63ff454def311aada68813b132743f8317379982ad582377",
+  "auditSha256": "ef3e998ad3ac78d5535ff38d9eb7be28f970a7bc2790bd11b01a48c045ee137d",
   "auditXmlSha256": "86172be118d99243ecbb6027ef4b82f2aa31590afcc7bbd776cffe9869482771",
-  "auditSurfaceFingerprint": "644a794043569231e550a16d17269925ec095dba671d1149b0cf52da815f81a9",
+  "auditSurfaceFingerprint": "9b3b740f73f47ea82924148ca0f346fbbdbaa4b57d2f9e7f0cf9cfc15c0d1a38",
   "approvedCandidates": [
     {
-      "id": "c:8b22970e0b10bfdec96667ab4402f52573e0cb67c73769f5db44cd41f818b1de",
-      "evidenceHash": "8b22970e0b10bfdec96667ab4402f52573e0cb67c73769f5db44cd41f818b1de",
+      "id": "c:0f23bfe0a58ccace456984f8aae76a7ad3f7e6fae6b79d2ee39d6115fcdaad05",
+      "evidenceHash": "0f23bfe0a58ccace456984f8aae76a7ad3f7e6fae6b79d2ee39d6115fcdaad05",
+      "operation": "bridge",
+      "surface": "dirt",
+      "width": 5.12,
+      "searchable": false,
+      "reason": "人工視覺稽核（dirt-edge 訊號，2026-09-01）：社區南側縱向窄土徑（319 格），高倍複查具清晰連續路徑，兩端接路網。"
+    },
+    {
+      "id": "c:408f762e44283f6144086e637ed8b6b3abc8f0bc1ab59ca97500371c67703643",
+      "evidenceHash": "408f762e44283f6144086e637ed8b6b3abc8f0bc1ab59ca97500371c67703643",
+      "operation": "bridge",
+      "surface": "dirt",
+      "width": 7.0,
+      "searchable": false,
+      "reason": "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「停車區橫向表面帶，不是公共道路。」維持事實描述，僅撤銷排除。"
+    },
+    {
+      "id": "c:54acb897ec67e6daeee264c1a18b8fbc56149f2716bb70e574a61e08a45d94b5",
+      "evidenceHash": "54acb897ec67e6daeee264c1a18b8fbc56149f2716bb70e574a61e08a45d94b5",
       "operation": "bridge",
       "surface": "dirt",
       "width": 3.227,
@@ -17,26 +35,8 @@
       "reason": "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「住宅／建物間私人土徑，不是公共道路。」維持事實描述，僅撤銷排除。"
     },
     {
-      "id": "c:adc86006832a51545dbc80e5c04cdb359ae003984c486e259de93dc3f1c5b9cd",
-      "evidenceHash": "adc86006832a51545dbc80e5c04cdb359ae003984c486e259de93dc3f1c5b9cd",
-      "operation": "bridge",
-      "surface": "paved",
-      "width": 7.0,
-      "searchable": false,
-      "reason": "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「停車區／服務巷表面帶，無可證實公共道路。」維持事實描述，僅撤銷排除。"
-    },
-    {
-      "id": "c:ce5fb2f63e260529e4fd5d17e67c67a141b994a5414c78056f8c8b382fc7daae",
-      "evidenceHash": "ce5fb2f63e260529e4fd5d17e67c67a141b994a5414c78056f8c8b382fc7daae",
-      "operation": "bridge",
-      "surface": "dirt",
-      "width": 5.0,
-      "searchable": false,
-      "reason": "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「停車區橫向表面帶，不是公共道路。」維持事實描述，僅撤銷排除。"
-    },
-    {
-      "id": "c:d4f58afdbb62dd7f94368867119bbdc817afbe7a5322c2b8909732ecc11b4b2f",
-      "evidenceHash": "d4f58afdbb62dd7f94368867119bbdc817afbe7a5322c2b8909732ecc11b4b2f",
+      "id": "c:c27c81fff5c1f62e9aa3870be86a5b25515bab5dee11ff46b6bd313cd2ee3ef4",
+      "evidenceHash": "c27c81fff5c1f62e9aa3870be86a5b25515bab5dee11ff46b6bd313cd2ee3ef4",
       "operation": "bridge",
       "surface": "paved",
       "width": 7.0,
@@ -44,25 +44,74 @@
       "reason": "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「停車區縱向表面帶，不是公共道路。」維持事實描述，僅撤銷排除。"
     },
     {
-      "id": "c:e7b748fd02d06b7ff83149a9865f50a1be36db918f738dc89803057a2996dfb5",
-      "evidenceHash": "e7b748fd02d06b7ff83149a9865f50a1be36db918f738dc89803057a2996dfb5",
+      "id": "c:eacfd79c0fa084979b9651fa2a100ff37ec0c12b1572856de86b000912e3cbad",
+      "evidenceHash": "eacfd79c0fa084979b9651fa2a100ff37ec0c12b1572856de86b000912e3cbad",
+      "operation": "bridge",
+      "surface": "dirt",
+      "width": 5.0,
+      "searchable": false,
+      "reason": "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「停車區橫向表面帶，不是公共道路。」維持事實描述，僅撤銷排除。"
+    },
+    {
+      "id": "c:ef5766802e0104b91f26544bf36c4aded0a29d2298e3e777b427635991c55407",
+      "evidenceHash": "ef5766802e0104b91f26544bf36c4aded0a29d2298e3e777b427635991c55407",
+      "operation": "bridge",
+      "surface": "dirt",
+      "width": 5.014,
+      "searchable": false,
+      "reason": "人工視覺稽核（dirt-edge 訊號，2026-09-01）：兩公路間連續實心土路帶（646 格），高倍複查具平滑連續路面紋理，兩端接路網。"
+    },
+    {
+      "id": "c:f039e0375724eccf10001cfbcaf354e282f5ee05623a39380233276e03bcdaf1",
+      "evidenceHash": "f039e0375724eccf10001cfbcaf354e282f5ee05623a39380233276e03bcdaf1",
+      "operation": "bridge",
+      "surface": "paved",
+      "width": 7.0,
+      "searchable": false,
+      "reason": "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「停車區／服務巷表面帶，無可證實公共道路。」維持事實描述，僅撤銷排除。"
+    },
+    {
+      "id": "c:fafa855715964cb62e47ad267e294fb508874c4573628ed98b91a90d9dc4c1be",
+      "evidenceHash": "fafa855715964cb62e47ad267e294fb508874c4573628ed98b91a90d9dc4c1be",
       "operation": "bridge",
       "surface": "paved",
       "width": 4.0,
       "searchable": false,
       "reason": "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「建物／庭院內橫向表面帶，不是公共道路。」維持事實描述，僅撤銷排除。"
-    },
-    {
-      "id": "c:fe4f9c04511923c010c1cc324edb90705e41a9a1253a0ee01ae2f2b838e84ef8",
-      "evidenceHash": "fe4f9c04511923c010c1cc324edb90705e41a9a1253a0ee01ae2f2b838e84ef8",
-      "operation": "bridge",
-      "surface": "dirt",
-      "width": 7.0,
-      "searchable": false,
-      "reason": "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「停車區橫向表面帶，不是公共道路。」維持事實描述，僅撤銷排除。"
     }
   ],
-  "rejectedCandidates": [],
+  "rejectedCandidates": [
+    {
+      "id": "c:3d4e8f556adf442458aee205f7bdc197b4bb56d03505963bb190b85e3e48e528",
+      "evidenceHash": "3d4e8f556adf442458aee205f7bdc197b4bb56d03505963bb190b85e3e48e528",
+      "reason": "人工視覺稽核：農田南緣 edge 帶（耕地與草地交界），非通行道路。"
+    },
+    {
+      "id": "c:62e0e9a71aa380644560f8e20cb4dbdfbeb787f9dc817fdfa49f9bd028d2dcf3",
+      "evidenceHash": "62e0e9a71aa380644560f8e20cb4dbdfbeb787f9dc817fdfa49f9bd028d2dcf3",
+      "reason": "人工視覺稽核：公路南側路肩帶，非獨立道路。"
+    },
+    {
+      "id": "c:697765da10297c689c3695846e0e0ca13c120ac6debff4dda6b78e279aa24f2e",
+      "evidenceHash": "697765da10297c689c3695846e0e0ca13c120ac6debff4dda6b78e279aa24f2e",
+      "reason": "人工視覺稽核：公路南側路肩帶，非獨立道路。"
+    },
+    {
+      "id": "c:7e2137a78fc8e5c05f8ca4239d3c445fadd8944b524392f9479eaf2cdc5bc35c",
+      "evidenceHash": "7e2137a78fc8e5c05f8ca4239d3c445fadd8944b524392f9479eaf2cdc5bc35c",
+      "reason": "人工視覺稽核：公路北側路肩／溝緣帶，與既有道路平行貼靠，非獨立道路。"
+    },
+    {
+      "id": "c:a8c21665c15a515a468127798b15b3c275f0ce07415e6a49580fcbae19e33ac5",
+      "evidenceHash": "a8c21665c15a515a468127798b15b3c275f0ce07415e6a49580fcbae19e33ac5",
+      "reason": "人工視覺稽核：社區西緣與公路間邊界帶，非獨立道路。"
+    },
+    {
+      "id": "c:bfd9bbdc18531163f342616997ab86204f786cdd3d430e724782716b8b49652d",
+      "evidenceHash": "bfd9bbdc18531163f342616997ab86204f786cdd3d430e724782716b8b49652d",
+      "reason": "人工視覺稽核：鋸齒狀侵蝕溝／水道形態，非通行路徑。"
+    }
+  ],
   "remove": [],
   "width": [],
   "surface": [],
