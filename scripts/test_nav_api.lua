@@ -14,6 +14,13 @@ local srcPath = arg[1]
 local file = assert(io.open(srcPath, "rb"))
 local source = file:read("*a"):gsub("\r\n", "\n")
 file:close()
+local mainPath = arg[2]
+    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua"
+local mainFile = assert(io.open(mainPath, "rb"))
+local mainSource = mainFile:read("*a"):gsub("\r\n", "\n")
+mainFile:close()
+assert(mainSource:match("MinidoracatMiniMapAPI%.navApiVersion%s*=%s*4"),
+    "navApiVersion 必須為 4")
 
 local compile = loadstring or load
 
@@ -26,24 +33,44 @@ local body = assert(source:match(
 -- 注意：長字串 [=[ 後的首個換行會被 Lua 吃掉，body 與 suffix 之間須補顯式 "\n"
 local prelude = [=[
 local MinidoracatMiniMapAPI = {}
-local engine = { state = "ready", graph = nil }
+local engine = {
+    state = "ready", graph = nil, patchState = "applied", searchState = "ok",
+}
 local navRoutes = {}
 local players = {}
 local calls = {}
-local nextRoute = nil
+local nextRoute, nextRouteState = nil, nil
+local detourCalls = {}
+local nextDetourRoute, nextDetourError = nil, nil
+local NavCore = {
+    findRoute = function(graph, sx, sy, tx, ty, ax, ay, ar)
+        detourCalls[#detourCalls + 1] = {
+            graph = graph, sx = sx, sy = sy, tx = tx, ty = ty,
+            ax = ax, ay = ay, ar = ar,
+        }
+        return nextDetourRoute, nextDetourError
+    end,
+}
+local function logf() end
+local function getTimestampMs() return 12345 end
+local function failNavEngine()
+    engine.state, engine.graph = "failed", nil
+    for key in pairs(navRoutes) do navRoutes[key] = nil end
+end
 local function getSpecificPlayer(pn) return players[pn] end
 -- ensureRoute stub：記下實際收到的引數（含 target 表 identity，驗證重用暫存契約）
 local function ensureRoute(key, target, px, py)
     calls[#calls + 1] = {
         key = key, target = target, tx = target.x, ty = target.y, px = px, py = py,
     }
-    return nextRoute
+    return nextRoute, nextRouteState
 end
 ]=]
 local suffix = [=[
 return { API = MinidoracatMiniMapAPI, engine = engine, navRoutes = navRoutes,
-    players = players, calls = calls,
-    setRoute = function(r) nextRoute = r end }
+    players = players, calls = calls, detourCalls = detourCalls,
+    setRoute = function(r, state) nextRoute, nextRouteState = r, state end,
+    setDetour = function(r, err) nextDetourRoute, nextDetourError = r, err end }
 ]=]
 local T = assert(compile(prelude .. body .. "\n" .. suffix, "nav-api"))()
 local API = T.API
@@ -54,11 +81,15 @@ end
 local function clear(t) for i = #t, 1, -1 do t[i] = nil end end
 local function resetAll()
     T.engine.state = "ready"
+    T.engine.searchState = "ok"
+    T.engine.patchState = "applied"
     T.engine.graph = nil
     T.players[0], T.players[1], T.players[2], T.players[3] = nil, nil, nil, nil
     T.navRoutes[0], T.navRoutes[1], T.navRoutes[2], T.navRoutes[3] = nil, nil, nil, nil
     T.setRoute(nil)
+    T.setDetour(nil, nil)
     clear(T.calls)
+    clear(T.detourCalls)
 end
 
 local NAN = 0 / 0
@@ -141,7 +172,11 @@ end
 -- A7: ensureRoute 收到 (playerNum, target{x,y}, 玩家座標)；route 原封不動回傳
 resetAll()
 T.players[2] = player(77, 88)
-local cached = { pts = { 1, 2, 3, 4 }, len = 42 }
+local cached = {
+    pts = { 1, 2, 3, 4 }, len = 42,
+    segSurface = { "paved" }, segWidth = { 6 },
+    cost = 42, avoidPenalty = 0, approachSurface = "unknown", patchState = "applied",
+}
 T.setRoute(cached)
 T.navRoutes[2] = { state = "ok" }
 route, state = API.requestRoute(2, 300, 400)
@@ -151,6 +186,10 @@ assert(T.calls[1].tx == 300 and T.calls[1].ty == 400, "A7: 目標座標須原樣
 assert(T.calls[1].px == 77 and T.calls[1].py == 88, "A7: 起點須取玩家當前座標")
 assert(route == cached, "A7: 回傳須是 ensureRoute 產物本體（不複製）")
 assert(state == "ok", "A7: state 須取 navRoutes[playerNum].state")
+assert(route.segSurface[1] == "paved" and route.segWidth[1] == 6
+    and route.cost == 42 and route.avoidPenalty == 0
+    and route.approachSurface == "unknown",
+    "A7: v4 additive metadata 須隨 route 本體原樣暴露")
 
 -- A8: 目標暫存是重用的同一張表（不每次配置），且 x/y 每次都被覆寫
 route, state = API.requestRoute(2, -500, 600)
@@ -165,7 +204,6 @@ assert(state == "noroad", "A9: rs.state=noroad 須直通，實得 " .. tostring(
 T.navRoutes[2] = nil
 route, state = API.requestRoute(2, 10, 20)
 assert(state == "noroad", "A9: 無 navRoutes 條目須回 noroad，實得 " .. tostring(state))
-
 -- A10: 無路時 ensureRoute 回 nil → route 為 nil，但仍回穩定字串（非拋錯）
 resetAll()
 T.players[0] = player(0, 0)
@@ -175,23 +213,101 @@ route, state = API.requestRoute(0, 10, 10)
 assert(route == nil and state == "noroad", "A10: 無路須回 (nil, noroad)")
 
 --------------------------------------------------------------------------------
+-- A10b/c: ensureRoute terminal failure 不得沿用空 cache 或舊 ok cache
+resetAll()
+T.players[0] = player(0, 0)
+T.setRoute(nil, "failed")
+route, state = API.requestRoute(0, 99, 100)
+assert(route == nil and state == "failed" and T.navRoutes[0] == nil,
+    "A10b: 無 cache search error 須回 failed")
+
+resetAll()
+T.players[0] = player(0, 0)
+T.navRoutes[0] = { state = "ok", route = { pts = {} }, tx = 1, ty = 2 }
+T.setRoute(nil, "failed")
+route, state = API.requestRoute(0, 99, 100)
+assert(route == nil and state == "failed",
+    "A10c: target-change search error 不得回舊 cache ok")
+
 -- 四、getNavGraph：引擎本體＋狀態（唯讀契約，不得複製 ~4k 節點 SoA）
 --------------------------------------------------------------------------------
 -- A11: 回的 graph 就是 engine.graph 同一張表；state 同步
 resetAll()
 local graph = { nodeCount = 3, nx = { 1, 2, 3 } }
 T.engine.graph = graph
-local g, gs = API.getNavGraph()
+local g, gs, gps, gss = API.getNavGraph()
 assert(g == graph, "A11: getNavGraph 須回 engine.graph 本體（identity）")
-assert(gs == "ready", "A11: 須一併回 engine 狀態")
+assert(gs == "ready" and gps == "applied" and gss == "ok",
+    "A11: 須一併回 engine/patch/search 狀態")
 
 -- A12: 未建圖時回 (nil, 狀態)——addon 靠 state 分「還沒好」與「壞了」
 T.engine.graph = nil
 T.engine.state = "building"
-g, gs = API.getNavGraph()
-assert(g == nil and gs == "building", "A12: 未建圖須回 (nil, building)")
+g, gs, gps = API.getNavGraph()
+assert(g == nil and gs == "building" and gps == "applied",
+    "A12: 未建圖須回 (nil, building, applied)")
 T.engine.state = "failed"
-g, gs = API.getNavGraph()
-assert(g == nil and gs == "failed", "A12: 失敗須回 (nil, failed)")
+g, gs, gps = API.getNavGraph()
+assert(g == nil and gs == "failed" and gps == "applied",
+    "A12: 失敗須回 (nil, failed, applied)")
 
-print("test_nav_api: OK（引數驗證 A1-A4＋早退 A5-A6＋ready 路徑 A7-A10＋graph A11-A12）")
+
+--------------------------------------------------------------------------------
+-- 五、requestDetour wrapper：簽名不變、所有早退與 ok cache/v4 identity
+--------------------------------------------------------------------------------
+resetAll()
+T.players[0] = player(1, 2)
+local detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 0)
+assert(detour == nil and detourState == "badargs" and #T.detourCalls == 0,
+    "A13: avoidR<=0 badargs 且不得進 A*")
+
+resetAll()
+detour, detourState = API.requestDetour(1, 10, 20, 30, 40, 5)
+assert(detour == nil and detourState == "noplayer" and #T.detourCalls == 0,
+    "A14: detour 無玩家早退")
+
+resetAll()
+T.players[0] = player(1, 2)
+T.engine.state = "building"
+detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5)
+assert(detour == nil and detourState == "building" and #T.detourCalls == 0,
+    "A15: detour engine state 直通")
+
+resetAll()
+T.players[0] = player(1, 2)
+T.engine.graph = { id = "graph" }
+detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5)
+assert(detour == nil and detourState == "noroad" and #T.detourCalls == 1
+    and T.navRoutes[0] == nil, "A16: detour noroad 不寫 cache")
+
+resetAll()
+T.players[2] = player(7, 8)
+T.engine.graph = { id = "graph" }
+local detourV4 = {
+    pts = { 1, 2, 3, 4 }, len = 2, cost = 2, avoidPenalty = 0,
+    segSurface = { "paved" }, segWidth = { 6 }, approachSurface = "unknown",
+    sx = 1, sy = 2, ex = 3, ey = 4, tx = 50, ty = 60,
+}
+T.setDetour(detourV4, nil)
+detour, detourState = API.requestDetour(2, 50, 60, 70, 80, 9)
+local dc = T.detourCalls[1]
+assert(detour == detourV4 and detourState == "ok", "A17: detour v4 route identity 原樣回傳")
+assert(dc.graph == T.engine.graph and dc.sx == 7 and dc.sy == 8
+    and dc.tx == 50 and dc.ty == 60 and dc.ax == 70 and dc.ay == 80 and dc.ar == 9,
+    "A17: detour 六參數與玩家/graph 原樣轉遞")
+assert(T.navRoutes[2].route == detourV4 and T.navRoutes[2].state == "ok"
+    and T.navRoutes[2].progressIdx == 1 and T.navRoutes[2].lastBuildMs == 12345,
+    "A17: detour 成功覆寫共用 cache")
+
+resetAll()
+T.players[0] = player(1, 2)
+T.engine.graph = { id = "graph" }
+T.setDetour(detourV4, "boom")
+detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5)
+assert(detour == nil and detourState == "failed" and T.navRoutes[0] == nil
+    and T.engine.state == "failed" and #T.detourCalls == 1,
+    "A18: detour err terminal、latch engine failed、不寫 cache")
+detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5)
+assert(detour == nil and detourState == "failed" and #T.detourCalls == 1,
+    "A18: failed latch 後重呼不得再進 findRoute")
+print("test_nav_api: OK（nav API v4＋requestRoute A1-A12＋requestDetour A13-A18）")

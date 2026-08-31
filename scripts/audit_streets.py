@@ -16,13 +16,14 @@ curb 單獨（中位寬 < 2 格）亦不得 accepted。
     python scripts/audit_streets.py --streets FILE.xml --surfaces FILE.json --out FILE.json
     python scripts/audit_streets.py --streets FILE.xml --surfaces FILE.json --out FILE.json --preview FILE.geojson
     python scripts/audit_streets.py ... --max-candidate-pixels 2000000
-全圖 dirt-candidate 可能數百萬格；超 --max-candidate-pixels 時仍寫 topology／streetSamples，
-但 candidateAnalysis.status=skipped（candidates=[] 不是「沒有缺路」）。請改餵 region JSON。
+全圖 candidate 以 row/span streaming 分析；--max-candidate-pixels 同時限制單一
+元件與全域 active detailed spans 像素量，超限元件仍以 aggregate evidence 拒絕。
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
+import itertools
 import json
 import math
 import os
@@ -60,8 +61,39 @@ GATE_WIDTH_SPREAD = 3.0
 GATE_COVERAGE = 0.80
 GATE_CONNECT = 8.0
 MIN_COMPONENT_AREA = 16
-DEFAULT_MAX_CANDIDATE_PIXELS = 2000000
+MAX_CANDIDATE_PIXELS = 2000000
+DEFAULT_MAX_CANDIDATE_PIXELS = MAX_CANDIDATE_PIXELS
+MAX_COMPONENTS = 50000
+MAX_REPORTED_CANDIDATES = 10000
+MAX_CANDIDATE_GRAPH_WORK = 100000000
+MAX_CANDIDATE_POLYLINE_POINTS = 8192
+MAX_TOTAL_PROFILE_WORK = 100000000
+MAX_TOTAL_CANDIDATE_POLYLINE_POINTS = 2000000
+MAX_CANDIDATE_GRAPH_BUCKET_REFS = 250000
+MAX_STREETS = 65536
+MAX_SURFACE_CELLS = 65536
+MIN_CELL_COORD = -128
+MAX_CELL_COORD = 127
+MAX_SOURCE_INPUTS = 1024
+MAX_SOURCE_CELL_ROWS = 65536
+MAX_POINTS_PER_STREET = 4096
+MAX_TOTAL_SEGMENTS = 16384
+MAX_TOTAL_PROBES = 8000000
+MAX_SEGMENT_LENGTH = 16384
+MIN_STREET_WIDTH = 1
+TOPOLOGY_BUCKET_SIZE = 64
+MAX_BUCKET_REFERENCES = 250000
+MAX_TOPOLOGY_PAIR_WORK = 250000
+MAX_ENDPOINT_WORK = 10000000
+MAX_TOPOLOGY_PAIR_SCAN = 1000000
+MAX_TOPOLOGY_FINDINGS = 20000
+MAX_STREET_WIDTH = 64
+MIN_POINT_COORD = -32768.0
+MAX_POINT_COORD = 32767.5
 NEAR_ENDPOINT_LO = 0.75
+MAX_STREETS_XML_BYTES = 8 * 1024 * 1024
+MAX_SURFACES_JSON_BYTES = 64 * 1024 * 1024
+MAX_TEXT_CHARS = 1024
 KIND_ORDER = {
     "emptyName": 0,
     "short": 1,
@@ -197,6 +229,20 @@ def require_int(value, label):
     return value
 
 
+def _validate_candidate_pixel_limit(value):
+    value = require_int(value, "max_candidate_pixels")
+    if not 0 <= value <= MAX_CANDIDATE_PIXELS:
+        raise AuditError("max_candidate_pixels 必須介於 0..%d" % (
+            MAX_CANDIDATE_PIXELS,))
+    return value
+
+
+def _require_text_limit(value, label):
+    if len(value) > MAX_TEXT_CHARS:
+        raise AuditError("%s 不得超過 %d chars" % (
+            label, MAX_TEXT_CHARS))
+
+
 def _xml_int(element, attr, label):
     value = element.get(attr)
     if value is None:
@@ -235,7 +281,13 @@ def parse_streets(data):
     if _xml_int(root, "version", "streets") != 1:
         raise AuditError("missing or invalid version")
     streets = []
-    for street_index, child in enumerate(list(root)):
+    total_segments = 0
+    total_probes = 0
+    children = list(root)
+    if len(children) > MAX_STREETS:
+        raise AuditError("streets 最多 %d 個 street，得到 %d" % (
+            MAX_STREETS, len(children)))
+    for street_index, child in enumerate(children):
         name = localname(child.tag)
         if name != "street":
             raise AuditError('unrecognised element "%s"' % name)
@@ -243,10 +295,12 @@ def parse_streets(data):
         if unknown_attrs:
             raise AuditError("street[%d] 未知 attributes：%r" % (
                 street_index, unknown_attrs))
+        street_name = child.get("name", "")
+        _require_text_limit(street_name, "street[%d].name" % street_index)
         width = _xml_int(child, "width", "street[%d]" % street_index)
-        if not 1 <= width <= 64:
-            raise AuditError("street[%d].width 必須介於 1..64，得到 %d" % (
-                street_index, width))
+        if not MIN_STREET_WIDTH <= width <= MAX_STREET_WIDTH:
+            raise AuditError("street[%d].width 必須介於 %d..%d，得到 %d" % (
+                street_index, MIN_STREET_WIDTH, MAX_STREET_WIDTH, width))
         containers = list(child)
         if len(containers) != 1 or localname(containers[0].tag) != "points":
             tags = [localname(item.tag) for item in containers]
@@ -256,7 +310,11 @@ def parse_streets(data):
         if points.attrib:
             raise AuditError("street[%d].points 不接受 attributes" % street_index)
         pts = []
-        for point_index, point in enumerate(list(points)):
+        point_nodes = list(points)
+        if len(point_nodes) > MAX_POINTS_PER_STREET:
+            raise AuditError("street[%d].points 最多 %d，得到 %d" % (
+                street_index, MAX_POINTS_PER_STREET, len(point_nodes)))
+        for point_index, point in enumerate(point_nodes):
             if localname(point.tag) != "point":
                 raise AuditError('unrecognised points element "%s"' % localname(point.tag))
             unknown_attrs = sorted(set(point.attrib) - {"x", "y"})
@@ -267,10 +325,37 @@ def parse_streets(data):
                 raise AuditError("street[%d].point[%d] 不接受 child tags" % (
                     street_index, point_index))
             label = "street[%d].point[%d]" % (street_index, point_index)
-            pts.append((_xml_float(point, "x", label),
-                        _xml_float(point, "y", label)))
+            coord = (_xml_float(point, "x", label),
+                     _xml_float(point, "y", label))
+            for axis, value in zip(("x", "y"), coord):
+                if not MIN_POINT_COORD <= value <= MAX_POINT_COORD:
+                    raise AuditError(
+                        "street[%d].point[%d].%s 必須介於 -32768..32767.5" % (
+                            street_index, point_index, axis))
+            if pts:
+                segment_length = math.hypot(
+                    coord[0] - pts[-1][0], coord[1] - pts[-1][1])
+                if segment_length > MAX_SEGMENT_LENGTH:
+                    raise AuditError(
+                        "street[%d].segment[%d] 長度不得超過 %d" % (
+                            street_index, point_index - 1,
+                            MAX_SEGMENT_LENGTH))
+                if segment_length <= 1e-9:
+                    total_probes += 1
+                else:
+                    total_probes += 3 * (
+                        max(1, int(round(segment_length))) + 1)
+                if total_probes > MAX_TOTAL_PROBES:
+                    raise AuditError(
+                        "streets total probes 最多 %d，得到 %d" % (
+                            MAX_TOTAL_PROBES, total_probes))
+            pts.append(coord)
+        total_segments += max(0, len(pts) - 1)
+        if total_segments > MAX_TOTAL_SEGMENTS:
+            raise AuditError("streets total segments 最多 %d，得到 %d" % (
+                MAX_TOTAL_SEGMENTS, total_segments))
         streets.append({
-            "name": child.get("name", ""),
+            "name": street_name,
             "width": width,
             "pts": pts,
         })
@@ -324,11 +409,18 @@ def _json_constant(value):
     raise AuditError("surfaces JSON 不接受非有限數值：%s" % value)
 
 
+def _require_cell_domain(value, label):
+    if not MIN_CELL_COORD <= value <= MAX_CELL_COORD:
+        raise AuditError("%s 必須介於 %d..%d" % (
+            label, MIN_CELL_COORD, MAX_CELL_COORD))
+
+
 def _validate_surface_source(source, cell_keys):
     require_keys(source, {"pzBuild", "scope", "inputs"}, "source")
     pz_build = source["pzBuild"]
     if not isinstance(pz_build, str) or not pz_build.strip():
         raise AuditError("source.pzBuild 必須為非空字串")
+    _require_text_limit(pz_build, "source.pzBuild")
 
     scope = require_keys(
         source["scope"],
@@ -343,6 +435,9 @@ def _validate_surface_source(source, cell_keys):
             raise AuditError("full scope 的 requestedRegion 必須為 null")
     else:
         requested = require_int_list(requested, 4, "source.scope.requestedRegion")
+        for index, value in enumerate(requested):
+            _require_cell_domain(
+                value, "source.scope.requestedRegion[%d]" % index)
         if requested[0] > requested[2] or requested[1] > requested[3]:
             raise AuditError("source.scope.requestedRegion bounds 顛倒")
     selected_count = require_int(
@@ -351,6 +446,8 @@ def _validate_surface_source(source, cell_keys):
         raise AuditError("source.scope.selectedCellCount=%d 與 cells=%d 不一致" % (
             selected_count, len(cell_keys)))
     bounds = require_int_list(scope["bounds"], 4, "source.scope.bounds")
+    for index, value in enumerate(bounds):
+        _require_cell_domain(value, "source.scope.bounds[%d]" % index)
     expected_bounds = [
         min(cx for cx, _ in cell_keys),
         min(cy for _, cy in cell_keys),
@@ -370,6 +467,10 @@ def _validate_surface_source(source, cell_keys):
     inputs = source["inputs"]
     if not isinstance(inputs, list) or not inputs:
         raise AuditError("source.inputs 必須為非空 array")
+    if len(inputs) > MAX_SOURCE_INPUTS:
+        raise AuditError("source.inputs 最多 %d，得到 %d" % (
+            MAX_SOURCE_INPUTS, len(inputs)))
+    source_cell_row_count = 0
     manifest_keys = set()
     last_priority = None
     for input_index, item in enumerate(inputs):
@@ -381,6 +482,9 @@ def _validate_surface_source(source, cell_keys):
             raise AuditError("source.inputs 必須依 priority 嚴格遞增")
         last_priority = priority
         layer = item["layer"]
+        if isinstance(layer, str):
+            _require_text_limit(
+                layer, "source.inputs[%d].layer" % input_index)
         if (not isinstance(layer, str) or not layer.strip()
                 or layer != layer.strip() or layer in (".", "..")
                 or "/" in layer or "\\" in layer or "\x00" in layer):
@@ -388,6 +492,10 @@ def _validate_surface_source(source, cell_keys):
         rows = item["cells"]
         if not isinstance(rows, list) or not rows:
             raise AuditError("source.inputs[%d].cells 必須為非空 array" % input_index)
+        source_cell_row_count += len(rows)
+        if source_cell_row_count > MAX_SOURCE_CELL_ROWS:
+            raise AuditError("source.inputs cell rows 最多 %d，得到 %d" % (
+                MAX_SOURCE_CELL_ROWS, source_cell_row_count))
         last_coord = None
         for row_index, row in enumerate(rows):
             label = "source.inputs[%d].cells[%d]" % (input_index, row_index)
@@ -395,11 +503,19 @@ def _validate_surface_source(source, cell_keys):
                 raise AuditError("%s 必須為 [cx,cy,lotheader,lotpack]" % label)
             cx = require_int(row[0], label + "[0]")
             cy = require_int(row[1], label + "[1]")
+            _require_cell_domain(cx, label + "[0]")
+            _require_cell_domain(cy, label + "[1]")
             coord = (cy, cx)
             if last_coord is not None and coord <= last_coord:
                 raise AuditError("source.inputs[%d].cells 必須依 y,x 排序且不得重複" %
                                  input_index)
             last_coord = coord
+            for field_index in (2, 3):
+                if not isinstance(row[field_index], str):
+                    raise AuditError("%s[%d] 必須為字串" % (
+                        label, field_index))
+                _require_text_limit(
+                    row[field_index], "%s[%d]" % (label, field_index))
             if row[2] != "%d_%d.lotheader" % (cx, cy):
                 raise AuditError("%s lotheader 名稱不符" % label)
             if row[3] != "world_%d_%d.lotpack" % (cx, cy):
@@ -430,6 +546,7 @@ def load_surfaces(data):
     map_id = raw["mapId"]
     if not isinstance(map_id, str) or not map_id.strip():
         raise AuditError("mapId 必須為非空字串")
+    _require_text_limit(map_id, "mapId")
     cell_size = require_int(raw["cellSize"], "cellSize")
     if cell_size != CELL_SIZE:
         raise AuditError("cellSize 必須為 %d，得到 %r" % (CELL_SIZE, cell_size))
@@ -439,12 +556,17 @@ def load_surfaces(data):
     cells = raw["cells"]
     if not isinstance(cells, list) or not cells:
         raise AuditError("cells 必須為非空 array")
+    if len(cells) > MAX_SURFACE_CELLS:
+        raise AuditError("cells 最多 %d，得到 %d" % (
+            MAX_SURFACE_CELLS, len(cells)))
     index = {}
     last_coord = None
     for i, cell in enumerate(cells):
         require_keys(cell, {"x", "y", "runs"}, "cells[%d]" % i)
         cx = require_int(cell["x"], "cell.x")
         cy = require_int(cell["y"], "cell.y")
+        _require_cell_domain(cx, "cell.x")
+        _require_cell_domain(cy, "cell.y")
         coord = (cy, cx)
         if last_coord is not None and coord <= last_coord:
             raise AuditError("top-level cells 必須依 y,x 排序且不得重複")
@@ -553,21 +675,99 @@ def ratios_from_counts(counts):
     return out
 
 
-def topology_findings(streets):
+def _segment_bucket_keys(a, b):
+    """線段穿越的 64m supercover buckets；邊界/角點同時納入兩側。"""
+    size = float(TOPOLOGY_BUCKET_SIZE)
+    x = int(math.floor(a[0] / size))
+    y = int(math.floor(a[1] / size))
+    end_x = int(math.floor(b[0] / size))
+    end_y = int(math.floor(b[1] / size))
+    keys = {(x, y)}
+    dx = b[0] - a[0]
+    dy = b[1] - a[1]
+    epsilon = 1e-12
+
+    if abs(dx) <= epsilon:
+        step_x = 0
+        t_max_x = math.inf
+        t_delta_x = math.inf
+    else:
+        step_x = 1 if dx > 0.0 else -1
+        boundary_x = (x + (1 if step_x > 0 else 0)) * size
+        t_max_x = (boundary_x - a[0]) / dx
+        t_delta_x = size / abs(dx)
+    if abs(dy) <= epsilon:
+        step_y = 0
+        t_max_y = math.inf
+        t_delta_y = math.inf
+    else:
+        step_y = 1 if dy > 0.0 else -1
+        boundary_y = (y + (1 if step_y > 0 else 0)) * size
+        t_max_y = (boundary_y - a[1]) / dy
+        t_delta_y = size / abs(dy)
+
+    while x != end_x or y != end_y:
+        if t_max_x < t_max_y - epsilon:
+            x += step_x
+            t_max_x += t_delta_x
+        elif t_max_y < t_max_x - epsilon:
+            y += step_y
+            t_max_y += t_delta_y
+        else:
+            next_x = x + step_x
+            next_y = y + step_y
+            if step_x:
+                keys.add((next_x, y))
+                t_max_x += t_delta_x
+            if step_y:
+                keys.add((x, next_y))
+                t_max_y += t_delta_y
+            x, y = next_x, next_y
+        keys.add((x, y))
+
+    if (abs(dx) <= epsilon
+            and math.isclose(a[0] / size, round(a[0] / size),
+                             abs_tol=epsilon)):
+        keys.update((bucket_x - 1, bucket_y)
+                    for bucket_x, bucket_y in tuple(keys))
+    if (abs(dy) <= epsilon
+            and math.isclose(a[1] / size, round(a[1] / size),
+                             abs_tol=epsilon)):
+        keys.update((bucket_x, bucket_y - 1)
+                    for bucket_x, bucket_y in tuple(keys))
+    return sorted(keys)
+
+
+def topology_findings(streets, work=None):
     findings = []
     sig_first = {}
     segs = []
+    if work is None:
+        work = {}
+    work.update({
+        "bucketReferenceCount": 0,
+        "topologyPairWorkCount": 0,
+        "topologyPairScanCount": 0,
+        "endpointWorkCount": 0,
+    })
+
+    def add_finding(finding):
+        next_count = len(findings) + 1
+        if next_count > MAX_TOPOLOGY_FINDINGS:
+            raise AuditError("topology findings 最多 %d，得到 %d" % (
+                MAX_TOPOLOGY_FINDINGS, next_count))
+        findings.append(finding)
     for i, st in enumerate(streets):
         pts = st["pts"]
         sid = street_sig(pts)
         if not str(st["name"]).strip():
-            findings.append({
+            add_finding({
                 "kind": "emptyName",
                 "id": sid,
                 "streetIndex": i,
             })
         if len(pts) < 2:
-            findings.append({
+            add_finding({
                 "kind": "short",
                 "id": sid,
                 "streetIndex": i,
@@ -575,7 +775,7 @@ def topology_findings(streets):
             })
             continue
         if sid in sig_first:
-            findings.append({
+            add_finding({
                 "kind": "duplicate",
                 "id": sid,
                 "streetIndex": i,
@@ -586,7 +786,7 @@ def topology_findings(streets):
         for k in range(len(pts) - 1):
             a, b = pts[k], pts[k + 1]
             if math.hypot(b[0] - a[0], b[1] - a[1]) <= 1e-4:
-                findings.append({
+                add_finding({
                     "kind": "zeroLength",
                     "id": sid,
                     "streetIndex": i,
@@ -595,8 +795,14 @@ def topology_findings(streets):
             segs.append((i, k, a, b, sid))
         for a in range(len(pts) - 1):
             for b in range(a + 2, len(pts) - 1):
+                work["topologyPairWorkCount"] += 1
+                if work["topologyPairWorkCount"] > MAX_TOPOLOGY_PAIR_WORK:
+                    raise AuditError(
+                        "topology pair work 最多 %d，得到 %d" % (
+                            MAX_TOPOLOGY_PAIR_WORK,
+                            work["topologyPairWorkCount"]))
                 if proper_intersect(pts[a], pts[a + 1], pts[b], pts[b + 1]):
-                    findings.append({
+                    add_finding({
                         "kind": "selfIntersection",
                         "id": sid,
                         "streetIndex": i,
@@ -604,23 +810,54 @@ def topology_findings(streets):
                         "segB": b,
                     })
 
-    for a in range(len(segs)):
-        ia, ka, a0, a1, sa = segs[a]
-        for b in range(a + 1, len(segs)):
-            ib, kb, b0, b1, sb = segs[b]
-            if ia == ib:
-                continue
-            if proper_intersect(a0, a1, b0, b1):
-                findings.append({
-                    "kind": "crossing",
-                    "id": sa,
-                    "streetIndex": ia,
-                    "otherStreetIndex": ib,
-                    "segA": ka,
-                    "segB": kb,
-                    "otherId": sb,
-                })
+    segment_buckets = {}
+    for segment_index, (_, _, a0, a1, _) in enumerate(segs):
+        for key in _segment_bucket_keys(a0, a1):
+            work["bucketReferenceCount"] += 1
+            if work["bucketReferenceCount"] > MAX_BUCKET_REFERENCES:
+                raise AuditError(
+                    "topology bucket references 最多 %d，得到 %d" % (
+                        MAX_BUCKET_REFERENCES,
+                        work["bucketReferenceCount"]))
+            segment_buckets.setdefault(key, []).append(segment_index)
 
+    seen_pairs = set()
+    for key in sorted(segment_buckets):
+        bucket = segment_buckets[key]
+        for first_pos, first in enumerate(bucket):
+            ia, ka, a0, a1, sa = segs[first]
+            for second in bucket[first_pos + 1:]:
+                work["topologyPairScanCount"] += 1
+                if work["topologyPairScanCount"] > MAX_TOPOLOGY_PAIR_SCAN:
+                    raise AuditError(
+                        "topology pair scan 最多 %d，得到 %d" % (
+                            MAX_TOPOLOGY_PAIR_SCAN,
+                            work["topologyPairScanCount"]))
+                ib, kb, b0, b1, sb = segs[second]
+                if ia == ib:
+                    continue
+                pair_key = (
+                    min(first, second) * MAX_TOTAL_SEGMENTS
+                    + max(first, second))
+                if pair_key in seen_pairs:
+                    continue
+                work["topologyPairWorkCount"] += 1
+                if work["topologyPairWorkCount"] > MAX_TOPOLOGY_PAIR_WORK:
+                    raise AuditError(
+                        "topology pair work 最多 %d，得到 %d" % (
+                            MAX_TOPOLOGY_PAIR_WORK,
+                            work["topologyPairWorkCount"]))
+                seen_pairs.add(pair_key)
+                if proper_intersect(a0, a1, b0, b1):
+                    add_finding({
+                        "kind": "crossing",
+                        "id": sa,
+                        "streetIndex": ia,
+                        "otherStreetIndex": ib,
+                        "segA": ka,
+                        "segB": kb,
+                        "otherId": sb,
+                    })
     # (streetIndex, points, sig)：sig 預先算好，避免在 O(n²) 內圈重算
     usable = [(i, st["pts"], street_sig(st["pts"]))
               for i, st in enumerate(streets) if len(st["pts"]) >= 2]
@@ -628,16 +865,26 @@ def topology_findings(streets):
         for end_slot, end_idx in enumerate((0, -1)):
             px, py = pts[end_idx]
             best = None
-            for j, opts, osig in usable:
+            bucket_x = int(math.floor(px / TOPOLOGY_BUCKET_SIZE))
+            bucket_y = int(math.floor(py / TOPOLOGY_BUCKET_SIZE))
+            nearby = set()
+            for near_y in range(bucket_y - 1, bucket_y + 2):
+                for near_x in range(bucket_x - 1, bucket_x + 2):
+                    nearby.update(segment_buckets.get((near_x, near_y), ()))
+            for segment_index in sorted(nearby):
+                work["endpointWorkCount"] += 1
+                if work["endpointWorkCount"] > MAX_ENDPOINT_WORK:
+                    raise AuditError(
+                        "topology endpoint work 最多 %d，得到 %d" % (
+                            MAX_ENDPOINT_WORK, work["endpointWorkCount"]))
+                j, _, b0, b1, osig = segs[segment_index]
                 if i == j:
                     continue
-                for k in range(len(opts) - 1):
-                    d = dist_point_seg(px, py, opts[k][0], opts[k][1],
-                                       opts[k + 1][0], opts[k + 1][1])
-                    if best is None or d < best[0]:
-                        best = (d, j, osig)
+                d = dist_point_seg(px, py, b0[0], b0[1], b1[0], b1[1])
+                if best is None or d < best[0]:
+                    best = (d, j, osig)
             if best is not None and NEAR_ENDPOINT_LO <= best[0] <= GATE_CONNECT:
-                findings.append({
+                add_finding({
                     "kind": "nearEndpoint",
                     "id": sid,
                     "streetIndex": i,
@@ -652,6 +899,7 @@ def topology_findings(streets):
         f.get("streetIndex", 0),
         f.get("segIndex", f.get("segA", f.get("end", 0))),
         f.get("otherStreetIndex", 0),
+        f.get("segB", 0),
         f.get("id", ""),
     ))
     return findings
@@ -716,16 +964,74 @@ def clip_segment_to_rect(x0, y0, x1, y1, minx, miny, maxx, maxy):
             x0 + hi * dx, y0 + hi * dy)
 
 
+def _capsule_row_span(ax, ay, bx, by, py, radius):
+    """回傳 capsule 與水平線 py 的連續 x span；None 表示不相交。"""
+    intervals = []
+    radius2 = radius * radius
+    for ex, ey in ((ax, ay), (bx, by)):
+        dy0 = py - ey
+        if dy0 * dy0 <= radius2:
+            half = math.sqrt(max(0.0, radius2 - dy0 * dy0))
+            intervals.append((ex - half, ex + half))
+
+    dx = bx - ax
+    dy = by - ay
+    length2 = dx * dx + dy * dy
+    if length2 > 1e-18:
+        yoff = py - ay
+        lo = -math.inf
+        hi = math.inf
+
+        if abs(dx) <= 1e-18:
+            dot = dy * yoff
+            if not (-1e-9 <= dot <= length2 + 1e-9):
+                lo, hi = 1.0, 0.0
+        else:
+            p0 = ax - dy * yoff / dx
+            p1 = ax + (length2 - dy * yoff) / dx
+            lo = max(lo, min(p0, p1))
+            hi = min(hi, max(p0, p1))
+
+        reach = radius * math.sqrt(length2)
+        if abs(dy) <= 1e-18:
+            if abs(dx * yoff) > reach + 1e-9:
+                lo, hi = 1.0, 0.0
+        else:
+            center = ax + dx * yoff / dy
+            half = reach / abs(dy)
+            lo = max(lo, center - half)
+            hi = min(hi, center + half)
+        if lo <= hi:
+            intervals.append((lo, hi))
+
+    if not intervals:
+        return None
+    lo = min(item[0] for item in intervals)
+    hi = max(item[1] for item in intervals)
+    start = int(math.ceil(lo - 0.5 - 1e-9))
+    end = int(math.floor(hi - 0.5 + 1e-9)) + 1
+    return (start, end) if start < end else None
+
+
+def _merge_intervals(intervals):
+    merged = []
+    for start, end in sorted(intervals):
+        if not merged or start > merged[-1][1]:
+            merged.append([start, end])
+        elif end > merged[-1][1]:
+            merged[-1][1] = end
+    return [tuple(item) for item in merged]
+
+
 def paint_coverage(streets, bounds):
-    covered = set()
+    """把既有 streets coverage rasterize 成每列合併 spans，不建逐像素 set。"""
+    rows = {}
     minx, miny, maxx, maxy = bounds
     for st in streets:
         pts = st["pts"]
         if len(pts) < 2 or is_railroad(st["name"], pts[0][0], pts[0][1]):
             continue
-        radius = float(st["width"]) / 2.0
-        r2_tol = radius * radius + 0.05  # 半徑平方 + 邊界容差
-        ri = int(math.ceil(radius))
+        radius = math.sqrt((float(st["width"]) / 2.0) ** 2 + 0.05)
         for i in range(len(pts) - 1):
             clipped = clip_segment_to_rect(
                 pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1],
@@ -734,105 +1040,367 @@ def paint_coverage(streets, bounds):
             if clipped is None:
                 continue
             x0, y0, x1, y1 = clipped
-            length = math.hypot(x1 - x0, y1 - y0)
-            steps = max(1, int(math.ceil(length * 2.0)))
-            for step in range(steps + 1):
-                t = step / steps
-                x = x0 + (x1 - x0) * t
-                y = y0 + (y1 - y0) * t
-                cx = int(math.floor(x))
-                cy = int(math.floor(y))
-                for dy in range(-ri, ri + 1):
-                    sy = cy + dy
-                    if sy < miny or sy > maxy:
-                        continue
-                    ey = (sy + 0.5 - y) ** 2
-                    if ey > r2_tol:
-                        continue
-                    for dx in range(-ri, ri + 1):
-                        sx = cx + dx
-                        if sx < minx or sx > maxx:
-                            continue
-                        if ey + (sx + 0.5 - x) ** 2 <= r2_tol:
-                            covered.add((sx, sy))
-    return covered
+            row0 = max(miny, int(math.ceil(min(y0, y1) - radius - 0.5 - 1e-9)))
+            row1 = min(maxy, int(math.floor(max(y0, y1) + radius - 0.5 + 1e-9)))
+            for sy in range(row0, row1 + 1):
+                span = _capsule_row_span(x0, y0, x1, y1, sy + 0.5, radius)
+                if span is None:
+                    continue
+                start = max(minx, span[0])
+                end = min(maxx + 1, span[1])
+                if start < end:
+                    rows.setdefault(sy, []).append((start, end))
+    return {y: _merge_intervals(rows[y]) for y in sorted(rows)}
 
 
 def graph_segments(streets, bounds):
-    """candidate 連通判定只保留 supplied bounds 周圍 8 格內的非鐵路線段。"""
+    """建立 nonrail streetSample segments 與 <=8 格 alignment spatial buckets。"""
     minx, miny, maxx, maxy = bounds
-    segs = []
-    for st in streets:
+    segments = []
+    bucket_size = 64
+    buckets = {}
+    bucket_reference_count = 0
+    for street_index, st in enumerate(streets):
         pts = st["pts"]
         if len(pts) < 2 or is_railroad(st["name"], pts[0][0], pts[0][1]):
             continue
         for k in range(len(pts) - 1):
+            coords = (
+                pts[k][0], pts[k][1], pts[k + 1][0], pts[k + 1][1])
+            segment = {
+                "id": "s:%d:%d" % (street_index, k),
+                "coords": coords,
+            }
+            segment_index = len(segments)
+            segments.append(segment)
             clipped = clip_segment_to_rect(
-                pts[k][0], pts[k][1], pts[k + 1][0], pts[k + 1][1],
+                coords[0], coords[1], coords[2], coords[3],
                 minx - GATE_CONNECT, miny - GATE_CONNECT,
                 maxx + GATE_CONNECT, maxy + GATE_CONNECT)
-            if clipped is not None:
-                segs.append(clipped)
-    return segs
+            if clipped is None:
+                continue
+            ax, ay, bx, by = clipped
+            expanded_keys = set()
+            for bucket_x, bucket_y in _segment_bucket_keys(
+                    (ax, ay), (bx, by)):
+                for near_y in range(bucket_y - 1, bucket_y + 2):
+                    for near_x in range(bucket_x - 1, bucket_x + 2):
+                        expanded_keys.add((near_x, near_y))
+            for key in sorted(expanded_keys):
+                next_count = bucket_reference_count + 1
+                if next_count > MAX_CANDIDATE_GRAPH_BUCKET_REFS:
+                    raise AuditError(
+                        "candidate graph bucket references 最多 %d，得到 %d" % (
+                            MAX_CANDIDATE_GRAPH_BUCKET_REFS, next_count))
+                bucket_reference_count = next_count
+                buckets.setdefault(key, []).append(segment_index)
+    return {
+        "segments": segments,
+        "buckets": buckets,
+        "bucketSize": bucket_size,
+        "bucketReferenceCount": bucket_reference_count,
+    }
 
 
 def count_candidate_pixels(surface):
-    n = 0
-    for runs in surface.cells.values():
-        for start, end, cid in runs:
-            if cid in CANDIDATE_IDS:
-                n += end - start
-    return n
+    return sum(
+        end - start
+        for runs in surface.cells.values()
+        for start, end, cid in runs
+        if cid in CANDIDATE_IDS)
 
 
-def candidate_pixels(surface, covered):
-    pixels = {}
+def _append_candidate_span(spans, start, end, cid):
+    if start >= end:
+        return
+    last = spans[-1] if spans else None
+    if last is not None and last[1] == start and last[2] == cid:
+        spans[-1] = (last[0], end, cid)
+    else:
+        spans.append((start, end, cid))
+
+
+def _subtract_coverage(spans, covered):
+    if not covered:
+        return spans
+    out = []
+    cover_index = 0
+    for start, end, cid in spans:
+        while cover_index < len(covered) and covered[cover_index][1] <= start:
+            cover_index += 1
+        cursor = start
+        index = cover_index
+        while index < len(covered) and covered[index][0] < end:
+            cover_start, cover_end = covered[index]
+            if cursor < cover_start:
+                _append_candidate_span(out, cursor, min(end, cover_start), cid)
+            cursor = max(cursor, cover_end)
+            if cursor >= end:
+                break
+            index += 1
+        if cursor < end:
+            _append_candidate_span(out, cursor, end, cid)
+    return out
+
+
+def candidate_rows(surface, covered, work):
+    """依 world y 產生 uncovered candidate spans；同列跨 cell 自然相接。"""
     cs = surface.cell_size
-    for (cx, cy), runs in surface.cells.items():
-        ox = cx * cs
-        oy = cy * cs
-        for start, end, cid in runs:
-            if cid not in CANDIDATE_IDS:
-                continue
-            for s in range(start, end):
-                ly, lx = divmod(s, cs)
-                wx = ox + lx
-                wy = oy + ly
-                key = (wx, wy)
-                if key not in covered:
-                    pixels[key] = cid
-    return pixels
+    items = sorted(
+        surface.cells.items(),
+        key=lambda item: (item[0][1], item[0][0]))
+    for cy, group in itertools.groupby(items, key=lambda item: item[0][1]):
+        rows = [[] for _ in range(cs)]
+        for (cx, _), runs in group:
+            ox = cx * cs
+            for start, end, cid in runs:
+                if cid not in CANDIDATE_IDS:
+                    continue
+                pos = start
+                while pos < end:
+                    ly = pos // cs
+                    row_end = min(end, (ly + 1) * cs)
+                    _append_candidate_span(
+                        rows[ly],
+                        ox + pos - ly * cs,
+                        ox + row_end - ly * cs,
+                        cid)
+                    pos = row_end
+        for ly, spans in enumerate(rows):
+            wy = cy * cs + ly
+            uncovered = _subtract_coverage(spans, covered.get(wy, ()))
+            work["uncoveredPixelCount"] += sum(
+                end - start for start, end, _ in uncovered)
+            work["rowSpanCount"] += len(uncovered)
+            yield wy, uncovered
 
 
-def connected_components(pixel_map):
-    remaining = set(pixel_map)
-    for origin in sorted(remaining):
-        if origin not in remaining:
-            continue
-        stack = [origin]
-        remaining.remove(origin)
-        cells = []
-        while stack:
-            x, y = stack.pop()
-            cells.append((x, y))
-            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                neighbor = (x + dx, y + dy)
-                if neighbor in remaining:
-                    remaining.remove(neighbor)
-                    stack.append(neighbor)
-        yield cells
+def _sum_prefix(n):
+    return n * (n - 1) // 2
 
 
-def principal_axis(cells):
-    n = len(cells)
-    mx = sum(p[0] for p in cells) / float(n)
-    my = sum(p[1] for p in cells) / float(n)
-    cxx = sum((p[0] - mx) ** 2 for p in cells) / float(n)
-    cyy = sum((p[1] - my) ** 2 for p in cells) / float(n)
-    cxy = sum((p[0] - mx) * (p[1] - my) for p in cells) / float(n)
+def _sum_squares_prefix(n):
+    return n * (n - 1) * (2 * n - 1) // 6
+
+
+class _SpanComponent:
+    __slots__ = (
+        "parent", "serial", "area", "minx", "miny", "maxx", "maxy",
+        "sumx", "sumy", "sumx2", "sumy2", "sumxy",
+        "surface_counts", "spans", "retained_pixels",
+        "storage_limited", "storage_limit_kind")
+
+    def __init__(self, serial):
+        self.parent = self
+        self.serial = serial
+        self.area = 0
+        self.minx = None
+        self.miny = None
+        self.maxx = None
+        self.maxy = None
+        self.sumx = 0
+        self.sumy = 0
+        self.sumx2 = 0
+        self.sumy2 = 0
+        self.sumxy = 0
+        self.surface_counts = [0] * len(CLASSES)
+        self.spans = []
+        self.retained_pixels = 0
+        self.storage_limited = False
+        self.storage_limit_kind = None
+
+    def drop_detail(self, work, kind):
+        if self.spans is not None:
+            work["currentRetainedDetailedPixelCount"] -= self.retained_pixels
+            work["currentRetainedDetailedSpanCount"] -= len(self.spans)
+            self.spans = None
+            self.retained_pixels = 0
+        self.storage_limited = True
+        if self.storage_limit_kind != "global":
+            self.storage_limit_kind = kind
+
+    def add_span(self, y, start, end, cid, limit, work):
+        count = end - start
+        sumx = _sum_prefix(end) - _sum_prefix(start)
+        self.area += count
+        self.minx = start if self.minx is None else min(self.minx, start)
+        self.maxx = end - 1 if self.maxx is None else max(self.maxx, end - 1)
+        self.miny = y if self.miny is None else min(self.miny, y)
+        self.maxy = y if self.maxy is None else max(self.maxy, y)
+        self.sumx += sumx
+        self.sumy += y * count
+        self.sumx2 += _sum_squares_prefix(end) - _sum_squares_prefix(start)
+        self.sumy2 += y * y * count
+        self.sumxy += y * sumx
+        self.surface_counts[cid] += count
+        if self.spans is None:
+            return
+        if self.area > limit:
+            self.drop_detail(work, "component")
+            return
+        if (work["currentRetainedDetailedPixelCount"] + count
+                > work["globalRetentionBudgetPixels"]):
+            self.drop_detail(work, "global")
+            return
+        self.spans.append((y, start, end, cid))
+        self.retained_pixels += count
+        work["currentRetainedDetailedPixelCount"] += count
+        work["currentRetainedDetailedSpanCount"] += 1
+        work["peakRetainedDetailedPixelCount"] = max(
+            work["peakRetainedDetailedPixelCount"],
+            work["currentRetainedDetailedPixelCount"])
+        work["peakRetainedDetailedSpanCount"] = max(
+            work["peakRetainedDetailedSpanCount"],
+            work["currentRetainedDetailedSpanCount"])
+
+    def absorb(self, other, limit, work):
+        self.area += other.area
+        self.minx = min(self.minx, other.minx)
+        self.miny = min(self.miny, other.miny)
+        self.maxx = max(self.maxx, other.maxx)
+        self.maxy = max(self.maxy, other.maxy)
+        self.sumx += other.sumx
+        self.sumy += other.sumy
+        self.sumx2 += other.sumx2
+        self.sumy2 += other.sumy2
+        self.sumxy += other.sumxy
+        for cid, count in enumerate(other.surface_counts):
+            self.surface_counts[cid] += count
+        if self.spans is None or other.spans is None or self.area > limit:
+            kinds = {self.storage_limit_kind, other.storage_limit_kind}
+            kind = "global" if "global" in kinds else "component"
+            self.drop_detail(work, kind)
+            other.drop_detail(work, kind)
+            self.storage_limit_kind = kind
+        else:
+            self.spans.extend(other.spans)
+            self.retained_pixels += other.retained_pixels
+            other.spans = None
+            other.retained_pixels = 0
+
+
+def release_component_detail(component, work):
+    if component.spans is None:
+        return
+    work["retainedDetailedPixelCount"] += component.retained_pixels
+    work["retainedDetailedSpanCount"] += len(component.spans)
+    work["currentRetainedDetailedPixelCount"] -= component.retained_pixels
+    work["currentRetainedDetailedSpanCount"] -= len(component.spans)
+    component.spans = None
+    component.retained_pixels = 0
+
+
+def _component_root(component):
+    root = component
+    while root.parent is not root:
+        root = root.parent
+    while component.parent is not component:
+        parent = component.parent
+        component.parent = root
+        component = parent
+    return root
+
+
+def _merge_components(first, second, limit, work):
+    first = _component_root(first)
+    second = _component_root(second)
+    if first is second:
+        return first
+    if second.serial < first.serial:
+        first, second = second, first
+    second.parent = first
+    first.absorb(second, limit, work)
+    return first
+
+
+def _sorted_by_serial(components):
+    return sorted(components, key=lambda item: item.serial)
+
+
+def _span_roots(spans):
+    return {_component_root(span[2]) for span in spans}
+
+
+def connected_components(rows, max_candidate_pixels, work):
+    """4-connected row-run CCL；上一列 labels + 全域有界 active detailed spans。"""
+    previous = []
+    previous_y = None
+    serial = 0
+    for y, row in rows:
+        if previous and previous_y is not None and y != previous_y + 1:
+            for component in _sorted_by_serial(_span_roots(previous)):
+                yield component
+            previous = []
+        old_roots = _span_roots(previous)
+        continuing_roots = set()
+        previous_index = 0
+        for start, end, _ in row:
+            while (previous_index < len(previous)
+                   and previous[previous_index][1] <= start):
+                previous_index += 1
+            scan = previous_index
+            while scan < len(previous) and previous[scan][0] < end:
+                if previous[scan][1] > start:
+                    continuing_roots.add(
+                        _component_root(previous[scan][2]))
+                scan += 1
+        for component in _sorted_by_serial(old_roots - continuing_roots):
+            # Consumer analyzes/releases before this generator resumes and
+            # pending current-row spans consume the global retention budget.
+            yield component
+
+
+        current = []
+        previous_index = 0
+        left = None
+        for start, end, cid in row:
+            while (previous_index < len(previous)
+                   and previous[previous_index][1] <= start):
+                previous_index += 1
+            roots = []
+            scan = previous_index
+            while scan < len(previous) and previous[scan][0] < end:
+                if previous[scan][1] > start:
+                    roots.append(_component_root(previous[scan][2]))
+                scan += 1
+            # class 是 evidence，不是幾何邊界：相鄰 gravel/dirt transition 刻意同元件。
+            if left is not None and left[1] == start:
+                roots.append(_component_root(left[2]))
+            roots = _sorted_by_serial(set(roots))
+            if roots:
+                component = roots[0]
+                for other in roots[1:]:
+                    component = _merge_components(
+                        component, other, max_candidate_pixels, work)
+            else:
+                component = _SpanComponent(serial)
+                serial += 1
+            component = _component_root(component)
+            component.add_span(
+                y, start, end, cid, max_candidate_pixels, work)
+            left = (start, end, component)
+            current.append(left)
+
+        current_roots = _span_roots(current)
+        work["peakActiveComponentCount"] = max(
+            work["peakActiveComponentCount"], len(current_roots))
+        previous = current
+        previous_y = y
+
+    for component in _sorted_by_serial(_span_roots(previous)):
+        yield component
+
+
+def principal_axis(component):
+    n = float(component.area)
+    mx = component.sumx / n
+    my = component.sumy / n
+    cxx = max(0.0, component.sumx2 / n - mx * mx)
+    cyy = max(0.0, component.sumy2 / n - my * my)
+    cxy = component.sumxy / n - mx * my
     delta = math.hypot(cxx - cyy, 2.0 * cxy)
     l1 = (cxx + cyy + delta) / 2.0
-    l2 = (cxx + cyy - delta) / 2.0
+    l2 = max(0.0, (cxx + cyy - delta) / 2.0)
     if abs(cxy) > 1e-9:
         vx, vy = cxy, l1 - cxx
     elif cyy > cxx:
@@ -843,33 +1411,26 @@ def principal_axis(cells):
     return mx, my, vx / norm, vy / norm, l1, l2
 
 
-def profile_component(cells):
-    mx, my, vx, vy, l1, l2 = principal_axis(cells)
-    bins = {}  # 沿主軸分箱，每箱只留橫向 [min, max] span
-    for x, y in cells:
-        t = (x - mx) * vx + (y - my) * vy
-        s = (x - mx) * (-vy) + (y - my) * vx
-        k = int(math.floor(t + 0.5))
-        span = bins.get(k)
-        if span is None:
-            bins[k] = [s, s]
-        elif s < span[0]:
-            span[0] = s
-        elif s > span[1]:
-            span[1] = s
-    keys = sorted(bins)
-    widths = []
-    polyline = []
-    for k in keys:
-        smin, smax = bins[k]
-        widths.append(smax - smin + 1.0)
-        smid = (smin + smax) / 2.0
-        polyline.append((mx + k * vx + smid * (-vy), my + k * vy + smid * vx))
-    length = float(keys[-1] - keys[0] + 1) if keys else 0.0
-    ratio = l1 / max(l2, 1e-9)
+def _aggregate_component_profile(component, mx, my, vx, vy, l1, l2, ratio):
+    corners = (
+        (component.minx, component.miny),
+        (component.minx, component.maxy),
+        (component.maxx, component.miny),
+        (component.maxx, component.maxy),
+    )
+    projected = [
+        (x - mx) * vx + (y - my) * vy for x, y in corners]
+    first = min(projected)
+    last = max(projected)
+    length = max(1.0, last - first + 1.0)
+    width = component.area / length
     return {
-        "polyline": polyline,
-        "widths": widths,
+        "status": "aggregate",
+        "polyline": [
+            (mx + first * vx, my + first * vy),
+            (mx + last * vx, my + last * vy),
+        ],
+        "widths": [width, width],
         "length": length,
         "ratio": ratio,
         "l1": l1,
@@ -877,28 +1438,158 @@ def profile_component(cells):
     }
 
 
-def min_dist_to_graph(px, py, segs):
-    best = math.inf
-    for ax, ay, bx, by in segs:
-        d = dist_point_seg(px, py, ax, ay, bx, by)
-        if d < best:
-            best = d
-    return best
+def profile_component(component):
+    mx, my, vx, vy, l1, l2 = principal_axis(component)
+    ratio = l1 / max(l2, 1e-9)
+    if component.spans is None:
+        return _aggregate_component_profile(
+            component, mx, my, vx, vy, l1, l2, ratio)
+
+    bins = {}
+    component.spans.sort()
+    # vx≈0 時主軸垂直：整條 row span 落在同一個 bin，可免逐像素投影。
+    axis_is_vertical = abs(vx) <= 1e-12
+    for y, start, end, _ in component.spans:
+        if axis_is_vertical:
+            t = (y - my) * vy
+            k = int(math.floor(t + 0.5))
+            s0 = (start - mx) * (-vy) + (y - my) * vx
+            s1 = (end - 1 - mx) * (-vy) + (y - my) * vx
+            lo, hi = min(s0, s1), max(s0, s1)
+            span = bins.get(k)
+            if span is None:
+                if len(bins) >= MAX_CANDIDATE_POLYLINE_POINTS:
+                    return _aggregate_component_profile(
+                        component, mx, my, vx, vy, l1, l2, ratio)
+                bins[k] = [lo, hi]
+            else:
+                span[0] = min(span[0], lo)
+                span[1] = max(span[1], hi)
+            continue
+        for x in range(start, end):
+            t = (x - mx) * vx + (y - my) * vy
+            s = (x - mx) * (-vy) + (y - my) * vx
+            k = int(math.floor(t + 0.5))
+            span = bins.get(k)
+            if span is None:
+                if len(bins) >= MAX_CANDIDATE_POLYLINE_POINTS:
+                    return _aggregate_component_profile(
+                        component, mx, my, vx, vy, l1, l2, ratio)
+                bins[k] = [s, s]
+            else:
+                span[0] = min(span[0], s)
+                span[1] = max(span[1], s)
+    keys = sorted(bins)
+    widths = []
+    polyline = []
+    for k in keys:
+        smin, smax = bins[k]
+        widths.append(smax - smin + 1.0)
+        smid = (smin + smax) / 2.0
+        polyline.append(
+            (mx + k * vx + smid * (-vy),
+             my + k * vy + smid * vx))
+    return {
+        "status": "detailed",
+        "polyline": polyline,
+        "widths": widths,
+        "length": float(keys[-1] - keys[0] + 1) if keys else 0.0,
+        "ratio": ratio,
+        "l1": l1,
+        "l2": l2,
+    }
 
 
-def analyze_component(cells, pixel_map, surface, graph_segs, region_bounds=None):
-    if len(cells) < MIN_COMPONENT_AREA:
+def _consume_candidate_graph_work(work):
+    if work is None:
+        return
+    next_count = work["candidateGraphWorkCount"] + 1
+    if next_count > MAX_CANDIDATE_GRAPH_WORK:
+        raise AuditError("candidate graph work 最多 %d，得到 %d" % (
+            MAX_CANDIDATE_GRAPH_WORK, next_count))
+    work["candidateGraphWorkCount"] = next_count
+
+
+def nearest_graph_segment(px, py, graph, nearby_only=False, work=None):
+    if nearby_only:
+        size = graph["bucketSize"]
+        key = (int(math.floor(px / size)), int(math.floor(py / size)))
+        indices = graph["buckets"].get(key, ())
+    else:
+        indices = range(len(graph["segments"]))
+    best_distance = math.inf
+    best_segment = None
+    best_tie = None
+    for index in indices:
+        _consume_candidate_graph_work(work)
+        segment = graph["segments"][index]
+        ax, ay, bx, by = segment["coords"]
+        distance = dist_point_seg(px, py, ax, ay, bx, by)
+        tie = (segment["id"], ax, ay, bx, by)
+        if (distance < best_distance - 1e-12
+                or (abs(distance - best_distance) <= 1e-12
+                    and (best_tie is None or tie < best_tie))):
+            best_distance = distance
+            best_segment = segment
+            best_tie = tie
+    return best_distance, best_segment
+
+
+def graph_parallel_profile(polyline, graph, work=None):
+    parallel_count = 0
+    max_distance = 0.0
+    cos_15 = math.cos(math.radians(15.0))
+    size = graph["bucketSize"]
+    for index, (x, y) in enumerate(polyline):
+        if len(polyline) == 1:
+            tx = ty = 0.0
+        elif index == 0:
+            tx = polyline[1][0] - x
+            ty = polyline[1][1] - y
+        elif index == len(polyline) - 1:
+            tx = x - polyline[index - 1][0]
+            ty = y - polyline[index - 1][1]
+        else:
+            tx = polyline[index + 1][0] - polyline[index - 1][0]
+            ty = polyline[index + 1][1] - polyline[index - 1][1]
+        tangent_norm = math.hypot(tx, ty)
+        key = (int(math.floor(x / size)), int(math.floor(y / size)))
+        indices = graph["buckets"].get(key, ())
+        nearest_distance = math.inf
+        has_parallel = False
+        for segment_index in indices:
+            _consume_candidate_graph_work(work)
+            segment = graph["segments"][segment_index]
+            ax, ay, bx, by = segment["coords"]
+            distance = dist_point_seg(x, y, ax, ay, bx, by)
+            nearest_distance = min(nearest_distance, distance)
+            if distance > GATE_CONNECT or tangent_norm <= 1e-12:
+                continue
+            sx, sy = bx - ax, by - ay
+            segment_norm = math.hypot(sx, sy)
+            if segment_norm <= 1e-12:
+                continue
+            dot = abs(tx * sx + ty * sy) / (tangent_norm * segment_norm)
+            if dot >= cos_15:
+                has_parallel = True
+        max_distance = max(max_distance, nearest_distance)
+        if has_parallel:
+            parallel_count += 1
+    return parallel_count / float(len(polyline)), max_distance
+
+
+def analyze_component(component, surface, graph, surface_fingerprint, xml_sha,
+                      work=None, region_bounds=None):
+    area = component.area
+    if area < MIN_COMPONENT_AREA:
         return None
-    xs = [p[0] for p in cells]
-    ys = [p[1] for p in cells]
-    minx, maxx = min(xs), max(xs)
-    miny, maxy = min(ys), max(ys)
+    minx, maxx = component.minx, component.maxx
+    miny, maxy = component.miny, component.maxy
     bw = maxx - minx + 1
     bh = maxy - miny + 1
-    area = len(cells)
     fill = area / float(bw * bh)
     aspect = max(bw, bh) / float(max(1, min(bw, bh)))
-    prof = profile_component(cells)
+    prof = profile_component(component)
     polyline = prof["polyline"]
     widths = prof["widths"]
     if not polyline or not widths:
@@ -907,17 +1598,28 @@ def analyze_component(cells, pixel_map, surface, graph_segs, region_bounds=None)
     median = quantile(widths, 0.5)
     p10 = quantile(widths, 0.1)
     p90 = quantile(widths, 0.9)
-    surface_counts = empty_counts()
-    for x, y in cells:
-        surface_counts[CLASSES[pixel_map[(x, y)]]] += 1
-    cand_n = 0
-    for x, y in polyline:
-        if surface.at(x, y) in CANDIDATE_IDS:
-            cand_n += 1
+    surface_counts = {
+        name: component.surface_counts[cid]
+        for cid, name in enumerate(CLASSES)
+    }
+    dominant_id = max(
+        range(len(CLASSES)),
+        key=lambda cid: (component.surface_counts[cid], -cid))
+    dominant_surface = CLASSES[dominant_id]
+    surface_purity = component.surface_counts[dominant_id] / float(area)
+    cand_n = sum(
+        1 for x, y in polyline if surface.at(x, y) in CANDIDATE_IDS)
     coverage = cand_n / float(len(polyline))
-    d0 = min_dist_to_graph(polyline[0][0], polyline[0][1], graph_segs)
-    d1 = min_dist_to_graph(polyline[-1][0], polyline[-1][1], graph_segs)
+    d0, segment0 = nearest_graph_segment(
+        polyline[0][0], polyline[0][1], graph, work=work)
+    d1, segment1 = nearest_graph_segment(
+        polyline[-1][0], polyline[-1][1], graph, work=work)
+    segment0_id = segment0["id"] if segment0 is not None else None
+    segment1_id = segment1["id"] if segment1 is not None else None
+    same_segment = bool(segment0 is not None and segment0 is segment1)
     ends = int(d0 <= GATE_CONNECT) + int(d1 <= GATE_CONNECT)
+    parallel_ratio, max_graph_distance = graph_parallel_profile(
+        polyline, graph, work=work)
     boundary_truncated = bool(
         region_bounds is not None
         and (minx <= region_bounds[0] or miny <= region_bounds[1]
@@ -933,8 +1635,14 @@ def analyze_component(cells, pixel_map, surface, graph_segs, region_bounds=None)
         reasons.append("widthSpread")
     if coverage < GATE_COVERAGE:
         reasons.append("coverage")
+    if surface_purity < 0.8:
+        reasons.append("surfaceImpure")
     if min(d0, d1) > GATE_CONNECT:
         reasons.append("unconnected")
+    if ends < 2:
+        reasons.append("unverifiedTerminus")
+    elif same_segment:
+        reasons.append("sameAttachment")
     if prof["ratio"] < 4.0 and area >= 64:
         reasons.append("noLongAxis")
     min_side = min(bw, bh)
@@ -943,8 +1651,12 @@ def analyze_component(cells, pixel_map, surface, graph_segs, region_bounds=None)
         reasons.append("field")
     if aspect < 2.5 and min_side >= 16 and fill < 0.55 and p90 > GATE_WIDTH_HI:
         reasons.append("courtyard")
+    if parallel_ratio >= 0.8:
+        reasons.append("parallelResidual")
     if boundary_truncated:
         reasons.append("boundaryTruncated")
+    if prof["status"] == "aggregate":
+        reasons.append("storageLimit")
     if ends == 2:
         confidence = "high"
     elif ends == 1:
@@ -952,38 +1664,62 @@ def analyze_component(cells, pixel_map, surface, graph_segs, region_bounds=None)
     else:
         confidence = "none"
     qpoly = [[r3(x), r3(y)] for x, y in polyline]
-    comp_id = "c:%d:%d:%d:%d:%d:%d" % (
-        q2(qpoly[0][0]), q2(qpoly[0][1]), q2(qpoly[-1][0]), q2(qpoly[-1][1]),
-        len(qpoly), area)
-    return {
-        "id": comp_id,
+    polyline_q2 = [[q2(x), q2(y)] for x, y in qpoly]
+    bbox = {"x0": minx, "y0": miny, "x1": maxx, "y1": maxy}
+    connection = {
+        "d0": r3(1e9 if math.isinf(d0) else d0),
+        "d1": r3(1e9 if math.isinf(d1) else d1),
+        "endsWithin8": ends,
+        "nearestSegment0Id": segment0_id,
+        "nearestSegment1Id": segment1_id,
+        "sameSegment": same_segment,
+    }
+    rounded_max_graph_distance = r3(
+        1e9 if math.isinf(max_graph_distance) else max_graph_distance)
+    candidate = {
+        "evidenceVersion": 2,
         "polyline": qpoly,
+        "polylineQ2": polyline_q2,
         "length": r3(length),
         "widthMedian": r3(median),
         "widthP10": r3(p10),
         "widthP90": r3(p90),
         "coverage": r3(coverage),
         "area": area,
-        "bbox": {"x0": minx, "y0": miny, "x1": maxx, "y1": maxy},
+        "bbox": bbox,
         "surfaceCounts": surface_counts,
-        "connection": {
-            "d0": r3(1e9 if math.isinf(d0) else d0),
-            "d1": r3(1e9 if math.isinf(d1) else d1),
-            "endsWithin8": ends,
-        },
+        "dominantSurface": dominant_surface,
+        "surfacePurity": r3(surface_purity),
+        "connection": connection,
+        "parallelToGraphRatio": r3(parallel_ratio),
+        "maxGraphDistance": rounded_max_graph_distance,
         "confidence": confidence,
         "boundaryTruncated": boundary_truncated,
+        "analysisStatus": prof["status"],
         "accepted": not reasons,
         "rejectionReasons": reasons,
+    }
+    evidence = {
+        "version": candidate["evidenceVersion"],
+        "source": {
+            "surfaceFingerprint": surface_fingerprint,
+            "xmlSha256": xml_sha,
+        },
+        "candidate": candidate,
+    }
+    evidence_hash = hashlib.sha256(
+        dumps_canonical(evidence).encode("utf-8")).hexdigest()
+    return {
+        "id": "c:" + evidence_hash,
+        "evidenceHash": evidence_hash,
+        **candidate,
     }
 
 
 def build_report(streets, surfaces_loaded, surface, xml_sha, surface_sha,
                  max_candidate_pixels=DEFAULT_MAX_CANDIDATE_PIXELS):
-    max_candidate_pixels = require_int(
-        max_candidate_pixels, "max_candidate_pixels")
-    if max_candidate_pixels < 0:
-        raise AuditError("max_candidate_pixels 必須 >= 0")
+    max_candidate_pixels = _validate_candidate_pixel_limit(
+        max_candidate_pixels)
     surface_source = surfaces_loaded["source"]
     scope = surface_source["scope"]
     cell_bounds = scope["bounds"]
@@ -1008,7 +1744,8 @@ def build_report(streets, surfaces_loaded, surface, xml_sha, surface_sha,
             a, b = pts[k], pts[k + 1]
             if math.hypot(b[0] - a[0], b[1] - a[1]) <= 1e-4:
                 zero_n += 1
-    findings = topology_findings(streets)
+    topology_work = {}
+    findings = topology_findings(streets, topology_work)
     dup_n = sum(1 for finding in findings if finding["kind"] == "duplicate")
     comp_count, comp_sizes = raw_exact_vertex_components(streets)
 
@@ -1019,7 +1756,6 @@ def build_report(streets, surfaces_loaded, surface, xml_sha, surface_sha,
         pts = st["pts"]
         if len(pts) < 2:
             continue
-        sid = street_sig(pts)
         rail = is_railroad(st["name"], pts[0][0], pts[0][1])
         for k in range(len(pts) - 1):
             x0, y0 = pts[k]
@@ -1028,7 +1764,7 @@ def build_report(streets, surfaces_loaded, surface, xml_sha, surface_sha,
             total_probe_count += sampled["sampleCount"]
             missing_probe_count += sampled["missingCount"]
             samples.append({
-                "id": "%s:%d" % (sid, k),
+                "id": "s:%d:%d" % (i, k),
                 "streetIndex": i,
                 "segIndex": k,
                 "x0": r3(x0),
@@ -1049,34 +1785,119 @@ def build_report(streets, surfaces_loaded, surface, xml_sha, surface_sha,
                 },
             })
 
-    # Logical pixel cap must run before coverage painting or raster expansion.
     pixel_count = count_candidate_pixels(surface)
-    if pixel_count > max_candidate_pixels:
-        candidate_analysis = {
-            "status": "skipped",
-            "reason": "candidatePixelLimit",
-            "pixelCount": pixel_count,
-            "limit": max_candidate_pixels,
-        }
-        candidates = []
-    else:
-        candidate_analysis = {
-            "status": "partial" if scope["mode"] == "region" else "ok",
-            "pixelCount": pixel_count,
-            "limit": max_candidate_pixels,
-        }
-        covered = paint_coverage(streets, surface_bounds)
-        pixels = candidate_pixels(surface, covered)
-        graph_segs = graph_segments(streets, surface_bounds)
-        region_bounds = surface_bounds if scope["mode"] == "region" else None
-        candidates = []
-        for cells in connected_components(pixels):
-            item = analyze_component(
-                cells, pixels, surface, graph_segs,
-                region_bounds=region_bounds)
-            if item is not None:
-                candidates.append(item)
-        candidates.sort(key=lambda c: (c["id"], c["bbox"]["y0"], c["bbox"]["x0"]))
+    covered = paint_coverage(streets, surface_bounds)
+    graph = graph_segments(streets, surface_bounds)
+    region_bounds = surface_bounds if scope["mode"] == "region" else None
+    work = {
+        "uncoveredPixelCount": 0,
+        "rowSpanCount": 0,
+        "peakActiveComponentCount": 0,
+        "componentCount": 0,
+        "smallComponentCount": 0,
+        "storageLimitedComponentCount": 0,
+        "componentLimitedComponentCount": 0,
+        "globalBudgetLimitedComponentCount": 0,
+        "maxComponentArea": 0,
+        "globalRetentionBudgetPixels": max_candidate_pixels,
+        "currentRetainedDetailedPixelCount": 0,
+        "currentRetainedDetailedSpanCount": 0,
+        "peakRetainedDetailedPixelCount": 0,
+        "peakRetainedDetailedSpanCount": 0,
+        "retainedDetailedPixelCount": 0,
+        "retainedDetailedSpanCount": 0,
+        "candidateGraphWorkCount": 0,
+        "profileWorkCount": 0,
+        "candidatePolylinePointCount": 0,
+    }
+    candidates = []
+    rows = candidate_rows(surface, covered, work)
+    for component in connected_components(rows, max_candidate_pixels, work):
+        next_component_count = work["componentCount"] + 1
+        if next_component_count > MAX_COMPONENTS:
+            raise AuditError("candidate components 最多 %d，得到 %d" % (
+                MAX_COMPONENTS, next_component_count))
+        work["componentCount"] = next_component_count
+        work["maxComponentArea"] = max(
+            work["maxComponentArea"], component.area)
+        if component.storage_limited:
+            work["storageLimitedComponentCount"] += 1
+            if component.storage_limit_kind == "global":
+                work["globalBudgetLimitedComponentCount"] += 1
+            else:
+                work["componentLimitedComponentCount"] += 1
+        if (component.area >= MIN_COMPONENT_AREA
+                and len(candidates) >= MAX_REPORTED_CANDIDATES):
+            raise AuditError("reported candidates 最多 %d，得到 %d" % (
+                MAX_REPORTED_CANDIDATES, len(candidates) + 1))
+        if component.spans is not None:
+            next_profile_work = work["profileWorkCount"] + component.area
+            if next_profile_work > MAX_TOTAL_PROFILE_WORK:
+                raise AuditError("candidate profile work 最多 %d，得到 %d" % (
+                    MAX_TOTAL_PROFILE_WORK, next_profile_work))
+            work["profileWorkCount"] = next_profile_work
+        item = analyze_component(
+            component, surface, graph, surface_sha, xml_sha, work=work,
+            region_bounds=region_bounds)
+        release_component_detail(component, work)
+        if item is None:
+            work["smallComponentCount"] += 1
+        else:
+            next_polyline_points = (
+                work["candidatePolylinePointCount"] + len(item["polyline"]))
+            if next_polyline_points > MAX_TOTAL_CANDIDATE_POLYLINE_POINTS:
+                raise AuditError(
+                    "candidate polyline points 最多 %d，得到 %d" % (
+                        MAX_TOTAL_CANDIDATE_POLYLINE_POINTS,
+                        next_polyline_points))
+            work["candidatePolylinePointCount"] = next_polyline_points
+            candidates.append(item)
+    candidates.sort(key=lambda c: (c["id"], c["bbox"]["y0"], c["bbox"]["x0"]))
+    accepted_count = sum(1 for item in candidates if item["accepted"])
+    aggregate_count = sum(
+        1 for item in candidates if item["analysisStatus"] == "aggregate")
+    candidate_analysis = {
+        "status": "partial" if scope["mode"] == "region" else "ok",
+        "pixelCount": pixel_count,
+        "limit": max_candidate_pixels,
+        "limitScope": "perComponentAndGlobalRetainedPixels",
+        "globalRetentionBudgetPixels": max_candidate_pixels,
+        "algorithm": "rowSpanStreaming",
+        "coverageSpanCount": sum(len(spans) for spans in covered.values()),
+        "uncoveredPixelCount": work["uncoveredPixelCount"],
+        "maskedPixelCount": pixel_count - work["uncoveredPixelCount"],
+        "rowSpanCount": work["rowSpanCount"],
+        "componentCount": work["componentCount"],
+        "componentLimit": MAX_COMPONENTS,
+        "reportedCandidateLimit": MAX_REPORTED_CANDIDATES,
+        "candidateGraphWorkCount": work["candidateGraphWorkCount"],
+        "candidateGraphWorkLimit": MAX_CANDIDATE_GRAPH_WORK,
+        "candidateGraphBucketReferenceCount": graph["bucketReferenceCount"],
+        "candidateGraphBucketReferenceLimit":
+            MAX_CANDIDATE_GRAPH_BUCKET_REFS,
+        "profileWorkCount": work["profileWorkCount"],
+        "profileWorkLimit": MAX_TOTAL_PROFILE_WORK,
+        "candidatePolylinePointCount": work["candidatePolylinePointCount"],
+        "candidatePolylinePointLimit":
+            MAX_TOTAL_CANDIDATE_POLYLINE_POINTS,
+        "smallComponentCount": work["smallComponentCount"],
+        "storageLimitedComponentCount": work["storageLimitedComponentCount"],
+        "componentLimitedComponentCount": work["componentLimitedComponentCount"],
+        "globalBudgetLimitedComponentCount": work[
+            "globalBudgetLimitedComponentCount"],
+        "retainedDetailedPixelCount": work["retainedDetailedPixelCount"],
+        "retainedDetailedSpanCount": work["retainedDetailedSpanCount"],
+        "peakRetainedDetailedPixelCount": work[
+            "peakRetainedDetailedPixelCount"],
+        "peakRetainedDetailedSpanCount": work[
+            "peakRetainedDetailedSpanCount"],
+        "detailedCandidateCount": len(candidates) - aggregate_count,
+        "aggregateCandidateCount": aggregate_count,
+        "acceptedCount": accepted_count,
+        "rejectedCount": len(candidates) - accepted_count,
+        "maxComponentArea": work["maxComponentArea"],
+        "peakActiveComponentCount": work["peakActiveComponentCount"],
+    }
 
     return {
         "schemaVersion": SCHEMA_VERSION,
@@ -1108,6 +1929,7 @@ def build_report(streets, surfaces_loaded, surface, xml_sha, surface_sha,
             "findings": findings,
             "rawExactVertexComponentCount": comp_count,
             "rawExactVertexComponentSizes": comp_sizes,
+            "work": topology_work,
         },
         "streetSamples": samples,
         "candidateAnalysis": candidate_analysis,
@@ -1115,9 +1937,26 @@ def build_report(streets, surfaces_loaded, surface, xml_sha, surface_sha,
     }
 
 
+def _read_capped_file(path, limit, label):
+    source = Path(path)
+    size = source.stat().st_size
+    if size > limit:
+        raise AuditError("%s 檔案不得超過 %d bytes，得到 %d" % (
+            label, limit, size))
+    data = source.read_bytes()
+    if len(data) > limit:
+        raise AuditError("%s 檔案不得超過 %d bytes，得到 %d" % (
+            label, limit, len(data)))
+    return data
+
+
 def audit(streets_path, surfaces_path, max_candidate_pixels=DEFAULT_MAX_CANDIDATE_PIXELS):
-    streets_data = Path(streets_path).read_bytes()
-    surfaces_data = Path(surfaces_path).read_bytes()
+    max_candidate_pixels = _validate_candidate_pixel_limit(
+        max_candidate_pixels)
+    streets_data = _read_capped_file(
+        streets_path, MAX_STREETS_XML_BYTES, "streets XML")
+    surfaces_data = _read_capped_file(
+        surfaces_path, MAX_SURFACES_JSON_BYTES, "surfaces JSON")
     xml_sha = hashlib.sha256(streets_data).hexdigest()
     surface_sha = hashlib.sha256(surfaces_data).hexdigest()
     streets = parse_streets(streets_data)
@@ -1171,7 +2010,7 @@ def write_canonical_file(obj, path):
     atomic_write_bytes(path, dumps_canonical(obj).encode("utf-8"))
 
 
-def write_preview(report, path):
+def render_preview_bytes(report):
     features = []
     for cand in report.get("candidates", []):
         coords = cand.get("polyline") or []
@@ -1196,7 +2035,51 @@ def write_preview(report, path):
             "geometry": geom,
         })
     doc = {"type": "FeatureCollection", "features": features}
-    atomic_write_bytes(path, dumps_canonical(doc).encode("utf-8"))
+    return dumps_canonical(doc).encode("utf-8")
+
+
+def write_preview(report, path):
+    atomic_write_bytes(path, render_preview_bytes(report))
+
+
+def _stage_bytes(path, data):
+    target = Path(path)
+    fd, temp_name = tempfile.mkstemp(
+        prefix=".%s." % target.name, suffix=".tmp", dir=str(target.parent))
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+    except BaseException:
+        if temp_path.exists():
+            temp_path.unlink()
+        raise
+    return temp_path, target
+
+
+def write_report_outputs(report, out, preview=None):
+    canonical_data = dumps_canonical(report).encode("utf-8")
+    preview_data = render_preview_bytes(report) if preview is not None else None
+    out_temp = None
+    preview_temp = None
+    preview_committed = False
+    try:
+        out_temp, out_target = _stage_bytes(out, canonical_data)
+        if preview is not None:
+            preview_temp, preview_target = _stage_bytes(preview, preview_data)
+            os.replace(preview_temp, preview_target)
+            preview_committed = True
+        try:
+            os.replace(out_temp, out_target)
+        except OSError as exc:
+            if preview_committed:
+                raise AuditError(
+                    "preview 已更新；canonical out 未更新：%s" % exc) from exc
+            raise
+    finally:
+        for temp_path in (preview_temp, out_temp):
+            if temp_path is not None and temp_path.exists():
+                temp_path.unlink()
 
 
 def main(argv=None):
@@ -1209,27 +2092,23 @@ def main(argv=None):
     parser.add_argument("--preview", default=None, help="可選 GeoJSON preview（非 patch 輸入）")
     parser.add_argument(
         "--max-candidate-pixels", type=int, default=DEFAULT_MAX_CANDIDATE_PIXELS,
-        help="缺路 raster 展開上限（先計數；超限跳過 candidates，預設 2000000）")
+        help="單一元件及全域 active detailed spans 像素上限（超限改 aggregate）")
     args = parser.parse_args(argv)
     try:
         reject_path_aliases(args.streets, args.surfaces, args.out, args.preview)
         report = audit(args.streets, args.surfaces,
                        max_candidate_pixels=args.max_candidate_pixels)
-        write_canonical_file(report, args.out)
-        if args.preview:
-            write_preview(report, args.preview)
+        write_report_outputs(report, args.out, args.preview)
     except (AuditError, OSError) as exc:
         sys.stderr.write("%s\n" % exc)
         return 2
     analysis = report["candidateAnalysis"]
     coverage = report["surfaceCoverage"]
-    if analysis["status"] == "skipped":
-        advice = ("; re-run with a region surface JSON"
-                  if coverage["status"] == "full" else "")
+    if analysis["storageLimitedComponentCount"]:
         sys.stderr.write(
-            "candidate analysis skipped: pixelCount=%d exceeds "
-            "--max-candidate-pixels=%d%s\n" % (
-                analysis["pixelCount"], analysis["limit"], advice))
+            "candidate analysis used aggregate evidence for %d component(s) "
+            "exceeding --max-candidate-pixels=%d\n" % (
+                analysis["storageLimitedComponentCount"], analysis["limit"]))
     accepted = sum(1 for candidate in report["candidates"] if candidate["accepted"])
     sys.stdout.write(
         "wrote %s (streets=%d points=%d candidates=%d accepted=%d "

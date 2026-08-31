@@ -98,8 +98,8 @@ local function resetGates() Core.navGates = {} end
 --------------------------------------------------------------------------------
 -- 註冊面
 --------------------------------------------------------------------------------
--- N0: API 版本號存在（addon 以此判相容）；v3＝getNavTarget＋requestDetour
-assert(API.navApiVersion == 3, "N0: navApiVersion 須為 3")
+-- N0: API 版本號存在（addon 以此判相容）；v4＝route segment surface/width metadata
+assert(API.navApiVersion == 4, "N0: navApiVersion 須為 4")
 
 -- N1: 零註冊＝放行（addon 不裝零影響）
 resetGates()

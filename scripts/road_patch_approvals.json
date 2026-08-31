@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "targetSrc": "Muldraugh, KY",
+  "mapId": "Muldraugh, KY",
+  "sourceBuild": "42.20.4",
+  "auditSha256": "4af9617a6193d76c63ff454def311aada68813b132743f8317379982ad582377",
+  "auditXmlSha256": "86172be118d99243ecbb6027ef4b82f2aa31590afcc7bbd776cffe9869482771",
+  "auditSurfaceFingerprint": "644a794043569231e550a16d17269925ec095dba671d1149b0cf52da815f81a9",
+  "approvedCandidates": [],
+  "rejectedCandidates": [
+    {
+      "id": "c:8b22970e0b10bfdec96667ab4402f52573e0cb67c73769f5db44cd41f818b1de",
+      "evidenceHash": "8b22970e0b10bfdec96667ab4402f52573e0cb67c73769f5db44cd41f818b1de",
+      "reason": "人工視覺稽核：住宅／建物間私人土徑，不是公共道路。"
+    },
+    {
+      "id": "c:adc86006832a51545dbc80e5c04cdb359ae003984c486e259de93dc3f1c5b9cd",
+      "evidenceHash": "adc86006832a51545dbc80e5c04cdb359ae003984c486e259de93dc3f1c5b9cd",
+      "reason": "人工視覺稽核：停車區／服務巷表面帶，無可證實公共道路。"
+    },
+    {
+      "id": "c:ce5fb2f63e260529e4fd5d17e67c67a141b994a5414c78056f8c8b382fc7daae",
+      "evidenceHash": "ce5fb2f63e260529e4fd5d17e67c67a141b994a5414c78056f8c8b382fc7daae",
+      "reason": "人工視覺稽核：停車區橫向表面帶，不是公共道路。"
+    },
+    {
+      "id": "c:d4f58afdbb62dd7f94368867119bbdc817afbe7a5322c2b8909732ecc11b4b2f",
+      "evidenceHash": "d4f58afdbb62dd7f94368867119bbdc817afbe7a5322c2b8909732ecc11b4b2f",
+      "reason": "人工視覺稽核：停車區縱向表面帶，不是公共道路。"
+    },
+    {
+      "id": "c:e7b748fd02d06b7ff83149a9865f50a1be36db918f738dc89803057a2996dfb5",
+      "evidenceHash": "e7b748fd02d06b7ff83149a9865f50a1be36db918f738dc89803057a2996dfb5",
+      "reason": "人工視覺稽核：建物／庭院內橫向表面帶，不是公共道路。"
+    },
+    {
+      "id": "c:fe4f9c04511923c010c1cc324edb90705e41a9a1253a0ee01ae2f2b838e84ef8",
+      "evidenceHash": "fe4f9c04511923c010c1cc324edb90705e41a9a1253a0ee01ae2f2b838e84ef8",
+      "reason": "人工視覺稽核：停車區橫向表面帶，不是公共道路。"
+    }
+  ],
+  "remove": [],
+  "width": [],
+  "surface": []
+}

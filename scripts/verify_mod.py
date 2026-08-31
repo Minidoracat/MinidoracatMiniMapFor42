@@ -34,10 +34,12 @@
 pz-mod-template（見 AGENTS.md）。
 """
 import json
+import hashlib
 import os
 import re
 import shutil
 import subprocess
+import tempfile
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -108,6 +110,112 @@ def iter_files(root, exts):
                 yield os.path.join(base, name)
 
 
+def road_patch_freshness(repo, lua_files):
+    approval_files, generator_files = [], []
+    for root_name in ("scripts", "MOD"):
+        root = os.path.join(repo, root_name)
+        if not os.path.isdir(root):
+            continue
+        for base, dirs, files in os.walk(root):
+            dirs[:] = [d for d in dirs if d not in (".git", ".omc", "__pycache__")]
+            for name in files:
+                path = os.path.join(base, name)
+                if name == "road_patch_approvals.json":
+                    approval_files.append(path)
+                if name == "gen_road_patches.py":
+                    generator_files.append(path)
+    generated = [f for f in lua_files
+                 if os.path.basename(f) == "MinidoracatMiniMapRoadPatches.lua"]
+    bad = []
+    for label, files in (
+        ("generated RoadPatch Lua", generated),
+        ("road_patch_approvals.json", approval_files),
+        ("gen_road_patches.py", generator_files),
+    ):
+        if len(files) != 1:
+            bad.append(f"expected exactly 1 {label}, found {len(files)}")
+    if bad:
+        return bad
+    with open(approval_files[0], "rb") as fh:
+        approval_sha = hashlib.sha256(fh.read()).hexdigest()
+    with open(generator_files[0], "rb") as fh:
+        generator_sha = hashlib.sha256(fh.read()).hexdigest()
+    with open(generated[0], encoding="utf-8") as fh:
+        text = fh.read()
+    approval_values = re.findall(r'approvalsSha256\s*=\s*"([0-9a-f]{64})"', text)
+    generator_values = re.findall(r'generatorSha256\s*=\s*"([0-9a-f]{64})"', text)
+    body_values = re.findall(
+        r"^-- generated-body-sha256: ([0-9a-f]{64})$", text, re.MULTILINE
+    )
+    if len(approval_values) != 1 or approval_values[0] != approval_sha:
+        bad.append("generated RoadPatch approvalsSha256 missing/duplicate/stale")
+    if len(generator_values) != 1 or generator_values[0] != generator_sha:
+        bad.append("generated RoadPatch generatorSha256 missing/duplicate/stale")
+    if len(body_values) != 1:
+        bad.append("generated RoadPatch body hash stamp missing/duplicate")
+    else:
+        body = re.sub(
+            r"^-- generated-body-sha256: [0-9a-f]{64}\n", "", text,
+            count=1, flags=re.MULTILINE,
+        )
+        if hashlib.sha256(body.encode("utf-8")).hexdigest() != body_values[0]:
+            bad.append("generated RoadPatch body hash stale; rerun gen_road_patches.py")
+    return bad
+
+
+def self_test_road_patch_freshness():
+    with tempfile.TemporaryDirectory() as root:
+        scripts = os.path.join(root, "scripts")
+        lua_dir = os.path.join(root, "MOD", "x")
+        os.makedirs(scripts)
+        os.makedirs(lua_dir)
+        approval = os.path.join(scripts, "road_patch_approvals.json")
+        generator = os.path.join(scripts, "gen_road_patches.py")
+        generated = os.path.join(lua_dir, "MinidoracatMiniMapRoadPatches.lua")
+        with open(approval, "wb") as fh:
+            fh.write(b"{}\\n")
+        with open(generator, "wb") as fh:
+            fh.write(b"# generator\\n")
+        approval_sha = hashlib.sha256(b"{}\\n").hexdigest()
+        generator_sha = hashlib.sha256(b"# generator\\n").hexdigest()
+        def write_generated(a_sha=approval_sha, g_sha=generator_sha):
+            body = ("MinidoracatMiniMapRoadPatches={"
+                    f'approvalsSha256="{a_sha}",generatorSha256="{g_sha}"'
+                    "}\n")
+            body_sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
+            with open(generated, "w", encoding="utf-8") as fh:
+                fh.write(f"-- generated-body-sha256: {body_sha}\n" + body)
+        write_generated()
+        assert not road_patch_freshness(root, [generated])
+        with open(generated, "a", encoding="utf-8") as fh:
+            fh.write(f'approvalsSha256="{approval_sha}"\\n')
+        assert road_patch_freshness(root, [generated])
+        write_generated()
+        assert road_patch_freshness(root, [])
+        duplicate = os.path.join(lua_dir, "duplicate", "road_patch_approvals.json")
+        os.makedirs(os.path.dirname(duplicate))
+        with open(duplicate, "wb") as fh:
+            fh.write(b"{}\\n")
+        assert road_patch_freshness(root, [generated])
+        os.remove(duplicate)
+        write_generated("0" * 64, generator_sha)
+        assert road_patch_freshness(root, [generated])
+        write_generated()
+        with open(generated, "a", encoding="utf-8") as fh:
+            fh.write("-- body modified\n")
+        assert road_patch_freshness(root, [generated])
+        write_generated()
+        with open(generator, "ab") as fh:
+            fh.write(b"# modified\\n")
+        assert road_patch_freshness(root, [generated])
+    print("verify_mod RoadPatch freshness self-test: OK")
+
+
+if __name__ == "__main__" and "--self-test-road-patch-freshness" in sys.argv:
+    self_test_road_patch_freshness()
+    sys.exit(0)
+
+
 MEDIA_DIRS = find_media()
 if not MEDIA_DIRS:
     print("找不到 MOD/*/Contents/mods/*/42/media，中止")
@@ -144,6 +252,10 @@ if luac:
         if m and int(m.group(1)) > 190:
             bad.append(f"{os.path.basename(f)}: main chunk {m.group(1)} locals（>190，Kahlua 上限 200）")
     fail("主 chunk local 數 ≤190", bad) if bad else ok("主 chunk local 數 ≤190（Kahlua actvar[200] 防線）")
+
+# ---- 1c. RoadPatch approval freshness ----
+approval_bad = road_patch_freshness(REPO, LUA_FILES)
+fail("RoadPatch approval freshness", approval_bad) if approval_bad else ok("RoadPatch approval freshness")
 
 # ---- 2. BOM / CRLF ----
 bad = []

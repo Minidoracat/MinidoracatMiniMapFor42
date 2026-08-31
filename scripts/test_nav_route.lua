@@ -28,6 +28,45 @@ local function route(g, sx, sy, tx, ty)
     return mod.findRoute(g, sx, sy, tx, ty)
 end
 
+local function patchFor(streets, targetSrc, tag)
+    local geometrySet = {}
+    local geometryCount = 0
+    for i = 1, #streets do
+        local street = streets[i]
+        if street.src == targetSrc then
+            geometryCount = geometryCount + 1
+            geometrySet[mod.fingerprintKey(street)] = "fixture:" .. geometryCount
+        end
+    end
+    return {
+        schemaVersion = 1, tag = tag or "fixture", targetSrc = targetSrc,
+        geometryCount = geometryCount, geometrySet = geometrySet,
+        removeCount = 0, remove = {},
+        addCount = 0, add = {},
+        bridgeCount = 0, bridge = {},
+        widthCount = 0, width = {},
+        surfaceCount = 0, surface = {},
+    }
+end
+
+local function assertRouteMetadata(r, label)
+    assert(r, label .. "：route 存在")
+    local segmentCount = #r.pts / 2 - 1
+    assert(#r.segSurface == segmentCount, label .. "：segSurface 與 pts 段數對齊")
+    assert(#r.segWidth == segmentCount, label .. "：segWidth 與 pts 段數對齊")
+    assert(r.approachSurface == "unknown", label .. "：approachSurface 固定 unknown")
+    assert(type(r.cost) == "number" and r.cost >= r.len, label .. "：cost 獨立且不小於幾何 len")
+    assert(type(r.avoidPenalty) == "number" and r.avoidPenalty >= 0,
+        label .. "：avoidPenalty 獨立非負")
+    for i = 1, segmentCount do
+        local surface = r.segSurface[i]
+        assert(surface == "paved" or surface == "gravel" or surface == "dirt"
+            or surface == "unknown", label .. "：surface 四態")
+        assert(type(r.segWidth[i]) == "number" and r.segWidth[i] > 0
+            and r.segWidth[i] < math.huge, label .. "：width 有限正數")
+    end
+end
+
 --------------------------------------------------------------------------------
 -- 一、幾何原語
 --------------------------------------------------------------------------------
@@ -45,6 +84,86 @@ do
     local buf = {}
     local n = mod.cellBoundaryTs(200, 10, 600, 10, buf)
     assert(n == 4 and buf[1] == 0 and buf[n] == 1, "cell 切點：跨 256/512 兩界＋首尾")
+end
+
+-- key-space/resource hard gates：座標 q2/bucket 無碰撞、4096 點上限用線性 concat、
+-- gate/node/pair counter 在數字 key 假設失效前 terminal error。
+do
+    assert(mod.geometryKey({ -32768, 0, -32767, 0 })
+        and mod.geometryKey({ 32766.5, 0, 32767.5, 0 }),
+        "limits：world coordinate 邊界合法")
+    assert(mod.geometryKey({ -32768.5, 0, 0, 0 }) == nil
+        and mod.geometryKey({ 0, 0, 32768, 0 }) == nil,
+        "limits：world coordinate 超界拒絕")
+    local maxPts = {}
+    for i = 1, 4096 do
+        maxPts[i * 2 - 1], maxPts[i * 2] = (i - 1) * 0.5, 0
+    end
+    local maxKey = mod.geometryKey(maxPts)
+    assert(maxKey and maxKey:match("^4096:"), "limits：4096 點 geometryKey 線性組裝")
+
+    local nodeGraph = { nodeCount = 99999, nodeByKey = {}, nx = {}, ny = {}, adjHead = {} }
+    assert(not pcall(mod.graphNode, nodeGraph, 1, 1),
+        "limits：graphNode 在 100000 前 terminal")
+
+    local many = {}
+    for s = 1, 17 do
+        local pts = {}
+        for i = 1, 4096 do
+            pts[i * 2 - 1], pts[i * 2] = (i - 1) * 0.5, s
+        end
+        many[s] = { name = "G" .. s, src = "M", width = 1, pts = pts }
+    end
+    assert(not pcall(mod.newBuild, many, nil),
+        "limits：raw segments 超過 16384 在 gate 前 terminal")
+    local gateState = {
+        gn = 65535, gx1 = {}, gy1 = {}, gx2 = {}, gy2 = {}, gsid = {},
+        gwidth = {}, gsurface = {}, buck = {}, bkeys = {}, bn = 0,
+        padTol = 0, peakBucket = 0, bucketReferenceCount = 0,
+    }
+    assert(not pcall(mod.gateEmit, gateState, 0, 0, 1, 0, 1, 1, "paved"),
+        "limits：gate segment key-space 在 65536 前 terminal")
+
+    local dense = mod.newBuild({
+        { name = "A", src = "M", pts = { 0, 0, 60, 1 } },
+        { name = "B", src = "M", pts = { 0, 1, 60, 0 } },
+        { name = "C", src = "M", pts = { 30, -1, 30, 2 } },
+    }, nil)
+    for _ = 1, 20 do
+        if dense.phase == "pairs" then break end
+        mod.step(dense, 1)
+    end
+    dense.pairWork = 100000
+    assert(not pcall(mod.step, dense, 10),
+        "limits：unique pair work 超過 100k terminal，不長期 building")
+    local scanCap = mod.newBuild({
+        { name = "S1", src = "M", pts = { 0, 0, 10, 0 } },
+        { name = "S2", src = "M", pts = { 0, 1, 10, 1 } },
+    }, nil)
+    for _ = 1, 10 do
+        if scanCap.phase == "pairs" then break end
+        mod.step(scanCap, 1)
+    end
+    scanCap.pairScanWork = 125000
+    assert(not pcall(mod.step, scanCap, 10),
+        "limits：pair scan 超過 125k terminal（含同街/duplicate）")
+    assert(not pcall(mod.addCut, { cutRecords = 10000, cuts = {} }, 1, 0.5, 0, 0),
+        "limits：cut records 超過 10k terminal")
+    local perSegCuts = {}
+    for i = 1, 128 do perSegCuts[i] = { t = i } end
+    assert(not pcall(mod.addCut, {
+        cutRecords = 0, cuts = { [1] = perSegCuts }, maxCutsPerSegment = 128,
+    }, 1, 0.5, 0, 0), "limits：單 segment cuts 超過 128 terminal")
+    assert(not pcall(mod.mapTo, { epMoveCount = 10000, epMove = {} },
+        0, 0, 1, 1, 1), "limits：endpoint moves 超過 10k terminal")
+    local bucketCap = mod.newBuild({
+        { name = "bucket", src = "M", pts = { 0, 0, 10, 0 } },
+    }, nil)
+    bucketCap.bucketReferenceCount = 100000
+    assert(not pcall(mod.step, bucketCap, 2),
+        "limits：bucket references 超過 100k terminal")
+    assert(not pcall(mod.queryStep, { n = 250000 }, 1),
+        "limits：單次 route query work 超過 250k terminal")
 end
 
 --------------------------------------------------------------------------------
@@ -432,6 +551,7 @@ do
         { name = "DetourN", src = "M", pts = { 0, 60, 200, 60 } },
         { name = "DetourE", src = "M", pts = { 200, 60, 200, 0 } },
     }, nil)
+    local edgeBase = g.edgeCount
     -- 無避讓：直路 ≈190
     local r0 = mod.findRoute(g, 5, 0, 195, 0)
     assert(r0, "避讓：基準路線存在")
@@ -441,9 +561,368 @@ do
     assert(r1, "避讓：detour 路線存在")
     assert(r1.len > 250 and r1.len < 400,
         "避讓：堵點蓋直路 → 繞北環（len ≈310，實得 " .. tostring(r1.len) .. "）")
+    assertRouteMetadata(r1, "避讓 detour")
+    assert(r1.avoidPenalty == 0, "避讓：繞路本體不應帶 avoidPenalty")
+    assert(g.adjTo[edgeBase + 1] == nil and g.adjLen[edgeBase + 1] == nil
+        and g.adjNext[edgeBase + 1] == nil and g.adjSurface[edgeBase + 1] == nil
+        and g.adjWidth[edgeBase + 1] == nil, "避讓：temporary edge 全 SoA 回滾")
+    assert(g.nx[g.nodeCount + 1] == nil and g.adjHead[g.nodeCount + 1] == nil,
+        "避讓：temporary node 回滾")
     -- 目標貼堵點：軟封鎖不是硬移除，仍要給路（吃罰照走）
     local r2 = mod.findRoute(g, 5, 0, 102, 0, 100, 0, 12)
     assert(r2, "避讓：目標在堵點圈內仍可達（軟封鎖）")
+    assertRouteMetadata(r2, "避讓堵點內目標")
+    assert(r2.avoidPenalty >= 0, "避讓：堵點懲罰欄位保持獨立")
+end
+
+-- 同一長段 direct 被 avoid 命中時仍須跑 graph A*；替代路中段離 direct 200 格，
+-- 超出 SNAP_RING，舊版只看同段 shortcut 會漏掉。
+do
+    local g = buildAll({
+        { name = "Direct", src = "M", width = 6, segSurface = { "paved" },
+            pts = { 0, 0, 1000, 0 } },
+        { name = "W", src = "M", width = 6, segSurface = { "paved" },
+            pts = { 0, 0, 0, 200 } },
+        { name = "N", src = "M", width = 6, segSurface = { "paved" },
+            pts = { 0, 200, 1000, 200 } },
+        { name = "E", src = "M", width = 6, segSurface = { "paved" },
+            pts = { 1000, 200, 1000, 0 } },
+    }, nil)
+    local r = mod.findRoute(g, 400, 0, 600, 0, 500, 0, 20)
+    assertRouteMetadata(r, "同段 avoid 遠端繞路")
+    assert(r.avoidPenalty == 0 and r.len > 2100,
+        "同段 avoid：runAStar 找到 SNAP_RING 外的合法遠端繞路")
+end
+
+--------------------------------------------------------------------------------
+-- 二十一、RoadPatch fingerprint：街名翻譯不影響、其他 src/map MOD 不影響；
+-- targetSrc 的 geometry 或 width 任一不符則原子 fail closed。
+--------------------------------------------------------------------------------
+do
+    local official = {
+        { name = "Oak Street", src = "M", width = 6, pts = { 0, 0, 10, 0, 20, 0 } },
+    }
+    local patch = patchFor(official, "M", "fingerprint")
+    local translated = {
+        { name = "橡樹街", src = "M", width = 6, pts = { 0, 0, 10, 0, 20, 0 } },
+        { name = "Mod Road", src = "OtherMap", width = 17, pts = { 900, 900, 950, 950 } },
+    }
+    local ok, state = mod.applyRoadPatches(translated, patch)
+    assert(ok and state == "applied", "RoadPatch fingerprint：翻譯名＋其他 src 仍命中")
+    assert(#translated == 2, "RoadPatch fingerprint：其他 map street 原樣留在同一 patched 表")
+
+    local mismatch = {
+        { name = "Oak Street", src = "M", width = 7, pts = { 0, 0, 10, 0, 20, 0 } },
+    }
+    local original = mismatch[1]
+    ok, state = mod.applyRoadPatches(mismatch, patch)
+    assert(not ok and state == "fingerprint mismatch", "RoadPatch fingerprint：width mismatch 拒套")
+    assert(mismatch[1] == original and mismatch._roadPatchTag == nil,
+        "RoadPatch fingerprint：mismatch 不得部分改寫 ex.out")
+    local unicode = {
+        { name = "譯名", src = "地圖", width = 6, pts = { 0, 0, 20, 0 } },
+    }
+    local unicodePatch = patchFor(unicode, "地圖", "unicode")
+    ok, state = mod.applyRoadPatches(unicode, unicodePatch)
+    assert(ok and state == "applied", "RoadPatch compact identity：非 ASCII src 不依字串長度")
+
+    local hugePts = {}
+    for i = 1, 10000 do
+        hugePts[i * 2 - 1], hugePts[i * 2] = i, 0
+    end
+    local abusive = {
+        { name = "Oak", src = "M", width = 6, pts = { 0, 0, 10, 0, 20, 0 } },
+        { name = "DoS", src = "OtherMap", width = 6, pts = hugePts },
+    }
+    ok, state = mod.applyRoadPatches(abusive, patch)
+    assert(ok and state == "applied" and abusive[2].segSurface == nil
+        and abusive[2].segWidth == nil and abusive[2].segRemoved == nil,
+        "RoadPatch limits：大量 non-target 不clone、不建 metadata/ID")
+end
+
+--------------------------------------------------------------------------------
+-- 二十二、RoadPatch clean apply order／idempotence／searchable：remove →
+-- width/surface overrides → add → bridge；searchable 必須明示 boolean。
+--------------------------------------------------------------------------------
+do
+    local streets = {
+        { name = "Base", src = "M", width = 6, pts = { 0, 0, 10, 0, 20, 0 } },
+    }
+    local patch = patchFor(streets, "M", "ordered")
+    local compact = patch.geometrySet[mod.fingerprintKey(streets[1])]
+    local id0 = mod.segmentId(compact, 0)
+    local id1 = mod.segmentId(compact, 1)
+    patch.removeCount, patch.remove = 1, { id0 }
+    patch.addCount, patch.add = 1, {
+        { id = "candidate:add", src = "M", width = 4, surface = "gravel",
+            searchable = false, pts = { 30, 0, 40, 0 } },
+    }
+    patch.bridgeCount, patch.bridge = 1, {
+        { id = "candidate:bridge", src = "M", width = 5, surface = "paved",
+            searchable = true, name = "Approved Bridge", pts = { 40, 0, 50, 0 } },
+    }
+    patch.widthCount, patch.width = 1, { { id = id1, value = 3 } }
+    patch.surfaceCount, patch.surface = 2, {
+        { id = id0, value = "paved" },
+        { id = id1, value = "dirt" },
+    }
+    local ok, state = mod.applyRoadPatches(streets, patch)
+    assert(ok and state == "applied" and #streets == 3, "RoadPatch apply：全操作一次套用")
+    assert(streets[1].segRemoved[1] == true, "RoadPatch apply：remove 先標記")
+    assert(streets[1].segWidth[2] == 3 and streets[1].segSurface[2] == "dirt",
+        "RoadPatch apply：width/surface 覆寫正確 segment")
+    assert(streets[2].searchable == false and not mod.streetSearchable(streets[2]),
+        "RoadPatch apply：add 明示 searchable=false")
+    assert(streets[3].searchable == true and mod.streetSearchable(streets[3]),
+        "RoadPatch apply：明示 searchable bridge 可進 index")
+    assert(mod.streetSearchable(streets[1]), "RoadPatch apply：只 remove 一段的原街仍可搜尋")
+    local patchedGraph = buildAll(streets, nil)
+    local indexStreet = {
+        name = "Winner", src = "A", width = 6,
+        pts = { 0, 10, 300, 10, 600, 10 }, segRemoved = { true, false },
+    }
+    local ax, ay = mod.streetIndexAnchor(indexStreet, function(cx)
+        if cx == 1 then return "B" end
+        return "A"
+    end, {})
+    assert(ax == 512 and ay == 10,
+        "street index：跳過 removed/敗者 cell，錨定首個實際保留子段")
+    assert(route(patchedGraph, 31, 0, 49, 0),
+        "RoadPatch apply：non-searchable add 仍進同一 patched graph")
+    local addIdentity = streets[2]
+    ok, state = mod.applyRoadPatches(streets, patch)
+    assert(ok and state == "already" and #streets == 3 and streets[2] == addIdentity,
+        "RoadPatch apply：相同 tag idempotent、不重複 append")
+    local other = patchFor(streets, "M", "different")
+    ok, state = mod.applyRoadPatches(streets, other)
+    assert(not ok and state == "different patch already applied",
+        "RoadPatch apply：不同 patch 不可疊套")
+end
+
+--------------------------------------------------------------------------------
+-- 二十三、RoadPatch conflict 原子性：同 segment 重複 surface 即整份拒絕；
+-- staged clone 不得洩漏到原 ex.out。
+--------------------------------------------------------------------------------
+do
+    local streets = {
+        { name = "Base", src = "M", width = 6, pts = { 0, 0, 20, 0 } },
+    }
+    local original = streets[1]
+    local patch = patchFor(streets, "M", "conflict")
+    local id = mod.segmentId(patch.geometrySet[mod.fingerprintKey(streets[1])], 0)
+    patch.surfaceCount, patch.surface = 2, {
+        { id = id, value = "paved" },
+        { id = id, value = "dirt" },
+    }
+    local ok, state = mod.applyRoadPatches(streets, patch)
+    assert(not ok and state == "surface conflict", "RoadPatch conflict：重複 metadata fail closed")
+    assert(streets[1] == original and original.segSurface == nil
+        and streets._roadPatchTag == nil, "RoadPatch conflict：原表零部分 mutation")
+    local countMismatch = patchFor(streets, "M", "count-mismatch")
+    countMismatch.surfaceCount = 0
+    countMismatch.surface = { { id = id, value = "paved" } }
+    ok, state = mod.applyRoadPatches(streets, countMismatch)
+    assert(not ok and state == "patch count/array mismatch"
+        and streets[1] == original and streets._roadPatchTag == nil,
+        "RoadPatch preflight：count 與 dense array 必須 exact 一致")
+    local widthMismatch = patchFor(streets, "M", "width-limit")
+    widthMismatch.widthCount = 1
+    widthMismatch.width = { { id = id, value = 65 } }
+    ok, state = mod.applyRoadPatches(streets, widthMismatch)
+    assert(not ok and state == "width conflict", "RoadPatch width：超過 1..64 fail closed")
+    local missingSearchable = patchFor(streets, "M", "searchable-required")
+    missingSearchable.addCount = 1
+    missingSearchable.add = {
+        { id = "missing", src = "M", width = 4, surface = "paved", pts = { 30, 0, 40, 0 } },
+    }
+    ok, state = mod.applyRoadPatches(streets, missingSearchable)
+    assert(not ok and state == "invalid add/bridge searchable",
+        "RoadPatch add：searchable 缺欄 fail closed")
+    local longName = patchFor(streets, "M", "name-limit")
+    longName.addCount = 1
+    longName.add = {
+        { id = "long", src = "M", width = 4, surface = "paved",
+            searchable = false, name = string.rep("x", 1025), pts = { 30, 0, 40, 0 } },
+    }
+    ok, state = mod.applyRoadPatches(streets, longName)
+    assert(not ok and state == "invalid add/bridge name",
+        "RoadPatch add：超長名稱不保留 search copy")
+end
+
+--------------------------------------------------------------------------------
+-- 二十四、parallel metadata SoA：gate/cut/snap/adj 全程保存；重複 edge metadata
+-- 衝突採 unknown/min width，route arrays 與 pts 段數嚴格對齊。
+--------------------------------------------------------------------------------
+do
+    local g = buildAll({
+        { name = "Wide Paved", src = "M", width = 8, segSurface = { "paved" },
+            pts = { 0, 0, 100, 0 } },
+        { name = "Narrow Dirt Duplicate", src = "M", width = 4, segSurface = { "dirt" },
+            pts = { 0, 0, 100, 0 } },
+    }, nil)
+    assert(g.segCount == 1, "metadata duplicate：snap segment 去重")
+    assert(g.sSurface[1] == "unknown" and g.sWidth[1] == 4,
+        "metadata duplicate：snap 採 unknown/min width")
+    for e = 1, g.edgeCount do
+        assert(g.adjSurface[e] == "unknown" and g.adjWidth[e] == 4,
+            "metadata duplicate：adj 採 unknown/min width")
+    end
+    local r = route(g, 0, 0, 100, 0)
+    assertRouteMetadata(r, "metadata duplicate route")
+    assert(r.segSurface[1] == "unknown" and r.segWidth[1] == 4,
+        "metadata duplicate：route 保存保守 metadata")
+    local mixed = buildAll({
+        { name = "P", src = "M", width = 8, segSurface = { "paved" },
+            pts = { 0, 20, 100, 20 } },
+        { name = "G", src = "M", width = 5, segSurface = { "gravel" },
+            pts = { 100, 20, 200, 20 } },
+    }, nil)
+    local mixedRoute = route(mixed, 0, 20, 200, 20)
+    assertRouteMetadata(mixedRoute, "metadata fromEdge route")
+    local sawPaved, sawGravel = false, false
+    for i = 1, #mixedRoute.segSurface do
+        if mixedRoute.segSurface[i] == "paved" then sawPaved = true end
+        if mixedRoute.segSurface[i] == "gravel" then sawGravel = true end
+    end
+    assert(sawPaved and sawGravel, "metadata fromEdge：回溯保存每條 edge 的不同 surface")
+end
+
+--------------------------------------------------------------------------------
+-- 二十五、保守 surface cost：108 格 paved 可勝 100 格 dirt；dirt-only 仍可達；
+-- width 僅 metadata、不影響 MiniMap 全域 A*；approach 不塞入 pts。
+--------------------------------------------------------------------------------
+do
+    assert(math.abs(mod.edgeTravelCost(100, "paved", 2) - 100) < 1e-9
+        and math.abs(mod.edgeTravelCost(100, "unknown", 8) - 100) < 1e-9
+        and math.abs(mod.edgeTravelCost(100, "gravel", 2) - 105) < 1e-9
+        and math.abs(mod.edgeTravelCost(100, "dirt", 8) - 110) < 1e-9,
+        "surface cost：倍率固定 1.00/1.00/1.05/1.10，width 不參與")
+    local g = buildAll({
+        { name = "Dirt Direct", src = "M", width = 6, segSurface = { "dirt" },
+            pts = { 0, 0, 100, 0 } },
+        { name = "Paved W", src = "M", width = 2, segSurface = { "paved" },
+            pts = { 0, 0, 0, 4 } },
+        { name = "Paved N", src = "M", width = 2, segSurface = { "paved" },
+            pts = { 0, 4, 100, 4 } },
+        { name = "Paved E", src = "M", width = 2, segSurface = { "paved" },
+            pts = { 100, 4, 100, 0 } },
+    }, nil)
+    local r = route(g, 0, 0, 100, 0)
+    assertRouteMetadata(r, "paved alternative")
+    assert(r.len > 107 and r.len < 109, "surface cost：選 108 格 paved 而非 100 格 dirt")
+    for i = 1, #r.segSurface do
+        assert(r.segSurface[i] == "paved", "surface cost：替代路逐段皆 paved")
+    end
+    assert(math.abs(r.cost - r.len) < 1e-6 and r.avoidPenalty == 0,
+        "surface cost：paved cost 與幾何 len 分離但數值相等")
+
+    local dirtGraph = buildAll({
+        { name = "Only Dirt", src = "M", width = 3, segSurface = { "dirt" },
+            pts = { 0, 0, 100, 0 } },
+    }, nil)
+    local dirt = route(dirtGraph, -10, 10, 110, 20)
+    assertRouteMetadata(dirt, "dirt-only")
+    assert(dirt.cost > dirt.len and dirt.segSurface[1] == "dirt",
+        "surface cost：dirt 有界加權但仍可達")
+    assert(dirt.pts[1] ~= -10 and dirt.pts[#dirt.pts - 1] ~= 110,
+        "approach：玩家→起錨／終錨→目標不進 pts")
+    local blocked = mod.findRoute(dirtGraph, 0, 0, 100, 0, 50, 0, 5)
+    assertRouteMetadata(blocked, "dirt-only unavoidable detour")
+
+    assert(blocked.avoidPenalty == 100000,
+        "surface cost：單一路徑不可避時 avoidPenalty 獨立標記")
+end
+
+--------------------------------------------------------------------------------
+-- 二十六、正式 generated Lua × runtime cross-language 契約：直接由 generated
+-- geometrySet 反建官方 q2 streets（街名全改譯名），再跑 production apply。
+-- 這會抓 generator/Lua 在量化、width、segment identity 任一字元漂移。
+--------------------------------------------------------------------------------
+do
+    local patchPath =
+        "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/shared/MinidoracatMiniMapRoadPatches.lua"
+    dofile(patchPath)
+    local patch = MinidoracatMiniMapRoadPatches
+    assert(patch and patch.auditSha256
+        == "4af9617a6193d76c63ff454def311aada68813b132743f8317379982ad582377",
+        "正式 RoadPatch：綁定 final total-work audit")
+    local streets = {}
+-- map priority 全域取得失敗必 terminal；僅 carrier/per-cell 維持 fail-open。
+do
+    local winnerBody = source:match(
+        "(local function makeWinnerOf%(%).-)\n\n%-%- 抽取準備")
+    assert(winnerBody, "找不到 makeWinnerOf production 區段")
+    local prelude = [[
+local Core = {}
+local function fileExists(path) return path:find("/A/0_0.lotheader", 1, true) ~= nil end
+]]
+    local factory = assert((loadstring or load)(
+        prelude .. winnerBody .. "\nreturn makeWinnerOf, Core", "winner-factory"))
+    local makeWinner, winnerCore = factory()
+    local fn, err = makeWinner()
+    assert(fn == nil and err, "winner：getLoadedMapDirs 缺失須失敗")
+    winnerCore.getLoadedMapDirs = function() error("boom") end
+    fn, err = makeWinner()
+    assert(fn == nil and err, "winner：priority provider throw 須失敗")
+    winnerCore.getLoadedMapDirs = function() return { A = 1, B = 1 } end
+    fn, err = makeWinner()
+    assert(fn == nil and err, "winner：duplicate priority index 須失敗")
+    winnerCore.getLoadedMapDirs = function() return { A = 1 } end
+    fn, err = makeWinner()
+    assert(fn and not err and fn(0, 0, nil) == "A",
+        "winner：有效全域 priority 建立 winner")
+    assert(fn(99, 99, "Carrier") == nil,
+        "winner：carrier src 無 lot 仍 per-cell fail-open")
+end
+
+    for member in pairs(patch.geometrySet) do
+        local geometry, widthQ = member:match("^(.-)|w:(%-?%d+)$")
+        assert(geometry and widthQ, "正式 RoadPatch：geometry member 格式")
+        local pts = {}
+        local field = 0
+        for token in geometry:gmatch("[^:]+") do
+            field = field + 1
+            if field > 1 then pts[#pts + 1] = assert(tonumber(token)) / 2 end
+        end
+        assert(#pts / 2 == tonumber(geometry:match("^(%d+):")),
+            "正式 RoadPatch：點數前綴與 full geometry 一致")
+        streets[#streets + 1] = {
+            name = "翻譯街名 " .. #streets, src = patch.targetSrc,
+            width = tonumber(widthQ) / 2, pts = pts,
+        }
+    end
+    streets[#streets + 1] = {
+        name = "Third-party map road", src = "OtherMap", width = 6,
+        pts = { -100, -100, -50, -50 },
+    }
+    assert(#streets == patch.geometryCount + 1, "正式 RoadPatch：usable geometry set 數量")
+    local ok, state = mod.applyRoadPatches(streets, patch)
+    assert(ok and state == "applied",
+        "正式 RoadPatch：runtime fingerprint/identity 全數命中，實得 " .. tostring(state))
+    local metadataCount = 0
+    for i = 1, patch.geometryCount do
+        local street = streets[i]
+        for si = 1, #street.pts / 2 - 1 do
+            metadataCount = metadataCount + 1
+            assert(street.segSurface[si] ~= nil and street.segWidth[si] > 0,
+                "正式 RoadPatch：每個官方非鐵路 segment 有 metadata")
+        end
+    end
+    assert(metadataCount == patch.surfaceCount and patch.addCount == 0
+        and patch.bridgeCount == 0 and patch.rejectedCandidateCount == 6,
+        "正式 RoadPatch：3343 surface overrides、6 reject、零批准新增")
+    local officialBuilder = mod.newBuild(streets, nil)
+    for _ = 1, 100000 do
+        if mod.step(officialBuilder, 5000) then break end
+    end
+    assert(officialBuilder.phase == "done", "正式 RoadPatch：官方 geometry 建圖完成")
+    print("official nav pairScan=" .. officialBuilder.pairScanWork
+        .. " pairUnique=" .. officialBuilder.pairWork
+        .. " peakBucket=" .. officialBuilder.peakBucket
+        .. " bucketRefs=" .. officialBuilder.bucketReferenceCount
+        .. " cutRecords=" .. officialBuilder.cutRecords
+        .. " maxCutsPerSegment=" .. officialBuilder.maxCutsPerSegment
+        .. " epMoveCount=" .. officialBuilder.epMoveCount)
 end
 
 print("test_nav_route: 全數通過")

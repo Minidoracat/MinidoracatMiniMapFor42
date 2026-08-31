@@ -3496,10 +3496,10 @@ end
 -- 外部程式碼壞掉不得讓核心功能連坐，更不得每幀刷屏）。零註冊時行為與加
 -- API 前逐位元相同（addon 不裝零影響）。
 -- test:nav-gate:start
--- v1→v2：新增 MinidoracatMiniMapAPI.getNavTarget（見本區段末）。既有
--- registerNavGate／requestRoute／getNavGraph 簽名與語意皆未動，v1 消費者
--- 的 `navApiVersion < 1` 相容判定照樣通過（addon 側判 `< 2` 才需 getNavTarget）。
-MinidoracatMiniMapAPI.navApiVersion = 3 -- v3: +requestDetour（避讓圈重算；AutoDrive blocked 改道）
+-- v4：requestRoute／requestDetour 的參數與 v1-v3 route 欄位不變；route additive
+-- 新增逐段 segSurface/segWidth（與 pts 段數嚴格對齊）、數值 cost/avoidPenalty、
+-- approachSurface 與 patchState="applied"|"raw"。舊版消費者仍可只讀既有欄位。
+MinidoracatMiniMapAPI.navApiVersion = 4
 Core.navGates = {} -- { { owner=, fn=, errLogged= }, ... }
 function MinidoracatMiniMapAPI.registerNavGate(ownerModId, gateFn)
     if type(ownerModId) ~= "string" or ownerModId == "" or type(gateFn) ~= "function" then

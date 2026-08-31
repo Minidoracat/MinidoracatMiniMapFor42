@@ -7,6 +7,11 @@
 - 地圖顯示設定 addon API v2：分類可在勾選／下拉之後註冊最多 16 個動作按鈕
   （`label`／`tooltip`／`run` 必填，`enabled` 可選；`run(playerNum)`）；超過上限或任一動作無效時整次註冊失敗，不會部分更新。
   未傳 `actions` 的既有 ticks／combos spec 完全相容。
+- **道路資料稽核與修補層**：新增可重現的全圖 `streets.xml`／地板材質稽核流程，
+  以記憶體有界的 row-span 分析辨識缺路候選，並將人工裁決與來源雜湊烘焙成
+  `MinidoracatMiniMapRoadPatches.lua`。42.20.4 全圖 6 筆最終候選均確認為停車區、
+  私有服務巷或建物間土徑，因此沒有臆測新增道路；已知道路仍取得逐段
+  `paved`／`gravel`／`dirt`／`unknown` metadata。
 - **管理員檢視旁路（雙層政策，預設全關）**：沙盒新增「允許管理員戰術檢視旁路」與
   「允許管理員隱私檢視旁路」兩個選項。旁路要**三把鑰匙**同時成立才生效——伺服器主人
   開放該沙盒選項、該玩家的 Role 具備「看見全部」（`CanSeeAll`）、以及管理員自己在
@@ -36,6 +41,10 @@
   改為引擎的 `SandboxOptions`、`SandboxVars` 只當 fallback（那張鏡像表任何 MOD 都能寫，
   權限判定不能建立在可被改寫的表上），並以 250ms 快照攤平逐幀逐鍵查表成本。舊伺服器
   缺鍵時退回與 `sandbox-options.txt` 逐鍵對齊的預設值，兩個管理員選項缺鍵即 `false`。
+- 導航介接升級為 API v4：路線新增與 `pts` 嚴格對齊的 `segSurface`／`segWidth`，
+  並分開回報幾何長度、路面成本與避讓懲罰。A* 以保守有界倍率偏好鋪裝替代路，
+  只有碎石／土路時仍保持可達。`requestRoute`／`requestDetour` 參數與既有 route
+  欄位維持相容；`getNavGraph` 尾端另回 RoadPatch／搜尋資料狀態。
 
 ## [42.20.4-0.22.0] - 2026-08-30
 
