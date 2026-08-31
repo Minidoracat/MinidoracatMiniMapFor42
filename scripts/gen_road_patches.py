@@ -151,6 +151,47 @@ def _validate_points(points: list[float], where: str = "geometry") -> None:
             _fail(f"{where} segment exceeds {MAX_SEGMENT_LENGTH}")
 
 
+OPERATION_SIMPLIFY_EPSILON = 0.25  # 同 runtime CUT_MERGE 量級；q2 精度 0.005 之上
+
+
+def _simplify_polyline(points: list[float], epsilon: float) -> list[float]:
+    """Douglas-Peucker 簡化 add/bridge operation 幾何。
+
+    稽核 polylineQ2 是 row-span 骨架的逐格點（169 格＝169 點），直接入 patch
+    會讓 runtime 建圖對每格微段做交叉切割（per-segment cut 上限爆掉）。
+    證據驗證（evidenceHash）仍用原始點；僅 operation 輸出簡化，幾何保形。
+    """
+    n = len(points) // 2
+    if n <= 2:
+        return list(points)
+    keep = [False] * n
+    keep[0] = keep[n - 1] = True
+    stack = [(0, n - 1)]
+    while stack:
+        i0, i1 = stack.pop()
+        if i1 - i0 < 2:
+            continue
+        ax, ay = points[2 * i0], points[2 * i0 + 1]
+        dx = points[2 * i1] - ax
+        dy = points[2 * i1 + 1] - ay
+        norm = math.hypot(dx, dy)
+        best, best_d = -1, epsilon
+        for i in range(i0 + 1, i1):
+            px, py = points[2 * i] - ax, points[2 * i + 1] - ay
+            d = math.hypot(px, py) if norm == 0.0 else abs(px * dy - py * dx) / norm
+            if d > best_d:
+                best, best_d = i, d
+        if best >= 0:
+            keep[best] = True
+            stack.append((i0, best))
+            stack.append((best, i1))
+    out: list[float] = []
+    for i in range(n):
+        if keep[i]:
+            out.extend((points[2 * i], points[2 * i + 1]))
+    return out
+
+
 def geometry_key(points: list[float]) -> str:
     """Translation-independent full q2 polyline identity (no width or name)."""
     _validate_points(points)
@@ -570,7 +611,7 @@ def _candidate_operations(
             "surface": surface,
             "searchable": searchable,
             "reason": reason,
-            "points": points,
+            "points": _simplify_polyline(points, OPERATION_SIMPLIFY_EPSILON),
         }
         (adds if operation_kind == "add" else bridges).append(operation)
 

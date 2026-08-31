@@ -1,4 +1,4 @@
--- generated-body-sha256: 0df0045195439b35c3e7247d815a971e00de6647b1c29b5631712c773f3f3346
+-- generated-body-sha256: 7561c70f48ebcf1c31b960ff24470b3a70838913e3b73afd81d40fa9cf42e10c
 -- MinidoracatMiniMapRoadPatches.lua
 -- 由 scripts/gen_road_patches.py 從 road-audit-v1 與人工批准清單產生；請勿手改。
 -- 重生：python scripts/gen_road_patches.py --audit <road-audit-full-total-work-pass.json>
@@ -12,11 +12,11 @@ MinidoracatMiniMapRoadPatches = {
     xmlSha256 = "86172be118d99243ecbb6027ef4b82f2aa31590afcc7bbd776cffe9869482771",
     surfaceFingerprint = "644a794043569231e550a16d17269925ec095dba671d1149b0cf52da815f81a9",
     auditSha256 = "4af9617a6193d76c63ff454def311aada68813b132743f8317379982ad582377",
-    rejectedCandidateCount = 6,
-    approvalsSha256 = "f04561493d18c9ef400f15f29b007bb8814e73ab92798e280e5c991575f18949",
-    generatorSha256 = "d91223959168b5f74195ee6888bcafe4992c486d0483a564eea92317f6a90df3",
-    rejectedEvidenceHash = "658515bfd1cdce0108453276ca7e362df568890a934bc8de7eb7ab932ef3b106",
-    tag = "bfb839d2fe203714f600c577266e5ee50eb9be771d3a4fa1e563a275d2653bfd",
+    rejectedCandidateCount = 0,
+    approvalsSha256 = "11b72906c6aa029f44ab702e60700b7eac406fa562e3e764913f046819f7f7e0",
+    generatorSha256 = "d762607d9b26b380028bc281f8db638e5ea1e7b763ff0764452d86de2e43f819",
+    rejectedEvidenceHash = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    tag = "0742e87f5de73d743b22ec908199b8bf7851ccbdc3ddc984cf50c5af75137902",
     geometryCount = 1089,
     geometrySet = {
         ["10:12630:10566:13634:10566:13656:10576:13667:10587:13672:10597:13672:10878:13686:10906:13702:10922:13732:10938:13750:10938|w:20"] = "958371c8dd485b7fd054bdeac5e0b677d0a7bf8454095329c599f5ccca199f28",
@@ -1115,8 +1115,14 @@ MinidoracatMiniMapRoadPatches = {
     addCount = 0,
     add = {
     },
-    bridgeCount = 0,
+    bridgeCount = 6,
     bridge = {
+        { id = "c:8b22970e0b10bfdec96667ab4402f52573e0cb67c73769f5db44cd41f818b1de", src = "Muldraugh, KY", width = 3.227, surface = "dirt", searchable = false, reason = "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「住宅／建物間私人土徑，不是公共道路。」維持事實描述，僅撤銷排除。", pts = { 6316, 5290, 6316, 5338.5, 6316.5, 5340.5, 6317, 5341, 6317, 5342.5, 6319.5, 5347, 6322.5, 5350, 6323, 5351, 6324, 5351.5, 6324.5, 5352.5, 6326.5, 5353.5, 6327, 5354.5, 6328, 5355, 6328.5, 5356, 6332.5, 5360, 6333, 5361, 6335, 5362, 6335.5, 5363, 6338, 5365, 6338.5, 5366, 6342.5, 5370, 6343, 5371, 6345, 5372, 6345.5, 5373, 6349.5, 5377, 6350, 5378, 6351, 5378.5, 6351, 5379.5, 6352, 5380, 6352, 5381, 6354, 5385, 6354, 5386, 6355, 5386.5, 6356, 5390.5, 6356, 5438.5, 6357, 5439.5, 6364, 5442, 6365, 5443, 6367.5, 5444, 6368, 5445, 6369.5, 5445.5, 6378.5, 5443, 6378.5, 5445, 6379, 5446 } },
+        { id = "c:adc86006832a51545dbc80e5c04cdb359ae003984c486e259de93dc3f1c5b9cd", src = "Muldraugh, KY", width = 7, surface = "paved", searchable = false, reason = "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「停車區／服務巷表面帶，無可證實公共道路。」維持事實描述，僅撤銷排除。", pts = { 13171.5, 1229, 13171.5, 1247, 13172.5, 1250, 13172, 1252, 13171, 1253, 13171, 1300 } },
+        { id = "c:ce5fb2f63e260529e4fd5d17e67c67a141b994a5414c78056f8c8b382fc7daae", src = "Muldraugh, KY", width = 5, surface = "dirt", searchable = false, reason = "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「停車區橫向表面帶，不是公共道路。」維持事實描述，僅撤銷排除。", pts = { 12904.5, 1809, 12951.5, 1809 } },
+        { id = "c:d4f58afdbb62dd7f94368867119bbdc817afbe7a5322c2b8909732ecc11b4b2f", src = "Muldraugh, KY", width = 7, surface = "paved", searchable = false, reason = "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「停車區縱向表面帶，不是公共道路。」維持事實描述，僅撤銷排除。", pts = { 13191, 1663.5, 13191, 1792.5 } },
+        { id = "c:e7b748fd02d06b7ff83149a9865f50a1be36db918f738dc89803057a2996dfb5", src = "Muldraugh, KY", width = 4, surface = "paved", searchable = false, reason = "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「建物／庭院內橫向表面帶，不是公共道路。」維持事實描述，僅撤銷排除。", pts = { 13235.5, 1524.5, 13276.5, 1524.5 } },
+        { id = "c:fe4f9c04511923c010c1cc324edb90705e41a9a1253a0ee01ae2f2b838e84ef8", src = "Muldraugh, KY", width = 7, surface = "dirt", searchable = false, reason = "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「停車區橫向表面帶，不是公共道路。」維持事實描述，僅撤銷排除。", pts = { 13030, 1810, 13025, 1810, 13024, 1808.5, 13021, 1808.5, 13020, 1810, 12959, 1810 } },
     },
     widthCount = 0,
     width = {

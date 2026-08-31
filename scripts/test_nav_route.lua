@@ -611,6 +611,26 @@ do
     assert(ok and state == "applied", "RoadPatch fingerprint：翻譯名＋其他 src 仍命中")
     assert(#translated == 2, "RoadPatch fingerprint：其他 map street 原樣留在同一 patched 表")
 
+    -- src=nil 全量替換容器（LangFor42 型態）：官方幾何逐條指紋命中即套用，
+    -- 集合外街道跳過不配置；缺任一官方幾何則整包拒套
+    local failOpen = {
+        { name = "橡樹街", src = nil, width = 6, pts = { 0, 0, 10, 0, 20, 0 } },
+        { name = "濱河路", src = nil, width = 9, pts = { 500, 500, 560, 500 } },
+    }
+    ok, state = mod.applyRoadPatches(failOpen, patch)
+    assert(ok and state == "applied", "RoadPatch fail-open：src=nil 全量容器指紋命中")
+    assert(#failOpen == 2 and failOpen[2].segSurface == nil
+        and failOpen[2].segWidth == nil,
+        "RoadPatch fail-open：集合外街道跳過、不建 metadata")
+
+    local failOpenMissing = {
+        { name = "濱河路", src = nil, width = 9, pts = { 500, 500, 560, 500 } },
+    }
+    ok, state = mod.applyRoadPatches(failOpenMissing, patch)
+    assert(not ok and state == "fingerprint mismatch"
+        and failOpenMissing._roadPatchTag == nil,
+        "RoadPatch fail-open：官方幾何缺席整包拒套")
+
     local mismatch = {
         { name = "Oak Street", src = "M", width = 7, pts = { 0, 0, 10, 0, 20, 0 } },
     }
@@ -909,8 +929,10 @@ end
         end
     end
     assert(metadataCount == patch.surfaceCount and patch.addCount == 0
-        and patch.bridgeCount == 0 and patch.rejectedCandidateCount == 6,
-        "正式 RoadPatch：3343 surface overrides、6 reject、零批准新增")
+        and patch.bridgeCount == 6 and patch.rejectedCandidateCount == 0,
+        "正式 RoadPatch：3343 surface overrides、6 bridge（2026-09-01 使用者翻案）、零 reject")
+    assert(#streets == patch.geometryCount + 1 + patch.bridgeCount,
+        "正式 RoadPatch：bridge 條目 append 至 patched 表尾")
     local officialBuilder = mod.newBuild(streets, nil)
     for _ = 1, 100000 do
         if mod.step(officialBuilder, 5000) then break end

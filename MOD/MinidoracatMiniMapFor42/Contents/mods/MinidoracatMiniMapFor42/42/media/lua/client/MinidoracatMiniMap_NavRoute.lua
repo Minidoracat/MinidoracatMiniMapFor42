@@ -211,8 +211,10 @@ local function cellBoundaryTs(x1, y1, x2, y2, out)
 end
 
 -- RoadPatch 身分只看來源容器＋完整 q2 幾何＋segment index；街名刻意不進身分，
--- 翻譯 MOD 改名仍能命中。fingerprint 另含 q2 width，且只核對 targetSrc 容器，
--- 第三方 map MOD 的其他容器不會讓官方 patch 誤判失效。
+-- 翻譯 MOD 改名仍能命中。fingerprint 另含 q2 width；具名容器只核對 targetSrc，
+-- 另對 src=nil 的未知來源（fail-open）容器做逐條指紋匹配——翻譯 MOD 的全量
+-- 替換容器（LangFor42 以 Riverside rel 承載官方 Muldraugh 幾何的中文版）落在
+-- 此類，集合外的街道跳過，第三方 map MOD 容器（具名非 target）不受影響。
 local function validWidth(value)
     return type(value) == "number" and value == value and value >= 1
         and value <= MAX_WIDTH
@@ -384,17 +386,27 @@ function NavCore.applyRoadPatches(streets, patch)
     local targetCount = 0
     for i = 1, #streets do
         local original = streets[i]
-        if original.src == patch.targetSrc then
-            local copy, cloneErr = cloneStreet(original)
-            if not copy then return false, cloneErr end
+        local isKnownTarget = original.src == patch.targetSrc
+        -- src=nil＝未知來源容器：幾何+寬度指紋在集合內即視為官方街道；不在
+        -- 集合＝其他地圖街道，跳過不算錯。geometryCount 全數命中的總量檢查
+        -- 不變（:下方）——官方幾何缺一條照樣整包拒套。
+        if isKnownTarget or original.src == nil then
             local fingerprint = fingerprintKey(original)
             local compact = fingerprint and patch.geometrySet[fingerprint] or nil
-            if not compact or targetSeen[fingerprint] then return false, "fingerprint mismatch" end
-            targetSeen[fingerprint] = true
-            targetCount = targetCount + 1
-            local ok, err = registerSegments(copy, compact, lookup)
-            if not ok then return false, err end
-            staged[i] = copy
+            if compact and not targetSeen[fingerprint] then
+                local copy, cloneErr = cloneStreet(original)
+                if not copy then return false, cloneErr end
+                targetSeen[fingerprint] = true
+                targetCount = targetCount + 1
+                local ok, err = registerSegments(copy, compact, lookup)
+                if not ok then return false, err end
+                staged[i] = copy
+            elseif isKnownTarget then
+                -- 具名 target 容器：指紋不在集合＝官方內容漂移；重複＝資料異常。皆 fail
+                return false, "fingerprint mismatch"
+            else
+                staged[i] = original -- src=nil 且幾何不在集合：非官方街道，原樣過
+            end
         else
             staged[i] = original -- 非 target 不配置 metadata/ID；builder 自行驗 raw
         end
