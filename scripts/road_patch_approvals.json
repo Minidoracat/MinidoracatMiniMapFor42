@@ -8,15 +8,6 @@
   "auditSurfaceFingerprint": "9b3b740f73f47ea82924148ca0f346fbbdbaa4b57d2f9e7f0cf9cfc15c0d1a38",
   "approvedCandidates": [
     {
-      "id": "c:0f23bfe0a58ccace456984f8aae76a7ad3f7e6fae6b79d2ee39d6115fcdaad05",
-      "evidenceHash": "0f23bfe0a58ccace456984f8aae76a7ad3f7e6fae6b79d2ee39d6115fcdaad05",
-      "operation": "bridge",
-      "surface": "dirt",
-      "width": 5.12,
-      "searchable": false,
-      "reason": "人工視覺稽核（dirt-edge 訊號，2026-09-01）：社區南側縱向窄土徑（319 格），高倍複查具清晰連續路徑，兩端接路網。"
-    },
-    {
       "id": "c:408f762e44283f6144086e637ed8b6b3abc8f0bc1ab59ca97500371c67703643",
       "evidenceHash": "408f762e44283f6144086e637ed8b6b3abc8f0bc1ab59ca97500371c67703643",
       "operation": "bridge",
@@ -53,15 +44,6 @@
       "reason": "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「停車區橫向表面帶，不是公共道路。」維持事實描述，僅撤銷排除。"
     },
     {
-      "id": "c:ef5766802e0104b91f26544bf36c4aded0a29d2298e3e777b427635991c55407",
-      "evidenceHash": "ef5766802e0104b91f26544bf36c4aded0a29d2298e3e777b427635991c55407",
-      "operation": "bridge",
-      "surface": "dirt",
-      "width": 5.014,
-      "searchable": false,
-      "reason": "人工視覺稽核（dirt-edge 訊號，2026-09-01）：兩公路間連續實心土路帶（646 格），高倍複查具平滑連續路面紋理，兩端接路網。"
-    },
-    {
       "id": "c:f039e0375724eccf10001cfbcaf354e282f5ee05623a39380233276e03bcdaf1",
       "evidenceHash": "f039e0375724eccf10001cfbcaf354e282f5ee05623a39380233276e03bcdaf1",
       "operation": "bridge",
@@ -81,6 +63,11 @@
     }
   ],
   "rejectedCandidates": [
+    {
+      "id": "c:0f23bfe0a58ccace456984f8aae76a7ad3f7e6fae6b79d2ee39d6115fcdaad05",
+      "evidenceHash": "0f23bfe0a58ccace456984f8aae76a7ad3f7e6fae6b79d2ee39d6115fcdaad05",
+      "reason": "使用者裁決取消（2026-09-01）：dirt-edge 候選經鐵路誤判事件後一併撤回，保守維持路網純度；日後如有實際需求走 manualRoads 人工描線。"
+    },
     {
       "id": "c:3d4e8f556adf442458aee205f7bdc197b4bb56d03505963bb190b85e3e48e528",
       "evidenceHash": "3d4e8f556adf442458aee205f7bdc197b4bb56d03505963bb190b85e3e48e528",
@@ -110,6 +97,11 @@
       "id": "c:bfd9bbdc18531163f342616997ab86204f786cdd3d430e724782716b8b49652d",
       "evidenceHash": "bfd9bbdc18531163f342616997ab86204f786cdd3d430e724782716b8b49652d",
       "reason": "人工視覺稽核：鋸齒狀侵蝕溝／水道形態，非通行路徑。"
+    },
+    {
+      "id": "c:ef5766802e0104b91f26544bf36c4aded0a29d2298e3e777b427635991c55407",
+      "evidenceHash": "ef5766802e0104b91f26544bf36c4aded0a29d2298e3e777b427635991c55407",
+      "reason": "使用者遊戲內實測否決（2026-09-01）：此帶為西北鐵路（馬爾德勞-勃蘭登堡）路基，非可行車土路——dirt-edge 訊號已知盲點：鐵路路基同為 dirt/gravel 邊帶，裁決時未與官方鐵路街道幾何對照。"
     }
   ],
   "remove": [],

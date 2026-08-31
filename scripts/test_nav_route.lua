@@ -929,8 +929,8 @@ end
         end
     end
     assert(metadataCount == patch.surfaceCount and patch.addCount == 1
-        and patch.bridgeCount == 8 and patch.rejectedCandidateCount == 6,
-        "正式 RoadPatch：surface overrides＋8 bridge（6 翻案＋2 dirt-edge 新增）＋1 manual add")
+        and patch.bridgeCount == 6 and patch.rejectedCandidateCount == 8,
+        "正式 RoadPatch：6 bridge 翻案＋1 manual add；dirt-edge 兩筆使用者實測否決")
     assert(#streets == patch.geometryCount + 1 + patch.addCount + patch.bridgeCount,
         "正式 RoadPatch：add/bridge 條目 append 至 patched 表尾")
     local officialBuilder = mod.newBuild(streets, nil)
