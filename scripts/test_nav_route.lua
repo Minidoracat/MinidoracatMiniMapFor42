@@ -58,6 +58,9 @@ local function assertRouteMetadata(r, label)
     assert(type(r.cost) == "number" and r.cost >= r.len, label .. "：cost 獨立且不小於幾何 len")
     assert(type(r.avoidPenalty) == "number" and r.avoidPenalty >= 0,
         label .. "：avoidPenalty 獨立非負")
+    -- v4 additive：snapDist＝查詢起點到 pts[1]（起點 snap 投影點）的直線距離
+    assert(type(r.snapDist) == "number" and r.snapDist >= 0 and r.snapDist < math.huge,
+        label .. "：snapDist 有限非負")
     for i = 1, segmentCount do
         local surface = r.segSurface[i]
         assert(surface == "paved" or surface == "gravel" or surface == "dirt"
@@ -928,9 +931,11 @@ end
                 "正式 RoadPatch：每個官方非鐵路 segment 有 metadata")
         end
     end
-    assert(metadataCount == patch.surfaceCount and patch.addCount == 1
-        and patch.bridgeCount == 6 and patch.rejectedCandidateCount == 8,
-        "正式 RoadPatch：6 bridge 翻案＋1 manual add；dirt-edge 兩筆使用者實測否決")
+    assert(metadataCount == patch.surfaceCount and patch.addCount == 2
+        and patch.bridgeCount == 6 and patch.rejectedCandidateCount == 8
+        and patch.removeCount == 3,
+        "正式 RoadPatch：6 bridge 翻案＋2 manual add（湖畔土徑、Bank Road 北段）"
+        .. "＋3 remove（Bank Road L 角段）；dirt-edge 兩筆使用者實測否決")
     assert(#streets == patch.geometryCount + 1 + patch.addCount + patch.bridgeCount,
         "正式 RoadPatch：add/bridge 條目 append 至 patched 表尾")
     local officialBuilder = mod.newBuild(streets, nil)
@@ -945,6 +950,51 @@ end
         .. " cutRecords=" .. officialBuilder.cutRecords
         .. " maxCutsPerSegment=" .. officialBuilder.maxCutsPerSegment
         .. " epMoveCount=" .. officialBuilder.epMoveCount)
+    -- snapDist 離線重現（AutoDrive 2026-09-01 回報：車在 (10716,9756) 目標
+    -- (10744.8,9717.5) 拿到 19 格外的舊起錨）：官方 geometry＋RoadPatch 下該座標
+    -- 的最近邊投影距離 1.5 格，重算後路線起點必在一個路幅內，且 snapDist 就是
+    -- 起點到 pts[1] 的實距。
+    do
+        local g = officialBuilder.graph
+        local r = mod.findRoute(g, 10716, 9756, 10744.8, 9717.5)
+        assertRouteMetadata(r, "snapDist 重現")
+        local dx, dy = 10716 - r.pts[1], 9756 - r.pts[2]
+        assert(math.abs(r.snapDist - math.sqrt(dx * dx + dy * dy)) < 1e-9,
+            "snapDist 重現：等於起點到 pts[1] 的直線距離")
+        assert(r.snapDist < 2,
+            "snapDist 重現：重算後起錨在 2 格內（實得 " .. tostring(r.snapDist) .. "）")
+    end
+    -- Bank Road (10662,9696) L 角修正（2026-09-02）：官方 polyline 把 y 9686→9698 的
+    -- 斜向過渡畫成 L 角，頂點 (10662.5,9695.5) 落在真路面西緣外 2.3 格（worldmap.xml
+    -- highway 多邊形西緣 (10660,9686)→(10666,9698)），導航線斜穿院子、自駕三短臂角
+    -- 全部退化爬行。patch 移除官方段 0-2、以三點折線取代；沿 Bank Road 南北向路線
+    -- 必須走斜段，且不得再經過 L 角的兩個舊頂點。
+    do
+        local g = officialBuilder.graph
+        local r = mod.findRoute(g, 10662.5, 9640, 10668.5, 9725)
+        assertRouteMetadata(r, "Bank Road 北→南")
+        local sawDiag, sawOldL = false, false
+        for i = 1, #r.pts, 2 do
+            local x, y = r.pts[i], r.pts[i + 1]
+            if math.abs(x - 10662.5) < 0.6 and math.abs(y - 9686) < 0.6 then sawDiag = true end
+            if math.abs(y - 9695.5) < 0.3 and (math.abs(x - 10662.5) < 0.3 or math.abs(x - 10666.5) < 0.3) then
+                sawOldL = true
+            end
+        end
+        assert(sawDiag, "Bank Road：路線經過斜段起點 (10662.5,9686)")
+        assert(not sawOldL, "Bank Road：路線不再經過 L 角舊頂點（y=9695.5）")
+        assert(r.len > 85 and r.len < 90,
+            "Bank Road：路線長 ≈ 85+斜段（實得 " .. tostring(r.len) .. "）")
+        -- 官方段 3 保留＝街道搜尋仍找得到 Bank Road（manual add 的 searchable 強制 false）
+        local bank
+        for i = 1, patch.geometryCount do
+            local pts = streets[i].pts
+            if #pts == 10 and pts[1] == 10662.5 and pts[2] == 9631 then bank = streets[i] end
+        end
+        assert(bank and bank.segRemoved[1] and bank.segRemoved[2] and bank.segRemoved[3]
+            and not bank.segRemoved[4], "Bank Road：官方段 0-2 移除、段 3 保留")
+        assert(mod.streetSearchable(bank), "Bank Road：保留段讓街道仍可搜尋")
+    end
 end
 
 print("test_nav_route: 全數通過")

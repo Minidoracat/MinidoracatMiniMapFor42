@@ -296,7 +296,8 @@ assert(dc.graph == T.engine.graph and dc.sx == 7 and dc.sy == 8
     and dc.tx == 50 and dc.ty == 60 and dc.ax == 70 and dc.ay == 80 and dc.ar == 9,
     "A17: detour 六參數與玩家/graph 原樣轉遞")
 assert(T.navRoutes[2].route == detourV4 and T.navRoutes[2].state == "ok"
-    and T.navRoutes[2].progressIdx == 1 and T.navRoutes[2].lastBuildMs == 12345,
+    and T.navRoutes[2].progressIdx == 1 and T.navRoutes[2].lastBuildMs == 12345
+    and T.navRoutes[2].buildX == 7 and T.navRoutes[2].buildY == 8,
     "A17: detour 成功覆寫共用 cache")
 
 resetAll()
@@ -310,4 +311,142 @@ assert(detour == nil and detourState == "failed" and T.navRoutes[0] == nil
 detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5)
 assert(detour == nil and detourState == "failed" and #T.detourCalls == 1,
     "A18: failed latch 後重呼不得再進 findRoute")
-print("test_nav_api: OK（nav API v4＋requestRoute A1-A12＋requestDetour A13-A18）")
+
+--------------------------------------------------------------------------------
+-- 六、ensureRoute 快取／偏航（test:nav-cache 區段；跑 production 本體）
+-- 實測病灶（2026-09-01 AutoDrive telemetry）：車在 (10716,9756) 拿到首點
+-- (10716,9737) 的舊線——偏航 19 格 < 舊 DEVIATION_DIST=28 就一直沿用快取。
+-- 小地圖靠 progressIdx 裁切藏住，addon 拿到未裁切本體＝被要求先斜穿 19 格房屋。
+--------------------------------------------------------------------------------
+local cacheBody = assert(source:match(
+    "%-%- test:nav%-cache:start[^\n]*\n(.-)\n%-%- test:nav%-cache:end"),
+    "找不到 nav-cache 測試區段")
+-- 常數取自 production 原始碼（測試不得自帶第二份數值，否則調參時測試照樣綠）
+local function constOf(name)
+    return assert(tonumber(source:match("\nlocal " .. name .. " = (%-?[%d%.]+)")),
+        "找不到常數 " .. name)
+end
+local DEVIATION_DIST = constOf("DEVIATION_DIST")
+local REBUILD_COOLDOWN_MS = constOf("REBUILD_COOLDOWN_MS")
+local REBUILD_MOVE_DIST = constOf("REBUILD_MOVE_DIST")
+assert(DEVIATION_DIST < 19,
+    "C0: DEVIATION_DIST 須小於實測病灶的 19 格偏航，實得 " .. DEVIATION_DIST)
+
+local cachePrelude = ([=[
+local floor, sqrt = math.floor, math.sqrt
+local DEVIATION_DIST, REBUILD_COOLDOWN_MS = %s, %s
+local REBUILD_MOVE_DIST, NOROAD_RETRY_DIST = %s, %s
+local navRoutes = {}
+local engine = { state = "ready", graph = { id = "g" }, patchState = "applied" }
+local nowMs = 0
+local findCalls = {}
+local nextRoute, nextErr = nil, nil
+local cleared = {}
+local function dist2(ax, ay, bx, by)
+    local dx, dy = bx - ax, by - ay
+    return dx * dx + dy * dy
+end
+local NavCore = {
+    -- 真投影（非常數 stub）：偏航閾值是本節的受測對象，量測面必須是真幾何
+    distToRoute = function(route, x, y)
+        local pts = route.pts
+        local bestD2, bi, bx, by = math.huge, 1, pts[1], pts[2]
+        for i = 1, #pts / 2 - 1 do
+            local ax, ay = pts[i * 2 - 1], pts[i * 2]
+            local cx, cy = pts[i * 2 + 1], pts[i * 2 + 2]
+            local dx, dy = cx - ax, cy - ay
+            local l2 = dx * dx + dy * dy
+            local t = 0
+            if l2 > 1e-12 then
+                t = ((x - ax) * dx + (y - ay) * dy) / l2
+                if t < 0 then t = 0 elseif t > 1 then t = 1 end
+            end
+            local qx, qy = ax + dx * t, ay + dy * t
+            local d2v = dist2(x, y, qx, qy)
+            if d2v < bestD2 then bestD2, bi, bx, by = d2v, i, qx, qy end
+        end
+        return sqrt(bestD2), bi, bx, by
+    end,
+    findRoute = function(graph, sx, sy, tx, ty)
+        findCalls[#findCalls + 1] = { sx = sx, sy = sy, tx = tx, ty = ty }
+        if nextErr then return nil, nextErr end
+        if not nextRoute then return nil end
+        return {
+            pts = { nextRoute[1], nextRoute[2], nextRoute[3], nextRoute[4] },
+            sx = nextRoute[1], sy = nextRoute[2],
+            snapDist = sqrt(dist2(sx, sy, nextRoute[1], nextRoute[2])),
+        }
+    end,
+}
+local function getTimestampMs() return nowMs end
+local function clearRoute(key) navRoutes[key] = nil; cleared[#cleared + 1] = key end
+local function failNavEngine()
+    engine.state, engine.graph = "failed", nil
+    for k in pairs(navRoutes) do navRoutes[k] = nil end
+end
+local function logf() end
+]=]):format(DEVIATION_DIST, REBUILD_COOLDOWN_MS, REBUILD_MOVE_DIST,
+    constOf("NOROAD_RETRY_DIST"))
+local cacheSuffix = [=[
+return { ensureRoute = ensureRoute, navRoutes = navRoutes, engine = engine,
+    findCalls = findCalls, cleared = cleared,
+    setNow = function(v) nowMs = v end,
+    setNext = function(r, e) nextRoute, nextErr = r, e end }
+]=]
+local C = assert(compile(cachePrelude .. cacheBody .. "\n" .. cacheSuffix, "nav-cache"))()
+local tgt = { x = 10744.8, y = 9717.5 }
+
+-- C1: 首算寫入 buildX/buildY（偏航重算的位移閘門需要它；漏寫＝閘門永遠擋住）
+C.setNow(1000)
+C.setNext({ 10716, 9737, 10751, 9737 })
+local cr = C.ensureRoute(0, tgt, 10716, 9737)
+assert(cr and #C.findCalls == 1, "C1: 首算須跑 findRoute")
+assert(C.navRoutes[0].buildX == 10716 and C.navRoutes[0].buildY == 9737,
+    "C1: cache 須記下本次 A* 起點")
+assert(math.abs(cr.snapDist) < 1e-9, "C1: 站在 snap 點上 snapDist≈0")
+
+-- C2: 走廊內（偏航 ≤ 閾值）沿用同一張表，snapDist 刷新成當下實距
+cr = C.ensureRoute(0, tgt, 10719, 9737)
+assert(cr == C.navRoutes[0].route and #C.findCalls == 1, "C2: 走廊內須命中快取")
+assert(math.abs(cr.snapDist - 3) < 1e-9,
+    "C2: snapDist 須刷新成當下 3 格，實得 " .. tostring(cr.snapDist))
+
+-- C3: 實測病灶——車北移到 (10716,9756)，偏航 19 格、冷卻已過 → 必須重算
+C.setNow(1000 + REBUILD_COOLDOWN_MS + 1)
+C.setNext({ 10714.5, 9756, 10714.5, 9737 })
+local before = C.navRoutes[0].route
+cr = C.ensureRoute(0, tgt, 10716, 9756)
+assert(#C.findCalls == 2 and cr ~= before, "C3: 偏航 19 格須重算，不得沿用舊線")
+assert(cr.snapDist < DEVIATION_DIST,
+    "C3: 重算後 snapDist 須落在一個路幅內，實得 " .. tostring(cr.snapDist))
+assert(C.navRoutes[0].buildX == 10716 and C.navRoutes[0].buildY == 9756,
+    "C3: 重算須更新 build 錨點")
+
+-- C4: 偏航逾閾但冷卻未過 → 沿用舊表、不得白燒 A*
+C.setNow(1000 + REBUILD_COOLDOWN_MS + 2)
+before = C.navRoutes[0].route
+cr = C.ensureRoute(0, tgt, 10716, 9756 + DEVIATION_DIST + 50)
+assert(cr == before and #C.findCalls == 2, "C4: 冷卻內不得重算")
+
+-- C5/C6 深野外：路網最近點本來就遠（首點必遠、偏航恆成立），冷卻到期就重跑
+-- ＝每 3s 產一條幾何相同的新表。位移閘門才是這裡唯一的止血點。
+local far = { x = 6000, y = 6000 }
+C.setNow(20000)
+C.setNext({ 5000, 5100, 5100, 5100 })
+cr = C.ensureRoute(1, far, 5000, 5000)
+assert(#C.findCalls == 3 and math.abs(cr.snapDist - 100) < 1e-9,
+    "C5: 深野外首算 snapDist 須為實距 100")
+
+-- C5: 冷卻已過但玩家近乎原地 → 同一張表（重算必得同一條線，換 identity 是純浪費）
+C.setNow(20000 + REBUILD_COOLDOWN_MS + 1)
+before = C.navRoutes[1].route
+cr = C.ensureRoute(1, far, 5000 + REBUILD_MOVE_DIST - 1, 5000)
+assert(cr == before and #C.findCalls == 3,
+    "C5: 位移不足 REBUILD_MOVE_DIST 不得重算（table identity 須穩定）")
+
+-- C6: 位移足夠 → 才重算
+cr = C.ensureRoute(1, far, 5000 + REBUILD_MOVE_DIST + 1, 5000)
+assert(#C.findCalls == 4 and cr ~= before, "C6: 位移足夠且偏航逾閾須重算")
+
+print("test_nav_api: OK（nav API v4＋requestRoute A1-A12＋requestDetour A13-A18"
+    .. "＋ensureRoute 快取/偏航 C0-C6）")

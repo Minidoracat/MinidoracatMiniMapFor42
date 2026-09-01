@@ -67,8 +67,18 @@ if not (Core and Core.ready) then return end
 local getBoolOption = Core.getBoolOption
 
 local STEP_BUDGET = 900       -- 每 tick 建圖操作預算（實測校準點，見檔頭效能節）
-local DEVIATION_DIST = 28     -- 偏航距（格）
+-- 偏航距（格）：超過即重算。舊值 28 是純視覺容差，對 nav API 消費者（AutoDrive）
+-- 是實害——route 首點是「重算當下」的 snap 投影點，快取沿用期間玩家可以離首點
+-- 28 格還拿到舊線；小地圖靠 progressIdx/progX/progY 裁切藏住，addon 拿到的是
+-- 未裁切本體，等於被要求先越野 28 格回到舊錨（2026-09-01 實測：車在
+-- (10716,9756)、舊線首點 (10716,9737)，第一段直接斜穿房屋柵欄）。12＝最寬車道
+-- 半寬 4＋路肩/人行道 ATTACH_SLACK 4.5 再留餘裕，越野接線壓在一個路幅內
+local DEVIATION_DIST = 12
 local REBUILD_COOLDOWN_MS = 3000
+local REBUILD_MOVE_DIST = 8   -- 偏航重算的最小位移（格）：原地重算必得同一條線
+                              -- （snap 只看座標），只是白燒 A* 又換掉 table
+                              -- identity。冷卻到期就重跑會讓深野外（首點必遠、
+                              -- 偏航恆成立）每 3s 產一條幾何相同的新表
 local NOROAD_RETRY_DIST = 64  -- 無路狀態下玩家位移超過此距才重試
 
 --------------------------------------------------------------------------------
@@ -1373,6 +1383,10 @@ local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR)
             end
         end
     end
+    -- snapDist（nav API v4 additive）＝查詢起點到路線首點（起點 snap 投影點）的
+    -- 直線距離，即消費者必須越野走完的接線長度；路線品質的單一數字判準。
+    -- 純新增欄位，不改任何既有欄位語意（len/cost 照舊不含兩端 approach）
+    if best then best.snapDist = sqrt(dist2(sx, sy, best.sx, best.sy)) end
     return best
 end
 
@@ -1465,7 +1479,9 @@ local engine = {
     searchState = "ok",
 }
 local navRoutes = {} -- [pn] = { state="ok|noroad", route=, tx=, ty=, progressIdx=,
-                     --          progX=, progY=, lastBuildMs=, failX=, failY= }
+                     --          progX=, progY=, lastBuildMs=, buildX=, buildY=,
+                     --          failX=, failY= }
+                     -- buildX/buildY＝上次 A* 的起點；偏航重算的位移閘門用
 
 -- cell 勝出查詢工廠：dir 優先序取自主檔 getLoadedMapDirs（index 1＝最高，同名
 -- cell 覆蓋其後——IsoMetaGrid 覆蓋語義見 AGENTS.md）；lotheader 存在性即該 dir
@@ -1784,10 +1800,11 @@ local function failNavEngine(err)
 end
 
 -- 路線狀態收斂（每繪製幀，便宜路徑優先）：target 消失→清；target 變更→重算；
--- 每幀增量投影更新行進進度（progressIdx/progX/progY 供裁切繪製），偏航 >28 格
+-- 每幀增量投影更新行進進度（progressIdx/progX/progY 供裁切繪製），偏航 >12 格
 -- → 3s 冷卻重算；無路狀態→位移 64 格才重試。恢復寫入（InitPlayer/
 -- OnCreatePlayer 直寫 navTargets 不經 navSetTarget）由 target 座標比對收斂。
 -- key：自己的目標＝pn（數字）；陣營分享目標＝"pn:作者"（字串）——同表混 key
+-- test:nav-cache:start（scripts/test_nav_api.lua 抽本區段跑快取／偏航回歸測試）
 local function ensureRoute(key, target, px, py)
     local rs = navRoutes[key]
     if not target then
@@ -1807,8 +1824,19 @@ local function ensureRoute(key, target, px, py)
             -- 為主，投影點是繪製裁切起點——不更新會畫回頭線（codex/claude）
             local d, idx, qx, qy = NavCore.distToRoute(rs.route, px, py, rs.progressIdx or 1)
             rs.progressIdx, rs.progX, rs.progY = idx, qx, qy
+            -- snapDist 隨每次查詢刷新成「當下玩家→路線首點」：沿用快取時建圖當下
+            -- 的值會低報實際接線長度，addon 就是靠這個數字決定要不要走低速接線
+            local pts = rs.route.pts
+            rs.route.snapDist = sqrt(dist2(px, py, pts[1], pts[2]))
             if d <= DEVIATION_DIST then return rs.route end
             if now - (rs.lastBuildMs or 0) < REBUILD_COOLDOWN_MS then return rs.route end
+            -- 原地（或近乎原地）重算必得同一條線：snap 只看座標，位移不足時重跑
+            -- A* 只是白燒＋換掉 table identity。深野外目標首點必遠、偏航恆成立，
+            -- 沒這道閘就是每 3s 一條幾何相同的新表
+            local mdx, mdy = px - (rs.buildX or px), py - (rs.buildY or py)
+            if mdx * mdx + mdy * mdy < REBUILD_MOVE_DIST * REBUILD_MOVE_DIST then
+                return rs.route
+            end
         end
     end
     -- 重算（首算/target 變更/偏航逾閾/無路重試）
@@ -1820,7 +1848,8 @@ local function ensureRoute(key, target, px, py)
     if route then route.patchState = engine.patchState end
     if route then
         navRoutes[key] = { state = "ok", route = route, tx = target.x, ty = target.y,
-            progressIdx = 1, progX = route.sx, progY = route.sy, lastBuildMs = now }
+            progressIdx = 1, progX = route.sx, progY = route.sy, lastBuildMs = now,
+            buildX = px, buildY = py }
         return route
     end
     -- noroad 首次記 log：MP 實測曾因零診斷輸出無法區分「snap 失敗／A* 斷連／
@@ -1832,6 +1861,7 @@ local function ensureRoute(key, target, px, py)
         failX = px, failY = py }
     return nil
 end
+-- test:nav-cache:end
 
 -- 路線雙層線（深底＋亮青面，同旗標黑框色面美學；青色與自標金旗/分享青旗區分靠
 -- 線形 vs 點形）。approach 段（玩家→進度投影點、終錨→目標）細半透明線＝非路網段。
@@ -2060,8 +2090,12 @@ Core.NavRouteCore = NavCore -- 除錯/測試面（離線測試另行抽取原始
 -- 回 (route, state)：
 --   route 保留 v1-v3 { pts,len,sx,sy,ex,ey,tx,ty }；v4 additive 加：
 --   segSurface/segWidth（長度恰 #pts/2-1）、數值 cost／avoidPenalty、
---   approachSurface="unknown"、patchState="applied"|"raw"。len/cost 均不含兩端
---   approach，cost 不含 avoidPenalty；raw 表示未套 RoadPatch、仍以原始 streets 導航。
+--   approachSurface="unknown"、patchState="applied"|"raw"、snapDist。len/cost 均不含
+--   兩端 approach，cost 不含 avoidPenalty；raw 表示未套 RoadPatch、仍以原始 streets 導航。
+--   snapDist＝玩家當下座標到 pts[1]（起點 snap 投影點）的直線距離，即出發前必須
+--   越野走完的接線長度；每次 requestRoute 都刷新（沿用快取時亦然），是路線可用性
+--   的單一判準。ensureRoute 的偏航閾值同步收到 DEVIATION_DIST=12，正常情況下
+--   snapDist 不會超過一個路幅。
 --   state＝"ok"｜"noroad"｜"badargs"｜"noplayer"｜engine 狀態（idle／extracting／
 --          building／failed）——皆穩定字串，addon 可直接分支。
 -- badargs 從嚴（review 指認）：playerNum 須是 0-3 整數（非整數／越界會讓
@@ -2129,7 +2163,8 @@ MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoi
     if route then route.patchState = engine.patchState end
     if not route then return nil, "noroad" end
     navRoutes[playerNum] = { state = "ok", route = route, tx = targetX, ty = targetY,
-        progressIdx = 1, progX = route.sx, progY = route.sy, lastBuildMs = getTimestampMs() }
+        progressIdx = 1, progX = route.sx, progY = route.sy,
+        lastBuildMs = getTimestampMs(), buildX = px, buildY = py }
     return route, "ok"
 end
 MinidoracatMiniMapAPI.getNavGraph = function()
