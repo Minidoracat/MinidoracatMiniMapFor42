@@ -8,7 +8,7 @@
 
 - 修正在車上時導航路線寧可「橫越田野／樹林」也不走正規道路的問題：先前選路只把兩端的越野接線算成三倍距離，適合走路抄捷徑，但開車過不了樹林——例如目的地就在支路旁 3 格、離大路 64 格時，路線會停在大路上要你自己穿 64 格樹林。現在人在車上時越野接線改算十二倍，會乖乖沿大路繞到路口再轉進支路；徒步導航不變。上下車會立刻重算路線
 
-> 技術要點：`route.snapDist` 沿用快取時改刷新為投影距離（＝偏航判定用的 d），首算值不變；`MinidoracatMiniMapAPI.navApiVersion` 4→5，欄位與簽名皆不變。自動駕駛 addon 0.3.0 起只在 v5 以上啟用「起點太遠」門檻。`NavCore.findRoute` 新增第 9 參 `approachWeight`（缺省 3）；`ensureRoute` 依 `getSpecificPlayer(pn):getVehicle()` 選 3／12 並記在快取，權重改變＝立即重算（不吃 3 秒冷卻）；`requestDetour` 同樣依車上狀態帶權重。
+> 技術要點：`route.snapDist` 沿用快取時改刷新為投影距離（＝偏航判定用的 d），首算值不變；`MinidoracatMiniMapAPI.navApiVersion` 4→5，欄位與簽名皆不變。自動駕駛 addon 0.3.0 起只在 v5 以上啟用「起點太遠」門檻。`NavCore.findRoute` 新增第 9 參 `approachWeight`（缺省 3）；`ensureRoute` 新增第 5 參 `weight`，由三個呼叫端（繪製、`requestRoute`、`requestDetour`）依手上 `playerObj:getVehicle()` 選 3／12 傳入並記在快取，權重改變＝立即重算（不吃 3 秒冷卻）。
 
 ## [42.20.4-0.23.0] - 2026-09-02
 

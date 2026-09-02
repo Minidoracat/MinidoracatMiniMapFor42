@@ -53,22 +53,17 @@ local NavCore = {
 }
 local function logf() end
 local function getTimestampMs() return 12345 end
--- approachWeightFor 定義在 nav-cache 區段（production 同檔在前）；這裡給同語意樁：
--- 車上 12、徒步 3（A17/A18 驗 requestDetour 把它傳進 findRoute）
-local function approachWeightFor(pn)
-    local p = players[pn]
-    if p and p.getVehicle and p:getVehicle() then return 12 end
-    return 3
-end
+-- approachWeightFor 定義在 nav-cache 區段（production 同檔在前），這裡給同語意樁
+local function approachWeightFor(p) return p:getVehicle() and 12 or 3 end
 local function failNavEngine()
     engine.state, engine.graph = "failed", nil
     for key in pairs(navRoutes) do navRoutes[key] = nil end
 end
 local function getSpecificPlayer(pn) return players[pn] end
 -- ensureRoute stub：記下實際收到的引數（含 target 表 identity，驗證重用暫存契約）
-local function ensureRoute(key, target, px, py)
+local function ensureRoute(key, target, px, py, weight)
     calls[#calls + 1] = {
-        key = key, target = target, tx = target.x, ty = target.y, px = px, py = py,
+        key = key, target = target, tx = target.x, ty = target.y, px = px, py = py, w = weight,
     }
     return nextRoute, nextRouteState
 end
@@ -82,8 +77,9 @@ return { API = MinidoracatMiniMapAPI, engine = engine, navRoutes = navRoutes,
 local T = assert(compile(prelude .. body .. "\n" .. suffix, "nav-api"))()
 local API = T.API
 
-local function player(x, y)
-    return { getX = function() return x end, getY = function() return y end }
+local function player(x, y, vehicle)
+    return { getX = function() return x end, getY = function() return y end,
+        getVehicle = function() return vehicle end }
 end
 local function clear(t) for i = #t, 1, -1 do t[i] = nil end end
 local function resetAll()
@@ -191,6 +187,7 @@ assert(#T.calls == 1, "A7: 須呼叫 ensureRoute 一次")
 assert(T.calls[1].key == 2, "A7: key 須是 playerNum（重用主線同一份快取）")
 assert(T.calls[1].tx == 300 and T.calls[1].ty == 400, "A7: 目標座標須原樣轉遞")
 assert(T.calls[1].px == 77 and T.calls[1].py == 88, "A7: 起點須取玩家當前座標")
+assert(T.calls[1].w == 3, "A7: 徒步 approach 權重 3 須傳進 ensureRoute")
 assert(route == cached, "A7: 回傳須是 ensureRoute 產物本體（不複製）")
 assert(state == "ok", "A7: state 須取 navRoutes[playerNum].state")
 assert(route.segSurface[1] == "paved" and route.segWidth[1] == 6
@@ -393,10 +390,6 @@ local NavCore = {
     end,
 }
 local function getTimestampMs() return nowMs end
-local inVehicle = {}
-local function getSpecificPlayer(pn)
-    return { getVehicle = function() return inVehicle[pn] and {} or nil end }
-end
 local function clearRoute(key) navRoutes[key] = nil; cleared[#cleared + 1] = key end
 local function failNavEngine()
     engine.state, engine.graph = "failed", nil
@@ -409,8 +402,7 @@ local cacheSuffix = [=[
 return { ensureRoute = ensureRoute, navRoutes = navRoutes, engine = engine,
     findCalls = findCalls, cleared = cleared,
     setNow = function(v) nowMs = v end,
-    setNext = function(r, e) nextRoute, nextErr = r, e end,
-    setVehicle = function(pn, on) inVehicle[pn] = on end }
+    setNext = function(r, e) nextRoute, nextErr = r, e end }
 ]=]
 local C = assert(compile(cachePrelude .. cacheBody .. "\n" .. cacheSuffix, "nav-cache"))()
 local tgt = { x = 10744.8, y = 9717.5 }
@@ -478,30 +470,22 @@ assert(cr == before and #C.findCalls == 3,
 cr = C.ensureRoute(1, far, 5000 + REBUILD_MOVE_DIST + 1, 5000)
 assert(#C.findCalls == 4 and cr ~= before, "C6: 位移足夠且偏航逾閾須重算")
 
--- C7（2026-09-02 Carpenter 實爆）：approach 權重跟著上下車換檔——徒步 3、車上 12；
--- 換檔＝快取失效立刻重算（不吃 3s 冷卻），同權重照常命中快取
+-- C7（2026-09-02 Carpenter 實爆）：approach 權重由呼叫端傳入（徒步 3、車上 12）——
+-- 換權重＝快取失效立刻重算（不吃 3s 冷卻），同權重照常命中快取
 C.setNow(50000)
 C.setNext({ 8000, 8000, 8100, 8000 })
 local tgt2 = { x = 8100, y = 8000 }
-cr = C.ensureRoute(2, tgt2, 8000, 8000)
+cr = C.ensureRoute(2, tgt2, 8000, 8000, 3)
 local calls0 = #C.findCalls
 assert(cr and C.findCalls[calls0].w == 3, "C7: 徒步首算 approach 權重 3，實得 " .. tostring(C.findCalls[calls0].w))
-C.setVehicle(2, true)
 C.setNow(50000 + 100) -- 冷卻未過
-cr = C.ensureRoute(2, tgt2, 8000, 8000)
+cr = C.ensureRoute(2, tgt2, 8000, 8000, 12)
 assert(#C.findCalls == calls0 + 1 and C.findCalls[calls0 + 1].w == 12,
     "C7: 上車立刻以權重 12 重算（不吃冷卻），實得 calls=" .. tostring(#C.findCalls - calls0))
-cr = C.ensureRoute(2, tgt2, 8001, 8000)
+cr = C.ensureRoute(2, tgt2, 8001, 8000, 12)
 assert(#C.findCalls == calls0 + 1, "C7: 車上同權重命中快取")
-C.setVehicle(2, false)
-cr = C.ensureRoute(2, tgt2, 8001, 8000)
+cr = C.ensureRoute(2, tgt2, 8001, 8000, 3)
 assert(#C.findCalls == calls0 + 2 and C.findCalls[calls0 + 2].w == 3, "C7: 下車換回權重 3 重算")
--- 陣營分享目標的字串 key 也認得前綴 pn
-C.setVehicle(0, true)
-C.setNext({ 9000, 9000, 9100, 9000 })
-cr = C.ensureRoute("0:someone", { x = 9100, y = 9000 }, 9000, 9000)
-assert(cr and C.findCalls[#C.findCalls].w == 12, "C7: 字串 key 取前綴 pn 的車上狀態")
-C.setVehicle(0, false)
 
 print("test_nav_api: OK（nav API v5＋requestRoute A1-A12＋requestDetour A13-A18"
     .. "＋ensureRoute 快取/偏航 C0-C7）")

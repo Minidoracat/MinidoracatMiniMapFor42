@@ -1323,9 +1323,7 @@ end
 -- 總代價含兩端 approach 距離（×approachWeight，缺省 3＝徒步；車上由呼叫端給 12），
 -- 取最短。第二回傳＝A* 內部例外（呼叫端 log）
 local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight)
-    if type(approachWeight) ~= "number" or approachWeight ~= approachWeight or approachWeight < 0 then
-        approachWeight = 3
-    end
+    approachWeight = approachWeight or 3
     if not g or g.nodeCount == 0 then return nil end
     local avoidR2 = nil
     if type(avoidR) == "number" and avoidR > 0
@@ -1812,16 +1810,12 @@ end
 -- 兩端 approach（越野接線）的權重：徒步 ×3（穿田是合理捷徑）、車上 ×12（車過不了
 -- 樹林／圍籬）。2026-09-02 Carpenter Test Road 實爆：目標離該路 3 格、離 Dixie 64 格，
 -- ×3 讓「Dixie 上 45 格＋越野 64 格」勝過「繞 KY-60 的 270 格正規路線」，AutoDrive
--- 只能拒啟動（起點太遠）。權重跟著上下車換檔，換檔＝快取失效立刻重算（不吃冷卻）。
-local APPROACH_WEIGHT_FOOT = 3
-local APPROACH_WEIGHT_VEHICLE = 12
-local function approachWeightFor(key)
-    local pn = type(key) == "number" and key or tonumber(tostring(key):match("^(%d+):"))
-    local playerObj = pn and getSpecificPlayer(pn) or nil
-    if playerObj and playerObj:getVehicle() then return APPROACH_WEIGHT_VEHICLE end
-    return APPROACH_WEIGHT_FOOT
+-- 只能拒啟動（起點太遠）。權重由呼叫端（手上已有 playerObj）算好傳入、記進快取；
+-- 上下車換檔＝快取失效立刻重算（不吃冷卻）。
+local function approachWeightFor(playerObj)
+    return playerObj:getVehicle() and 12 or 3
 end
-local function ensureRoute(key, target, px, py)
+local function ensureRoute(key, target, px, py, weight)
     local rs = navRoutes[key]
     if not target then
         if rs then clearRoute(key) end
@@ -1829,7 +1823,6 @@ local function ensureRoute(key, target, px, py)
     end
     if engine.state ~= "ready" then return nil end -- extracting/building/failed：先畫直線旗標
     local now = getTimestampMs()
-    local weight = approachWeightFor(key)
     if rs and rs.tx == target.x and rs.ty == target.y and rs.approachWeight == weight then
         if rs.state == "noroad" then
             local fdx, fdy = px - rs.failX, py - rs.failY
@@ -2026,8 +2019,8 @@ local function drawApproach(inner, mapAPI, x1, y1, x2, y2)
 end
 
 -- 依 key 畫一條路線（含行進裁切與 approach）；回傳是否有畫
-local function drawOneRoute(inner, mapAPI, key, target, px, py, styleU, styleO)
-    local route = ensureRoute(key, target, px, py)
+local function drawOneRoute(inner, mapAPI, key, target, px, py, weight, styleU, styleO)
+    local route = ensureRoute(key, target, px, py, weight)
     if not route then
         -- 無路線（graph 空/建圖失敗/建置中/真 noroad）：畫玩家→目標直線
         -- （同 approach 樣式）——旗標之外至少有方向線（2026-08-20 使用者回饋
@@ -2054,6 +2047,7 @@ local function drawNavRoute(inner)
     local playerObj = getSpecificPlayer(pn)
     if not playerObj then return end
     local px, py = playerObj:getX(), playerObj:getY()
+    local weight = approachWeightFor(playerObj)
     local mapAPI = inner.mapAPI
     local target = Core.navGetTarget and Core.navGetTarget(pn) or nil
     -- 陣營分享目標的路線（接收方本地各自算路，零網路增量；沙盒閘門在
@@ -2069,7 +2063,7 @@ local function drawNavRoute(inner)
     if shared then
         if engine.state == "idle" then kickEngine(inner) end
         for author, st in pairs(shared) do
-            drawOneRoute(inner, mapAPI, prefix .. author, st, px, py,
+            drawOneRoute(inner, mapAPI, prefix .. author, st, px, py, weight,
                 SHARED_UNDER, sharedOverStyle(author))
         end
     end
@@ -2078,7 +2072,7 @@ local function drawNavRoute(inner)
         return
     end
     if engine.state == "idle" then kickEngine(inner) end
-    drawOneRoute(inner, mapAPI, pn, target, px, py)
+    drawOneRoute(inner, mapAPI, pn, target, px, py, weight)
 end
 
 Core.drawNavRoute = drawNavRoute
@@ -2148,8 +2142,8 @@ MinidoracatMiniMapAPI.requestRoute = function(playerNum, targetX, targetY)
     local playerObj, argState = apiPlayer(playerNum, targetX, targetY)
     if not playerObj then return nil, argState end
     apiTarget.x, apiTarget.y = targetX, targetY
-    local route, routeState =
-        ensureRoute(playerNum, apiTarget, playerObj:getX(), playerObj:getY())
+    local route, routeState = ensureRoute(playerNum, apiTarget,
+        playerObj:getX(), playerObj:getY(), approachWeightFor(playerObj))
     if routeState or engine.state ~= "ready" then
         return route, routeState or engine.state
     end
@@ -2174,8 +2168,9 @@ MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoi
     local playerObj, argState = apiPlayer(playerNum, targetX, targetY)
     if not playerObj then return nil, argState end
     local px, py = playerObj:getX(), playerObj:getY()
+    local weight = approachWeightFor(playerObj)
     local route, aerr = NavCore.findRoute(engine.graph, px, py, targetX, targetY,
-        avoidX, avoidY, avoidR, approachWeightFor(playerNum))
+        avoidX, avoidY, avoidR, weight)
     if aerr then
         failNavEngine(aerr)
         return nil, "failed"
@@ -2184,8 +2179,7 @@ MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoi
     if not route then return nil, "noroad" end
     navRoutes[playerNum] = { state = "ok", route = route, tx = targetX, ty = targetY,
         progressIdx = 1, progX = route.sx, progY = route.sy,
-        lastBuildMs = getTimestampMs(), buildX = px, buildY = py,
-        approachWeight = approachWeightFor(playerNum) }
+        lastBuildMs = getTimestampMs(), buildX = px, buildY = py, approachWeight = weight }
     return route, "ok"
 end
 MinidoracatMiniMapAPI.getNavGraph = function()
