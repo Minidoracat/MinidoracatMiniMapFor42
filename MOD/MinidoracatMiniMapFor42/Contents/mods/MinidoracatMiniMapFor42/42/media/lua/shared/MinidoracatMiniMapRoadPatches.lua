@@ -1,4 +1,4 @@
--- generated-body-sha256: 0d5368e22cdc9d9eab939e215b388495e51c63232691a2dc10145187e6488fe5
+-- generated-body-sha256: f87291bba6c3d3f631886c7fc249556e2c4e10708d16f504f0bc16e7fc80ed70
 -- MinidoracatMiniMapRoadPatches.lua
 -- 由 scripts/gen_road_patches.py 從 road-audit-v1 與人工批准清單產生；請勿手改。
 -- 重生：python scripts/gen_road_patches.py --audit <road-audit-full-total-work-pass.json>
@@ -13,10 +13,10 @@ MinidoracatMiniMapRoadPatches = {
     surfaceFingerprint = "9b3b740f73f47ea82924148ca0f346fbbdbaa4b57d2f9e7f0cf9cfc15c0d1a38",
     auditSha256 = "ef3e998ad3ac78d5535ff38d9eb7be28f970a7bc2790bd11b01a48c045ee137d",
     rejectedCandidateCount = 8,
-    approvalsSha256 = "74dd2e4665151c2d54ca877f4e82605faff06a42ab036d72af4d22881c8399a5",
+    approvalsSha256 = "1da326b261c611652be836d503082fa4bc323a0f757c0f28352e811943db03ea",
     generatorSha256 = "96f825a211029ed68554393ade36d8d5ebcb21a60a5387f825d794ecd1924b0d",
     rejectedEvidenceHash = "a01e40f16298f53a4aca9a45b2ffce3f5d6257a0e868fa14e36a1c450ff43bcb",
-    tag = "4865774558b54ae311a10c52ba5bc49ecfca9fc376b4d0685dfb974c78af37cc",
+    tag = "f219d9348aebb207cc963cc40ad809cdc90c5329157aaf46df1631ded70b6d8f",
     geometryCount = 1089,
     geometrySet = {
         ["10:12630:10566:13634:10566:13656:10576:13667:10587:13672:10597:13672:10878:13686:10906:13702:10922:13732:10938:13750:10938|w:20"] = "958371c8dd485b7fd054bdeac5e0b677d0a7bf8454095329c599f5ccca199f28",
@@ -1115,9 +1115,10 @@ MinidoracatMiniMapRoadPatches = {
         "aebb75485b96db37f6d1e315407f0be3481740949ba2869db03c48b9848ee717:1",
         "aebb75485b96db37f6d1e315407f0be3481740949ba2869db03c48b9848ee717:2",
     },
-    addCount = 2,
+    addCount = 3,
     add = {
         { id = "m:muldraugh-bank-road-north", src = "Muldraugh, KY", width = 5, surface = "paved", searchable = false, reason = "Bank Road 北段幾何修正（2026-09-02）：官方 streets.xml 把 y 9686→9698 的斜向過渡畫成 L 角（(10662.5,9695.5)→(10666.5,9695.5)→(10668.5,9697.5)），頂點落在真路面西緣外 2.3 格（worldmap.xml highway 多邊形西緣 (10660,9686)→(10666,9698)；稽核亦判該東向短段 surface=unknown）——導航線斜穿院子角，自駕三個短臂角全部退化爬行。移除官方段 0-2、以三點折線（北段中心 x=10662.5、斜段 (10662.5,9686)→(10668.5,9697.5)）取代，尾點與保留的官方段 3 起點重合併節點；段 3 保留使 Bank Road 仍可搜尋。", pts = { 10662.5, 9631, 10662.5, 9686, 10668.5, 9697.5 } },
+        { id = "m:muldraugh-hog-wallow-ky60-link", src = "Muldraugh, KY", width = 8, surface = "paved", searchable = false, reason = "Hog Wallow Road 北端缺段（2026-09-03，玩家 RubyDiamond 回報「小段沒鏈接」x4490 y10650）：官方 polyline 北端止於 (4483,10744)，但 road-surfaces-full-v2 逐格實證鋪面路帶（class paved、寬 8：x 4479-4486）續向北至 y≈10650，於 45° 切角轉東（y 10642-10649）直抵 KY-60，缺 182.6 格。折線起點與官方北端節點重合、尾點落 KY-60 兩段共用頂點 (4571.5,10646) 併節點；中線 185 個取樣格全數 paved。稽核 row-span 於該區零 detailed candidate（缺段與官方路帶連成同一鋪面分量、無獨立訊號），屬稽核盲點。", pts = { 4483, 10744, 4483, 10653, 4490.5, 10645.5, 4571.5, 10646 } },
         { id = "m:muldraugh-lakehouse-trail", src = "Muldraugh, KY", width = 4, surface = "dirt", searchable = false, reason = "使用者人工描線（2026-09-01）：湖畔小屋（約 10050,8250）聯外土徑，東端接河畔路縱段（x=10781）。表面 class 與周圍曠野同為 dirt，row-span 稽核無訊號；34 折點自基底 pyramid 影像描取，經路帶疊圖逐段驗證貼合（含湖角東繞與北上弧）。西端止於小屋私人駛道（非官方街道），懸空端屬預期。", pts = { 10098, 8218, 10115, 8235, 10132, 8250, 10170, 8282, 10183, 8296, 10195, 8310, 10210, 8324, 10222, 8332, 10240, 8336, 10258, 8330, 10268, 8315, 10274, 8295, 10277, 8272, 10276, 8250, 10271, 8228, 10263, 8210, 10269, 8196, 10281, 8189, 10292, 8185, 10316, 8172, 10340, 8174, 10364, 8186, 10388, 8190, 10411, 8199, 10460, 8253, 10484, 8262, 10532, 8260, 10580, 8263, 10628, 8262, 10700, 8263, 10748, 8265, 10781, 8255 } },
     },
     bridgeCount = 6,

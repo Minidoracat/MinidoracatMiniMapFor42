@@ -10,6 +10,10 @@
 
 > 技術要點：`route.snapDist` 沿用快取時改刷新為投影距離（＝偏航判定用的 d），首算值不變；`MinidoracatMiniMapAPI.navApiVersion` 4→5，欄位與簽名皆不變。自動駕駛 addon 0.3.0 起只在 v5 以上啟用「起點太遠」門檻。`NavCore.findRoute` 新增第 9 參 `approachWeight`（缺省 3）；`ensureRoute` 新增第 5 參 `weight`，由三個呼叫端（繪製、`requestRoute`、`requestDetour`）依手上 `playerObj:getVehicle()` 選 3／12 傳入並記在快取，權重改變＝立即重算（不吃 3 秒冷卻）。
 
+- **Hog Wallow Road（豬窪路）北端與 KY-60 之間缺一段路網**（玩家回報「小段沒鏈接」，約 x4490 y10650）：官方街道資料把這條路畫到 (4483,10744) 就停了，但實際鋪面還往北 94 格、切角轉東 81 格接上 KY-60。少了這 183 格，導航線在這裡斷頭，從豬窪路要上 KY-60 得沿路南下繞 4500 格。道路修補層現在把這段補進路網，路線與自動駕駛直接走這條接上 KY-60。
+
+> 技術要點：`manualRoads` 追加 `m:muldraugh-hog-wallow-ky60-link`（add、paved、width 8，四點折線 (4483,10744)→(4483,10653)→(4490.5,10645.5)→(4571.5,10646)），起點與官方北端節點重合、尾點落 KY-60 兩段共用頂點；鋪面依 `road-surfaces-full-v2` 逐格實證（中線 185 格全 paved）。稽核 row-span 未列此候選：KY-60 實際路帶比 xml 寬 1-2 格，未覆蓋的路肩細條把缺段接進全圖大分量。離線回歸：`test_nav_route.lua` 鎖 addCount=3＋(4483,10800)→(4540,10583) 路線經切角頂點、長 309（修前 4501）。
+
 ## [42.20.4-0.23.0] - 2026-09-02
 
 ### 新增

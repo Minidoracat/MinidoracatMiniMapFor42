@@ -931,11 +931,11 @@ end
                 "正式 RoadPatch：每個官方非鐵路 segment 有 metadata")
         end
     end
-    assert(metadataCount == patch.surfaceCount and patch.addCount == 2
+    assert(metadataCount == patch.surfaceCount and patch.addCount == 3
         and patch.bridgeCount == 6 and patch.rejectedCandidateCount == 8
         and patch.removeCount == 3,
-        "正式 RoadPatch：6 bridge 翻案＋2 manual add（湖畔土徑、Bank Road 北段）"
-        .. "＋3 remove（Bank Road L 角段）；dirt-edge 兩筆使用者實測否決")
+        "正式 RoadPatch：6 bridge 翻案＋3 manual add（湖畔土徑、Bank Road 北段、"
+        .. "Hog Wallow–KY-60 缺段）＋3 remove（Bank Road L 角段）；dirt-edge 兩筆使用者實測否決")
     assert(#streets == patch.geometryCount + 1 + patch.addCount + patch.bridgeCount,
         "正式 RoadPatch：add/bridge 條目 append 至 patched 表尾")
     local officialBuilder = mod.newBuild(streets, nil)
@@ -994,6 +994,24 @@ end
         assert(bank and bank.segRemoved[1] and bank.segRemoved[2] and bank.segRemoved[3]
             and not bank.segRemoved[4], "Bank Road：官方段 0-2 移除、段 3 保留")
         assert(mod.streetSearchable(bank), "Bank Road：保留段讓街道仍可搜尋")
+    end
+    -- Hog Wallow Road 北端缺段（2026-09-03 玩家回報 x4490 y10650）：官方 polyline 止於
+    -- (4483,10744)，鋪面實際續北 94 格再切角轉東 81 格接 KY-60。patch 補 182.6 格連線後，
+    -- Hog Wallow 南側→KY-60 北側的路線必須經過切角頂點、長度貼近直達（未補前只能
+    -- 沿 Hog Wallow 南下 2800 格繞行或 noroad）。
+    do
+        local g = officialBuilder.graph
+        local r = mod.findRoute(g, 4483, 10800, 4540, 10583)
+        assertRouteMetadata(r, "Hog Wallow–KY-60 缺段")
+        local sawCorner = false
+        for i = 1, #r.pts, 2 do
+            if math.abs(r.pts[i] - 4490.5) < 1e-6 and math.abs(r.pts[i + 1] - 10645.5) < 1e-6 then
+                sawCorner = true
+            end
+        end
+        assert(sawCorner, "Hog Wallow–KY-60：路線經過切角頂點 (4490.5,10645.5)")
+        assert(r.len > 300 and r.len < 320,
+            "Hog Wallow–KY-60：路線長 ≈ 56+182.6+70.4（實得 " .. tostring(r.len) .. "）")
     end
 end
 
