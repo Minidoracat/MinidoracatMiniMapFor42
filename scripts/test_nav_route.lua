@@ -997,4 +997,27 @@ end
     end
 end
 
+--------------------------------------------------------------------------------
+-- 十八、approach 權重（2026-09-02 AutoDrive 實爆回歸）：Carpenter Test Road 縮比
+-- fixture——目標離支路 3 格、離幹道 64 格，幹道上直達 45 格 vs 繞路口 270 格。
+-- 徒步 ×3：幹道勝（越野 64 格算捷徑）；車上 ×12：必須走正規路線到支路（車過不了
+-- 樹林，選幹道＝把玩家丟在 64 格外拒啟動）。缺省與非法權重＝3（v1-v3 語意不變）。
+--------------------------------------------------------------------------------
+do
+    local g = buildAll({
+        { name = "Dixie", src = "M", width = 14, pts = { 10592, 8858, 10592, 11197, 10592, 14251 } },
+        { name = "KY-60", src = "M", width = 15, pts = { 6000, 11204.5, 12900, 11204.5 } },
+        { name = "Carpenter", src = "M", width = 8, pts = { 10525, 9274, 10525, 11197 } },
+    }, nil)
+    local foot = mod.findRoute(g, 10593, 11125, 10528, 11080)
+    assert(foot and #foot.pts == 4 and foot.pts[3] == 10592,
+        "approach 權重：徒步（缺省 ×3）取幹道直達＋越野 64 格")
+    local car = mod.findRoute(g, 10593, 11125, 10528, 11080, nil, nil, nil, 12)
+    assert(car and car.pts[#car.pts - 1] == 10525 and car.len > 250,
+        "approach 權重：車上 ×12 走 Dixie→KY-60→Carpenter（len=" .. tostring(car and car.len) .. "）")
+    assert(car.snapDist < 2, "approach 權重：車上路線起點就在車旁")
+    local bad = mod.findRoute(g, 10593, 11125, 10528, 11080, nil, nil, nil, -1)
+    assert(bad and bad.pts[3] == 10592, "approach 權重：非法權重退缺省 3")
+end
+
 print("test_nav_route: 全數通過")

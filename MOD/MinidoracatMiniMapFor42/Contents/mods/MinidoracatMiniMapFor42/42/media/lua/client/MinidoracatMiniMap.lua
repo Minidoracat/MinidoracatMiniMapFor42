@@ -3359,7 +3359,11 @@ end
 -- v4：requestRoute／requestDetour 的參數與 v1-v3 route 欄位不變；route additive
 -- 新增逐段 segSurface/segWidth（與 pts 段數嚴格對齊）、數值 cost/avoidPenalty、
 -- approachSurface 與 patchState="applied"|"raw"。舊版消費者仍可只讀既有欄位。
-MinidoracatMiniMapAPI.navApiVersion = 4
+-- v5（2026-09-02）：欄位與簽名全同 v4，只修 route.snapDist 語意——沿用快取時刷新成
+-- 「玩家→路線最近點」的投影距離（＝偏航 d），不再是「玩家→pts[1]」；v4 在沿線前進後
+-- 停車再查會把在線上的車報成起點百公尺外。消費者以 navApiVersion>=5 判定可否信任
+-- snapDist 當「起點太遠」門檻（AutoDrive 對 v4 不套此門檻）。
+MinidoracatMiniMapAPI.navApiVersion = 5
 Core.navGates = {} -- { { owner=, fn=, errLogged= }, ... }
 function MinidoracatMiniMapAPI.registerNavGate(ownerModId, gateFn)
     if type(ownerModId) ~= "string" or ownerModId == "" or type(gateFn) ~= "function" then

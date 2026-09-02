@@ -1320,8 +1320,12 @@ end
 
 -- 對外：找路。起、終點各取 2 候選（不同節點對）——起點防「玩家在兩路之間先走
 -- 反方向」，終點防「最近段是斷連孤島、次近段可達卻回 nil」（codex review）。
--- 總代價含兩端 approach 距離，取最短。第二回傳＝A* 內部例外（呼叫端 log）
-local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR)
+-- 總代價含兩端 approach 距離（×approachWeight，缺省 3＝徒步；車上由呼叫端給 12），
+-- 取最短。第二回傳＝A* 內部例外（呼叫端 log）
+local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight)
+    if type(approachWeight) ~= "number" or approachWeight ~= approachWeight or approachWeight < 0 then
+        approachWeight = 3
+    end
     if not g or g.nodeCount == 0 then return nil end
     local avoidR2 = nil
     if type(avoidR) == "number" and avoidR > 0
@@ -1371,10 +1375,10 @@ local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR)
                 if err then return nil, err end
             end
             if r then
-                -- 候選 objective＝surface cost＋獨立 avoid penalty＋兩端 approach×3；
+                -- 候選 objective＝surface cost＋獨立 avoid penalty＋兩端 approach×權重；
                 -- route.len 保持純幾何長，供既有 v1-v3 消費者沿用。
                 local cost = r.cost + r.avoidPenalty
-                    + 3 * (sqrt(dist2(sx, sy, r.sx, r.sy))
+                    + approachWeight * (sqrt(dist2(sx, sy, r.sx, r.sy))
                     + sqrt(dist2(tx, ty, r.ex, r.ey)))
                 if not best or cost < best._cost then
                     r._cost = cost
@@ -1390,8 +1394,8 @@ local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR)
     return best
 end
 
-function NavCore.findRoute(g, sx, sy, tx, ty, avoidX, avoidY, avoidR)
-    local ok, route, err = pcall(findRouteInner, g, sx, sy, tx, ty, avoidX, avoidY, avoidR)
+function NavCore.findRoute(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight)
+    local ok, route, err = pcall(findRouteInner, g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight)
     if not ok then return nil, route end
     return route, err
 end
@@ -1805,6 +1809,18 @@ end
 -- OnCreatePlayer 直寫 navTargets 不經 navSetTarget）由 target 座標比對收斂。
 -- key：自己的目標＝pn（數字）；陣營分享目標＝"pn:作者"（字串）——同表混 key
 -- test:nav-cache:start（scripts/test_nav_api.lua 抽本區段跑快取／偏航回歸測試）
+-- 兩端 approach（越野接線）的權重：徒步 ×3（穿田是合理捷徑）、車上 ×12（車過不了
+-- 樹林／圍籬）。2026-09-02 Carpenter Test Road 實爆：目標離該路 3 格、離 Dixie 64 格，
+-- ×3 讓「Dixie 上 45 格＋越野 64 格」勝過「繞 KY-60 的 270 格正規路線」，AutoDrive
+-- 只能拒啟動（起點太遠）。權重跟著上下車換檔，換檔＝快取失效立刻重算（不吃冷卻）。
+local APPROACH_WEIGHT_FOOT = 3
+local APPROACH_WEIGHT_VEHICLE = 12
+local function approachWeightFor(key)
+    local pn = type(key) == "number" and key or tonumber(tostring(key):match("^(%d+):"))
+    local playerObj = pn and getSpecificPlayer(pn) or nil
+    if playerObj and playerObj:getVehicle() then return APPROACH_WEIGHT_VEHICLE end
+    return APPROACH_WEIGHT_FOOT
+end
 local function ensureRoute(key, target, px, py)
     local rs = navRoutes[key]
     if not target then
@@ -1813,7 +1829,8 @@ local function ensureRoute(key, target, px, py)
     end
     if engine.state ~= "ready" then return nil end -- extracting/building/failed：先畫直線旗標
     local now = getTimestampMs()
-    if rs and rs.tx == target.x and rs.ty == target.y then
+    local weight = approachWeightFor(key)
+    if rs and rs.tx == target.x and rs.ty == target.y and rs.approachWeight == weight then
         if rs.state == "noroad" then
             local fdx, fdy = px - rs.failX, py - rs.failY
             if fdx * fdx + fdy * fdy < NOROAD_RETRY_DIST * NOROAD_RETRY_DIST then
@@ -1824,10 +1841,12 @@ local function ensureRoute(key, target, px, py)
             -- 為主，投影點是繪製裁切起點——不更新會畫回頭線（codex/claude）
             local d, idx, qx, qy = NavCore.distToRoute(rs.route, px, py, rs.progressIdx or 1)
             rs.progressIdx, rs.progX, rs.progY = idx, qx, qy
-            -- snapDist 隨每次查詢刷新成「當下玩家→路線首點」：沿用快取時建圖當下
-            -- 的值會低報實際接線長度，addon 就是靠這個數字決定要不要走低速接線
-            local pts = rs.route.pts
-            rs.route.snapDist = sqrt(dist2(px, py, pts[1], pts[2]))
+            -- snapDist 隨每次查詢刷新成「當下玩家→路線最近點」（就是上一行的偏航 d）：
+            -- 沿用快取時建圖當下的值會低報實際接線長度；而拿「玩家→pts[1]」當接線長
+            -- （2026-09-02 AutoDrive 實爆）在沿線前進 100 格後停車再啟動會報 100——
+            -- 車就在線上卻被 addon 當「起點太遠」拒啟動。首算時 progressIdx=1、
+            -- d＝到首點距離，兩種定義相同；之後只有投影距離才是要越野接線的長度。
+            rs.route.snapDist = d
             if d <= DEVIATION_DIST then return rs.route end
             if now - (rs.lastBuildMs or 0) < REBUILD_COOLDOWN_MS then return rs.route end
             -- 原地（或近乎原地）重算必得同一條線：snap 只看座標，位移不足時重跑
@@ -1839,8 +1858,9 @@ local function ensureRoute(key, target, px, py)
             end
         end
     end
-    -- 重算（首算/target 變更/偏航逾閾/無路重試）
-    local route, aerr = NavCore.findRoute(engine.graph, px, py, target.x, target.y)
+    -- 重算（首算/target 變更/上下車換權重/偏航逾閾/無路重試）
+    local route, aerr = NavCore.findRoute(engine.graph, px, py, target.x, target.y,
+        nil, nil, nil, weight)
     if aerr then
         failNavEngine(aerr)
         return nil, "failed"
@@ -1849,7 +1869,7 @@ local function ensureRoute(key, target, px, py)
     if route then
         navRoutes[key] = { state = "ok", route = route, tx = target.x, ty = target.y,
             progressIdx = 1, progX = route.sx, progY = route.sy, lastBuildMs = now,
-            buildX = px, buildY = py }
+            buildX = px, buildY = py, approachWeight = weight }
         return route
     end
     -- noroad 首次記 log：MP 實測曾因零診斷輸出無法區分「snap 失敗／A* 斷連／
@@ -1858,7 +1878,7 @@ local function ensureRoute(key, target, px, py)
         "no route: player(%d,%d) target(%d,%d) - straight-line flag fallback",
         floor(px), floor(py), floor(target.x), floor(target.y)))
     navRoutes[key] = { state = "noroad", tx = target.x, ty = target.y,
-        failX = px, failY = py }
+        failX = px, failY = py, approachWeight = weight }
     return nil
 end
 -- test:nav-cache:end
@@ -2155,7 +2175,7 @@ MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoi
     if not playerObj then return nil, argState end
     local px, py = playerObj:getX(), playerObj:getY()
     local route, aerr = NavCore.findRoute(engine.graph, px, py, targetX, targetY,
-        avoidX, avoidY, avoidR)
+        avoidX, avoidY, avoidR, approachWeightFor(playerNum))
     if aerr then
         failNavEngine(aerr)
         return nil, "failed"
@@ -2164,7 +2184,8 @@ MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoi
     if not route then return nil, "noroad" end
     navRoutes[playerNum] = { state = "ok", route = route, tx = targetX, ty = targetY,
         progressIdx = 1, progX = route.sx, progY = route.sy,
-        lastBuildMs = getTimestampMs(), buildX = px, buildY = py }
+        lastBuildMs = getTimestampMs(), buildX = px, buildY = py,
+        approachWeight = approachWeightFor(playerNum) }
     return route, "ok"
 end
 MinidoracatMiniMapAPI.getNavGraph = function()

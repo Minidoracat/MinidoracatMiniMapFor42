@@ -19,8 +19,8 @@ local mainPath = arg[2]
 local mainFile = assert(io.open(mainPath, "rb"))
 local mainSource = mainFile:read("*a"):gsub("\r\n", "\n")
 mainFile:close()
-assert(mainSource:match("MinidoracatMiniMapAPI%.navApiVersion%s*=%s*4"),
-    "navApiVersion 必須為 4")
+assert(mainSource:match("MinidoracatMiniMapAPI%.navApiVersion%s*=%s*5"),
+    "navApiVersion 必須為 5（v5＝snapDist 改投影距離語意）")
 
 local compile = loadstring or load
 
@@ -43,16 +43,23 @@ local nextRoute, nextRouteState = nil, nil
 local detourCalls = {}
 local nextDetourRoute, nextDetourError = nil, nil
 local NavCore = {
-    findRoute = function(graph, sx, sy, tx, ty, ax, ay, ar)
+    findRoute = function(graph, sx, sy, tx, ty, ax, ay, ar, approachWeight)
         detourCalls[#detourCalls + 1] = {
             graph = graph, sx = sx, sy = sy, tx = tx, ty = ty,
-            ax = ax, ay = ay, ar = ar,
+            ax = ax, ay = ay, ar = ar, w = approachWeight,
         }
         return nextDetourRoute, nextDetourError
     end,
 }
 local function logf() end
 local function getTimestampMs() return 12345 end
+-- approachWeightFor 定義在 nav-cache 區段（production 同檔在前）；這裡給同語意樁：
+-- 車上 12、徒步 3（A17/A18 驗 requestDetour 把它傳進 findRoute）
+local function approachWeightFor(pn)
+    local p = players[pn]
+    if p and p.getVehicle and p:getVehicle() then return 12 end
+    return 3
+end
 local function failNavEngine()
     engine.state, engine.graph = "failed", nil
     for key in pairs(navRoutes) do navRoutes[key] = nil end
@@ -299,6 +306,13 @@ assert(T.navRoutes[2].route == detourV4 and T.navRoutes[2].state == "ok"
     and T.navRoutes[2].progressIdx == 1 and T.navRoutes[2].lastBuildMs == 12345
     and T.navRoutes[2].buildX == 7 and T.navRoutes[2].buildY == 8,
     "A17: detour 成功覆寫共用 cache")
+assert(dc.w == 3 and T.navRoutes[2].approachWeight == 3,
+    "A17: 徒步 detour 帶 approach 權重 3 並記進 cache")
+T.players[2].getVehicle = function() return {} end
+T.setDetour(detourV4, nil)
+detour, detourState = API.requestDetour(2, 50, 60, 70, 80, 9)
+assert(T.detourCalls[2].w == 12 and T.navRoutes[2].approachWeight == 12,
+    "A17: 車上 detour 帶 approach 權重 12（cache 記權重，下車後 ensureRoute 會換檔重算）")
 
 resetAll()
 T.players[0] = player(1, 2)
@@ -367,8 +381,8 @@ local NavCore = {
         end
         return sqrt(bestD2), bi, bx, by
     end,
-    findRoute = function(graph, sx, sy, tx, ty)
-        findCalls[#findCalls + 1] = { sx = sx, sy = sy, tx = tx, ty = ty }
+    findRoute = function(graph, sx, sy, tx, ty, ax, ay, ar, approachWeight)
+        findCalls[#findCalls + 1] = { sx = sx, sy = sy, tx = tx, ty = ty, w = approachWeight }
         if nextErr then return nil, nextErr end
         if not nextRoute then return nil end
         return {
@@ -379,6 +393,10 @@ local NavCore = {
     end,
 }
 local function getTimestampMs() return nowMs end
+local inVehicle = {}
+local function getSpecificPlayer(pn)
+    return { getVehicle = function() return inVehicle[pn] and {} or nil end }
+end
 local function clearRoute(key) navRoutes[key] = nil; cleared[#cleared + 1] = key end
 local function failNavEngine()
     engine.state, engine.graph = "failed", nil
@@ -391,7 +409,8 @@ local cacheSuffix = [=[
 return { ensureRoute = ensureRoute, navRoutes = navRoutes, engine = engine,
     findCalls = findCalls, cleared = cleared,
     setNow = function(v) nowMs = v end,
-    setNext = function(r, e) nextRoute, nextErr = r, e end }
+    setNext = function(r, e) nextRoute, nextErr = r, e end,
+    setVehicle = function(pn, on) inVehicle[pn] = on end }
 ]=]
 local C = assert(compile(cachePrelude .. cacheBody .. "\n" .. cacheSuffix, "nav-cache"))()
 local tgt = { x = 10744.8, y = 9717.5 }
@@ -405,11 +424,22 @@ assert(C.navRoutes[0].buildX == 10716 and C.navRoutes[0].buildY == 9737,
     "C1: cache 須記下本次 A* 起點")
 assert(math.abs(cr.snapDist) < 1e-9, "C1: 站在 snap 點上 snapDist≈0")
 
--- C2: 走廊內（偏航 ≤ 閾值）沿用同一張表，snapDist 刷新成當下實距
-cr = C.ensureRoute(0, tgt, 10719, 9737)
+-- C2: 走廊內（偏航 ≤ 閾值）沿用同一張表，snapDist 刷新成當下到路線的投影距離
+-- （沿線 3 格＋側偏 3 格 → 3；舊「玩家→首點」定義會得 4.24）
+cr = C.ensureRoute(0, tgt, 10719, 9740)
 assert(cr == C.navRoutes[0].route and #C.findCalls == 1, "C2: 走廊內須命中快取")
 assert(math.abs(cr.snapDist - 3) < 1e-9,
-    "C2: snapDist 須刷新成當下 3 格，實得 " .. tostring(cr.snapDist))
+    "C2: snapDist 須刷新成當下投影距離 3 格，實得 " .. tostring(cr.snapDist))
+
+-- C2b（2026-09-02 AutoDrive 實爆）：沿線前進 30 格、車仍在線上 → snapDist 是投影距離 0，
+-- 不是「玩家→首點」的 30；舊定義讓 addon 在「停車再啟動」時把在路上的車當起點太遠拒啟動
+cr = C.ensureRoute(0, tgt, 10746, 9737)
+assert(cr == C.navRoutes[0].route and #C.findCalls == 1, "C2b: 沿線前進仍命中快取")
+assert(math.abs(cr.snapDist) < 1e-9,
+    "C2b: 沿線前進 snapDist 須為投影距離 0，實得 " .. tostring(cr.snapDist))
+cr = C.ensureRoute(0, tgt, 10746, 9742)
+assert(math.abs(cr.snapDist - 5) < 1e-9,
+    "C2b: 沿線 30 格＋側偏 5 格 snapDist 須為 5，實得 " .. tostring(cr.snapDist))
 
 -- C3: 實測病灶——車北移到 (10716,9756)，偏航 19 格、冷卻已過 → 必須重算
 C.setNow(1000 + REBUILD_COOLDOWN_MS + 1)
@@ -448,5 +478,30 @@ assert(cr == before and #C.findCalls == 3,
 cr = C.ensureRoute(1, far, 5000 + REBUILD_MOVE_DIST + 1, 5000)
 assert(#C.findCalls == 4 and cr ~= before, "C6: 位移足夠且偏航逾閾須重算")
 
-print("test_nav_api: OK（nav API v4＋requestRoute A1-A12＋requestDetour A13-A18"
-    .. "＋ensureRoute 快取/偏航 C0-C6）")
+-- C7（2026-09-02 Carpenter 實爆）：approach 權重跟著上下車換檔——徒步 3、車上 12；
+-- 換檔＝快取失效立刻重算（不吃 3s 冷卻），同權重照常命中快取
+C.setNow(50000)
+C.setNext({ 8000, 8000, 8100, 8000 })
+local tgt2 = { x = 8100, y = 8000 }
+cr = C.ensureRoute(2, tgt2, 8000, 8000)
+local calls0 = #C.findCalls
+assert(cr and C.findCalls[calls0].w == 3, "C7: 徒步首算 approach 權重 3，實得 " .. tostring(C.findCalls[calls0].w))
+C.setVehicle(2, true)
+C.setNow(50000 + 100) -- 冷卻未過
+cr = C.ensureRoute(2, tgt2, 8000, 8000)
+assert(#C.findCalls == calls0 + 1 and C.findCalls[calls0 + 1].w == 12,
+    "C7: 上車立刻以權重 12 重算（不吃冷卻），實得 calls=" .. tostring(#C.findCalls - calls0))
+cr = C.ensureRoute(2, tgt2, 8001, 8000)
+assert(#C.findCalls == calls0 + 1, "C7: 車上同權重命中快取")
+C.setVehicle(2, false)
+cr = C.ensureRoute(2, tgt2, 8001, 8000)
+assert(#C.findCalls == calls0 + 2 and C.findCalls[calls0 + 2].w == 3, "C7: 下車換回權重 3 重算")
+-- 陣營分享目標的字串 key 也認得前綴 pn
+C.setVehicle(0, true)
+C.setNext({ 9000, 9000, 9100, 9000 })
+cr = C.ensureRoute("0:someone", { x = 9100, y = 9000 }, 9000, 9000)
+assert(cr and C.findCalls[#C.findCalls].w == 12, "C7: 字串 key 取前綴 pn 的車上狀態")
+C.setVehicle(0, false)
+
+print("test_nav_api: OK（nav API v5＋requestRoute A1-A12＋requestDetour A13-A18"
+    .. "＋ensureRoute 快取/偏航 C0-C7）")
