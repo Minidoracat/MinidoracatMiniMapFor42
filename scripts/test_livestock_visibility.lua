@@ -1,13 +1,16 @@
 -- 主檔拆分後的區段來源：註冊/模式/距離/安全屋/導航閘門仍在主檔（arg[1]）；
 -- worldmap-effective-tick 與 UNIFIED_WM_TICKS 在 _Settings.lua（arg[2]）；
 -- 點雲取樣三段（zombie/animal-sampling、livestock-visibility）於主 chunk
--- locvar 上限拆檔後移至 _Dots.lua（arg[3]，2026-08-20）
+-- locvar 上限拆檔後移至 _Dots.lua（arg[3]，2026-08-20）；zone 距離閘
+-- （distGateParams 的 Poi/ZoneDisplayDistance 呼叫點）同理移至 _Zones.lua（arg[4]，2026-09-03）
 local sourcePath = arg[1]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua"
 local settingsPath = arg[2]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Settings.lua"
 local dotsPath = arg[3]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Dots.lua"
+local zonesPath = arg[4]
+    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Zones.lua"
 
 local function readSource(path)
     local file = assert(io.open(path, "rb"))
@@ -18,6 +21,7 @@ end
 local source = readSource(sourcePath)
 local settingsSource = readSource(settingsPath)
 local dotsSource = readSource(dotsPath)
+local zonesSource = readSource(zonesPath)
 
 local body = assert(dotsSource:match(
     "%-%- test:livestock%-visibility:start\n(.-)\n%-%- test:livestock%-visibility:end"),
@@ -453,12 +457,13 @@ assert(settingsSource:find("if sliderW < %d+ then sliderW = %d+ end"),
 local DIST_NAMES = { "ZombieDotDistance", "AnimalIconDistance", "VehicleIconDistance",
     "SafehouseDisplayDistance", "PoiDisplayDistance", "ZoneDisplayDistance" }
 for _, n in ipairs(DIST_NAMES) do
-    -- 消費端呼叫點可在主檔或 _Dots.lua（點雲距離閘門隨拆檔遷移）。第二參 pn
+    -- 消費端呼叫點可在主檔、_Dots.lua 或 _Zones.lua（距離閘門隨拆檔遷移）。第二參 pn
     -- 是管理員檢視旁路的逐 slot 依據——漏傳＝該呼叫點永遠不旁路且靜默不報錯，
     -- 故守衛連「必須帶 pn」一起釘住（右括號改成逗號＋空白）
     assert(source:find('displayDist%("' .. n .. '", pn%)')
-        or dotsSource:find('displayDist%("' .. n .. '", pn%)'),
-        "主檔/_Dots 缺 displayDist(\"" .. n .. "\", pn) 精確逐 slot 呼叫點")
+        or dotsSource:find('displayDist%("' .. n .. '", pn%)')
+        or zonesSource:find('displayDist%("' .. n .. '", pn%)'),
+        "主檔/_Dots/_Zones 缺 displayDist(\"" .. n .. "\", pn) 精確逐 slot 呼叫點")
     -- ESC 註冊點可在主檔（本體恆存選項，值域用 CLIENT_DIST_MAX 常數）或
     -- _Settings.lua（addon 條件選項 OnGameBoot 尾端追加，字面 2000＝同值——
     -- 該檔無 CLIENT_DIST_MAX local；值域對齊由本守衛釘住）

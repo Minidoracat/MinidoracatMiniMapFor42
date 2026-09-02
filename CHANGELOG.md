@@ -14,6 +14,12 @@
 
 > 技術要點：`manualRoads` 追加 `m:muldraugh-hog-wallow-ky60-link`（add、paved、width 8，四點折線 (4483,10744)→(4483,10653)→(4490.5,10645.5)→(4571.5,10646)），起點與官方北端節點重合、尾點落 KY-60 兩段共用頂點；鋪面依 `road-surfaces-full-v2` 逐格實證（中線 185 格全 paved）。稽核 row-span 未列此候選：KY-60 實際路帶比 xml 寬 1-2 格，未覆蓋的路肩細條把缺段接進全圖大分量。離線回歸：`test_nav_route.lua` 鎖 addCount=3＋(4483,10800)→(4540,10583) 路線經切角頂點、長 309（修前 4501）。
 
+### 變更
+
+- 小地圖區域圖層（自訂區域／地標的填色、框線、圖標）的繪製程式碼搬進獨立模組檔，畫面與功能不變；為之後更多 addon 的擴充預留空間
+
+> 技術要點：主檔 Zone 段（`test:zone-render` 切片，fill／lines／icons 三 pass＋ZC 候選快取，735 行）逐位元搬至 `MinidoracatMiniMap_Zones.lua`，主檔主 chunk local 175→151（Kahlua 200 上限、verify 警戒 190）。主檔留 `Core.drawZonePass(inner, pass, flagKey)`（Core 匿名閉包、零 locvar）供兩個 prerender wrap 呼叫時查表，模組缺席依 flagKey log-once；新匯出 `Core.drawClippedEdge`。離線測試 `test_zone_render.lua`（arg[3]）與 `test_livestock_visibility.lua`（arg[4]）改從新檔抽切片／搜呼叫點。新增 `docs/addon-api.md` 為 addon API 契約單一來源；addon 守衛規範改為版本欄位 `>=` 比較（Zones addon 同步）。
+
 ## [42.20.4-0.23.0] - 2026-09-02
 
 ### 新增

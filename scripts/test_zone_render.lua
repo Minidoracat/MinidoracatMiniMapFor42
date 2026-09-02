@@ -1,12 +1,18 @@
 -- Zone 圖層渲染回歸測試（A1 stencil 保護、A2 provider 隔離、A3 AABB 早退、
 -- drawClippedEdge alpha 契約）。仿 test_livestock_visibility.lua 的 stub 風格：
 -- 抽主檔標記區段→補最小 stub→組裝可離線跑。用法：lua scripts/test_zone_render.lua
+-- [主檔] [POI 檔] [_Zones 檔]（zone-render 切片自 2026-09-03 拆檔起在 _Zones.lua）
 local sourcePath = arg[1]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua"
+local zonesPath = arg[3]
+    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Zones.lua"
 
 local file = assert(io.open(sourcePath, "rb"))
 local source = file:read("*a"):gsub("\r\n", "\n")
 file:close()
+local zonesFile = assert(io.open(zonesPath, "rb"))
+local zonesSource = zonesFile:read("*a"):gsub("\r\n", "\n")
+zonesFile:close()
 
 local compile = loadstring or load
 
@@ -44,9 +50,9 @@ assert(edge.draw(0.5) == 0.5, "顯式 alpha 未透傳")
 --------------------------------------------------------------------------------
 -- Zone fill/line 渲染：A1 stencil 保護、A2 provider 隔離、A3 AABB 早退
 --------------------------------------------------------------------------------
-local zoneBody = assert(source:match(
+local zoneBody = assert(zonesSource:match(
     "%-%- test:zone%-render:start\n(.-)\n%-%- test:zone%-render:end"),
-    "找不到 zone 繪製測試區段")
+    "找不到 zone 繪製測試區段（MinidoracatMiniMap_Zones.lua）")
 -- deriveAffine 已前移出 zone-render 區段（殭屍/動物繪製共用），獨立標記抽取後
 -- 拼在 zone body 之前——維持單一事實來源，不在 prelude 放複製品
 local affineBody = assert(source:match(
