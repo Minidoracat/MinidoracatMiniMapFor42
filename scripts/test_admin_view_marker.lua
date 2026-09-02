@@ -1,15 +1,17 @@
 -- ADMIN VIEW marker: visibility, memoization, Skin fallback and log-once wiring.
-local mainPath = arg[1]
-    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua"
+local mainPath = arg[1] -- admin-view-marker 切片自 2026-09-03 起在 _Nav.lua
+    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Nav.lua"
 local wmPath = arg[2]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_WorldMapNav.lua"
+local prerenderPath = arg[3] -- 小地圖 prerender wrap 留在主檔，經 Core.drawAdminViewMarker 呼叫時查
+    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua"
 local function read(path)
     local fh = assert(io.open(path, "rb"))
     local text = fh:read("*a"):gsub("\r\n", "\n")
     fh:close()
     return text
 end
-local source, wmSource = read(mainPath), read(wmPath)
+local source, wmSource, prerenderSource = read(mainPath), read(wmPath), read(prerenderPath)
 local body = assert(source:match(
     "%-%- test:admin%-view%-marker:start\n(.-)\n%-%- test:admin%-view%-marker:end"),
     "missing admin view marker test block")
@@ -128,8 +130,8 @@ check(fallback.rects == 2 and fallback.borders == 2 and fallback.texts == 2,
 check(logCount("skin failed") == 1,
     "Skin failure logs once")
 
-check(source:find("pcall%(drawAdminViewMarker, self%)") ~= nil
-    and source:find("_minidoracatAdminMarkErrLogged", 1, true) ~= nil,
+check(prerenderSource:find("pcall%(Core%.drawAdminViewMarker, self%)") ~= nil
+    and prerenderSource:find("_minidoracatAdminMarkErrLogged", 1, true) ~= nil,
     "minimap prerender calls marker with log-once error handling")
 check(wmSource:find("pcall%(Core%.drawAdminViewMarker, self%)") ~= nil
     and wmSource:find("_minidoracatWMAdminMarkErrLogged", 1, true) ~= nil,

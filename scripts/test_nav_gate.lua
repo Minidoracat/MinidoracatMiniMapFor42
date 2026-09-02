@@ -1,7 +1,7 @@
 -- Addon 導航 API（registerNavGate / navGateAllows / navSetTarget / getNavTarget /
 -- drawNavTargets）
--- 離線回歸測試。仿 test_ghost_gate.lua：抽主檔標記區段→補最小 stub→組裝離線跑；
--- nav-gate 與 nav-draw 兩區段拼在同一 chunk＝判定與繪製都跑真正的 production 碼。
+-- 離線回歸測試。仿 test_ghost_gate.lua：抽 _Nav.lua 標記區段（2026-09-03 自主檔拆出）
+-- →補最小 stub→組裝離線跑；nav-gate 與 nav-draw 兩區段拼在同一 chunk＝判定與繪製都跑真正的 production 碼。
 -- 核心不變量（addon 是外部程式碼，錯得起但不能拖垮導航）：
 --   * 零註冊＝放行（addon 不裝零影響）
 --   * 多 gate 為 AND，且「明確回 false」才擋——忘了 return 不該讓導航靜默死掉
@@ -14,9 +14,9 @@
 --   * getNavTarget 是純狀態讀取：槽位驗證從嚴（非 0-3 整數＝badargs）、無目標
 --     回 "notarget"，且只交出兩個純量——不得洩漏 navTargets 內部 table（交出
 --     參考＝addon 能繞過 navSetTarget 改目標，不重播分享也不存檔）
--- 用法：lua scripts/test_nav_gate.lua
+-- 用法：lua scripts/test_nav_gate.lua [_Nav 檔]
 local mainPath = arg[1]
-    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua"
+    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Nav.lua"
 
 local function readSource(path)
     local file = assert(io.open(path, "rb"))

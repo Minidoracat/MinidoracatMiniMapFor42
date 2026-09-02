@@ -11,6 +11,8 @@ local dotsPath = arg[3]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Dots.lua"
 local zonesPath = arg[4]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Zones.lua"
+local navPath = arg[5] -- nav-share-gate 切片自 2026-09-03 起在 _Nav.lua
+    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Nav.lua"
 
 local function readSource(path)
     local file = assert(io.open(path, "rb"))
@@ -22,6 +24,7 @@ local source = readSource(sourcePath)
 local settingsSource = readSource(settingsPath)
 local dotsSource = readSource(dotsPath)
 local zonesSource = readSource(zonesPath)
+local navSource = readSource(navPath)
 
 local body = assert(dotsSource:match(
     "%-%- test:livestock%-visibility:start\n(.-)\n%-%- test:livestock%-visibility:end"),
@@ -329,7 +332,7 @@ local safehouseChunk, safehouseErr = compile(
 assert(safehouseChunk, safehouseErr)
 local safehouseHarness = safehouseChunk()
 
-local navBody = assert(source:match(
+local navBody = assert(navSource:match(
     "%-%- test:nav%-share%-gate:start\n(.-)\n%-%- test:nav%-share%-gate:end"),
     "找不到 navShareGateTick 測試區段")
 local navChunk, navErr = compile([[

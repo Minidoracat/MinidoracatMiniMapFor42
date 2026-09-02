@@ -14,8 +14,8 @@ local srcPath = arg[1]
 local file = assert(io.open(srcPath, "rb"))
 local source = file:read("*a"):gsub("\r\n", "\n")
 file:close()
-local mainPath = arg[2]
-    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua"
+local mainPath = arg[2] -- navApiVersion 宣告自 2026-09-03 起在 _Nav.lua
+    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Nav.lua"
 local mainFile = assert(io.open(mainPath, "rb"))
 local mainSource = mainFile:read("*a"):gsub("\r\n", "\n")
 mainFile:close()

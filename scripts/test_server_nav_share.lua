@@ -6,8 +6,8 @@ local source = fh:read("*a"):gsub("\r\n", "\n")
 fh:close()
 local compile = loadstring or load
 
-local clientPath = arg[2]
-    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua"
+local clientPath = arg[2] -- nav-share-policy 切片自 2026-09-03 起在 _Nav.lua
+    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Nav.lua"
 local clientFile = assert(io.open(clientPath, "rb"))
 local clientSource = clientFile:read("*a"):gsub("\r\n", "\n")
 clientFile:close()
