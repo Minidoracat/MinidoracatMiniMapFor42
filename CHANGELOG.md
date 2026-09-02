@@ -16,9 +16,13 @@
 
 ### 變更
 
-- 小地圖區域圖層（自訂區域／地標的填色、框線、圖標）的繪製程式碼搬進獨立模組檔，畫面與功能不變；為之後更多 addon 的擴充預留空間
+- 小地圖主程式檔重整：區域圖層繪製、導航目標（旗標／右鍵選單／陣營分享）、邊緣拖曳縮放與快捷鍵三段程式碼各自搬進獨立模組檔，畫面與功能不變；為之後更多 addon 的擴充預留空間
 
-> 技術要點：主檔 Zone 段（`test:zone-render` 切片，fill／lines／icons 三 pass＋ZC 候選快取，735 行）逐位元搬至 `MinidoracatMiniMap_Zones.lua`，主檔主 chunk local 175→151（Kahlua 200 上限、verify 警戒 190）。主檔留 `Core.drawZonePass(inner, pass, flagKey)`（Core 匿名閉包、零 locvar）供兩個 prerender wrap 呼叫時查表，模組缺席依 flagKey log-once；新匯出 `Core.drawClippedEdge`。離線測試 `test_zone_render.lua`（arg[3]）與 `test_livestock_visibility.lua`（arg[4]）改從新檔抽切片／搜呼叫點。新增 `docs/addon-api.md` 為 addon API 契約單一來源；addon 守衛規範改為版本欄位 `>=` 比較（Zones addon 同步）。
+> 技術要點：三刀各自 commit、行為逐位元不變（唯一例外 `RESIZE_MIN`→`Core.RESIZE_MIN`，因它是主檔兩處依字級抬高的可變值）。主檔主 chunk local 175→151→134→111（Kahlua 200 上限、verify 警戒 190）；主檔 4443→2753 行。
+> - `MinidoracatMiniMap_Zones.lua`：`test:zone-render` 切片（fill／lines／icons 三 pass＋ZC 候選快取）；主檔留 `Core.drawZonePass(inner, pass, flagKey)` 入口，模組缺席依 flagKey log-once；新匯出 `Core.drawClippedEdge`。
+> - `MinidoracatMiniMap_Nav.lua`：導航狀態／分享／nav gate API（`navApiVersion`／`registerNavGate`／`getNavTarget`）／旗標繪製／抵達／座標列／管理員檢視標記／右鍵選單／OnServerCommand；`navTargets` 表留主檔（InitPlayer 載回 modData）經 `Core.navTargets` 共享；prerender 四個呼叫點改 `pcall(Core.*)`。字母序在 `_NavRoute`／`_Search`／`_Settings`／`_WorldMapNav` 之前，其 `Core.nav*` 閉包載入期即就緒；先載入的 `_Dots`／`_FloatIcon`／`_Ghost`／`_Migrate`／POI 經審計皆呼叫時查。
+> - `MinidoracatMiniMap_Resize.lua`：拖曳縮放狀態機、外框調色、outer prerender／render wrap、標題列鎖定、自訂鍵位；`debugWarn` 留主檔（`_FloatIcon` 載入期取別名且先載入）；主檔 InitPlayer 補掛與實例 prerender 改呼叫時查 `Core.installResizeHooks`／`Core.chromeTintBorder`＋nil 防呆，三個前置宣告與 `RESIZE_EDGE` 移除，新匯出 `Core.resizeMax`。
+> - 拆法：`luac -l` 列該段 GETGLOBAL＝需別名的主檔 local，缺的補 `Core` 匯出；搬後再審計主檔零洩漏、新檔自由名稱只剩 PZ 全域。離線測試改讀新檔：`test_zone_render`（arg[3]）、`test_livestock_visibility`（arg[4]/[5]）、`test_nav_gate`／`test_admin_view_marker`／`test_server_nav_share`／`test_nav_api` 改指 `_Nav.lua`。新增 `docs/addon-api.md` 為 addon API 契約單一來源；addon 守衛規範改為版本欄位 `>=` 比較（Zones addon 同步）。
 
 ## [42.20.4-0.23.0] - 2026-09-02
 
