@@ -12,7 +12,8 @@
 -- `require=MinidoracatUIFor42` 保證框架先載入（ZomboidFileSystem.java:807-833）。
 --
 -- 【API 契約】核心圓角需要框架 API v1 rev>=1；rev>=3 時額外轉發 toggle／slider
--- painters 與 Studio chrome icons。版本不合或資產缺失＝走本檔直角／純文字退回。
+-- painters 與 Studio chrome icons；rev>=4 另有 art 圖示（地圖符號＋分類 icon，
+-- Skin.iconTexture 取貼圖）。版本不合或資產缺失＝走本檔直角／純文字／原版符號退回。
 local Core = MinidoracatMiniMapCore
 if not (Core and Core.ready) then return end
 
@@ -161,6 +162,16 @@ function Skin.icon(element, name, x, y, size, color, alpha)
         return FWIcons.draw(element, name, x, y, size, color, alpha)
     end
     return false
+end
+
+-- 取框架圖示貼圖（供繪製端 drawTextureScaled 自畫，如地圖上的動物／安全屋符號）。
+-- rev>=4 才有 art key；舊 rev 對 art key 回 nil（Icons.get 未知 key 回 nil），
+-- 呼叫端退回原版 LootableMaps 符號。回 nil＝缺框架／缺資產／未知 key，絕不拋錯
+function Skin.iconTexture(name)
+    if FWRevision >= 2 and FWIcons and type(FWIcons.get) == "function" then
+        return FWIcons.get(name)
+    end
+    return nil
 end
 
 Core.Skin = Skin

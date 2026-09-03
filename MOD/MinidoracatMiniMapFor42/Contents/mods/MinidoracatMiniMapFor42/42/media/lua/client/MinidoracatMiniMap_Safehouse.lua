@@ -43,7 +43,7 @@ local function safehouseNameMode(pn)
 end
 
 -- test:safehouse-distance:start
-local SH_ICON = "media/ui/LootableMaps/map_house.png" -- 原版地圖符號（MapSymbolDefinitions 註冊集）
+local SH_ICON = "media/ui/LootableMaps/map_house.png" -- 原版地圖符號（框架缺席時的退回）
 local SH_ICON_SIZE = 16 -- ponytail: 固定 16px；要可調再比照 PoiIconSize 加滑條
 -- 名稱字寬 memo（title 逐幀 MeasureStringX 是跨界呼叫；title 少且 session 內罕變，
 -- 改名後舊鍵殘留無害）；字高隨 UI 字型倍率變動，首繪量一次
@@ -138,7 +138,10 @@ local function drawSafehouses(inner)
                 if showIcon then
                     -- 白 glyph 染色畫法與動物／載具符號共用（_Dots.lua adotsDrawGlyph；
                     -- 模組缺席＝不畫圖標，其餘照常）；只在整顆落在視窗內時畫
-                    local tex = adotsTexture and adotsTexture(SH_ICON)
+                    -- UI 框架 rev 4 art 圖示優先（呼叫時查 Core.Skin），缺則退原版 map_house
+                    local Skin = Core.Skin
+                    local tex = Skin and Skin.iconTexture and Skin.iconTexture("house")
+                        or (adotsTexture and adotsTexture(SH_ICON))
                     local drawGlyph = Core.adotsDrawGlyph
                     local ix, iy = cx - SH_ICON_SIZE / 2, cy - SH_ICON_SIZE / 2
                     if tex and drawGlyph and ix >= 0 and iy >= 0

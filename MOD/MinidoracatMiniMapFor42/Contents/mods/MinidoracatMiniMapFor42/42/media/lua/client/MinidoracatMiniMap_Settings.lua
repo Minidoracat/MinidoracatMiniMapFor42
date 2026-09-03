@@ -213,13 +213,16 @@ local UNIFIED_SECTIONS = {
     { id = "poicat", label = "UI_MinidoracatMiniMap_SecPOI",
         icon = "pin", master = POI_MASTER_TICKS[1] },
     { id = "safehouse", label = "UI_MinidoracatMiniMap_SecSafehouse",
-        master = SAFEHOUSE_NAV_MASTER },
+        icon = "house", iconTex = "media/ui/LootableMaps/map_house.png", master = SAFEHOUSE_NAV_MASTER },
     { id = "distance", label = "UI_MinidoracatMiniMap_SecDistance", icon = "gauge" },
     { id = "zombie", label = "UI_MinidoracatMiniMap_SecZombie",
+        icon = "skull", iconTex = "media/ui/LootableMaps/map_skull.png",
         gate = "AllowZombieDots", master = ZOMBIE_MASTER },
     { id = "animals", label = "UI_MinidoracatMiniMap_SecAnimals",
+        icon = "pawprint", iconTex = "media/ui/LootableMaps/map_pawprint.png",
         gate = "AllowAnimalDots", master = ANIMAL_NAV_MASTER },
     { id = "vehicles", label = "UI_MinidoracatMiniMap_SecVehicles",
+        icon = "steeringwheel", iconTex = "media/ui/LootableMaps/map_steeringwheel.png",
         gate = "AllowVehicleDots", master = VEHICLE_MASTER },
     { id = "worldmap", label = "UI_MinidoracatMiniMap_SecWorldMap", icon = "globe" },
     { id = "appearance", label = "UI_MinidoracatMiniMap_SecAppearance", icon = "sliders" },
@@ -232,7 +235,7 @@ local UNIFIED_SECTIONS = {
 -- 刻意不在 OnGameBoot 一次性插入：三個條件全是 live 值（政策可即時改、權限
 -- 可被升降、分割畫面每個 slot 各自判定），一次性插入會把首幀狀態凍住。
 -- test:settings-studio-admin:start
-local ADMIN_SECTION = { id = "admin", label = "UI_MinidoracatMiniMap_SecAdmin", icon = "sliders" }
+local ADMIN_SECTION = { id = "admin", label = "UI_MinidoracatMiniMap_SecAdmin", icon = "lock" }
 
 local function adminSectionEligible(pn)
     if not Policy then return false end
@@ -466,7 +469,11 @@ local function unifiedAddTick(ctx, x, yy, w, labelText, checked, cb, arg)
     t:setSelected(1, checked and true or false)
     return unifiedAdd(ctx, t)
 end
-local function unifiedOnCombo(target, box, e) settingsApply(e, box.selected) end
+local function unifiedOnCombo(target, box, e)
+    settingsApply(e, box.selected)
+    -- 動物圖標風格切換＝物種小圖跟著換（符號↔彩圖），重建讓玩家立刻看到長怎樣
+    if e.id == "AnimalIconStyle" then unifiedRebuild(target) end
+end
 -- 下拉列（ISComboBox 建法/回呼同原視窗：ISComboBox.lua:586/253）；
 -- 標籤欄寬＝全部 combo 標籤實測最寬（各語系自適應），佔滿目前 lane
 local function unifiedAddComboRow(ctx, entry)
@@ -829,17 +836,26 @@ local function unifiedBuildAnimals(ctx)
             0.95, 0.55, 0.25, 1, UIFont.Small, true))
         ctx.curY = ctx.curY + ctx.rowH
     end
-    -- 物種網格（欄數自適應）：列首小圖（捲動面板 render 畫）＋勾選（勾＝顯示）
+    -- 物種網格（欄數自適應）：列首小圖（捲動面板 render 畫）＋勾選（勾＝顯示）。
+    -- 小圖與地圖同源（Core.adotsStyleTexture）：符號風格＝框架 art／原版符號染灰，
+    -- 物品風格＝彩圖＋深底——設定視窗所見即地圖所得
     local disOpt = modOptions and modOptions:getOption("AnimalSpeciesFilter")
     local dis = unifiedCsvSet(disOpt and disOpt:getValue() or "")
+    local styleItem = getComboIndex("AnimalIconStyle", 1) == 2
     for i = 1, #ADOTS_SPECIES_UI do
         local def = ADOTS_SPECIES_UI[i]
         local cx = ctx.curX + 4 + ((i - 1) % ctx.cols3) * ctx.colW3
         local cy = ctx.curY + math.floor((i - 1) / ctx.cols3) * ctx.rowH
         local art = ADOTS_ART and ADOTS_ART[def.groups[1]]
+        local tex, asItem
+        if Core.adotsStyleTexture then
+            tex, asItem = Core.adotsStyleTexture(art, styleItem)
+        else
+            tex = adotsTexture and adotsTexture(art and art.sym)
+        end
         local icons = ctx.win._icons
-        icons[#icons + 1] = { panel = ctx.panel,
-            name = art and art.sym, x = cx, y = cy, size = ctx.fontH + 2 }
+        icons[#icons + 1] = { panel = ctx.panel, tex = tex, item = asItem,
+            x = cx, y = cy, size = ctx.fontH + 2 }
         unifiedAddTick(ctx, cx + ctx.fontH + 5, cy, ctx.colW3 - ctx.fontH - 6, getText(def.label), not dis[def.key],
             function(target, index, selected, e)
                 unifiedSetFilter("AnimalSpeciesFilter", ADOTS_SPECIES_UI, e.key, selected)
@@ -1723,10 +1739,20 @@ local function studioSetupPanel(win)
                 end
                 local color = selected and Skin and Skin.COLORS.ACCENT_AMBER or nil
                 local textX = row.x + 10
+                -- icon＝UI 框架圖示鍵（rev 4 art 鍵缺席／舊 rev 時 Skin.icon 回 false）；
+                -- iconTex＝原版地圖符號路徑退回（白 glyph 可染色，同色同尺寸維持整排一致）
                 if row.sec.icon and Skin and Skin.icon
                         and Skin.icon(self, row.sec.icon, row.x + 8, row.y + 5, 16,
                             color or Skin.COLORS.TEXT_MUTED) then
                     textX = row.x + 30
+                elseif row.sec.iconTex and adotsTexture then
+                    local tex = adotsTexture(row.sec.iconTex)
+                    if tex then
+                        local c = color or (Skin and Skin.COLORS.TEXT_MUTED)
+                        self:drawTextureScaled(tex, row.x + 8, row.y + 5, 16, 16, 1,
+                            c and c.r or 0.7, c and c.g or 0.7, c and c.b or 0.7)
+                        textX = row.x + 30
+                    end
                 end
                 self:drawText(getText(row.sec.label), textX, row.y + 7,
                     color and color.r or 0.9, color and color.g or 0.9,
@@ -1752,7 +1778,10 @@ local function studioSetupPanel(win)
             local ic = w._icons[i]
             if ic.panel == self then
                 local tex = ic.tex or (ic.name and adotsTexture and adotsTexture(ic.name))
-                if tex then
+                if tex and ic.item then -- 彩圖：深底＋原色（同地圖物品風格畫法）
+                    self:drawRect(ic.x - 1, ic.y, ic.size + 2, ic.size + 2, 0.75, 0, 0, 0)
+                    self:drawTextureScaled(tex, ic.x, ic.y + 1, ic.size, ic.size, 1, 1, 1, 1)
+                elseif tex then
                     self:drawTextureScaled(tex, ic.x, ic.y + 1, ic.size, ic.size, 1,
                         ic.r or 0.92, ic.g or 0.92, ic.b or 0.92)
                 end
@@ -1895,7 +1924,7 @@ unifiedRebuild = function(win)
     for i = 1, #UNIFIED_SECTIONS do
         local sec = UNIFIED_SECTIONS[i]
         local labelW = tm:MeasureStringX(UIFont.Small, getText(sec.label))
-        local chromeW = (sec.master and 52 or 8) + (sec.icon and 24 or 0)
+        local chromeW = (sec.master and 52 or 8) + ((sec.icon or sec.iconTex) and 24 or 0)
         navNeed = math.max(navNeed, labelW + chromeW + 20)
     end
     local desiredInspectorW = math.max(measure.laneW + 34, measure.fontH * 34)

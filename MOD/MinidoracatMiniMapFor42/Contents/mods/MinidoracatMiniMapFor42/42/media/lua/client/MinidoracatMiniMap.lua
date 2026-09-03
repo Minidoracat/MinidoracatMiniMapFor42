@@ -2077,16 +2077,17 @@ end
 -- 物種 → 圖標素材。活鹿無物品圖（不可入包的動物只有屍體圖），物品風格用鹿屍圖；
 -- 未知物種（其他 MOD 動物）→ 腳印備援。（統一視窗畫物種小圖經命名空間引用）
 local ADOTS_ART = {
-    chicken = { sym = "media/ui/LootableMaps/map_chicken.png", item = "Item_Chicken_HenBrown" },
-    cow     = { sym = "media/ui/LootableMaps/map_cow.png",     item = "Item_CowBrown_Calf" },
-    pig     = { sym = "media/ui/LootableMaps/map_pig.png",     item = "Item_PigWhite_Piglet" },
-    sheep   = { sym = "media/ui/LootableMaps/map_sheep.png",   item = "Item_SheepSuffolk_Lamb" },
-    deer    = { sym = "media/ui/LootableMaps/map_deer.png",    item = "Item_DeerFemale_Dead" },
-    rabbit  = { sym = "media/ui/LootableMaps/map_rabbit.png",  item = "Item_Rabbit" },
-    raccoon = { sym = "media/ui/LootableMaps/map_raccoon.png", item = "Item_Raccoon" },
-    rat     = { sym = "media/ui/LootableMaps/map_rodent.png",  item = "Item_Rat" },
-    mouse   = { sym = "media/ui/LootableMaps/map_rodent.png",  item = "Item_Mouse" },
-    turkey  = { sym = "media/ui/LootableMaps/map_turkey.png",  item = "Item_TurkeyHen" },
+    -- icon＝UI 框架 rev 4 art 圖示 key（Core.Skin.iconTexture；缺框架／舊 rev 退 sym 原版符號）
+    chicken = { icon = "chicken", sym = "media/ui/LootableMaps/map_chicken.png", item = "Item_Chicken_HenBrown" },
+    cow     = { icon = "cow",     sym = "media/ui/LootableMaps/map_cow.png",     item = "Item_CowBrown_Calf" },
+    pig     = { icon = "pig",     sym = "media/ui/LootableMaps/map_pig.png",     item = "Item_PigWhite_Piglet" },
+    sheep   = { icon = "sheep",   sym = "media/ui/LootableMaps/map_sheep.png",   item = "Item_SheepSuffolk_Lamb" },
+    deer    = { icon = "deer",    sym = "media/ui/LootableMaps/map_deer.png",    item = "Item_DeerFemale_Dead" },
+    rabbit  = { icon = "rabbit",  sym = "media/ui/LootableMaps/map_rabbit.png",  item = "Item_Rabbit" },
+    raccoon = { icon = "raccoon", sym = "media/ui/LootableMaps/map_raccoon.png", item = "Item_Raccoon" },
+    rat     = { icon = "rodent",  sym = "media/ui/LootableMaps/map_rodent.png",  item = "Item_Rat" },
+    mouse   = { icon = "rodent",  sym = "media/ui/LootableMaps/map_rodent.png",  item = "Item_Mouse" },
+    turkey  = { icon = "turkey",  sym = "media/ui/LootableMaps/map_turkey.png",  item = "Item_TurkeyHen" },
 }
 local ADOTS_FALLBACK_SYM = "media/ui/LootableMaps/map_pawprint.png"
 

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### 變更
+
+- **全新圖標**：安全屋、殭屍、動物（雞／牛／豬／羊／鹿／兔／浣熊／鼠／火雞）、載具的地圖圖標換成一組新繪的實心剪影，辨識度比原版地圖符號高很多；地圖顯示設定的導覽列每個分類現在都有圖示（安全屋／殭屍／動物／載具與圖層／資源點等同一排風格）。圖標由 UI 框架（MinidoracatUIFor42）統一提供，框架未更新時自動退回原版符號
+- **設定視窗的物種小圖跟著「動物圖標風格」走**：切到「彩色物品圖標」時，動物分類的物種清單立刻改顯示彩圖（深底），切回符號即恢復——地圖上長怎樣設定窗就長怎樣
+
+> 技術要點：依賴框架 API rev 4（`Icons` 新增 13 個 art key）；`Skin.iconTexture(key)` adapter，`_Dots.lua` 的 `adotsSymTexture／adotsStyleTexture／adotsVehTexture` 為地圖與設定視窗的單一貼圖來源（框架 art → `ADOTS_ART.sym` 原版 → 腳印備援；第三方相容包物種只有 `sym` 照走）。安全屋圖標 `house`、導覽分類 `icon=`＋`iconTex=` 原版退回。`AnimalIconStyle` 下拉改值即 `unifiedRebuild`。
+
 ## [42.20.4-0.25.0] - 2026-09-03
 
 ### 新增

@@ -553,6 +553,34 @@ local function adotsDrawGlyph(inner, tex, ux, uy, size, r, g, b, af)
     inner:drawTextureScaled(tex, ux, uy, size, size, bodyA, r, g, b)
 end
 
+-- 符號貼圖解析（地圖繪製與設定視窗物種小圖共用同一實作＝所見即所得）：
+-- 內建物種帶 icon key → UI 框架 rev 4 art 圖示優先（Core.Skin 載入序在本檔之後，
+-- 呼叫時查）；缺框架／舊 rev／缺資產退原版 sym；第三方註冊物種只有 sym 照走 sym；
+-- 未知物種＝腳印備援（框架 pawprint → 原版 map_pawprint）
+local function adotsSymTexture(art)
+    local Skin = Core.Skin
+    local key = art and art.icon or (not art and "pawprint") or nil
+    if key and Skin and Skin.iconTexture then
+        local tex = Skin.iconTexture(key)
+        if tex then return tex end
+    end
+    return adotsTexture(art and art.sym or ADOTS_FALLBACK_SYM)
+        or adotsTexture(ADOTS_FALLBACK_SYM)
+end
+-- 物種小圖／地圖圖標依風格取貼圖：物品風格回 (彩圖, true)，缺彩圖或符號風格回 (符號, false)
+local function adotsStyleTexture(art, styleItem)
+    if styleItem and art then
+        local tex = adotsTexture(art.item)
+        if tex then return tex, true end
+    end
+    return adotsSymTexture(art), false
+end
+local function adotsVehTexture()
+    local Skin = Core.Skin
+    local tex = Skin and Skin.iconTexture and Skin.iconTexture("steeringwheel")
+    return tex or adotsTexture(ADOTS_VEH_SYM)
+end
+
 -- wildOpt/liveOpt/vehOpt＝該表面的開關選項（小地圖 AnimalWild…／世界地圖 WM 前綴）；
 -- 風格/大小/顏色/物種與類別篩選、伺服器沙盒閘皆兩表面共用
 local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
@@ -596,21 +624,13 @@ local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
         -- 手動裁切同殭屍點位（Lua 繪製不吃元件裁切）；留 1px 邊給影子/描邊
         if ux >= 1 and uy >= 1 and ux + size <= inner.width - 1 and uy + size <= inner.height - 1 then
             if d.veh then -- 載具：恆用符號（無對應物品圖），顏色可自訂
-                local tex = adotsTexture(ADOTS_VEH_SYM)
+                local tex = adotsVehTexture()
                 if tex then
                     adotsDrawGlyph(inner, tex, ux, uy, size, vehC[1], vehC[2], vehC[3], vAlpha)
                 end
             else
                 local art = ADOTS_ART[d.group]
-                local tex, asItem
-                if styleItem and art then
-                    tex = adotsTexture(art.item)
-                    asItem = tex ~= nil
-                end
-                if not tex then
-                    tex = adotsTexture(art and art.sym or ADOTS_FALLBACK_SYM)
-                        or adotsTexture(ADOTS_FALLBACK_SYM)
-                end
+                local tex, asItem = adotsStyleTexture(art, styleItem)
                 if tex then
                     if asItem then
                         inner:drawRect(ux - 1, uy - 1, size + 2, size + 2, 0.75 * aAlpha, 0, 0, 0)
@@ -632,4 +652,6 @@ end
 -- 主檔 prerender wrap 經 Core 動態呼叫（同 Core.drawNavRoute 慣例）
 Core.drawZombieDotsOn = drawZombieDotsOn
 Core.drawAnimalDots = drawAnimalDots
+Core.adotsStyleTexture = adotsStyleTexture -- _Settings.lua：物種小圖依風格取圖（與地圖同源）
+Core.adotsVehTexture = adotsVehTexture
 Core.adotsDrawGlyph = adotsDrawGlyph -- _Safehouse.lua：安全屋圖標沿用白 glyph 染色畫法
