@@ -58,8 +58,8 @@ local UNIFIED_LAYER_TICKS = {
     { id = "PlaceNames", label = "UI_MinidoracatMiniMap_PlaceNames", default = true },
     { id = "StreetNames", label = "UI_MinidoracatMiniMap_StreetNames", default = true },
     { id = "NavRoute", label = "UI_MinidoracatMiniMap_NavRoute", default = true },
-    { id = "Safehouses", label = "UI_MinidoracatMiniMap_Safehouses", default = true },
-    -- PoiIcons/PoiBlocks 移入獨立「資源點」區塊（poicat），與 ZoneLayer 解耦
+    -- Safehouses 移入獨立「安全屋」區塊（safehouse）；PoiIcons/PoiBlocks 移入獨立
+    -- 「資源點」區塊（poicat），與 ZoneLayer 解耦
     { id = "Isometric", label = "IGUI_MapOption_Isometric", engine = true },
     { id = "Symbols", label = "IGUI_MapOption_Symbols", engine = true },
     { id = "RemoteSymbols", label = "IGUI_MapOption_RemoteSymbols", engine = true },
@@ -132,12 +132,19 @@ local UNIFIED_SLIDERS = {
         { id = "ClientVehicleIconDistance", label = "UI_MinidoracatMiniMap_DistVehicle",
             default = 0, min = 0, max = 2000, step = 1, fmt = "%d",
             zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited", capBy = "VehicleIconDistance" },
-        { id = "ClientSafehouseDisplayDistance", label = "UI_MinidoracatMiniMap_DistSafehouse",
-            default = 0, min = 0, max = 2000, step = 1, fmt = "%d",
-            zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited", capBy = "SafehouseDisplayDistance" },
+        -- 安全屋兩條距離滑條在「安全屋」區塊（UNIFIED_SLIDERS.safehouse），不在此列
         { id = "ClientPoiDisplayDistance", label = "UI_MinidoracatMiniMap_DistPoi",
             default = 0, min = 0, max = 2000, step = 1, fmt = "%d",
             zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited", capBy = "PoiDisplayDistance" },
+    },
+    -- 安全屋：範圍框／圖標共用 SafehouseDisplayDistance，名稱獨立 SafehouseNameDistance
+    safehouse = {
+        { id = "ClientSafehouseDisplayDistance", label = "UI_MinidoracatMiniMap_DistSafehouse",
+            default = 0, min = 0, max = 2000, step = 1, fmt = "%d",
+            zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited", capBy = "SafehouseDisplayDistance" },
+        { id = "ClientSafehouseNameDistance", label = "UI_MinidoracatMiniMap_DistSafehouseName",
+            default = 0, min = 0, max = 2000, step = 1, fmt = "%d",
+            zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited", capBy = "SafehouseNameDistance" },
     },
 }
 local UNIFIED_APPEAR_COMBOS = {
@@ -189,12 +196,24 @@ local VEHICLE_MASTER = {
 local ZONE_MASTER = {
     id = "ZoneLayer", label = "UI_MinidoracatMiniMap_ZoneLayer", default = true,
 }
+-- 安全屋三件套（範圍框／圖標／名稱）：導覽 pill 投影三者 OR（同動物母開關）
+local SAFEHOUSE_MASTER_TICKS = {
+    { id = "Safehouses", label = "UI_MinidoracatMiniMap_Safehouses", default = true },
+    { id = "SafehouseIcons", label = "UI_MinidoracatMiniMap_SafehouseIcons", default = true },
+    { id = "SafehouseNames", label = "UI_MinidoracatMiniMap_SafehouseNames", default = true },
+}
+local SAFEHOUSE_NAV_MASTER = {
+    label = "UI_MinidoracatMiniMap_SecSafehouse",
+    members = SAFEHOUSE_MASTER_TICKS,
+}
 
 -- 分類骨架：studioBuildInspector 依 id 分派 builder；gate＝伺服器沙盒閘
 local UNIFIED_SECTIONS = {
     { id = "layers", label = "UI_MinidoracatMiniMap_SecLayers", icon = "layers" },
     { id = "poicat", label = "UI_MinidoracatMiniMap_SecPOI",
         icon = "pin", master = POI_MASTER_TICKS[1] },
+    { id = "safehouse", label = "UI_MinidoracatMiniMap_SecSafehouse",
+        master = SAFEHOUSE_NAV_MASTER },
     { id = "distance", label = "UI_MinidoracatMiniMap_SecDistance", icon = "gauge" },
     { id = "zombie", label = "UI_MinidoracatMiniMap_SecZombie",
         gate = "AllowZombieDots", master = ZOMBIE_MASTER },
@@ -769,6 +788,28 @@ local function unifiedBuildPoicat(ctx)
     unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.poi)
 end
 
+-- 安全屋：三顆開關（雙欄）＋沙盒模式「關閉」時停用對應開關並提示（同牲畜模式 4 提示）
+-- ＋兩條距離滑條。模式由 _Safehouse.lua 匯出（呼叫時查 Core.*；模組缺席視為全部）
+local function unifiedBuildSafehouse(ctx)
+    local rectMode = Core.safehouseDisplayMode and Core.safehouseDisplayMode(ctx.pn) or 3
+    local nameMode = Core.safehouseNameMode and Core.safehouseNameMode(ctx.pn) or 3
+    unifiedAddTickCols(ctx, #SAFEHOUSE_MASTER_TICKS, function(i, x, y, w)
+        local master = SAFEHOUSE_MASTER_TICKS[i]
+        local tick = unifiedAddTick(ctx, x, y, w, getText(master.label),
+            getBoolOption(master.id, master.default), unifiedOnModTick, master)
+        local mode = master.id == "SafehouseNames" and nameMode or rectMode
+        tick.enable = mode ~= 1
+    end)
+    if rectMode == 1 or nameMode == 1 then
+        unifiedAdd(ctx, ISLabel:new(ctx.curX + 4, ctx.curY, ctx.fontH,
+            getText(rectMode == 1 and "UI_MinidoracatMiniMap_SafehouseHiddenBySandbox"
+                or "UI_MinidoracatMiniMap_SafehouseNamesHiddenBySandbox"),
+            0.95, 0.55, 0.25, 1, UIFont.Small, true))
+        ctx.curY = ctx.curY + ctx.rowH
+    end
+    unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.safehouse)
+end
+
 local function unifiedBuildZombie(ctx)
     for i = 1, #UNIFIED_ZOMBIE_COMBOS do unifiedAddComboRow(ctx, UNIFIED_ZOMBIE_COMBOS[i]) end
     unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.zombie)
@@ -1149,6 +1190,7 @@ end
 
 local UNIFIED_BUILDERS = {
     layers = unifiedBuildLayers, poicat = unifiedBuildPoicat, zones = unifiedBuildZones,
+    safehouse = unifiedBuildSafehouse,
     zombie = unifiedBuildZombie,
     animals = unifiedBuildAnimals, vehicles = unifiedBuildVehicles, distance = unifiedBuildDistance,
     worldmap = unifiedBuildWorldmap, appearance = unifiedBuildAppearance,
@@ -1189,6 +1231,9 @@ local function unifiedMeasureLayout()
     end
     for i = 1, #UNIFIED_WM_TICKS do
         max2 = math.max(max2, tw(getText(UNIFIED_WM_TICKS[i].label)))
+    end
+    for i = 1, #SAFEHOUSE_MASTER_TICKS do
+        max2 = math.max(max2, tw(getText(SAFEHOUSE_MASTER_TICKS[i].label)))
     end
     for i = 1, #UNIFIED_SECTIONS do
         local spec = UNIFIED_SECTIONS[i].addon
@@ -1334,6 +1379,9 @@ local function studioBuildIndex()
                 end
             end
             studioIndexList(index, sec, UNIFIED_SLIDERS.poi, "navigate")
+        elseif sec.id == "safehouse" then
+            studioIndexList(index, sec, SAFEHOUSE_MASTER_TICKS, "boolean", "mod")
+            studioIndexList(index, sec, UNIFIED_SLIDERS.safehouse, "navigate")
         elseif sec.id == "zombie" then
             studioIndexAdd(index, sec, ZOMBIE_MASTER.label, "boolean", "mod", ZOMBIE_MASTER)
             studioIndexList(index, sec, UNIFIED_ZOMBIE_COMBOS, "navigate")
@@ -1564,6 +1612,9 @@ local function studioResetSection(target, button)
             end
         end
         if studioResetList(UNIFIED_SLIDERS.poi, 0) then changed = true end
+    elseif sec.id == "safehouse" then
+        changed = studioResetList(SAFEHOUSE_MASTER_TICKS, false)
+        if studioResetList(UNIFIED_SLIDERS.safehouse, 0) then changed = true end
     elseif sec.id == "zombie" then
         changed = studioResetId(ZOMBIE_MASTER.id, ZOMBIE_MASTER.default)
         if studioResetList(UNIFIED_ZOMBIE_COMBOS, 1) then changed = true end
@@ -1959,12 +2010,17 @@ local function studioLiveSettingsDirty(win)
     win._liveVehicles, win._liveLivestock = vehicles, livestock
     local caps = win._liveDistanceCaps
     if not caps then caps = {}; win._liveDistanceCaps = caps; dirty = true end
+    -- 距離 cap 追蹤涵蓋「顯示距離」區與「安全屋」區兩組滑條（後者以 100+ 偏移鍵存）
     for i = 1, #UNIFIED_SLIDERS.distance do
         local capBy = UNIFIED_SLIDERS.distance[i].capBy
         if capBy then
             local cap = sandboxDist and sandboxDist(capBy, pn) or nil
             if caps[i] ~= cap then caps[i] = cap; dirty = true end
         end
+    end
+    for i = 1, #UNIFIED_SLIDERS.safehouse do
+        local cap = sandboxDist and sandboxDist(UNIFIED_SLIDERS.safehouse[i].capBy, pn) or nil
+        if caps[100 + i] ~= cap then caps[100 + i] = cap; dirty = true end
     end
     -- policy revision＝沙盒值或本機旗標的變動計數；role eligibility 另需逐幀
     -- 輪詢——管理員被升／降權不經任何寫入路徑，revision 不會動，只能直接比資格

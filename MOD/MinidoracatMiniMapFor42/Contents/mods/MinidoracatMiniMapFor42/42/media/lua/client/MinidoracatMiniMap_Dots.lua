@@ -632,3 +632,4 @@ end
 -- 主檔 prerender wrap 經 Core 動態呼叫（同 Core.drawNavRoute 慣例）
 Core.drawZombieDotsOn = drawZombieDotsOn
 Core.drawAnimalDots = drawAnimalDots
+Core.adotsDrawGlyph = adotsDrawGlyph -- _Safehouse.lua：安全屋圖標沿用白 glyph 染色畫法

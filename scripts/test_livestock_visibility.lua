@@ -13,6 +13,8 @@ local zonesPath = arg[4]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Zones.lua"
 local navPath = arg[5] -- nav-share-gate 切片自 2026-09-03 起在 _Nav.lua
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Nav.lua"
+local safehousePath = arg[6] -- safehouse-distance 切片自 2026-09-03 起在 _Safehouse.lua
+    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Safehouse.lua"
 
 local function readSource(path)
     local file = assert(io.open(path, "rb"))
@@ -25,6 +27,7 @@ local settingsSource = readSource(settingsPath)
 local dotsSource = readSource(dotsPath)
 local zonesSource = readSource(zonesPath)
 local navSource = readSource(navPath)
+local safehouseSource = readSource(safehousePath)
 
 local body = assert(dotsSource:match(
     "%-%- test:livestock%-visibility:start\n(.-)\n%-%- test:livestock%-visibility:end"),
@@ -274,22 +277,40 @@ local zombieChunk, zombieErr = compile(zombiePrelude .. "\n" .. zombieBody .. "\
 assert(zombieChunk, zombieErr)
 local zombieHarness = zombieChunk()
 
-local safehouseBody = assert(source:match(
+local safehouseBody = assert(safehouseSource:match(
     "%-%- test:safehouse%-distance:start\n(.-)\n%-%- test:safehouse%-distance:end"),
     "找不到 drawSafehouses 測試區段")
 local safehousePrelude = [=[
-local distance, playerPresent, px, py = nil, true, 0, 10
-local houses, drawCount = {}, 0
+local distance, ndistance, playerPresent, px, py = nil, nil, true, 0, 10
+local houses, drawCount, iconCount, nameCount = {}, 0, 0, 0
+-- 三顆玩家開關（預設只開範圍框，既有計數斷言只數框線）
+local opts = { Safehouses = true, SafehouseIcons = false, SafehouseNames = false }
 local function javaList(values)
     return { size = function() return #values end, get = function(_, i) return values[i + 1] end }
 end
 SafeHouse = { getSafehouseList = function() return javaList(houses) end }
-local function getBoolOption() return true end
-local function displayDist() return distance end
--- 安全屋顯示模式改由主檔 safehouseDisplayMode(pn) 供給（Policy 隱私檢視生效時
--- 回最寬的 3）。harness 直接注入合成後的模式值＝「政策 ＋ 旁路」的唯一輸入
-local shMode = 3
+local function getBoolOption(id, default)
+    if opts[id] == nil then return default end
+    return opts[id]
+end
+local function displayDist(name)
+    if name == "SafehouseNameDistance" then return ndistance end
+    return distance
+end
+-- 安全屋顯示模式改由 Policy 供給（隱私檢視生效時回最寬的 3）。harness 直接注入
+-- 合成後的模式值＝「政策 ＋ 旁路」的唯一輸入；名稱模式獨立一鍵
+local shMode, nameMode = 3, 3
 local function safehouseDisplayMode() return shMode end
+local function safehouseNameMode() return nameMode end
+-- 陣營：myFaction 為 nil＝無陣營；members＝同陣營 username 集合
+local factionMembers = nil
+Faction = { getPlayerFaction = function(username)
+    if not factionMembers then return nil end
+    return {
+        isOwner = function(_, name) return factionMembers[name] == "owner" end,
+        isMember = function(_, name) return factionMembers[name] == true end,
+    }
+end }
 local defaultPlayer = {
     getX = function() return px end,
     getY = function() return py end,
@@ -297,33 +318,48 @@ local defaultPlayer = {
 }
 local function getSpecificPlayer() return playerPresent and defaultPlayer or nil end
 local function drawClippedEdge() drawCount = drawCount + 1 end
+local function adotsTexture() return "tex" end
+local Core = { adotsDrawGlyph = function() iconCount = iconCount + 1 end }
+function getTextManager()
+    return { MeasureStringX = function() return 20 end, getFontHeight = function() return 10 end }
+end
+UIFont = { Small = "Small" }
 local mapAPI = {
     worldToUIX = function(_, x) return x end,
     worldToUIY = function(_, _, y) return y end,
 }
-local inner = { playerNum = 0, mapAPI = mapAPI, width = 100, height = 100 }
-local function safehouse(x1, y1, x2, y2, mine)
+local inner = { playerNum = 0, mapAPI = mapAPI, width = 100, height = 100,
+    drawRect = function() end,
+    drawText = function() nameCount = nameCount + 1 end }
+local function safehouse(x1, y1, x2, y2, mine, owner, title)
     return {
         getX = function() return x1 end,
         getY = function() return y1 end,
         getX2 = function() return x2 end,
         getY2 = function() return y2 end,
         playerAllowed = function() return mine end,
+        getOwner = function() return owner or "Z" end,
+        getTitle = function() return title or "Safehouse" end,
     }
 end
 ]=]
 local safehouseSuffix = [=[
 return {
     draw = function()
-        drawCount = 0
+        drawCount, iconCount, nameCount = 0, 0, 0
         drawSafehouses(inner)
-        return drawCount
+        return drawCount, iconCount, nameCount
     end,
     setDistance = function(value) distance = value end,
+    setNameDistance = function(value) ndistance = value end,
     setPlayerPresent = function(value) playerPresent = value end,
     setPlayerPosition = function(x, y) px, py = x, y end,
     setHouses = function(value) houses = value end,
     setMode = function(value) shMode = value end,
+    setNameMode = function(value) nameMode = value end,
+    setOption = function(id, value) opts[id] = value end,
+    setFaction = function(members) factionMembers = members end,
+    modeAllows = safehouseModeAllows,
     safehouse = safehouse,
 }
 ]=]
@@ -458,15 +494,16 @@ assert(settingsSource:find("if sliderW < %d+ then sliderW = %d+ end"),
 -- 命名契約守衛："Client"..沙盒名 三方對齊（displayDist 串接 ↔ ESC 註冊 step=1 ↔
 -- 統一視窗 capBy/id）——日後新增距離沙盒選項漏註冊 Client 滑條時這裡會紅
 local DIST_NAMES = { "ZombieDotDistance", "AnimalIconDistance", "VehicleIconDistance",
-    "SafehouseDisplayDistance", "PoiDisplayDistance", "ZoneDisplayDistance" }
+    "SafehouseDisplayDistance", "SafehouseNameDistance", "PoiDisplayDistance", "ZoneDisplayDistance" }
 for _, n in ipairs(DIST_NAMES) do
-    -- 消費端呼叫點可在主檔、_Dots.lua 或 _Zones.lua（距離閘門隨拆檔遷移）。第二參 pn
-    -- 是管理員檢視旁路的逐 slot 依據——漏傳＝該呼叫點永遠不旁路且靜默不報錯，
+    -- 消費端呼叫點可在主檔、_Dots.lua、_Zones.lua 或 _Safehouse.lua（距離閘門隨拆檔遷移）。
+    -- 第二參 pn 是管理員檢視旁路的逐 slot 依據——漏傳＝該呼叫點永遠不旁路且靜默不報錯，
     -- 故守衛連「必須帶 pn」一起釘住（右括號改成逗號＋空白）
     assert(source:find('displayDist%("' .. n .. '", pn%)')
         or dotsSource:find('displayDist%("' .. n .. '", pn%)')
-        or zonesSource:find('displayDist%("' .. n .. '", pn%)'),
-        "主檔/_Dots/_Zones 缺 displayDist(\"" .. n .. "\", pn) 精確逐 slot 呼叫點")
+        or zonesSource:find('displayDist%("' .. n .. '", pn%)')
+        or safehouseSource:find('displayDist%("' .. n .. '", pn%)'),
+        "主檔/_Dots/_Zones/_Safehouse 缺 displayDist(\"" .. n .. "\", pn) 精確逐 slot 呼叫點")
     -- ESC 註冊點可在主檔（本體恆存選項，值域用 CLIENT_DIST_MAX 常數）或
     -- _Settings.lua（addon 條件選項 OnGameBoot 尾端追加，字面 2000＝同值——
     -- 該檔無 CLIENT_DIST_MAX local；值域對齊由本守衛釘住）
@@ -478,8 +515,9 @@ for _, n in ipairs(DIST_NAMES) do
     assert(settingsSource:find('id = "Client' .. n .. '"'),
         "統一視窗 distance 區缺 id=Client" .. n)
 end
-assert(source:find('local shMode = safehouseDisplayMode%(pn%)'),
-    "安全屋顯示模式必須使用目前 surface 的 pn")
+assert(safehouseSource:find('local shMode = safehouseDisplayMode%(pn%)')
+    and safehouseSource:find('local nameMode = safehouseNameMode%(pn%)'),
+    "安全屋顯示／名稱模式必須使用目前 surface 的 pn")
 assert(source:find('sandboxGate%("AllowZombieIntensity", true, self%.playerNum or 0%)'),
     "殭屍熱度閘門不得借用 slot 0")
 assert(dotsSource:find('sandboxGate%("AllowZombieDots", true, el%.playerNum or 0%)'),
@@ -494,7 +532,7 @@ assert(settingsSource:find('sandboxGate%("AllowZombieDots", true, pn%)')
     and settingsSource:find('sandboxGate%("AllowVehicleDots", true, pn%)'),
     "設定視窗 live gate 必須使用持有者 pn")
 local stepOneCount = select(2, settingsSource:gsub('step = 1, fmt = "%%d"', ""))
-assert(stepOneCount == 6, "統一視窗 distance 滑條 step 應全為 1（得 " .. stepOneCount .. "）")
+assert(stepOneCount == 7, "統一視窗距離滑條 step 應全為 1（得 " .. stepOneCount .. "）")
 
 local worldMapMappings = {
     { "WMZombieDots", "AllowZombieDots" },
@@ -667,16 +705,65 @@ safehouseHarness.setPlayerPresent(true)
 safehouseHarness.setPlayerPosition(15, 15)
 safehouseHarness.setDistance(1)
 assert(safehouseHarness.draw() == 4, "玩家位於安全屋矩形內時應顯示")
--- 顯示模式三檔（隱私旁路生效時 safehouseDisplayMode 回 3＝與此處模式3同路徑）
+-- 顯示模式四檔（隱私旁路生效時 safehouseDisplayMode 回 3＝與此處模式3同路徑）
 safehouseHarness.setDistance(nil)
-safehouseHarness.setHouses({ safehouseHarness.safehouse(10, 10, 20, 20, false),
-    safehouseHarness.safehouse(30, 30, 40, 40, true) })
+safehouseHarness.setHouses({ safehouseHarness.safehouse(10, 10, 20, 20, false, "Z"),
+    safehouseHarness.safehouse(30, 30, 40, 40, true, "A"),
+    safehouseHarness.safehouse(50, 50, 60, 60, false, "F") })
 safehouseHarness.setMode(1)
 assert(safehouseHarness.draw() == 0, "安全屋模式1未關閉全部框線")
 safehouseHarness.setMode(2)
 assert(safehouseHarness.draw() == 4, "安全屋模式2應只畫我方安全屋")
 safehouseHarness.setMode(3)
-assert(safehouseHarness.draw() == 8, "安全屋模式3應畫全部安全屋（隱私旁路同路徑）")
+assert(safehouseHarness.draw() == 12, "安全屋模式3應畫全部安全屋（隱私旁路同路徑）")
+safehouseHarness.setMode(4)
+assert(safehouseHarness.draw() == 4, "無陣營時模式4應退化為僅自己的")
+safehouseHarness.setFaction({ F = true })
+assert(safehouseHarness.draw() == 8, "模式4應畫自己＋屋主同陣營的安全屋")
+safehouseHarness.setFaction({ F = "owner" })
+assert(safehouseHarness.draw() == 8, "模式4：屋主是陣營擁有者亦算同陣營")
+safehouseHarness.setFaction(nil)
+-- 純函式判定表
+local allows = safehouseHarness.modeAllows
+assert(allows(1, true, true) == false and allows(2, false, true) == false
+    and allows(2, true, false) == true and allows(3, false, false) == true
+    and allows(4, false, true) == true and allows(4, false, false) == false,
+    "safehouseModeAllows 判定表錯誤")
+-- 圖標／名稱：圖標跟範圍模式與距離；名稱走獨立模式與獨立距離
+safehouseHarness.setMode(3)
+safehouseHarness.setOption("Safehouses", false)
+safehouseHarness.setOption("SafehouseIcons", true)
+safehouseHarness.setOption("SafehouseNames", true)
+local rects, icons, names = safehouseHarness.draw()
+assert(rects == 0 and icons == 3 and names == 3, "圖標／名稱開關應獨立於範圍框")
+safehouseHarness.setPlayerPosition(0, 10)
+safehouseHarness.setDistance(10)
+rects, icons, names = safehouseHarness.draw()
+assert(icons == 1 and names == 3, "範圍距離只裁圖標，不裁名稱")
+safehouseHarness.setNameDistance(10)
+rects, icons, names = safehouseHarness.draw()
+assert(icons == 1 and names == 1, "名稱距離應獨立裁名稱")
+safehouseHarness.setDistance(nil)
+safehouseHarness.setNameDistance(nil)
+safehouseHarness.setNameMode(2)
+rects, icons, names = safehouseHarness.draw()
+assert(icons == 3 and names == 1, "名稱模式2只畫我方名稱、圖標不受影響")
+safehouseHarness.setNameMode(1)
+safehouseHarness.setMode(1)
+rects, icons, names = safehouseHarness.draw()
+assert(icons == 0 and names == 0, "兩模式皆關閉時不畫任何東西")
+safehouseHarness.setNameMode(3)
+safehouseHarness.setMode(3)
+safehouseHarness.setPlayerPresent(false)
+safehouseHarness.setNameDistance(10)
+rects, icons, names = safehouseHarness.draw()
+assert(icons == 0 and names == 0, "名稱距離啟用且缺玩家時整層 fail closed")
+safehouseHarness.setPlayerPresent(true)
+safehouseHarness.setNameDistance(nil)
+safehouseHarness.setNameMode(3)
+safehouseHarness.setOption("Safehouses", true)
+safehouseHarness.setOption("SafehouseIcons", false)
+safehouseHarness.setOption("SafehouseNames", false)
 
 assert(not navHarness.cacheEmpty(), "導航測試初始快取缺失")
 navHarness.setAllowed(false)

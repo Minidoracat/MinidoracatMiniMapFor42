@@ -828,13 +828,6 @@ local function livestockVisibilityMode(pn)
 end
 -- test:livestock-effective-mode:end
 
--- 安全屋範圍顯示模式：1=關閉、2=僅自己所屬、3=全部（預設；缺表視為 3）。
--- 隱私檢視生效時 Policy 回 3（取最寬模式，與距離閘一併放行）
-local function safehouseDisplayMode(pn)
-    if Policy then return Policy.safehouseMode(pn) end
-    return sandboxGate("SafehouseDisplay", 3)
-end
-
 -- combobox 值＝選中項索引（同 AdornMode 用法）；超界或無選項回預設
 local function getComboIndex(id, default)
     if not modOptions then return default end
@@ -1061,9 +1054,15 @@ if PZAPI and PZAPI.ModOptions then
     -- 顯示原版樣式（多數地圖 MOD 自帶向量 worldmap 資料），關閉後同理
     modOptions:addTickBox("MapImagery", "UI_MinidoracatMiniMap_MapImagery", true,
         "UI_MinidoracatMiniMap_MapImagery_tooltip")
-    -- 安全屋範圍（本 MOD 純 Lua 自繪，見下方 drawSafehouses）：繪製端每幀讀值即時生效
+    -- 安全屋圖層（範圍框／圖標／名稱；本 MOD 純 Lua 自繪，_Safehouse.lua）：
+    -- 繪製端每幀讀值即時生效。伺服器沙盒 SafehouseDisplay／SafehouseNameDisplay
+    -- 為天花板，這三顆只能再收緊
     modOptions:addTickBox("Safehouses", "UI_MinidoracatMiniMap_Safehouses", true,
         "UI_MinidoracatMiniMap_Safehouses_tooltip")
+    modOptions:addTickBox("SafehouseIcons", "UI_MinidoracatMiniMap_SafehouseIcons", true,
+        "UI_MinidoracatMiniMap_SafehouseIcons_tooltip")
+    modOptions:addTickBox("SafehouseNames", "UI_MinidoracatMiniMap_SafehouseNames", true,
+        "UI_MinidoracatMiniMap_SafehouseNames_tooltip")
     -- 地圖包（MapPackLayers/MapBounds/MapBoundsColor）選項為 addon-conditional，
     -- 於下方 OnGameBoot 區塊「有地圖包註冊」時才追加——沒裝地圖包不出現
     modOptions:addTickBox("ZombieIntensity", "UI_MinidoracatMiniMap_ZombieIntensity", false,
@@ -1211,6 +1210,7 @@ if PZAPI and PZAPI.ModOptions then
     modOptions:addSlider("ClientAnimalIconDistance", "UI_MinidoracatMiniMap_DistAnimal", 0, CLIENT_DIST_MAX, 1, 0)
     modOptions:addSlider("ClientVehicleIconDistance", "UI_MinidoracatMiniMap_DistVehicle", 0, CLIENT_DIST_MAX, 1, 0)
     modOptions:addSlider("ClientSafehouseDisplayDistance", "UI_MinidoracatMiniMap_DistSafehouse", 0, CLIENT_DIST_MAX, 1, 0)
+    modOptions:addSlider("ClientSafehouseNameDistance", "UI_MinidoracatMiniMap_DistSafehouseName", 0, CLIENT_DIST_MAX, 1, 0)
     modOptions:addSlider("ClientPoiDisplayDistance", "UI_MinidoracatMiniMap_DistPoi", 0, CLIENT_DIST_MAX, 1, 0)
     -- 收尾分隔線：addTitle 只畫標題、不畫群組結束，少了這行後面的外觀選項
     -- （不透明度/鎖定位置/穿透模式…）在視覺上會被歸進「顯示距離」標題底下
@@ -2154,15 +2154,9 @@ end
 
 
 --------------------------------------------------------------------------------
--- 安全屋範圍（Safehouses，預設開）：成員（含擁有者/受邀）＝綠框、他人＝紅框。
--- 四角經 worldToUIX/Y 投影後以 drawLine2 連線（ISUIElement.lua:1229）——
--- 等軸測（Isometric）投影下矩形成菱形，畫線才不失真。
--- 資料源：SafeHouse.getSafehouseList()（用例 ISSafehousesList.lua:61-62）、
--- 範圍 getX/getY/getX2/getY2（SafeHouse.java:596-632）、成員判定
--- playerAllowed(player)（SafeHouse.java:284，涵蓋 owner 與 players）。
--- 安全屋通常個位數，逐幀直畫免節流；線段超出視窗由 UIWorldMap stencil 裁切
--- （UIWorldMap.java:255-257，同齒輪面板被裁的機制，這裡反過來是助力），
--- 僅做粗略剔除省繪製呼叫。單機無安全屋＝清單空＝零成本。
+-- 框線共用工具（安全屋／地圖包範圍／zone 框線同用）：明確線段裁切＋畫邊。
+-- 安全屋圖層本體（範圍框／圖標／名稱）已拆至 MinidoracatMiniMap_Safehouse.lua
+-- （2026-09-03，主 chunk locvar 上限對策），主檔 prerender 經 Core.drawSafehouses 呼叫。
 --------------------------------------------------------------------------------
 -- test:clipped-edge:start
 local SH_EDGE_A = 0.85
@@ -2205,61 +2199,6 @@ local function drawClippedEdge(inner, x1, y1, x2, y2, r, g, b, a)
     end
 end
 -- test:clipped-edge:end
-
--- test:safehouse-distance:start
-local function drawSafehouses(inner)
-    if not (SafeHouse and SafeHouse.getSafehouseList) then return end
-    if not getBoolOption("Safehouses", true) then return end
-    local pn = inner.playerNum or 0
-    local dist = displayDist("SafehouseDisplayDistance", pn)
-    -- 顯示模式：1=關閉、2=僅自己的、3=全部（預設；缺表視為 3）。管理員隱私檢視
-    -- 生效時取最寬模式（3）且距離閘一併放行——旁路只影響「這台客戶端畫什麼」
-    local shMode = safehouseDisplayMode(pn)
-    if shMode == 1 then return end
-    local list = SafeHouse.getSafehouseList()
-    if not list or list:size() == 0 then return end
-    -- getSpecificPlayer/getX/getY 原版用例 ISMiniMap.lua:216-222；getUsername 原版用例
-    -- ISScoreboard.lua:108。距離啟用但缺玩家時全部 fail closed
-    local playerObj = getSpecificPlayer(pn)
-    if dist and not playerObj then return end
-    local px = playerObj and playerObj:getX()
-    local py = playerObj and playerObj:getY()
-    local username = playerObj and playerObj:getUsername()
-    local dist2 = dist and dist * dist
-    local mapAPI = inner.mapAPI
-    for i = 0, list:size() - 1 do
-        local sh = list:get(i)
-        -- 安全屋幾何 getter＝SafeHouse.java:596-633；getX2/getY2 回 x+w/y+h
-        local x1, y1 = sh:getX(), sh:getY()
-        local x2, y2 = sh:getX2(), sh:getY2()
-        -- 成員判定走 String 版 playerAllowed（SafeHouse.java:290-292，只查
-        -- owner＋players）——IsoPlayer 版（:284-287）含管理員 CanGoInsideSafehouses
-        -- 後門，admin 測試會全判綠
-        local mine = username ~= nil and sh:playerAllowed(username)
-        local visible = shMode ~= 2 or mine -- 模式 2＝僅畫自己所屬的
-        if visible and dist2 then
-            -- 玩家點到矩形的最近點；x2/y2 沿用上方原版 getter 原值
-            local nx = math.max(x1, math.min(px, x2))
-            local ny = math.max(y1, math.min(py, y2))
-            local dx, dy = px - nx, py - ny
-            visible = dx * dx + dy * dy <= dist2
-        end
-        if visible then
-            -- 四角投影（worldToUIX/Y 同殭屍點位；等軸測下矩形成菱形故逐邊畫線）
-            local ux1, uy1 = mapAPI:worldToUIX(x1, y1), mapAPI:worldToUIY(x1, y1)
-            local ux2, uy2 = mapAPI:worldToUIX(x2, y1), mapAPI:worldToUIY(x2, y1)
-            local ux3, uy3 = mapAPI:worldToUIX(x2, y2), mapAPI:worldToUIY(x2, y2)
-            local ux4, uy4 = mapAPI:worldToUIX(x1, y2), mapAPI:worldToUIY(x1, y2)
-            local r, g, b = 1.0, 0.25, 0.2            -- 他人＝紅
-            if mine then r, g, b = 0.25, 0.95, 0.35 end -- 自己＝綠
-            drawClippedEdge(inner, ux1, uy1, ux2, uy2, r, g, b)
-            drawClippedEdge(inner, ux2, uy2, ux3, uy3, r, g, b)
-            drawClippedEdge(inner, ux3, uy3, ux4, uy4, r, g, b)
-            drawClippedEdge(inner, ux4, uy4, ux1, uy1, r, g, b)
-        end
-    end
-end
--- test:safehouse-distance:end
 
 --------------------------------------------------------------------------------
 -- MOD 地圖範圍框線＋名稱（MapBounds，預設開）：對 manifest 裡「已啟用的地圖 MOD」
@@ -2549,7 +2488,13 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         end
         -- Zone 填色＝mod 加繪最底層（base map 之上，安全屋/框線之下）
         Core.drawZonePass(self, "drawZoneFill", "_minidoracatZoneFillErrLogged")
-        pcall(drawSafehouses, self) -- pcall 防清單併發增刪（同殭屍取樣的防禦策略）
+        -- 安全屋圖層（_Safehouse.lua）：pcall 防清單併發增刪（同殭屍取樣的防禦策略）；
+        -- 模組缺席 pcall(nil) 回 false，同走 log-once 可診斷
+        local shOk, shErr = pcall(Core.drawSafehouses, self)
+        if not shOk and not self._minidoracatSafehouseErrLogged then
+            self._minidoracatSafehouseErrLogged = true
+            log("safehouse layer draw failed: " .. tostring(shErr))
+        end
         pcall(drawMapBounds, self)
         Core.drawZonePass(self, "drawZoneLines", "_minidoracatZoneLineErrLogged") -- 與 MapBounds 同層
         Core.drawZonePass(self, "drawZoneIcons", "_minidoracatZoneIconErrLogged") -- POI 圖標，同層
@@ -2744,7 +2689,7 @@ Core.debugWarn = debugWarn
 Core.applyChromeOpacity = applyChromeOpacity -- _Ghost.lua 切換穿透時重套外框透明度
 Core.resizeMax = resizeMax -- _Resize.lua：尺寸上限（玩家螢幕短邊 85%）
 Core.clipSegment = clipSegment -- _NavRoute.lua：路線裁剪（共用零配置 Liang-Barsky 單一實作）
-Core.drawClippedEdge = drawClippedEdge -- _Zones.lua：zone 框線裁切畫線（共用 Liang-Barsky 單一實作）
+Core.drawClippedEdge = drawClippedEdge -- _Zones.lua／_Safehouse.lua：框線裁切畫線（共用 Liang-Barsky 單一實作）
 Core.getLoadedMapDirs = getLoadedMapDirs -- _NavRoute.lua：cell 勝出閘門的地圖優先序來源
 Core.visibleWorldAABB = visibleWorldAABB -- _NavRoute.lua：路線繪製的世界視窗剔除（共用單一實作）
 Core.copyCoordsText = copyCoordsText -- _WorldMapNav.lua：右鍵複製座標（共用剪貼簿＋琥珀回饋）

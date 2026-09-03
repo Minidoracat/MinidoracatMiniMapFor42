@@ -47,7 +47,8 @@
 --     ＋ ZombieDotDistance／AnimalIconDistance／VehicleIconDistance／
 --        PoiDisplayDistance／ZoneDisplayDistance／AllInfoDistance
 --   隱私層 PRIVACY_KEYS（會看到別的玩家藏起來的東西，故獨立第二把鑰匙）：
---     SafehouseDisplay／SafehouseDisplayDistance／LivestockVisibility
+--     SafehouseDisplay／SafehouseDisplayDistance／SafehouseNameDisplay／
+--     SafehouseNameDistance／LivestockVisibility
 --   **永不旁路**：AllowNavShare（會讓伺服器代發座標給別人，是通訊而非檢視）、
 --   ExportPlayerPositions／PlayerExportInterval／ExportOfflinePlayers（落地成
 --   檔案，是 I/O 政策而非檢視），以及 AllowAdminTacticalView／
@@ -84,7 +85,8 @@
 --                                  0／缺值／非數字＝不限；AllInfoDistance 為
 --                                  全域上限，與個別值取較小的正值）
 --   livestockMode(pn)            → 1-4（已套用單機收斂；隱私生效時回 1）
---   safehouseMode(pn)            → 1-3（隱私生效時回 3）
+--   safehouseMode(pn)            → 1-4（隱私生效時回 3＝全部）
+--   safehouseNameMode(pn)        → 1-4（同上；安全屋名稱獨立政策）
 --   玩家自己「再收緊」的偏好（ModOptions 滑條等）不在本檔——那是 client 層在
 --   本 facade 的輸出之上取較小值，伺服器上限永遠是天花板。
 
@@ -179,7 +181,7 @@ local OPTION_PREFIX = "MinidoracatMiniMap."
 local TTL_MS = 250
 local NUM_LIMIT = 1000000000 -- 數字合理值域（±1e9）：順手把 inf 一併排除
 
--- 19 鍵 schema：{ 沙盒鍵名, 型別, 預設值 }。預設值必須與
+-- 21 鍵 schema：{ 沙盒鍵名, 型別, 預設值 }。預設值必須與
 -- media/sandbox-options.txt 的 default 逐鍵一致——這是「舊伺服器缺鍵」時的
 -- 實際生效值，寫錯會讓缺鍵的伺服器行為與有鍵的不同。enum 以 number 表示
 -- （Java 端 getValue 回選項索引）。
@@ -197,6 +199,8 @@ local SCHEMA = {
     { "ZoneDisplayDistance", "number", 0 },
     { "SafehouseDisplay", "number", 3 },
     { "SafehouseDisplayDistance", "number", 0 },
+    { "SafehouseNameDisplay", "number", 3 },
+    { "SafehouseNameDistance", "number", 0 },
     { "AllowNavShare", "boolean", true },
     { "ExportPlayerPositions", "boolean", false },
     { "PlayerExportInterval", "number", 5 },
@@ -204,7 +208,7 @@ local SCHEMA = {
     { "AllowAdminTacticalView", "boolean", false },
     { "AllowAdminPrivacyView", "boolean", false },
 }
-local SCHEMA_N = 19 -- 顯式筆數（家規：不用 # 依賴隱性長度）
+local SCHEMA_N = 21 -- 顯式筆數（家規：不用 # 依賴隱性長度）
 
 local KIND = {}
 for i = 1, SCHEMA_N do
@@ -224,11 +228,12 @@ local TACTICAL_KEYS = {
     ZoneDisplayDistance = true,
     AllInfoDistance = true,
 }
--- 隱私層唯一走通用距離閘的鍵。SafehouseDisplay／LivestockVisibility 是模式鍵：
--- 其隱私旁路在 safehouseMode／livestockMode 內自行判定，不經此名單，也到不了
--- policyGate（KIND 非 boolean）。
+-- 隱私層走通用距離閘的鍵。SafehouseDisplay／SafehouseNameDisplay／LivestockVisibility
+-- 是模式鍵：其隱私旁路在 safehouseMode／safehouseNameMode／livestockMode 內自行判定，
+-- 不經此名單，也到不了 policyGate（KIND 非 boolean）。
 local PRIVACY_KEYS = {
     SafehouseDisplayDistance = true,
+    SafehouseNameDistance = true,
 }
 
 -- 本機檢視旗標只存在此 closure；不進 player modData（任何導航存檔同步都碰不到）。
@@ -469,14 +474,17 @@ local function livestockMode(pn)
     return mode
 end
 
--- 安全屋範圍顯示：1=關閉、2=僅自己的、3=全部。隱私生效時回 3。
-local function safehouseMode(pn)
+-- 安全屋顯示模式（範圍框／名稱各一鍵）：1=關閉、2=僅自己的、3=全部、
+-- 4=自己與陣營（4 為後加，追加在尾端保舊存檔 3＝全部的語意）。隱私生效時回 3。
+local function safehouseModeOf(key, pn)
     refreshPolicy(false)
     if privacyActiveCached(pn) then return 3 end
-    local mode = snapshotRead("SafehouseDisplay", 3)
-    if type(mode) ~= "number" or mode < 1 or mode > 3 then mode = 3 end
+    local mode = snapshotRead(key, 3)
+    if type(mode) ~= "number" or mode < 1 or mode > 4 then mode = 3 end
     return mode
 end
+local function safehouseMode(pn) return safehouseModeOf("SafehouseDisplay", pn) end
+local function safehouseNameMode(pn) return safehouseModeOf("SafehouseNameDisplay", pn) end
 
 local Policy = {
     apiVersion = 1,
@@ -496,6 +504,7 @@ local Policy = {
     sandboxDistance = policyDistance,
     livestockMode = livestockMode,
     safehouseMode = safehouseMode,
+    safehouseNameMode = safehouseNameMode,
 }
 -- test:admin-policy:end
 

@@ -224,7 +224,8 @@ local function adminSectionEligible(pn)
     lastAdminPn = pn
     return adminEligible
 end
-local UNIFIED_SLIDERS = { distance = { { capBy = "A" }, { capBy = "B" } } }
+local UNIFIED_SLIDERS = { distance = { { capBy = "A" }, { capBy = "B" } },
+    safehouse = { { capBy = "S" } } }
 local function sandboxGate(name, default)
     if gates[name] == nil then return default end
     return gates[name]
@@ -250,6 +251,8 @@ setLiveGate("AllowZombieDots", false)
 check(liveDirty(liveWin) and not liveDirty(liveWin), "gate transition dirties exactly once")
 setCap("A", 300)
 check(liveDirty(liveWin) and not liveDirty(liveWin), "distance cap transition dirties exactly once")
+setCap("S", 100)
+check(liveDirty(liveWin) and not liveDirty(liveWin), "safehouse cap transition dirties exactly once")
 setLiveLivestock(4)
 check(liveDirty(liveWin) and not liveDirty(liveWin), "livestock transition dirties exactly once")
 setRevision(1)
@@ -321,7 +324,7 @@ check(resetStats.apply == 1 and resetStats.save == 1 and resetStats.rebuild == 2
 check(source:find('studioResetId("ClientZoneDisplayDistance"', 1, true) == nil,
     "zones reset never changes the Distance category slider")
 
-local required = { "layers", "poicat", "distance", "zombie", "animals",
+local required = { "layers", "poicat", "safehouse", "distance", "zombie", "animals",
     "vehicles", "worldmap", "appearance", "perf" }
 local sections = assert(source:match("local UNIFIED_SECTIONS = {(.-)\n}"),
     "missing section table")
@@ -405,7 +408,7 @@ check(source:find("_scrollBySection%[win._renderedScrollKey%]", 1) ~= nil,
 check(source:find("pcall(studioRebuildDirty, self, structuralDirty)", 1, true) ~= nil
     and source:find("or self._studioRebuildRetry", 1, true) ~= nil,
     "failed live rebuild is logged and retried instead of consuming the dirty signature")
-local EXPECTED_ASSERTIONS = 98
+local EXPECTED_ASSERTIONS = 101
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
         .. ", actual " .. assertions)

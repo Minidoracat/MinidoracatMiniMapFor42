@@ -543,8 +543,8 @@ for key in pairs(N.privacyKeys) do
     if kinds[key] == nil then unknownWhitelisted = unknownWhitelisted + 1 end
 end
 checkEq(tacticalCount, 10, "戰術白名單成員數（4 布林＋6 距離）")
-checkEq(privacyCount, 1,
-    "隱私白名單只含距離鍵（模式鍵的旁路在 safehouseMode／livestockMode 內判）")
+checkEq(privacyCount, 2,
+    "隱私白名單只含兩把距離鍵（模式鍵的旁路在 safehouseMode／safehouseNameMode／livestockMode 內判）")
 checkEq(overlap, 0, "兩張白名單不重疊")
 checkEq(unknownWhitelisted, 0, "白名單沒有 schema 外的鍵（打錯字＝永遠不命中）")
 
@@ -597,24 +597,32 @@ local P = newPolicy{
 }
 checkEq(P.policy.livestockMode(0), 3, "MP：牲畜模式直出政策值")
 checkEq(P.policy.safehouseMode(0), 2, "安全屋模式直出政策值")
+checkEq(P.policy.safehouseNameMode(0), 3, "名稱模式缺鍵＝SCHEMA 預設 3")
 P.world.java.LivestockVisibility = 9
-P.world.java.SafehouseDisplay = 4
+P.world.java.SafehouseDisplay = 5
+P.world.java.SafehouseNameDisplay = 4
 P.policy.refresh(true)
 checkEq(P.policy.livestockMode(0), 2, "牲畜模式越界＝回 SCHEMA 預設 2")
-checkEq(P.policy.safehouseMode(0), 3, "安全屋模式越界＝回 3（全部顯示）")
+checkEq(P.policy.safehouseMode(0), 3, "安全屋模式越界（>4）＝回 3（全部顯示）")
+checkEq(P.policy.safehouseNameMode(0), 4, "名稱模式 4（自己與陣營）合法直出")
 P.world.java.LivestockVisibility = 4
 P.world.java.SafehouseDisplay = 1
+P.world.java.SafehouseNameDisplay = 1
 P.policy.refresh(true)
 checkEq(P.policy.livestockMode(0), 4, "隱私未開＝牲畜隱藏政策照舊")
 checkEq(P.policy.safehouseMode(0), 1, "隱私未開＝安全屋關閉政策照舊")
+checkEq(P.policy.safehouseNameMode(0), 1, "隱私未開＝名稱關閉政策照舊")
 checkEq(P.policy.setLocalTactical(0, true), true, "開啟戰術層")
 checkEq(P.policy.livestockMode(0), 4, "只有戰術層＝隱私選項不解除")
 checkEq(P.policy.safehouseMode(0), 1, "只有戰術層＝安全屋顯示不解除")
+checkEq(P.policy.safehouseNameMode(0), 1, "只有戰術層＝名稱顯示不解除")
 checkEq(P.policy.setLocalPrivacy(0, true), true, "開啟隱私層")
 checkEq(P.policy.livestockMode(0), 1, "隱私層生效＝牲畜全部可見")
 checkEq(P.policy.safehouseMode(0), 3, "隱私層生效＝安全屋全部可見")
+checkEq(P.policy.safehouseNameMode(0), 3, "隱私層生效＝名稱全部可見")
 checkEq(P.policy.livestockMode(1), 4, "旁路逐 slot：其他 slot 照舊被隱藏")
 checkEq(P.policy.safehouseMode(1), 1, "旁路逐 slot：其他 slot 安全屋照舊")
+checkEq(P.policy.safehouseNameMode(1), 1, "旁路逐 slot：其他 slot 名稱照舊")
 
 local Q = newPolicy{ mpClient = false, java = { LivestockVisibility = 2 } }
 checkEq(Q.policy.livestockMode(0), 1, "SP：模式 2 無玩家間歸屬語意＝等同全部顯示")
@@ -654,7 +662,7 @@ checkEq(R.policy.livestockMode(0), 2, "既有牲畜政策不受影響")
 checkEq(R.policy.safehouseMode(0), 3, "既有安全屋政策不受影響")
 
 --------------------------------------------------------------------------------
--- 13. 19 鍵 schema 與 sandbox-options.txt 逐鍵對齊
+-- 13. 21 鍵 schema 與 sandbox-options.txt 逐鍵對齊
 --     SCHEMA 預設＝「舊伺服器缺鍵」時的實際生效值，寫錯會讓缺鍵伺服器的行為與
 --     有鍵的不同，而且不會有任何錯誤訊息。
 --------------------------------------------------------------------------------
@@ -679,8 +687,8 @@ local missingInSchema = 0
 for name in pairs(sbDeclared) do
     if kinds[name] == nil then missingInSchema = missingInSchema + 1 end
 end
-checkEq(sbCount, 19, "sandbox-options.txt 有 19 個選項")
-checkEq(S.schemaN, 19, "SCHEMA_N 顯式筆數＝19")
+checkEq(sbCount, 21, "sandbox-options.txt 有 21 個選項")
+checkEq(S.schemaN, 21, "SCHEMA_N 顯式筆數＝21")
 checkEq(#S.schema, S.schemaN, "SCHEMA 列數與 SCHEMA_N 一致（漏改就靜默少載一把鍵）")
 checkEq(missingInSchema, 0, "沙盒選項全部在 SCHEMA 內（漏一把＝該鍵永遠讀不到）")
 for i = 1, S.schemaN do
@@ -688,7 +696,7 @@ for i = 1, S.schemaN do
     checkEq(row[2] .. "|" .. tostring(row[3]), sbDeclared[row[1]] or "missing",
         "SCHEMA 與 sandbox-options 對齊：" .. row[1])
     -- 缺鍵時的實際生效值必須就是 SCHEMA 預設；這同時證明 KIND/DEFAULTS 建表
-    -- 迴圈確實走完 19 列（少一列＝該鍵變未知鍵，read 會回 nil）。
+    -- 迴圈確實走完 21 列（少一列＝該鍵變未知鍵，read 會回 nil）。
     checkEq(S.policy.read(row[1]), row[3], "缺鍵時實際生效值＝SCHEMA 預設：" .. row[1])
 end
 
@@ -739,7 +747,7 @@ check(source:find("Events%.OnCreatePlayer%.Add%(clearLocalSlot%)") ~= nil
 --------------------------------------------------------------------------------
 -- 斷言條數守門：新增／刪除斷言必須同步改這個數字，否則整批被靜默略過也不會
 -- 有人發現；schema 與 never-bypass 迴圈產生的動態斷言亦計入總數。
-local EXPECTED_ASSERTIONS = 281
+local EXPECTED_ASSERTIONS = 291
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
         .. ", actual " .. assertions)

@@ -21,7 +21,7 @@ Overlays "map images rendered from the actual in-game view" onto the B42 world m
 [*] [b]Live zombie dots[/b] (off by default): real-time zombie positions with adjustable color / size / opacity / cap; vanilla heatmap toggle included
 [*] [b]Animal & vehicle icons[/b] (off by default): separate wild/livestock toggles, species and vehicle-category filters (the compatibility pack adds dogs, horses and more); two icon styles, colorblind-friendly palette
 [*] [b]World-map icons[/b]: the same zombie/animal/vehicle icons on the world map (M), four independent toggles
-[*] [b]Street names + safehouse outlines[/b]: street names on the corner mini-map (vanilla never had them); your safehouse green, others red
+[*] [b]Street names + safehouses[/b]: street names on the corner mini-map (vanilla never had them); safehouse outline / icon / name toggles, yours green, faction cyan, others red
 [*] [b]Player coordinates + one-click copy[/b]: x, y, z at the bottom of both maps; the toolbar copy icon copies your position, while right-click copies any pointed spot — paste straight into /teleportto
 [*] [b]Ghost mode[/b]: clicks and wheel pass through to the game while the map turns semi-transparent — enlarge it into a permanent overlay that never blocks play; hotkey '
 [*] [b]Free look[/b]: drag to inspect and stay there, click once to snap back to the player

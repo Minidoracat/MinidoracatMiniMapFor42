@@ -3,56 +3,62 @@ VERSION = 1,
 option MinidoracatMiniMap.AllInfoDistance
 {type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllInfoDistance,}
 
-option MinidoracatMiniMap.AllowZombieDots
-{type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowZombieDots,}
-
-option MinidoracatMiniMap.ZombieDotDistance
-{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMap, translation = MinidoracatMiniMapZombieDotDistance,}
-
-option MinidoracatMiniMap.AllowZombieIntensity
-{type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowZombieIntensity,}
-
-option MinidoracatMiniMap.AllowAnimalDots
-{type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowAnimalDots,}
-
-option MinidoracatMiniMap.AnimalIconDistance
-{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAnimalIconDistance,}
-
-option MinidoracatMiniMap.LivestockVisibility
-{type = enum, numValues = 4, default = 2, page = MinidoracatMiniMap, translation = MinidoracatMiniMapLivestockVisibility,}
-
-option MinidoracatMiniMap.AllowVehicleDots
-{type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowVehicleDots,}
-
-option MinidoracatMiniMap.VehicleIconDistance
-{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMap, translation = MinidoracatMiniMapVehicleIconDistance,}
-
-option MinidoracatMiniMap.PoiDisplayDistance
-{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMap, translation = MinidoracatMiniMapPoiDisplayDistance,}
-
-option MinidoracatMiniMap.ZoneDisplayDistance
-{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMap, translation = MinidoracatMiniMapZoneDisplayDistance,}
-
-option MinidoracatMiniMap.SafehouseDisplay
-{type = enum, numValues = 3, default = 3, page = MinidoracatMiniMap, translation = MinidoracatMiniMapSafehouseDisplay,}
-
-option MinidoracatMiniMap.SafehouseDisplayDistance
-{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMap, translation = MinidoracatMiniMapSafehouseDisplayDistance,}
-
 option MinidoracatMiniMap.AllowNavShare
 {type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowNavShare,}
-
-option MinidoracatMiniMap.ExportPlayerPositions
-{type = boolean, default = false, page = MinidoracatMiniMap, translation = MinidoracatMiniMapExportPlayerPositions,}
-
-option MinidoracatMiniMap.PlayerExportInterval
-{type = integer, min = 1, max = 300, default = 5, page = MinidoracatMiniMap, translation = MinidoracatMiniMapPlayerExportInterval,}
-
-option MinidoracatMiniMap.ExportOfflinePlayers
-{type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapExportOfflinePlayers,}
 
 option MinidoracatMiniMap.AllowAdminTacticalView
 {type = boolean, default = false, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowAdminTacticalView,}
 
 option MinidoracatMiniMap.AllowAdminPrivacyView
 {type = boolean, default = false, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowAdminPrivacyView,}
+
+option MinidoracatMiniMap.AllowZombieDots
+{type = boolean, default = true, page = MinidoracatMiniMapIcons, translation = MinidoracatMiniMapAllowZombieDots,}
+
+option MinidoracatMiniMap.ZombieDotDistance
+{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMapIcons, translation = MinidoracatMiniMapZombieDotDistance,}
+
+option MinidoracatMiniMap.AllowZombieIntensity
+{type = boolean, default = true, page = MinidoracatMiniMapIcons, translation = MinidoracatMiniMapAllowZombieIntensity,}
+
+option MinidoracatMiniMap.AllowAnimalDots
+{type = boolean, default = true, page = MinidoracatMiniMapIcons, translation = MinidoracatMiniMapAllowAnimalDots,}
+
+option MinidoracatMiniMap.AnimalIconDistance
+{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMapIcons, translation = MinidoracatMiniMapAnimalIconDistance,}
+
+option MinidoracatMiniMap.LivestockVisibility
+{type = enum, numValues = 4, default = 2, page = MinidoracatMiniMapIcons, translation = MinidoracatMiniMapLivestockVisibility,}
+
+option MinidoracatMiniMap.AllowVehicleDots
+{type = boolean, default = true, page = MinidoracatMiniMapIcons, translation = MinidoracatMiniMapAllowVehicleDots,}
+
+option MinidoracatMiniMap.VehicleIconDistance
+{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMapIcons, translation = MinidoracatMiniMapVehicleIconDistance,}
+
+option MinidoracatMiniMap.PoiDisplayDistance
+{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMapAreas, translation = MinidoracatMiniMapPoiDisplayDistance,}
+
+option MinidoracatMiniMap.ZoneDisplayDistance
+{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMapAreas, translation = MinidoracatMiniMapZoneDisplayDistance,}
+
+option MinidoracatMiniMap.SafehouseDisplay
+{type = enum, numValues = 4, default = 3, page = MinidoracatMiniMapSafehouse, translation = MinidoracatMiniMapSafehouseDisplay,}
+
+option MinidoracatMiniMap.SafehouseDisplayDistance
+{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMapSafehouse, translation = MinidoracatMiniMapSafehouseDisplayDistance,}
+
+option MinidoracatMiniMap.SafehouseNameDisplay
+{type = enum, numValues = 4, default = 3, page = MinidoracatMiniMapSafehouse, translation = MinidoracatMiniMapSafehouseNameDisplay,}
+
+option MinidoracatMiniMap.SafehouseNameDistance
+{type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMapSafehouse, translation = MinidoracatMiniMapSafehouseNameDistance,}
+
+option MinidoracatMiniMap.ExportPlayerPositions
+{type = boolean, default = false, page = MinidoracatMiniMapExport, translation = MinidoracatMiniMapExportPlayerPositions,}
+
+option MinidoracatMiniMap.PlayerExportInterval
+{type = integer, min = 1, max = 300, default = 5, page = MinidoracatMiniMapExport, translation = MinidoracatMiniMapPlayerExportInterval,}
+
+option MinidoracatMiniMap.ExportOfflinePlayers
+{type = boolean, default = true, page = MinidoracatMiniMapExport, translation = MinidoracatMiniMapExportOfflinePlayers,}
