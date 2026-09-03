@@ -456,11 +456,13 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh, wantNames)
         d.name = name
         return c >= ADOTS_MAX
     end
-    -- 名稱：getFullName（品種＋種類；自訂名優先；野生自帶「(野生)」，原版用例
-    -- ISAnimalContextMenu.lua:140）＋性別（isFemale／IGUI_Animal_Female|Male，
-    -- 原版用例 ISAnimalUI.lua:73-75）；性別譯文每輪只查兩次
+    -- 名稱：自訂名優先（getCustomName，原版用例 ISAnimalUI.lua:626），否則只取種類
+    -- IGUI_AnimalType_<type>（同 IsoAnimal.getFullName 的種類段，刻意不帶品種——
+    -- 「安格斯牛 小牛」太長，小地圖只要「小牛」）；性別 isFemale／IGUI_Animal_Female|Male
+    -- （原版用例 ISAnimalUI.lua:73-75）；性別譯文每輪只查兩次。野生不另標（顏色已區分）
     local femaleTxt = wantNames and getText("IGUI_Animal_Female") or nil
     local maleTxt = wantNames and getText("IGUI_Animal_Male") or nil
+    local typeNames = wantNames and {} or nil -- type → 譯文（每輪每種類只查一次）
     -- pcall 防競態：清單雖是快照，元素仍是活物件（isDead/getX 期間可能被模擬端移除）。
     -- 動物/載具各自一個 failure boundary：第三方動物資料出錯不連坐清空載具
     -- （反之亦然）；失敗保留該輪已 push 的部分結果。首錯記 log 一次
@@ -495,12 +497,21 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh, wantNames)
                         show = wantLive and adotsLivestockVisible(ax, ay, livestockMode, shRects)
                     end
                     if show then
-                        local group = adotsGroup(a:getAnimalType())
+                        local atype = a:getAnimalType()
+                        local group = adotsGroup(atype)
                         if not (disAnimal and disAnimal[group]) then -- 物種篩選
                             local name = nil
                             if wantNames then
+                                local base = a:getCustomName()
+                                if base == nil or base == "" then
+                                    base = typeNames[atype]
+                                    if not base then
+                                        base = getText("IGUI_AnimalType_" .. atype)
+                                        typeNames[atype] = base
+                                    end
+                                end
                                 name = getText("UI_MinidoracatMiniMap_AnimalNameFmt",
-                                    a:getFullName(), a:isFemale() and femaleTxt or maleTxt)
+                                    base, a:isFemale() and femaleTxt or maleTxt)
                             end
                             if push(ax, ay, false, wild, group, name) then break end
                         end

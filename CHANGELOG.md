@@ -4,9 +4,9 @@
 
 ### 新增
 
-- **動物名稱**：動物分類新增「顯示動物名稱」開關（預設關）——圖標下方標出品種與種類（有取名的顯示自訂名）並附公／母，野生另標「野生」；「動物名稱顯示距離」滑條（0＝不限）只在距離內標名，圖標本身不受影響
+- **動物名稱**：動物分類新增「顯示動物名稱」開關（預設關）——圖標下方標出種類（如「小牛」；有取名的顯示自訂名）並附公／母；「動物名稱顯示距離」滑條（0＝不限）只在距離內標名，圖標本身不受影響
 
-> 技術要點：名稱於 0.5 秒取樣輪一併取（`getFullName`＋`isFemale`，譯文 `IGUI_Animal_Female|Male`），入點池 `d.name`；`wantNames` 進取樣 cache key（mask bit 8）。距離為純客戶端 `AnimalNameDistance`（無沙盒 cap——名稱不比圖標多揭露位置），缺玩家時 fail closed 不標名。格式鍵 `UI_MinidoracatMiniMap_AnimalNameFmt`。
+> 技術要點：名稱於 0.5 秒取樣輪一併取（`getCustomName` 優先，否則 `IGUI_AnimalType_<getAnimalType()>`；`isFemale`，譯文 `IGUI_Animal_Female|Male`），入點池 `d.name`；`wantNames` 進取樣 cache key（mask bit 8）。距離為純客戶端 `AnimalNameDistance`（無沙盒 cap——名稱不比圖標多揭露位置），缺玩家時 fail closed 不標名。格式鍵 `UI_MinidoracatMiniMap_AnimalNameFmt`。
 
 ### 變更
 
