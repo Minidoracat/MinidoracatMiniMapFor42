@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [42.20.4-0.25.0] - 2026-09-03
+
+### 新增
+
+- **安全屋獨立分類**：地圖顯示設定新增「安全屋」分類，範圍框開關從「圖層顯示」搬入，並新增「顯示安全屋圖標」（範圍中心的房屋圖標）與「顯示安全屋名稱」兩顆開關；顏色一致——自己所屬綠、同陣營屋主青、其他玩家紅。安全屋範圍與名稱的顯示距離兩條滑條也在此分類（原「顯示距離」區的安全屋滑條搬過來），名稱距離獨立可調。伺服器以沙盒關閉時，對應開關會反灰並提示
+- **沙盒：安全屋名稱獨立政策**：新增「安全屋名稱顯示」（關閉／僅自己的／全部／自己與陣營）與「安全屋名稱顯示距離」，與範圍顯示分開設定；「安全屋範圍顯示」多一檔「自己與陣營」（屋主為同陣營成員即顯示）。新檔追加在尾端，舊伺服器存的「全部」值不變
+- **沙盒分頁**：Minidoracat 小地圖的沙盒選項拆成五個分頁——一般（全域距離上限、陣營分享、管理員旁路）／圖標（殭屍、動物、載具）／區域（資源點、自訂區域）／安全屋／匯出，選項名稱不變，既有伺服器設定無需調整
+
+> 技術要點：安全屋圖層整段自主檔拆至 `MinidoracatMiniMap_Safehouse.lua`（主檔 prerender 改 `pcall(Core.drawSafehouses)`＋log-once；`_Dots.lua` 新匯出 `Core.adotsDrawGlyph`）。模式判定純函式 `safehouseModeAllows(mode, mine, ally)`，陣營以 `Faction.getPlayerFaction(username)`→`isOwner/isMember(sh:getOwner())` 判定（Faction.java:123/150/154），名稱取 `sh:getTitle()`（SafeHouse.java:727）。Policy SCHEMA 19→21 鍵、`PRIVACY_KEYS` 加 `SafehouseNameDistance`、新 `safehouseNameMode(pn)`，兩模式值域 1-4（隱私旁路回 3）。沙盒 `page` 只是 UI 分頁字串（翻譯鍵 `Sandbox_<page>`），選項名前綴 `MinidoracatMiniMap.` 不變，`SandboxVars` 讀寫不受影響。離線回歸：`test_livestock_visibility`（改讀 `_Safehouse.lua`；模式 4／圖標／名稱／獨立距離案例）、`test_admin_policy`（21 鍵對齊、名稱模式）、`test_settings_studio`（safehouse 分類＋cap dirty）。
+
 ## [42.20.4-0.24.0] - 2026-09-03
 
 ### 修正
