@@ -583,7 +583,7 @@ end
 -- 未知物種＝腳印備援（框架 pawprint → 原版 map_pawprint）
 local function adotsSymTexture(art)
     local Skin = Core.Skin
-    local key = art and art.icon or (not art and "pawprint") or nil
+    local key = art and art.icon or (art == nil and "pawprint")
     if key and Skin and Skin.iconTexture then
         local tex = Skin.iconTexture(key)
         if tex then return tex end
@@ -598,11 +598,6 @@ local function adotsStyleTexture(art, styleItem)
         if tex then return tex, true end
     end
     return adotsSymTexture(art), false
-end
-local function adotsVehTexture()
-    local Skin = Core.Skin
-    local tex = Skin and Skin.iconTexture and Skin.iconTexture("steeringwheel")
-    return tex or adotsTexture(ADOTS_VEH_SYM)
 end
 
 -- wildOpt/liveOpt/vehOpt＝該表面的開關選項（小地圖 AnimalWild…／世界地圖 WM 前綴）；
@@ -621,18 +616,12 @@ local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
     local wantNames = (wantWild or wantLive) and getBoolOption("AnimalNames", false)
     local st = sampleAnimalDots(inner, wantWild, wantLive, wantVeh, wantNames)
     if st.count == 0 then return end
-    local nameDist2, npx, npy, nameTh = nil, nil, nil, nil
-    if wantNames then
-        local nd = getSliderValue("AnimalNameDistance", 0, 0, 2000)
-        local playerObj = getSpecificPlayer(pn)
-        if nd > 0 then
-            if not playerObj then wantNames = false else -- 距離啟用缺玩家＝不標名（fail closed）
-                nameDist2 = nd * nd
-                npx, npy = playerObj:getX(), playerObj:getY()
-            end
-        end
-        if wantNames then nameTh = getTextManager():getFontHeight(UIFont.Small) end
-    end
+    local nd = wantNames and getSliderValue("AnimalNameDistance", 0, 0, 2000) or 0
+    local nameP = nd > 0 and getSpecificPlayer(pn) or nil
+    if nd > 0 and not nameP then wantNames = false end -- 距離啟用缺玩家＝不標名（fail closed）
+    local nameDist2 = nameP and nd * nd
+    local npx, npy = nameP and nameP:getX(), nameP and nameP:getY()
+    local nameTh = wantNames and getTextManager():getFontHeight(UIFont.Small)
     local styleItem = getComboIndex("AnimalIconStyle", 1) == 2
     -- 大小/透明度滑條每幀讀值（0.9.0 起動物/載具各自獨立；風格不再影響大小）
     local aSize = getSliderValue("AnimalIconSize", 16, 8, 48)
@@ -663,7 +652,9 @@ local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
         -- 手動裁切同殭屍點位（Lua 繪製不吃元件裁切）；留 1px 邊給影子/描邊
         if ux >= 1 and uy >= 1 and ux + size <= inner.width - 1 and uy + size <= inner.height - 1 then
             if d.veh then -- 載具：恆用符號（無對應物品圖），顏色可自訂
-                local tex = adotsVehTexture()
+                local Skin = Core.Skin -- 框架 art 優先，缺則原版方向盤
+                local tex = Skin and Skin.iconTexture and Skin.iconTexture("steeringwheel")
+                    or adotsTexture(ADOTS_VEH_SYM)
                 if tex then
                     adotsDrawGlyph(inner, tex, ux, uy, size, vehC[1], vehC[2], vehC[3], vAlpha)
                 end
@@ -708,5 +699,4 @@ end
 Core.drawZombieDotsOn = drawZombieDotsOn
 Core.drawAnimalDots = drawAnimalDots
 Core.adotsStyleTexture = adotsStyleTexture -- _Settings.lua：物種小圖依風格取圖（與地圖同源）
-Core.adotsVehTexture = adotsVehTexture
 Core.adotsDrawGlyph = adotsDrawGlyph -- _Safehouse.lua：安全屋圖標沿用白 glyph 染色畫法

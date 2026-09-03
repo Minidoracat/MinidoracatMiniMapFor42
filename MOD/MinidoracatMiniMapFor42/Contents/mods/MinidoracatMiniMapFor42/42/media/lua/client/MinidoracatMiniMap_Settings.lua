@@ -187,10 +187,6 @@ local ANIMAL_MASTER_TICKS = {
     { id = "AnimalWild", label = "UI_MinidoracatMiniMap_AnimalWild", default = false },
     { id = "AnimalLivestock", label = "UI_MinidoracatMiniMap_AnimalLivestock", default = false },
 }
--- 動物分類的附加開關（不進導覽 pill）：名稱標籤
-local ANIMAL_EXTRA_TICKS = {
-    { id = "AnimalNames", label = "UI_MinidoracatMiniMap_AnimalNames", default = false },
-}
 local ANIMAL_NAV_MASTER = {
     label = "UI_MinidoracatMiniMap_SecAnimals",
     members = ANIMAL_MASTER_TICKS,
@@ -855,12 +851,7 @@ local function unifiedBuildAnimals(ctx)
         local cx = ctx.curX + 4 + ((i - 1) % ctx.cols3) * ctx.colW3
         local cy = ctx.curY + math.floor((i - 1) / ctx.cols3) * ctx.rowH
         local art = ADOTS_ART and ADOTS_ART[def.groups[1]]
-        local tex, asItem
-        if Core.adotsStyleTexture then
-            tex, asItem = Core.adotsStyleTexture(art, styleItem)
-        else
-            tex = adotsTexture and adotsTexture(art and art.sym)
-        end
+        local tex, asItem = Core.adotsStyleTexture(art, styleItem)
         local icons = ctx.win._icons
         icons[#icons + 1] = { panel = ctx.panel, tex = tex, item = asItem,
             x = cx, y = cy, size = ctx.fontH + 2 }
@@ -878,12 +869,10 @@ local function unifiedBuildAnimals(ctx)
         unifiedRebuild(ctx.win)
     end)
     for i = 1, #UNIFIED_ANIMAL_COMBOS do unifiedAddComboRow(ctx, UNIFIED_ANIMAL_COMBOS[i]) end
-    for i = 1, #ANIMAL_EXTRA_TICKS do
-        local t = ANIMAL_EXTRA_TICKS[i]
-        unifiedAddTick(ctx, ctx.curX + 4, ctx.curY, ctx.laneW - 6, getText(t.label),
-            getBoolOption(t.id, t.default), unifiedOnModTick, t)
-        ctx.curY = ctx.curY + ctx.rowH
-    end
+    -- 動物名稱開關（整列；不進導覽 pill）
+    unifiedAddTick(ctx, ctx.curX + 4, ctx.curY, ctx.laneW - 6, getText("UI_MinidoracatMiniMap_AnimalNames"),
+        getBoolOption("AnimalNames", false), unifiedOnModTick, { id = "AnimalNames" })
+    ctx.curY = ctx.curY + ctx.rowH
     unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.animals)
 end
 
@@ -1418,7 +1407,8 @@ local function studioBuildIndex()
             studioIndexList(index, sec, UNIFIED_SLIDERS.zombie, "navigate")
         elseif sec.id == "animals" then
             studioIndexList(index, sec, ANIMAL_MASTER_TICKS, "boolean", "mod")
-            studioIndexList(index, sec, ANIMAL_EXTRA_TICKS, "boolean", "mod")
+            studioIndexAdd(index, sec, "UI_MinidoracatMiniMap_AnimalNames", "boolean", "mod",
+                { id = "AnimalNames", default = false })
             studioIndexList(index, sec, ADOTS_SPECIES_UI, "navigate")
             studioIndexList(index, sec, UNIFIED_ANIMAL_COMBOS, "navigate")
             studioIndexList(index, sec, UNIFIED_SLIDERS.animals, "navigate")
@@ -1652,7 +1642,7 @@ local function studioResetSection(target, button)
         if studioResetList(UNIFIED_SLIDERS.zombie, 0) then changed = true end
     elseif sec.id == "animals" then
         changed = studioResetList(ANIMAL_MASTER_TICKS, false)
-        if studioResetList(ANIMAL_EXTRA_TICKS, false) then changed = true end
+        if studioResetId("AnimalNames", false) then changed = true end
         if studioResetId("AnimalSpeciesFilter", "-") then changed = true end
         if studioResetList(UNIFIED_ANIMAL_COMBOS, 1) then changed = true end
         if studioResetList(UNIFIED_SLIDERS.animals, 0) then changed = true end
@@ -1766,7 +1756,7 @@ local function studioSetupPanel(win)
                     if tex then
                         local c = color or (Skin and Skin.COLORS.TEXT_MUTED)
                         self:drawTextureScaled(tex, row.x + 8, row.y + 5, 16, 16, 1,
-                            c and c.r or 0.7, c and c.g or 0.7, c and c.b or 0.7)
+                            c and c.r or 0.62, c and c.g or 0.62, c and c.b or 0.62)
                         textX = row.x + 30
                     end
                 end
@@ -1793,7 +1783,7 @@ local function studioSetupPanel(win)
         for i = 1, #w._icons do
             local ic = w._icons[i]
             if ic.panel == self then
-                local tex = ic.tex or (ic.name and adotsTexture and adotsTexture(ic.name))
+                local tex = ic.tex
                 if tex and ic.item then -- 彩圖：原色不染，不墊底（物品圖本身透明背景）
                     self:drawTextureScaled(tex, ic.x, ic.y + 1, ic.size, ic.size, 1, 1, 1, 1)
                 elseif tex then
