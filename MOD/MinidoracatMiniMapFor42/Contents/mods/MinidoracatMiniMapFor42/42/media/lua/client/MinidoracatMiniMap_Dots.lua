@@ -531,7 +531,7 @@ end
 --   符號風格＝黑影四斜角偏移＋染色本體疊繪兩次（白 glyph 線條細、單次繪 alpha 偏淡，
 --   疊繪增濃；疊繪次數是實測調校旋鈕）——drawTextureScaled 引數 (tex,x,y,w,h,a,r,g,b)，
 --   主檔標題列 wrap 與 ISCollapsableWindow.lua:160 同序；
---   物品風格＝黑底方塊（drawRect）＋原色彩圖＋野生綠角標。
+--   物品風格＝原色彩圖（不墊底）＋野生綠角標。
 -- 白 glyph 繪製：黑影四斜角＋染色本體疊繪兩次（白 glyph 線條細、單次繪 alpha 偏淡，
 -- 疊繪增濃；次數是實測調校旋鈕）——動物符號風格與載具共用
 local adotsBodyACache = {} -- af→bodyA（ICON-4：sqrt 是跨界呼叫、原每圖標每幀一次；af 來自滑條離散值，鍵集有界）
@@ -632,8 +632,7 @@ local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
                 local art = ADOTS_ART[d.group]
                 local tex, asItem = adotsStyleTexture(art, styleItem)
                 if tex then
-                    if asItem then
-                        inner:drawRect(ux - 1, uy - 1, size + 2, size + 2, 0.75 * aAlpha, 0, 0, 0)
+                    if asItem then -- 彩圖原色、不墊底（物品圖本身透明背景；2026-09-03 使用者裁決）
                         inner:drawTextureScaled(tex, ux, uy, size, size, aAlpha, 1, 1, 1)
                         if d.wild then -- 角標＝野生（彩圖不可染色，用角標區分；色跟野生下拉）
                             inner:drawRect(ux + size - 3, uy - 1, 4, 4, aAlpha,
