@@ -92,16 +92,25 @@ Project Zomboid Build 42 遊戲內世界地圖圖片化 MOD。
 
 ## 截圖
 
+### 繁體中文
+
 | | |
 |---|---|
-| ![統一設定視窗（圓角皮膚）](docs/screenshots/settings-window.png) | ![小地圖圓角卡片外框](docs/screenshots/minimap-frame.png) |
-| ![導航選單與回中提示](docs/screenshots/nav-menu-recenter-hint.png) | ![陣營目標分享](docs/screenshots/nav-share-faction.png) |
-| ![導航邊緣指示](docs/screenshots/nav-edge-indicator.png) | ![管理員沙盒選項](docs/screenshots/admin-sandbox-options.png) |
-| ![內建資源點（POI）](docs/screenshots/poi-resource-points.png) | ![地圖搜尋：地下室條目](docs/screenshots/search-basement.png) |
-| ![地圖搜尋：英文街名](docs/screenshots/search-street.png) | ![沿道路導航路線（大地圖）](docs/screenshots/nav-route-worldmap.png) |
-| ![沿道路導航路線（小地圖）](docs/screenshots/nav-route-minimap.png) | ![分享目標的隊友路線](docs/screenshots/nav-route-shared.png) |
+| ![統一設定視窗（圓角皮膚）](docs/screenshots/zh/01-settings-window.png) | ![小地圖圓角卡片外框](docs/screenshots/zh/02-minimap-frame.png) |
+| ![小地圖右鍵選單（導航／複製座標／搜尋／陣營分享）](docs/screenshots/zh/03-nav-menu.png) | ![沿道路導航路線（大地圖）](docs/screenshots/zh/04-nav-route-worldmap.png) |
+| ![沿道路導航路線（小地圖）](docs/screenshots/zh/05-nav-route-minimap.png) | ![分享目標的隊友路線](docs/screenshots/zh/06-nav-route-shared.png) |
+| ![地圖搜尋：中文街名](docs/screenshots/zh/07-search-street.png) | ![地圖搜尋：地下室條目](docs/screenshots/zh/08-search-basement.png) |
+| ![管理員沙盒選項](docs/screenshots/zh/09-admin-sandbox-options.png) | |
 
-（沙盒選項／回中提示另有英日文版截圖：`*-en.png`、`*-jp.png`）
+### English
+
+| | |
+|---|---|
+| ![Settings: Layers](docs/screenshots/en/01-settings-layers.png) | ![Settings: Animal icons](docs/screenshots/en/02-settings-animal-icons.png) |
+| ![Mini-map context menu](docs/screenshots/en/03-nav-menu.png) | ![World map key & symbols](docs/screenshots/en/04-worldmap-key-symbols.png) |
+| ![Map search: street names](docs/screenshots/en/05-search-street.png) | ![Admin sandbox options](docs/screenshots/en/06-admin-sandbox-options.png) |
+
+Steam Workshop 用 JPG（≤2MB）在 `docs/screenshots/steam/{zh,en}/`，編號與上表一致。
 
 ## 設定
 
