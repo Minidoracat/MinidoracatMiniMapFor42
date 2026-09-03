@@ -532,7 +532,7 @@ assert(settingsSource:find('sandboxGate%("AllowZombieDots", true, pn%)')
     and settingsSource:find('sandboxGate%("AllowVehicleDots", true, pn%)'),
     "設定視窗 live gate 必須使用持有者 pn")
 local stepOneCount = select(2, settingsSource:gsub('step = 1, fmt = "%%d"', ""))
-assert(stepOneCount == 7, "統一視窗距離滑條 step 應全為 1（得 " .. stepOneCount .. "）")
+assert(stepOneCount == 8, "統一視窗距離滑條 step 應全為 1（得 " .. stepOneCount .. "）")
 
 local worldMapMappings = {
     { "WMZombieDots", "AllowZombieDots" },

@@ -101,6 +101,10 @@ local UNIFIED_SLIDERS = {
             default = 16, min = 8, max = 48, step = 1, fmt = "%dpx" },
         { id = "AnimalIconAlpha", label = "UI_MinidoracatMiniMap_IconAlpha",
             default = 100, min = 10, max = 100, step = 5, fmt = "%d%%" },
+        -- 動物名稱顯示距離（純客戶端，無沙盒 cap）
+        { id = "AnimalNameDistance", label = "UI_MinidoracatMiniMap_AnimalNameDistance",
+            default = 0, min = 0, max = 2000, step = 1, fmt = "%d",
+            zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited" },
     },
     vehicles = {
         { id = "VehicleIconSize", label = "UI_MinidoracatMiniMap_VehicleIconSize",
@@ -182,6 +186,10 @@ local POI_MASTER_TICKS = {
 local ANIMAL_MASTER_TICKS = {
     { id = "AnimalWild", label = "UI_MinidoracatMiniMap_AnimalWild", default = false },
     { id = "AnimalLivestock", label = "UI_MinidoracatMiniMap_AnimalLivestock", default = false },
+}
+-- 動物分類的附加開關（不進導覽 pill）：名稱標籤
+local ANIMAL_EXTRA_TICKS = {
+    { id = "AnimalNames", label = "UI_MinidoracatMiniMap_AnimalNames", default = false },
 }
 local ANIMAL_NAV_MASTER = {
     label = "UI_MinidoracatMiniMap_SecAnimals",
@@ -870,6 +878,12 @@ local function unifiedBuildAnimals(ctx)
         unifiedRebuild(ctx.win)
     end)
     for i = 1, #UNIFIED_ANIMAL_COMBOS do unifiedAddComboRow(ctx, UNIFIED_ANIMAL_COMBOS[i]) end
+    for i = 1, #ANIMAL_EXTRA_TICKS do
+        local t = ANIMAL_EXTRA_TICKS[i]
+        unifiedAddTick(ctx, ctx.curX + 4, ctx.curY, ctx.laneW - 6, getText(t.label),
+            getBoolOption(t.id, t.default), unifiedOnModTick, t)
+        ctx.curY = ctx.curY + ctx.rowH
+    end
     unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.animals)
 end
 
@@ -1404,6 +1418,7 @@ local function studioBuildIndex()
             studioIndexList(index, sec, UNIFIED_SLIDERS.zombie, "navigate")
         elseif sec.id == "animals" then
             studioIndexList(index, sec, ANIMAL_MASTER_TICKS, "boolean", "mod")
+            studioIndexList(index, sec, ANIMAL_EXTRA_TICKS, "boolean", "mod")
             studioIndexList(index, sec, ADOTS_SPECIES_UI, "navigate")
             studioIndexList(index, sec, UNIFIED_ANIMAL_COMBOS, "navigate")
             studioIndexList(index, sec, UNIFIED_SLIDERS.animals, "navigate")
@@ -1637,6 +1652,7 @@ local function studioResetSection(target, button)
         if studioResetList(UNIFIED_SLIDERS.zombie, 0) then changed = true end
     elseif sec.id == "animals" then
         changed = studioResetList(ANIMAL_MASTER_TICKS, false)
+        if studioResetList(ANIMAL_EXTRA_TICKS, false) then changed = true end
         if studioResetId("AnimalSpeciesFilter", "-") then changed = true end
         if studioResetList(UNIFIED_ANIMAL_COMBOS, 1) then changed = true end
         if studioResetList(UNIFIED_SLIDERS.animals, 0) then changed = true end

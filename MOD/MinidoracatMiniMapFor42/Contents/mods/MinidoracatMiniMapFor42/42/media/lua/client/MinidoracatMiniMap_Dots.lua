@@ -372,7 +372,8 @@ end
 
 -- 取樣狀態掛在地圖元件上（分槽理由同 zdotsStateFor：兩表面/分割畫面各自持有）
 -- test:animal-sampling:start
-local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
+-- wantNames＝一併取動物名稱（getFullName＋公母；每 500ms 取樣一次，不逐幀跨界）
+local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh, wantNames)
     local pn = inner.playerNum or 0
     local st = inner._minidoracatADots
     if not st then
@@ -404,6 +405,7 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
     local disAnimal, rawA = adotsDisabledGroups("AnimalSpeciesFilter", ADOTS_SPECIES_UI)
     local disVeh, rawV = adotsDisabledGroups("VehicleCategoryFilter", ADOTS_VEHCAT_UI)
     local mask = (wantWild and 1 or 0) + (wantLive and 2 or 0) + (wantVeh and 4 or 0)
+        + (wantNames and 8 or 0)
     -- username/hasPlayer 留在節流 key（牲畜隱私過濾與 fail closed 的既有契約：
     -- 變更須「立即」淘汰快取，test_livestock_visibility 鎖此行為，不得延後）；
     -- getSpecificPlayer/getUsername 原版用例 ISMiniMap.lua:216-222／ISScoreboard.lua:108
@@ -441,7 +443,7 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
     local da2 = da and da * da
     local dv2 = dv and dv * dv
     -- 點池欄位每次全量覆寫（含 veh 旗標）——池重用會殘留上一輪欄位
-    local function push(x, y, veh, wild, group)
+    local function push(x, y, veh, wild, group, name)
         local c = st.count + 1
         st.count = c
         local d = st.dots[c]
@@ -451,8 +453,14 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
         d.veh = veh
         d.wild = wild
         d.group = group
+        d.name = name
         return c >= ADOTS_MAX
     end
+    -- 名稱：getFullName（品種＋種類；自訂名優先；野生自帶「(野生)」，原版用例
+    -- ISAnimalContextMenu.lua:140）＋性別（isFemale／IGUI_Animal_Female|Male，
+    -- 原版用例 ISAnimalUI.lua:73-75）；性別譯文每輪只查兩次
+    local femaleTxt = wantNames and getText("IGUI_Animal_Female") or nil
+    local maleTxt = wantNames and getText("IGUI_Animal_Male") or nil
     -- pcall 防競態：清單雖是快照，元素仍是活物件（isDead/getX 期間可能被模擬端移除）。
     -- 動物/載具各自一個 failure boundary：第三方動物資料出錯不連坐清空載具
     -- （反之亦然）；失敗保留該輪已 push 的部分結果。首錯記 log 一次
@@ -489,7 +497,12 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
                     if show then
                         local group = adotsGroup(a:getAnimalType())
                         if not (disAnimal and disAnimal[group]) then -- 物種篩選
-                            if push(ax, ay, false, wild, group) then break end
+                            local name = nil
+                            if wantNames then
+                                name = getText("UI_MinidoracatMiniMap_AnimalNameFmt",
+                                    a:getFullName(), a:isFemale() and femaleTxt or maleTxt)
+                            end
+                            if push(ax, ay, false, wild, group, name) then break end
                         end
                     end
                 end
@@ -592,8 +605,23 @@ local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
     local wantVeh = getBoolOption(vehOpt, false)
         and sandboxGate("AllowVehicleDots", true, pn) ~= false
     if not (wantWild or wantLive or wantVeh) then return end -- 全關＝零成本
-    local st = sampleAnimalDots(inner, wantWild, wantLive, wantVeh)
+    -- 動物名稱（預設關）：取樣時一併帶名字；AnimalNameDistance 0＝不限，
+    -- N＞0＝距玩家 N 格內才標名（純客戶端偏好，圖標本身仍受伺服器距離閘）
+    local wantNames = (wantWild or wantLive) and getBoolOption("AnimalNames", false)
+    local st = sampleAnimalDots(inner, wantWild, wantLive, wantVeh, wantNames)
     if st.count == 0 then return end
+    local nameDist2, npx, npy, nameTh = nil, nil, nil, nil
+    if wantNames then
+        local nd = getSliderValue("AnimalNameDistance", 0, 0, 2000)
+        local playerObj = getSpecificPlayer(pn)
+        if nd > 0 then
+            if not playerObj then wantNames = false else -- 距離啟用缺玩家＝不標名（fail closed）
+                nameDist2 = nd * nd
+                npx, npy = playerObj:getX(), playerObj:getY()
+            end
+        end
+        if wantNames then nameTh = getTextManager():getFontHeight(UIFont.Small) end
+    end
     local styleItem = getComboIndex("AnimalIconStyle", 1) == 2
     -- 大小/透明度滑條每幀讀值（0.9.0 起動物/載具各自獨立；風格不再影響大小）
     local aSize = getSliderValue("AnimalIconSize", 16, 8, 48)
@@ -641,6 +669,23 @@ local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
                     else
                         local c = d.wild and wildC or liveC
                         adotsDrawGlyph(inner, tex, ux, uy, size, c[1], c[2], c[3], aAlpha)
+                    end
+                end
+            end
+            -- 名稱標籤：圖標正下方置中，深底＋白字（同安全屋名稱畫法）；超出視窗不畫
+            if wantNames and d.name and not d.veh then
+                local within = true
+                if nameDist2 then
+                    local ndx, ndy = d.x - npx, d.y - npy
+                    within = ndx * ndx + ndy * ndy <= nameDist2
+                end
+                if within then
+                    local tw = getTextManager():MeasureStringX(UIFont.Small, d.name)
+                    local tx = ux + half - tw / 2
+                    local ty = uy + size + 1
+                    if tx >= 2 and ty + nameTh <= inner.height - 2 and tx + tw <= inner.width - 2 then
+                        inner:drawRect(tx - 3, ty - 1, tw + 6, nameTh + 2, 0.6 * aAlpha, 0, 0, 0)
+                        inner:drawText(d.name, tx, ty, 1, 1, 1, 0.95 * aAlpha, UIFont.Small)
                     end
                 end
             end

@@ -1131,6 +1131,11 @@ if PZAPI and PZAPI.ModOptions then
     -- 大小/透明度滑條（0.9.0 起動物與載具各自獨立；舊共用 combobox 值一次性換算）
     modOptions:addSlider("AnimalIconSize", "UI_MinidoracatMiniMap_AnimalIconSize", 8, 48, 1, 16)
     modOptions:addSlider("AnimalIconAlpha", "UI_MinidoracatMiniMap_AnimalIconAlphaOpt", 10, 100, 5, 100)
+    -- 動物名稱（預設關）：圖標下方標「品種 種類（公/母）」；距離 0＝不限（純客戶端偏好，
+    -- 不設沙盒——名稱不比圖標多揭露位置資訊）
+    modOptions:addTickBox("AnimalNames", "UI_MinidoracatMiniMap_AnimalNames", false,
+        "UI_MinidoracatMiniMap_AnimalNames_tooltip")
+    modOptions:addSlider("AnimalNameDistance", "UI_MinidoracatMiniMap_AnimalNameDistance", 0, CLIENT_DIST_MAX, 1, 0)
     -- 載具圖標（預設關）：無內建車形地圖圖示，以方向盤符號顯示（見 ADOTS_VEH_SYM）
     modOptions:addTickBox("VehicleDots", "UI_MinidoracatMiniMap_VehicleDots", false,
         "UI_MinidoracatMiniMap_VehicleDots_tooltip")
