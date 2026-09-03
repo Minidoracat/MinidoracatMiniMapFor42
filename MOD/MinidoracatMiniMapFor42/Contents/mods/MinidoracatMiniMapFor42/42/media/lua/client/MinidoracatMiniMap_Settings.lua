@@ -838,7 +838,7 @@ local function unifiedBuildAnimals(ctx)
     end
     -- 物種網格（欄數自適應）：列首小圖（捲動面板 render 畫）＋勾選（勾＝顯示）。
     -- 小圖與地圖同源（Core.adotsStyleTexture）：符號風格＝框架 art／原版符號染灰，
-    -- 物品風格＝彩圖＋深底——設定視窗所見即地圖所得
+    -- 物品風格＝彩圖原色（不墊底，物品圖本身透明）——設定視窗所見即地圖所得
     local disOpt = modOptions and modOptions:getOption("AnimalSpeciesFilter")
     local dis = unifiedCsvSet(disOpt and disOpt:getValue() or "")
     local styleItem = getComboIndex("AnimalIconStyle", 1) == 2
@@ -1778,8 +1778,7 @@ local function studioSetupPanel(win)
             local ic = w._icons[i]
             if ic.panel == self then
                 local tex = ic.tex or (ic.name and adotsTexture and adotsTexture(ic.name))
-                if tex and ic.item then -- 彩圖：深底＋原色（同地圖物品風格畫法）
-                    self:drawRect(ic.x - 1, ic.y, ic.size + 2, ic.size + 2, 0.75, 0, 0, 0)
+                if tex and ic.item then -- 彩圖：原色不染，不墊底（物品圖本身透明背景）
                     self:drawTextureScaled(tex, ic.x, ic.y + 1, ic.size, ic.size, 1, 1, 1, 1)
                 elseif tex then
                     self:drawTextureScaled(tex, ic.x, ic.y + 1, ic.size, ic.size, 1,
