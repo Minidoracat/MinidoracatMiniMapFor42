@@ -17,8 +17,9 @@
 --   （曝露 UIWorldMap.java:539；rel 與加入字串同構，equalsIgnoreCase 比對
 --   WorldMap.java:230-236）；getStreetDataCount/getStreetDataByIndex：
 --   WorldMapStreetsV1.java:31-37（byIndex 兜底遍歷未知來源容器）
--- - 不呼叫 addStreetData/clearStreetData：小地圖街道由主檔 InitPlayer 補載
---   （count==0 gate）；clearStreetData 會走 combinedStreets.clear()——
+-- - 不呼叫 addStreetData/clearStreetData：小地圖（InitPlayer）與世界地圖（每次
+--   ShowWorldMap）的街道皆由主檔 ensureStreetData 補載（count>0 跳過）；
+--   clearStreetData 會走 combinedStreets.clear()——
 --   WorldMapStreets.clear 不清 StreetLookup 空間索引、42.20.3 起 ObjectPool
 --   上限 1024 < 官方 1098 條（WorldMap.java:241-248、WorldMapStreets.java:433-437；
 --   LangFor42 AGENTS.md 實證幽靈殘留），本檔對任何實例全程唯讀
@@ -1472,9 +1473,11 @@ local function logf(key, msg)
 end
 
 -- 引擎狀態機：idle → extracting → building → ready | failed（failed＝本場次
--- 不再重試，直線行為照舊）。OnGameStart 重置：客戶端 Lua 進存檔不重載（本
--- repo 以 OnCreatePlayer/InitPlayer 處理 per-world 狀態的既有慣例即為此），
--- 換檔不重置會把上一世界的 graph／failed 帶進新世界（codex/grok review）
+-- 不再重試，直線行為照舊）。idle＋engine.nodata＝上次探測到的容器是空的、
+-- per-inner 每秒重試中（見 kickEngine）——idle 不再保證「首個繪製幀必推進」。
+-- OnGameStart 重置：客戶端 Lua 進存檔不重載（本 repo 以 OnCreatePlayer/InitPlayer
+-- 處理 per-world 狀態的既有慣例即為此），換檔不重置會把上一世界的 graph／failed
+-- 帶進新世界（codex/grok review）
 local engine = {
     state = "idle", extract = nil, builder = nil, graph = nil,
     patchState = "raw",
@@ -1548,10 +1551,11 @@ end
 -- lotheader，兩種身分推定都不成立）。重複與未知的取捨在 stepExtract 的
 -- street 級簽名去重：known 先抽（帶 src），byIndex 容器逐街比對簽名——已見
 -- 即跳過、未見即以 src=nil 收入（cell gate 對 nil src fail-open 不裁）。
--- 不對任何實例 addStreetData/clearStreetData：主檔 InitPlayer 已對小地圖
--- 補載（走同一 MapUtils 函式），且 clearStreetData 會踩 combinedStreets.clear
+-- 不對任何實例 addStreetData/clearStreetData：主檔 ensureStreetData 已對小地圖
+-- 與世界地圖補載（走同一 MapUtils 函式），且 clearStreetData 會踩 combinedStreets.clear
 -- 的 StreetLookup 幽靈＋ObjectPool 1024 上限坑（WorldMap.java:241-248、
 -- WorldMapStreets.java:433-437；LangFor42 AGENTS.md 有 42.20.3 實證）
+-- test:nav-extract:start（scripts/test_nav_kick.lua 抽本區段；依賴 getStreets/getLotDirectories/logf/MAX_STREET_CONTAINERS 由 prelude 注入）
 local function beginExtract(mapAPI)
     local streetsAPI = mapAPI:getStreetsAPI()
     if not streetsAPI then return nil end
@@ -1561,8 +1565,14 @@ local function beginExtract(mapAPI)
     end
     local total = streetsAPI:getStreetDataCount()
     if total == 0 then
-        logf("nodata", "no street data on this map instance (unexpected)")
-        return nil
+        -- 「這個實例現在沒街道」≠「這個世界沒街道」：小地圖與世界地圖是兩個
+        -- 獨立 WorldMap 容器（兩側皆由主檔 ensureStreetData 補載：小地圖 InitPlayer
+        -- 、世界地圖每次 ShowWorldMap），任一側空都不得讓引擎進 failed 終態——
+        -- 2026-09-05 MP 回報：空側先冷啟動（設目標當幀哪一側先繪製不可控）＝
+        -- 該世界導航永久退直線，即使另一側容器是滿的。回 retry 讓另一側／
+        -- 稍後重試（節流在 kickEngine）
+        logf("nodata", "no street data on this map instance; will retry")
+        return nil, true
     end
     if total > MAX_STREET_CONTAINERS then error("street container limit exceeded") end
     local list = {}
@@ -1596,6 +1606,7 @@ local function beginExtract(mapAPI)
         omittedSearchNames = 0,
     }
 end
+-- test:nav-extract:end
 
 -- 抽取分幀：每 tick 有限跨界呼叫（getTranslatedText/getNumPoints/getPointX/Y
 -- 全是 Java bridge；同步全抽 ~15k 次 ≈ 數十 ms > 16.7ms 幀預算，會在設目標
@@ -1765,25 +1776,42 @@ Events.OnTick.Add(function()
     end
 end)
 
--- 引擎啟動（設目標後首個繪製幀；同步部分只做容器蒐集，重活分幀）
+-- 引擎啟動（設目標後首個繪製幀；同步部分只做容器蒐集，重活分幀）。
+-- nodata（該實例容器空）：state 維持 idle、engine.nodata=true（_Search 據此顯示
+-- 「無結果」而非「載入中」），冷卻 1 秒後可再探測。冷卻**存在 inner 上**
+-- （`_minidoracatNavRetryAt`）而非模組 local：同幀多表面（分割畫面 per-player
+-- 小地圖／世界地圖＋小地圖）共用一個 deadline 時，空側每次到期先推 deadline
+-- 就把滿側永久擋在門外（codex review）；inner 隨世界重建，換世界不需重置。
+-- 無街道地圖（多數 MOD 地圖無 streets.xml）代價＝每個 inner 每秒兩次 bridge
+-- 探測。getTimestampMs 出處 LuaManager.java:9267-9274（節流範本 forageServer.lua:456-460）
+-- test:nav-kick:start（scripts/test_nav_kick.lua 抽本區段；依賴 engine/beginExtract/logf/getTimestampMs 由 prelude 注入）
 local function kickEngine(inner)
     if engine.state ~= "idle" then return end
     local mapAPI = inner and inner.mapAPI
     if not mapAPI then return end
-    local ok, ex = pcall(beginExtract, mapAPI)
+    local now = getTimestampMs()
+    if now < (inner._minidoracatNavRetryAt or 0) then return end
+    local ok, ex, retry = pcall(beginExtract, mapAPI)
     if not ok or not ex then
-        if not ok then logf("acquire", "street acquire failed: " .. tostring(ex)) end
-        engine.state = "failed"
+        if not ok then
+            logf("acquire", "street acquire failed: " .. tostring(ex))
+        elseif retry == true then -- pcall 失敗時第三回傳是 stack trace，只認 true
+            inner._minidoracatNavRetryAt = now + 1000
+            engine.nodata = true
+            return
+        end
+        engine.state, engine.nodata = "failed", nil -- 終態，不得殘留 nodata 遮住 failed
         return
     end
-    engine.extract = ex
-    engine.state = "extracting"
+    engine.extract, engine.state, engine.nodata = ex, "extracting", nil
 end
+-- test:nav-kick:end
 
 -- 世界生命週期重置：PZ 同一程序回主選單再進另一存檔時 client Lua 不重載，
 -- 引擎單例會把上一世界的 graph／failed 終態帶進新世界（幽靈路網或永久直線）
 Events.OnGameStart.Add(function()
     engine.state, engine.extract, engine.builder, engine.graph = "idle", nil, nil, nil
+    engine.nodata = nil
     engine.patchState = "raw"
     engine.searchState = "ok"
     engine.streetIndex = nil
@@ -2088,8 +2116,11 @@ Core.navKickEngine = function(inner)
     if engine.state == "idle" then kickEngine(inner) end
     return engine.state
 end
-Core.navEngineState = function() -- _Search.lua：唯讀狀態（refresh cache key＋failed 終態判定）
-    return engine.state
+-- _Search.lua：唯讀狀態（refresh cache key＋pending 判定）。"nodata"＝idle 但上次
+-- 探測到的容器是空的——搜尋端要顯示「無結果」而非永久「載入中」（claude/codex
+-- review：retry 語意讓 idle 不再是「還在來的路上」）
+Core.navEngineState = function()
+    return engine.nodata and "nodata" or engine.state
 end
 Core.NavRouteCore = NavCore -- 除錯/測試面（離線測試另行抽取原始碼區段）
 

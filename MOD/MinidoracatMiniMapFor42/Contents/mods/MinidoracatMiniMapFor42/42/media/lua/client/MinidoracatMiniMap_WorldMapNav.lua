@@ -34,11 +34,10 @@ function ISWorldMap:onMinidoracatCopyCoords(wx, wy)
     Core.copyCoordsText(self, string.format("%d,%d,0", wx, wy))
 end
 
--- 搜尋視窗（本體 _Search.lua；世界地圖側 self 兼作 NavRoute 引擎冷啟動的
--- mapAPI 載體——與小地圖 inner 同介面）
+-- 搜尋視窗（本體 _Search.lua；引擎冷啟動由其 winRefresh 泵對 live 表面處理）
 function ISWorldMap:onMinidoracatSearch()
     if Core.toggleSearchWindow then
-        Core.toggleSearchWindow(self.playerNum or 0, self)
+        Core.toggleSearchWindow(self.playerNum or 0)
     end
 end
 

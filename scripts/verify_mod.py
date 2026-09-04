@@ -449,6 +449,8 @@ _lua_tests = [
     ("test_player_export.lua", "玩家匯出 Policy 權威", False),
     ("test_server_nav_share.lua", "伺服器導航分享 never-bypass", False),
     ("test_admin_view_marker.lua", "ADMIN VIEW 標記與 fallback", False),
+    ("test_street_backfill.lua", "街道資料補載 gate", False),
+    ("test_nav_kick.lua", "導航引擎冷啟動狀態機", False),
 ]
 for _script, _label, _may_skip in _lua_tests:
     _gate = f"Lua 單元測試（{_script}：{_label}）"

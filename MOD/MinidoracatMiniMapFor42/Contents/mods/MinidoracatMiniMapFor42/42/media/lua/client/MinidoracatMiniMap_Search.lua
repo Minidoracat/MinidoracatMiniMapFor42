@@ -275,6 +275,16 @@ local function winSetTarget(win)
 end
 
 local function winRefresh(win, force)
+    -- 引擎冷啟動／nodata 重試泵（每幀，prerender 呼叫）：沒設導航目標時 drawNavRoute
+    -- 在 kick 前就 return，搜尋是唯一入口（codex review）。對**現行** live 表面各 kick 一次——小地圖以
+    -- getPlayerMiniMap 取當下實例（Recreate 會換 inner，存快照會抱著死容器；原版
+    -- 用例 ISMiniMap.lua:749）＋世界地圖單例；kickEngine 非 idle O(1) 早退、nodata
+    -- per-inner 節流 1 秒，兩側都會被提交，滿側一補上即接手
+    if Core.navKickEngine then
+        local mm = getPlayerMiniMap(win.playerNum or 0)
+        if mm and mm.inner then Core.navKickEngine(mm.inner) end
+        if ISWorldMap_instance then Core.navKickEngine(ISWorldMap_instance) end
+    end
     local text = win.entry:getInternalText() or ""
     -- cache key＝文字＋引擎狀態雙欄位（review：索引屬非同步建置，只鍵文字會在
     -- ready 後永遠停在「載入中」；欄位比較零每幀字串配置）
@@ -288,7 +298,8 @@ local function winRefresh(win, force)
     local results = doSearch(text, playerObj:getX(), playerObj:getY())
     if #results == 0 then
         if text ~= "" then
-            -- failed＝引擎終態（本場次不重試）：顯示「無結果」而非永久裝載入中；
+            -- failed／nodata＝不會自己變好（failed 終態；nodata 靠上方泵重試、
+            -- 成功會換 state 觸發重刷）：顯示「無結果」而非永久裝載入中；
             -- 索引已到手（building 期即有）但查無同樣「無結果」
             local pending = (Core.navStreetIndex and Core.navStreetIndex() == nil)
                 and (st == "idle" or st == "extracting" or st == "building")
@@ -449,13 +460,12 @@ local function centerToPlayer(win, pn)
     win:setY(sy + math.floor((sh - win.height) / 2))
 end
 
--- 開關搜尋視窗（按鈕/右鍵選單入口共用）。inner 供 NavRoute 引擎冷啟動：
--- 搜尋街名需要街道索引，玩家可能還沒設過導航目標（引擎 idle）。
+-- 開關搜尋視窗（按鈕/右鍵選單入口共用）。引擎冷啟動由 winRefresh 的 live 表面泵
+-- 負責（開窗後首個 prerender 即 kick），本函式不再收 inner。
 -- 分割畫面：同人再按＝關；他人按＝owner-transfer 重刷（同 _Settings 慣例），
 -- 不誤關別人的視窗
-Core.toggleSearchWindow = function(pn, inner)
+Core.toggleSearchWindow = function(pn)
     pn = pn or 0
-    if Core.navKickEngine and inner then Core.navKickEngine(inner) end
     if searchWin and searchWin:isVisible() then
         if (searchWin.playerNum or 0) == pn then
             closeWindow(searchWin)

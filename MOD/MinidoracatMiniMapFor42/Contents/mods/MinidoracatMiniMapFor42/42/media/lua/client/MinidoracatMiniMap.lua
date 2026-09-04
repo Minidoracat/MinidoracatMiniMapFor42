@@ -1310,6 +1310,49 @@ if not (ISWorldMap and ISWorldMap.initDataAndStyle) then
     return
 end
 
+-- 街道資料補載（世界地圖與小地圖共用）：原版小地圖從不載 streets.xml（只有世界
+-- 地圖載，ISWorldMap.lua:1450），ShowStreetNames 開著也無字可畫；世界地圖那條
+-- 只在 MainScreen.instance.inGame 為真的 init 分支跑一次（ISWorldMap.lua:1447-1451）
+-- ——MP 回報世界地圖側容器為空（2026-09-05），機制未實證，本函式的 log 即診斷。
+-- 走同一函式（ISMapDefinitions.lua:41-49，只用 mapUI.javaObject）＝翻譯 MOD wrap
+-- 它載入的中文街名（LangFor42 MapStreets_Flx）一併生效。
+-- 只有**明確 count==0** 才補載：initDefaultStreetData 開頭的 clearStreetData
+-- （ISMapDefinitions.lua:44）會走 combinedStreets.clear()——WorldMapStreets.clear
+-- 不清 StreetLookup 空間索引且 42.20.3 起 ObjectPool 上限 1024 < 官方 1098 條
+-- （WorldMap.java:241-248、WorldMapStreets.java:433-437；LangFor42 AGENTS.md 實證
+-- 「英文街名幽靈殘留」）。探測拋錯＝狀態未知，fail-closed：補載內同樣要呼叫
+-- getStreetsAPI，探測失敗補載必也失敗，fail-open 只剩「對已載入實例重 clear」
+-- 的風險（codex review）。Recreate／重開圖每次重跑本段，count>0 即跳過。
+-- API 出處：getStreetsAPI UIWorldMapV3.java:111；getStreetDataCount
+-- WorldMapStreetsV1.java:31-37；getLotDirectories LuaManager.java:8415
+-- test:street-backfill:start（scripts/test_street_backfill.lua 抽本區段）
+local function ensureStreetData(mapUI)
+    if not (MapUtils and MapUtils.initDefaultStreetData) then return end
+    local function streetCount()
+        return mapUI.mapAPI:getStreetsAPI():getStreetDataCount()
+    end
+    local okBefore, before = pcall(streetCount)
+    if okBefore and before > 0 then return end
+    local loadOk, loadErr = nil, nil -- nil＝fail-closed 未嘗試（log 印 skipped）
+    if okBefore then loadOk, loadErr = pcall(MapUtils.initDefaultStreetData, mapUI) end
+    -- 留痕（每實例一次，旗標掛在 mapUI 上：實例隨世界／Recreate 重建，不需事件
+    -- 重置——OnGameStart 晚於 OnCreatePlayer→InitPlayer，用它重置會壓掉新世界
+    -- 首次補載的 log，codex review）：探測拋錯／載入拋錯／載入後仍空，三者都是
+    -- 「街名、hover 高亮、導航路線整組失效」且原版零提示。載入拋錯不看 count
+    -- （多目錄載到一半炸掉 count 已 >0，仍是部分路網）。lot dirs 數：0＝引擎地圖
+    -- 清單本身為空，>0＝清單裡沒有 streets.xml（MOD 地圖常態）
+    local okAfter, after = pcall(streetCount)
+    if mapUI._minidoracatStreetWarned or (loadOk and okAfter and after > 0) then return end
+    mapUI._minidoracatStreetWarned = true
+    local okDirs, dirs = pcall(getLotDirectories)
+    log("street data load problem (lot dirs=" .. tostring(okDirs and dirs and dirs:size() or "?")
+        .. ", probe=" .. (okBefore and "ok" or ("error: " .. tostring(before)))
+        .. ", load=" .. (loadOk == nil and "skipped" or loadOk and "ok" or ("error: " .. tostring(loadErr)))
+        .. ", count=" .. tostring(okAfter and after or "?")
+        .. "): street names, hover highlight and route navigation may be unavailable")
+end
+-- test:street-backfill:end
+
 -- 掛在 ISWorldMap:initDataAndStyle 之後：該函式建立世界地圖資料與預設樣式
 -- （內部呼叫 MapUtils.initDefaultStyleV3），是加自訂圖層的正確時機。
 -- 註：初建其實也會經內部 overlayPaper 觸發下方 wrap 補掛（instance 於
@@ -1366,6 +1409,10 @@ if ISWorldMap and ISWorldMap.ShowWorldMap then
     function ISWorldMap.ShowWorldMap(playerNum, centerX, centerY, zoom)
         originalShowWorldMap(playerNum, centerX, centerY, zoom)
         if ISWorldMap_instance then
+            -- 街道資料保險掛這裡而非 initDataAndStyle wrap：原版在同一函式已載
+            -- 一次，緊接著補＝必 no-op；真正需要救的是「單例已存在、之後再開圖」
+            -- （grok review）。count>0 即跳過＝每次開圖一次 bridge 探測
+            pcall(ensureStreetData, ISWorldMap_instance)
             local ok, err = pcall(applyMiniMapPyramids, ISWorldMap_instance)
             if not ok then
                 log("remount on map open failed: " .. tostring(err))
@@ -1452,31 +1499,9 @@ if ISMiniMap and ISMiniMap.InitPlayer then
                     log("minimap init failed: " .. tostring(err))
                 end
                 pcall(applyToggleOptions, minimap.inner.mapAPI)
-                -- 街道資料補載：原版小地圖不載 streets.xml（只有世界地圖載，
-                -- ISWorldMap.lua:1450），ShowStreetNames 開著也無字可畫。走同一
-                -- 函式（ISMapDefinitions.lua:41-49，只用 mapUI.javaObject）——
-                -- 翻譯 MOD wrap 它載入的中文街名（CatLangFor42 MapStreets_Flx）一併生效
-                -- count==0 gate：initDefaultStreetData 開頭的 clearStreetData
-                -- （ISMapDefinitions.lua:44）會走 combinedStreets.clear()——
-                -- WorldMapStreets.clear 不清 StreetLookup 空間索引且 42.20.3
-                -- 起 ObjectPool 上限 1024 < 官方 1098 條（WorldMap.java:241-248、
-                -- WorldMapStreets.java:433-437；LangFor42 AGENTS.md 實證「英文
-                -- 街名幽靈殘留」）。Recreate 每次重跑本段，無 gate＝反覆
-                -- clear+re-add 踩坑；有 gate＝每實例至多一次 clear-on-empty
-                -- （no-op）＋一次載入。LangFor42 wrap（不 clear、只 add）在
-                -- 或不在都相容
-                if MapUtils and MapUtils.initDefaultStreetData then
-                    -- gate 判定整段 pcall：getStreetsAPI 探測異常（API 漂移等）
-                    -- 不得炸 InitPlayer 後續（導航目標 modData 載回在本段之後），
-                    -- 且判定失敗＝退回 0.16 無條件補載——寧可重踩 clear 坑也
-                    -- 不可靜默丟街名（claude review：gate 失效面）
-                    local gateOk, isEmpty = pcall(function()
-                        return minimap.inner.mapAPI:getStreetsAPI():getStreetDataCount() == 0
-                    end)
-                    if not gateOk or isEmpty then
-                        pcall(MapUtils.initDefaultStreetData, minimap.inner)
-                    end
-                end
+                -- 街道資料補載（共用實作與緣由見 ensureStreetData）。整段
+                -- pcall：不得炸 InitPlayer 後續（導航目標 modData 載回在本段之後）
+                pcall(ensureStreetData, minimap.inner)
             end
             pcall(applyChromeOpacity, minimap)
             -- 導航目標持久化載回（存於角色 modData，見下方導航一節）
@@ -1900,7 +1925,7 @@ installMinidoracatButtons = function(mm)
     local searchBtn = ISButton:new(0, ref.y, ref.width, ref.height,
         texSearch and "" or getText("UI_MinidoracatMiniMap_BtnSearchLabel"), mm, function(target)
         if Core.toggleSearchWindow then
-            Core.toggleSearchWindow(target.playerNum or 0, target.inner)
+            Core.toggleSearchWindow(target.playerNum or 0)
         end
     end)
     searchBtn:initialise()
@@ -2345,12 +2370,11 @@ if ISWorldMap and ISWorldMap.createChildren then
             -- Core.toggleSettingsWindow＝Settings 模組檔提供；缺席（模組缺失）就不插鈕
             if not (modOptions and Core.toggleSettingsWindow and self.buttonPanel and self.closeBtn) then return end
             local btnSize = self.closeBtn.height
-            -- 放大鏡搜尋鈕（實測回饋：大地圖找不到搜尋入口——右鍵選單之外補
-            -- 按鈕）；self 兼 NavRoute 引擎冷啟動的 mapAPI 載體（同右鍵選單）
+            -- 放大鏡搜尋鈕（實測回饋：大地圖找不到搜尋入口——右鍵選單之外補按鈕）
             local searchBtn = ISButton:new(self.closeBtn.x, 0, btnSize, btnSize, "", self,
                 function(target)
                     if Core.toggleSearchWindow then
-                        Core.toggleSearchWindow(target.playerNum or 0, target)
+                        Core.toggleSearchWindow(target.playerNum or 0)
                     end
                 end)
             searchBtn:initialise()

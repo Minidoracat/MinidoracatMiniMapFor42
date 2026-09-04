@@ -288,7 +288,7 @@ end
 
 function ISMiniMapInner:onMinidoracatSearch()
     if Core.toggleSearchWindow then
-        Core.toggleSearchWindow(self.playerNum or 0, self)
+        Core.toggleSearchWindow(self.playerNum or 0)
     end
 end
 
