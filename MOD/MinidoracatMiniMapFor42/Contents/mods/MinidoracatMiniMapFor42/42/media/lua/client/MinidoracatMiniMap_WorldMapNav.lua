@@ -43,43 +43,63 @@ end
 
 --------------------------------------------------------------------------------
 -- 右鍵選單：原版 onRightMouseUp（ISWorldMap.lua:907-982）三段——
---   (a) symbolsUI 工具取消（:908-910，ISWorldMapSymbols.lua:1597-1611：
---       currentTool 的取消拖曳／down 時暫存的 ignoreRightMouseUp）；
---   (b) 非 debug/admin：return false（:911-913，一般玩家原本無選單）；
---   (c) debug/admin：ISContextMenu.get(0, absX, absY) 建除錯選單回 true（:914-981）。
--- 本 wrap：(a) 作用中原樣透傳（右鍵語意＝取消工具，不疊選單——判定讀 up 當下
--- 的 currentTool＋down 時快照的 ignoreRightMouseUp，後者涵蓋「down 後工具被清」邊界）；
--- (c) 以 getPlayerContextMenu(0) 追加原單例（原版硬編 0，同小地圖 hook 慣例，
--- 保住 debug 傳送/Reapply 項）；(b) 自建 ISContextMenu.get(playerNum,…)（同
--- 原版 :917 座標式；用 self.playerNum 而非硬編 0——分割畫面歸屬正確）。
--- 顯示：ISContextMenu.get 自帶 setVisible(true)（ISContextMenu.lua:1168/1180），
--- 追加/自建兩路皆已可見，無需（也不模仿）小地圖側的 numOptions 重顯——那是
--- 原版 ISMiniMap.lua:295-297 先隱藏空選單的對應解，世界地圖原版無此段
+--   (a) symbolsUI 工具取消（:908-910，ISWorldMapSymbols.lua:1597-1611）→ 原樣透傳；
+--   (b) 非 debug/admin：return false（:911-913）→ 自建 ISContextMenu.get(playerNum,…)
+--       （同原版 :917 座標式；playerNum 而非硬編 0＝分割畫面歸屬正確）；
+--   (c) debug/admin：ISContextMenu.get(0, …) 建除錯選單回 true（:914-981）→ 追加同一單例。
+-- 前手建沒建選單看 getPlayerContextMenu(pn) 的可見性，不信回傳值：DebugMenu 系建了選單
+-- 回 nil（DebugMenuCore.lua:244-250），只看 handled 會走自建、get 的 clear
+-- （ISContextMenu.lua:1166-1170）把它洗掉。呼叫前手前先藏殘留選單（原版 get 同樣先
+-- hideAndChildren 再重顯，:1168），事後可見＝這一下建的。追加以「已有 SetTarget 項」冪等。
+-- 開圖自癒：Cheat Menu Reborn 在 OnGameStart 整個覆寫且非 debug 不呼叫前手
+-- （CMR_MapTeleport.lua:27-55）、DebugMenu 系載入期直接賦值（DebugMenuCore.lua:304）——
+-- 後載即把本 wrap 踢掉；ShowWorldMap 是所有開圖路徑的匯合點（ISReadWorldMap.lua:25、
+-- ISWorldMap.lua:1626），每次開圖不是我們的函式就把當下那個當前手重包。案例見 AGENTS 踩坑錄。
 --------------------------------------------------------------------------------
 -- test:wm-rightclick:start
-if ISWorldMap and ISWorldMap.onRightMouseUp then
-    local originalWMRightMouseUp = ISWorldMap.onRightMouseUp
-    function ISWorldMap:onRightMouseUp(x, y)
+local REHOOK_MAX = 8 -- ponytail: 兩個 MOD 都在開圖時重包會互踢成無限鏈，8 次後放手讓對方贏
+local rehooks = 0
+local navRightMouseUp -- 本 MOD 的 handler；重包時比對身分
+
+local function installWMRightMouseUp()
+    local prev = ISWorldMap.onRightMouseUp
+    if not prev or prev == navRightMouseUp then return end
+    if navRightMouseUp then
+        if rehooks >= REHOOK_MAX then return end
+        rehooks = rehooks + 1
+        print("[MinidoracatMiniMap] worldmap right-click hook replaced by another mod; re-wrapping ("
+            .. rehooks .. "/" .. REHOOK_MAX .. ")")
+    end
+    navRightMouseUp = function(self, x, y)
         local sym = self.symbolsUI
         if sym and (sym.currentTool ~= nil or sym.ignoreRightMouseUp) then
-            return originalWMRightMouseUp(self, x, y) -- 工具取消路徑，不動
+            return prev(self, x, y) -- 工具取消路徑，不動
         end
-        local handled = originalWMRightMouseUp(self, x, y)
         local pn = self.playerNum or 0
+        local own = getPlayerContextMenu(pn)
+        if own and own:isVisible() then own:hideAndChildren() end
+        local handled = prev(self, x, y)
         local playerObj = getSpecificPlayer(pn)
         if not playerObj then return handled end -- debug 主選單地圖：無玩家不加項
         local context
-        if handled then
-            context = getPlayerContextMenu(0) -- 原版 debug/admin 選單已建（硬編 0）：追加同一單例
+        if own and own:isVisible() then
+            context = own -- 前手這一下建的（原版 debug／DebugMenu／CMR）
+        elseif handled then
+            context = getPlayerContextMenu(0) -- 原版 debug 硬編 0；分割畫面 pn≠0 由此接
         else
-            -- 一般玩家：原版無選單，自建（座標式同原版 ISWorldMap.lua:917）
             context = ISContextMenu.get(pn, x + self:getAbsoluteX(), y + self:getAbsoluteY())
         end
         if not context then return handled end
+        local setLabel = getText("UI_MinidoracatMiniMap_SetTarget")
+        local opts = context.options
+        if opts then
+            for i = 1, #opts do
+                if opts[i].name == setLabel then return true end -- 鏈裡兩層都是我們：已加過
+            end
+        end
         local worldX = self.mapAPI:uiToWorldX(x, y) -- 2 參 uiToWorld 用例 ISWorldMap.lua:939-940
         local worldY = self.mapAPI:uiToWorldY(x, y)
-        context:addOption(getText("UI_MinidoracatMiniMap_SetTarget"), self,
-            self.onMinidoracatSetTarget, worldX, worldY)
+        context:addOption(setLabel, self, self.onMinidoracatSetTarget, worldX, worldY)
         -- 複製此處座標：選項文字即時帶座標（先看到再決定點不點，同小地圖）
         local cwx, cwy = math.floor(worldX), math.floor(worldY)
         context:addOption(getText("UI_MinidoracatMiniMap_CopyHere",
@@ -99,6 +119,18 @@ if ISWorldMap and ISWorldMap.onRightMouseUp then
             end
         end
         return true
+    end
+    ISWorldMap.onRightMouseUp = navRightMouseUp
+end
+
+if ISWorldMap and ISWorldMap.onRightMouseUp then
+    installWMRightMouseUp()
+    if ISWorldMap.ShowWorldMap then
+        local originalNavShowWorldMap = ISWorldMap.ShowWorldMap
+        function ISWorldMap.ShowWorldMap(playerNum, centerX, centerY, zoom)
+            originalNavShowWorldMap(playerNum, centerX, centerY, zoom)
+            installWMRightMouseUp()
+        end
     end
 end
 -- test:wm-rightclick:end

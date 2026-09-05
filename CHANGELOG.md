@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [42.20.4-0.26.3] - 2026-09-06
+
+### 修正
+
+- **世界地圖右鍵選單與作弊／調試選單類 MOD 互相蓋掉的問題**：裝了「DebugMenu／B42 調試菜單社區版」的玩家，本 MOD 一裝上大地圖右鍵就只剩「設定導航目標」三項、它的「調試菜單 > 傳送」消失；反過來裝了「Cheat Menu Reborn」的玩家大地圖右鍵只剩「Teleport Here」、本 MOD 的導航選項消失（Workshop 留言與 Discord 各一位回報）。兩種都是同一個右鍵事件被多個 MOD 各自接管：對方建了選單卻沒告訴我們，我們就另建一張把它洗掉；或對方在我們之後整個接走、根本不呼叫我們。現在本 MOD 改成看「右鍵之後畫面上有沒有選單」——有就把導航選項接在它後面（兩家選項同一張）；每次開大地圖也會確認自己還在右鍵鏈上，被踢掉就重新掛回去（對方選單照樣保留）。沒裝這類 MOD 的玩家行為不變；受影響玩家不必再用 `-debug` 啟動或改裝別的作弊選單，對角落小地圖右鍵／搜尋視窗「設為導航目標」兩條路本來就不受影響
+
+> 技術要點：`ISWorldMap:onRightMouseUp` wrap 改以 `getPlayerContextMenu(pn):isVisible()` 判前手是否建了選單（呼叫前手前先 `hideAndChildren` 殘留選單，事後可見＝這一下建的），不再只信回傳值；前手回 true 而選單在 player 0（原版 debug 硬編）仍追加該單例；都沒有才 `ISContextMenu.get(pn, …)` 自建。追加以「選單已有 SetTarget 項」為冪等閘。`ISWorldMap.ShowWorldMap` 多包一層：`onRightMouseUp` 不是本 MOD 函式就把當下函式當前手重包（上限 8 次，封頂 log），所有開圖路徑（`ISReadWorldMap.perform`、主選單 debug）都經 ShowWorldMap。離線回歸 `scripts/test_worldmap_nav.lua`（已進 verify；N1-N5 五個違規證明各自紅）。
+
 ## [42.20.4-0.26.2] - 2026-09-05
 
 ### 變更

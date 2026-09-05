@@ -451,6 +451,7 @@ _lua_tests = [
     ("test_admin_view_marker.lua", "ADMIN VIEW 標記與 fallback", False),
     ("test_street_backfill.lua", "街道資料補載 gate", False),
     ("test_nav_kick.lua", "導航引擎冷啟動狀態機", False),
+    ("test_worldmap_nav.lua", "世界地圖右鍵選單合併／開圖重包", False),
 ]
 for _script, _label, _may_skip in _lua_tests:
     _gate = f"Lua 單元測試（{_script}：{_label}）"

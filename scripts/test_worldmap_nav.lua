@@ -3,13 +3,18 @@
 -- 核心不變量：
 --   (1) symbolsUI 工具作用中（currentTool / down 時快照的 ignoreRightMouseUp）
 --       右鍵＝取消工具，原樣透傳、不疊選單；
---   (2) 原版 handled（debug/admin 已建 player-0 選單）→ getPlayerContextMenu(0)
---       追加同一單例；一般玩家 → ISContextMenu.get(self.playerNum, abs 座標) 自建
---       ——分割畫面歸屬用 playerNum、不硬編 0；
---   (3) 選項組裝：SetTarget/CopyHere 恆有；ClearTarget 依 navGetTarget；ShareTarget
---       再疊 isClient＋Faction＋AllowNavShare 三閘；
---   (4) prerender 加繪：先座標列後導航；各自 pcall＋實例旗標 log-once。
--- 用法：lua scripts/test_worldmap_nav.lua
+--   (2) 前手建了選單（getPlayerContextMenu(pn) 呼叫後可見）→ 追加同一單例，不論
+--       前手回什麼（DebugMenu 系建了選單回 nil）；前手回 true 但選單在 player 0
+--       （原版 debug 硬編 0）也追加；都沒有 → ISContextMenu.get(self.playerNum, abs 座標)
+--       自建——分割畫面歸屬用 playerNum、不硬編 0；
+--   (3) 呼叫前手前把殘留舊選單藏掉：舊選單不會被誤判成「前手建的」；
+--   (4) 選項組裝：SetTarget/CopyHere/SearchMenu 恆有；ClearTarget 依 navGetTarget；
+--       ShareTarget 再疊 isClient＋Faction＋AllowNavShare 三閘；同一選單已有 SetTarget
+--       就不再加（冪等）；
+--   (5) 開圖自癒：別的 MOD 整個覆寫 onRightMouseUp（不呼叫前手）→ ShowWorldMap 後
+--       重包一層，兩家選項都在；重包有上限；
+--   (6) prerender 加繪：先座標列後導航；各自 pcall＋實例旗標 log-once。
+-- 用法：lua scripts/test_worldmap_nav.lua [path/to/MinidoracatMiniMap_WorldMapNav.lua]
 local navPath = arg[1]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_WorldMapNav.lua"
 
@@ -27,49 +32,72 @@ local preBody = assert(source:match(
 local compile = loadstring or load
 
 --------------------------------------------------------------------------------
--- stub 環境：ISWorldMap 原版行為可注入（handledResult）；選單雙路可觀測
+-- stub 環境：原版 onRightMouseUp 行為可注入（origMode）；每位玩家一顆選單單例，
+-- ISContextMenu.get 仿原版 hide→show→clear（ISContextMenu.lua:1166-1180）
 --------------------------------------------------------------------------------
 local env = [=[
 local printed = {}
 local function print(msg) printed[#printed + 1] = tostring(msg) end
 local calls = {}                 -- 依序記錄可觀測事件
-local handledResult = false      -- 原版 onRightMouseUp 回傳（true＝debug/admin 已建選單）
+local origMode = "none"          -- none＝原版一般玩家（回 false）；debug＝原版 debug（get(0) 建選單回 true）；
+                                 -- debugmenu＝DebugMenu 系（get(pn) 建選單、回 nil）
 local playerObjs = {}            -- [pn] = 假玩家物件
 local clientMode = false
 local factionOf = nil            -- Faction.getPlayerFaction 回傳
 local sandboxAllow = true
 local navTarget = nil            -- Core.navGetTarget 回傳
+local menus = {}                 -- [pn] = 選單單例
+local gets = 0                   -- ISContextMenu.get 呼叫次數
 
-local function mkContext(tag)
-    local c = { tag = tag, options = {} }
-    function c:addOption(text, target, fn, a, b)
-        self.options[#self.options + 1] = { text = text, target = target, fn = fn, a = a, b = b }
+local function mkContext(pn)
+    local c = { pn = pn, options = {}, visible = false, hides = 0 }
+    function c:addOption(name, target, fn, a, b)
+        self.options[#self.options + 1] = { name = name, target = target, fn = fn, a = a, b = b }
     end
+    function c:isVisible() return self.visible end
+    function c:hideAndChildren() self.visible = false; self.hides = self.hides + 1 end
+    function c:clear() self.options = {} end
     return c
 end
-local appendedMenu = mkContext("appended") -- getPlayerContextMenu(0) 單例
-local builtMenu = nil                      -- ISContextMenu.get 新建
+local function menuOf(pn)
+    if not menus[pn] then menus[pn] = mkContext(pn) end
+    return menus[pn]
+end
+local function getPlayerContextMenu(pn)
+    calls[#calls + 1] = "getPlayerContextMenu:" .. tostring(pn)
+    return menuOf(pn)
+end
+local ISContextMenu = {}
+function ISContextMenu.get(pn, x, y)
+    calls[#calls + 1] = string.format("ISContextMenu.get:%s:%s:%s", tostring(pn), tostring(x), tostring(y))
+    gets = gets + 1
+    local c = menuOf(pn)
+    c:hideAndChildren(); c.visible = true; c:clear()
+    return c
+end
 
 local ISWorldMap = {}
 function ISWorldMap.onRightMouseUp(self, x, y)
     calls[#calls + 1] = "orig-rmb"
-    return handledResult
+    if origMode == "debug" then
+        local c = ISContextMenu.get(0, x + self:getAbsoluteX(), y + self:getAbsoluteY())
+        c:addOption("vanilla-teleport")
+        return true
+    elseif origMode == "debugmenu" then
+        local c = ISContextMenu.get(self.playerNum or 0, x + self:getAbsoluteX(), y + self:getAbsoluteY())
+        c:addOption("debugmenu-root")
+        return nil
+    end
+    return false
+end
+function ISWorldMap.ShowWorldMap(playerNum, centerX, centerY, zoom)
+    calls[#calls + 1] = "orig-show:" .. tostring(playerNum)
 end
 function ISWorldMap.prerender(self)
     calls[#calls + 1] = "orig-prerender"
 end
 
 local function getSpecificPlayer(pn) return playerObjs[pn] end
-local function getPlayerContextMenu(pn)
-    calls[#calls + 1] = "getPlayerContextMenu:" .. tostring(pn)
-    return appendedMenu
-end
-local ISContextMenu = {}
-function ISContextMenu.get(pn, x, y)
-    calls[#calls + 1] = string.format("ISContextMenu.get:%s:%s:%s", tostring(pn), tostring(x), tostring(y))
-    builtMenu = mkContext("built")
-    return builtMenu
-end
 local function getText(key, arg1)
     if arg1 then return key .. "|" .. arg1 end
     return key
@@ -105,13 +133,14 @@ function ISWorldMap:onMinidoracatCopyCoords(wx, wy) Core.copyCoordsText(self, st
 local suffix = [=[
 return {
     ISWorldMap = ISWorldMap,
+    ISContextMenu = ISContextMenu,
     calls = calls,
     printed = printed,
     clearCalls = function() for i = #calls, 1, -1 do calls[i] = nil end end,
-    appendedMenu = appendedMenu,
-    builtMenu = function() return builtMenu end,
-    resetBuilt = function() builtMenu = nil end,
-    setHandled = function(v) handledResult = v end,
+    menu = menuOf,
+    gets = function() return gets end,
+    resetMenus = function() for k in pairs(menus) do menus[k] = nil end; gets = 0 end,
+    setOrigMode = function(v) origMode = v end,
     setPlayer = function(pn, p) playerObjs[pn] = p end,
     setClient = function(v) clientMode = v end,
     setFaction = function(v) factionOf = v end,
@@ -138,60 +167,109 @@ local function mkWM(pn)
     }, { __index = mod.ISWorldMap })
 end
 
+local function names(menu)
+    local t = {}
+    for i, o in ipairs(menu.options) do t[i] = o.name end
+    return table.concat(t, ",")
+end
+local function countName(menu, name)
+    local n = 0
+    for _, o in ipairs(menu.options) do if o.name == name then n = n + 1 end end
+    return n
+end
+local SET = "UI_MinidoracatMiniMap_SetTarget"
+local OURS3 = SET .. ",UI_MinidoracatMiniMap_CopyHere|12, 34, 0,UI_MinidoracatMiniMap_SearchMenu"
+
 --------------------------------------------------------------------------------
--- R1/R2: symbols 工具作用中／down 快照旗標＝原樣透傳，不建選單
+-- R1/R2: symbols 工具作用中／down 快照旗標＝原樣透傳，不建選單、不碰單例
 --------------------------------------------------------------------------------
 mod.setPlayer(0, { name = "p0" })
 local wm = mkWM(0)
 wm.symbolsUI.currentTool = {}
-mod.setHandled(true)
+mod.setOrigMode("debug")
 local r = wm:onRightMouseUp(5, 6)
 assert(r == true, "R1: 工具作用中須原樣回傳 original 結果")
-assert(mod.calls[1] == "orig-rmb" and #mod.calls == 1, "R1: 只跑 original、不得建選單")
-mod.clearCalls()
+assert(mod.calls[1] == "orig-rmb", "R1: 只跑 original")
+assert(countName(mod.menu(0), SET) == 0, "R1: 工具作用中不得追加本 MOD 選項")
+mod.clearCalls(); mod.resetMenus()
 
 wm.symbolsUI.currentTool = nil
 wm.symbolsUI.ignoreRightMouseUp = true
+mod.setOrigMode("none")
 r = wm:onRightMouseUp(5, 6)
-assert(#mod.calls == 1 and mod.calls[1] == "orig-rmb", "R2: down 快照旗標同樣透傳")
-mod.clearCalls()
+assert(#mod.calls == 1 and mod.calls[1] == "orig-rmb", "R2: down 快照旗標同樣透傳、不碰選單")
+mod.clearCalls(); mod.resetMenus()
 wm.symbolsUI.ignoreRightMouseUp = false
 
 --------------------------------------------------------------------------------
--- R3: debug/admin（original 回 true）→ 追加 player-0 單例；不自建
+-- R3: 原版 debug（get(0) 建選單回 true）→ 追加同一單例、不再 get（會 clear 掉 debug 項）
 --------------------------------------------------------------------------------
-mod.setHandled(true)
+mod.setOrigMode("debug")
 mod.setNavTarget(nil)
 r = wm:onRightMouseUp(5, 6)
 assert(r == true, "R3: 追加路徑回 true")
-assert(mod.calls[2] == "getPlayerContextMenu:0", "R3: 須追加原版 player-0 單例")
-assert(mod.builtMenu() == nil, "R3: 不得另建選單（會 clear 掉 debug 選項）")
-assert(#mod.appendedMenu.options == 3, "R3: 無目標時追加 SetTarget+CopyHere+SearchMenu 三項")
-assert(mod.appendedMenu.options[1].text == "UI_MinidoracatMiniMap_SetTarget", "R3: 首項 SetTarget")
-mod.clearCalls()
+assert(mod.gets() == 1, "R3: 只有原版那一次 get，本 MOD 不得再 get（實得 " .. mod.gets() .. "）")
+assert(names(mod.menu(0)) == "vanilla-teleport," .. OURS3,
+    "R3: debug 項保留＋追加三項（實得 " .. names(mod.menu(0)) .. "）")
+assert(mod.menu(0).visible, "R3: 選單維持可見")
+mod.clearCalls(); mod.resetMenus()
 
 --------------------------------------------------------------------------------
--- R4: 一般玩家（original 回 false）→ ISContextMenu.get(pn, abs 座標) 自建；
+-- N1: DebugMenu 系前手（建了選單卻回 nil）→ 追加同一單例，不得自建洗掉它
+--     （2026-09-05 kenzo_L：裝本 MOD 後只剩本 MOD 三項）
+--------------------------------------------------------------------------------
+mod.setOrigMode("debugmenu")
+r = wm:onRightMouseUp(5, 6)
+assert(r == true, "N1: 追加路徑回 true（已消費）")
+assert(mod.gets() == 1, "N1: 前手建的選單不得被本 MOD 再 get 洗掉（實得 gets=" .. mod.gets() .. "）")
+assert(names(mod.menu(0)) == "debugmenu-root," .. OURS3,
+    "N1: 前手選項保留＋追加三項（實得 " .. names(mod.menu(0)) .. "）")
+mod.clearCalls(); mod.resetMenus()
+
+--------------------------------------------------------------------------------
+-- R4: 一般玩家（original 回 false、無選單）→ ISContextMenu.get(pn, abs 座標) 自建；
 --     分割畫面 pn=1 歸屬正確
 --------------------------------------------------------------------------------
 mod.setPlayer(1, { name = "p1" })
 local wm1 = mkWM(1)
-mod.setHandled(false)
+mod.setOrigMode("none")
 r = wm1:onRightMouseUp(5, 6)
 assert(r == true, "R4: 自建路徑回 true（已消費）")
-assert(mod.calls[2] == "ISContextMenu.get:1:105:206",
-    "R4: 須以 self.playerNum=1 與絕對座標自建（實得 " .. tostring(mod.calls[2]) .. "）")
-local menu = mod.builtMenu()
-assert(menu and #menu.options == 3, "R4: 自建選單三項（SetTarget/CopyHere/SearchMenu）")
+local gotGet = false
+for _, c in ipairs(mod.calls) do if c == "ISContextMenu.get:1:105:206" then gotGet = true end end
+assert(gotGet, "R4: 須以 self.playerNum=1 與絕對座標自建（實得 " .. table.concat(mod.calls, ",") .. "）")
+local menu = mod.menu(1)
+assert(names(menu) == OURS3, "R4: 自建選單三項（實得 " .. names(menu) .. "）")
+assert(#mod.menu(0).options == 0, "R4: 不得碰 player 0 的單例")
 -- R7: CopyHere 文字帶 floor 座標；回呼參數同值
-assert(menu.options[2].text == "UI_MinidoracatMiniMap_CopyHere|12, 34, 0",
-    "R7: CopyHere 文字須帶 floor 座標（實得 " .. tostring(menu.options[2].text) .. "）")
 assert(menu.options[2].a == 12 and menu.options[2].b == 34, "R7: 回呼參數須為 floor 後座標")
 -- R9: 回呼綁定走 playerNum
 menu.options[1].fn(menu.options[1].target, menu.options[1].a, menu.options[1].b)
 assert(mod.calls[#mod.calls] == "navSet:1:12.7:34.2", "R9: SetTarget 回呼須以 pn=1 寫入原始世界座標")
-mod.clearCalls()
-mod.resetBuilt()
+mod.clearCalls(); mod.resetMenus()
+
+--------------------------------------------------------------------------------
+-- R3b: 分割畫面 pn=1 遇原版 debug（選單硬編在 player 0、回 true）→ 追加 player 0 單例
+--------------------------------------------------------------------------------
+mod.setOrigMode("debug")
+r = wm1:onRightMouseUp(5, 6)
+assert(names(mod.menu(0)) == "vanilla-teleport," .. OURS3,
+    "R3b: pn=1 的 debug 選單在 player 0，須追加該單例（實得 " .. names(mod.menu(0)) .. "）")
+assert(mod.gets() == 1, "R3b: 不得另建")
+mod.clearCalls(); mod.resetMenus()
+
+--------------------------------------------------------------------------------
+-- N4: 殘留的舊選單（上一次右鍵留著沒關）不得被當成「前手建的」——先藏、再自建新的
+--------------------------------------------------------------------------------
+mod.setOrigMode("none")
+local stale = mod.menu(1)
+stale.visible = true
+stale:addOption("stale-option")
+r = wm1:onRightMouseUp(5, 6)
+assert(stale.hides >= 1, "N4: 呼叫前手前須先藏掉殘留選單")
+assert(mod.gets() == 1 and names(mod.menu(1)) == OURS3,
+    "N4: 殘留選單不得被追加，須重建（實得 gets=" .. mod.gets() .. " " .. names(mod.menu(1)) .. "）")
+mod.clearCalls(); mod.resetMenus()
 
 --------------------------------------------------------------------------------
 -- R5: playerObj nil（debug 主選單地圖）→ 回傳 handled、不建選單
@@ -199,8 +277,8 @@ mod.resetBuilt()
 mod.setPlayer(1, nil)
 r = wm1:onRightMouseUp(5, 6)
 assert(r == false, "R5: 無玩家回傳 original 結果")
-assert(#mod.calls == 1 and mod.builtMenu() == nil, "R5: 無玩家不得建選單")
-mod.clearCalls()
+assert(mod.gets() == 0 and #mod.menu(1).options == 0, "R5: 無玩家不得建選單")
+mod.clearCalls(); mod.resetMenus()
 mod.setPlayer(1, { name = "p1" })
 
 --------------------------------------------------------------------------------
@@ -211,25 +289,91 @@ mod.setClient(true)
 mod.setFaction({})
 mod.setSandbox(true)
 r = wm1:onRightMouseUp(5, 6)
-local m6 = mod.builtMenu()
+local m6 = mod.menu(1)
 assert(#m6.options == 5, "R6: 目標＋陣營＋沙盒允許＝5 項（實得 " .. #m6.options .. "）")
-assert(m6.options[4].text == "UI_MinidoracatMiniMap_ClearTarget", "R6: 第四項 ClearTarget")
-assert(m6.options[5].text == "UI_MinidoracatMiniMap_ShareTarget", "R6: 第五項 ShareTarget")
-mod.clearCalls()
-mod.resetBuilt()
+assert(m6.options[4].name == "UI_MinidoracatMiniMap_ClearTarget", "R6: 第四項 ClearTarget")
+assert(m6.options[5].name == "UI_MinidoracatMiniMap_ShareTarget", "R6: 第五項 ShareTarget")
+mod.clearCalls(); mod.resetMenus()
 
 mod.setSandbox(false) -- 伺服器禁分享：Share 消失、Clear 保留
 r = wm1:onRightMouseUp(5, 6)
-assert(#mod.builtMenu().options == 4, "R6: 沙盒禁分享＝4 項（無 Share）")
-mod.clearCalls()
-mod.resetBuilt()
+assert(#mod.menu(1).options == 4, "R6: 沙盒禁分享＝4 項（無 Share）")
+mod.clearCalls(); mod.resetMenus()
 mod.setClient(false) -- 單機：無 Share
 mod.setSandbox(true)
 r = wm1:onRightMouseUp(5, 6)
-assert(#mod.builtMenu().options == 4, "R6: 單機＝4 項（無 Share）")
-mod.clearCalls()
-mod.resetBuilt()
+assert(#mod.menu(1).options == 4, "R6: 單機＝4 項（無 Share）")
+mod.clearCalls(); mod.resetMenus()
 mod.setNavTarget(nil)
+
+--------------------------------------------------------------------------------
+-- N2: 別的 MOD 在我們之後整個覆寫 onRightMouseUp（不呼叫前手；Cheat Menu Reborn
+--     的 OnGameStart 覆寫／DebugMenu 直接賦值）→ 開圖前只剩它的選單（症狀重現）、
+--     ShowWorldMap 後重包一層 → 兩家選項都在、只 log 一次
+--------------------------------------------------------------------------------
+local ours = mod.ISWorldMap.onRightMouseUp
+local function cmrLike(self, x, y)
+    mod.calls[#mod.calls + 1] = "cmr-rmb"
+    local c = mod.ISContextMenu.get(0, x + self:getAbsoluteX(), y + self:getAbsoluteY())
+    c:addOption("Teleport Here")
+    return true
+end
+mod.ISWorldMap.onRightMouseUp = cmrLike
+r = wm:onRightMouseUp(5, 6)
+assert(names(mod.menu(0)) == "Teleport Here", "N2: 覆寫後（未開圖）本 MOD 選項確實消失＝症狀重現")
+mod.clearCalls(); mod.resetMenus()
+
+mod.ISWorldMap.ShowWorldMap(0)
+assert(mod.calls[1] == "orig-show:0", "N2: ShowWorldMap 須先跑前手")
+assert(mod.ISWorldMap.onRightMouseUp ~= cmrLike and mod.ISWorldMap.onRightMouseUp ~= ours,
+    "N2: 開圖後須重包成新的一層（劫持者當前手）")
+mod.clearCalls()
+r = wm:onRightMouseUp(5, 6)
+assert(r == true, "N2: 重包後回 true")
+assert(names(mod.menu(0)) == "Teleport Here," .. OURS3,
+    "N2: 劫持者選項保留＋本 MOD 三項（實得 " .. names(mod.menu(0)) .. "）")
+assert(mod.gets() == 1, "N2: 劫持者建的選單不得被再 get")
+local relogs = 0
+for _, l in ipairs(mod.printed) do if l:find("re%-wrapping") then relogs = relogs + 1 end end
+assert(relogs == 1, "N2: 重包須 log 一次（實得 " .. relogs .. "）")
+mod.clearCalls(); mod.resetMenus()
+
+-- 已是我們的函式再開圖＝不動（不多包一層）
+local stableFn = mod.ISWorldMap.onRightMouseUp
+mod.ISWorldMap.ShowWorldMap(0)
+assert(mod.ISWorldMap.onRightMouseUp == stableFn, "N2: 最外層已是本 MOD 時開圖不得再包")
+mod.clearCalls()
+
+--------------------------------------------------------------------------------
+-- N3: 別的 MOD 有禮貌地 wrap 我們（呼叫前手再加自己的項）、我們又在開圖重包到最外層
+--     → 鏈裡兩層都是我們，本 MOD 選項只能出現一組（冪等）
+--------------------------------------------------------------------------------
+local inner = mod.ISWorldMap.onRightMouseUp
+mod.ISWorldMap.onRightMouseUp = function(self, x, y)
+    local res = inner(self, x, y)
+    mod.menu(self.playerNum or 0):addOption("polite-mod")
+    return res
+end
+mod.ISWorldMap.ShowWorldMap(0)
+r = wm:onRightMouseUp(5, 6)
+assert(countName(mod.menu(0), SET) == 1,
+    "N3: 鏈裡兩層本 MOD 只得追加一組（實得 " .. countName(mod.menu(0), SET) .. "，" .. names(mod.menu(0)) .. "）")
+assert(countName(mod.menu(0), "polite-mod") == 1, "N3: 有禮貌的 MOD 選項保留")
+mod.clearCalls(); mod.resetMenus()
+
+--------------------------------------------------------------------------------
+-- N5: 兩邊都在開圖時重包＝互踢；重包次數封頂後放手（鏈不得無限長）
+--------------------------------------------------------------------------------
+local rewraps = 0
+local function noop() return false end
+for _ = 1, 20 do
+    mod.ISWorldMap.onRightMouseUp = noop
+    mod.ISWorldMap.ShowWorldMap(0)
+    if mod.ISWorldMap.onRightMouseUp ~= noop then rewraps = rewraps + 1 end
+end
+assert(rewraps < 20, "N5: 重包須有上限（實得 20 次全部重包）")
+assert(rewraps >= 3, "N5: 上限不得低到正常互動就放棄（實得 " .. rewraps .. "）")
+mod.clearCalls(); mod.resetMenus()
 
 --------------------------------------------------------------------------------
 -- R8: prerender 加繪順序＋log-once（實例旗標）
@@ -240,12 +384,13 @@ assert(table.concat(mod.calls, ",") == "orig-prerender,drawCoords,drawNav",
     "R8: 順序須為 original→座標列→導航（實得 " .. table.concat(mod.calls, ",") .. "）")
 mod.clearCalls()
 
+local before = #mod.printed
 mod.setDrawFail(false, true) -- 導航持續拋錯：log-once、座標列不受影響
 wmP:prerender()
 wmP:prerender()
-assert(#mod.printed == 1 and mod.printed[1]:find("worldmap nav draw failed", 1, true),
-    "R8: 導航繪製失敗須 log-once（實得 " .. #mod.printed .. " 筆）")
+assert(#mod.printed == before + 1 and mod.printed[#mod.printed]:find("worldmap nav draw failed", 1, true),
+    "R8: 導航繪製失敗須 log-once（實得 " .. (#mod.printed - before) .. " 筆）")
 mod.setDrawFail(false, false)
 mod.clearCalls()
 
-print("test_worldmap_nav: OK（R1-R9：工具透傳/追加/自建/歸屬/選項閘/回呼/加繪順序/log-once）")
+print("test_worldmap_nav: OK（R1-R9＋N1-N5：工具透傳/前手選單合併/自建/歸屬/殘留選單/選項閘/回呼/開圖重包/冪等/重包上限/加繪順序/log-once）")
