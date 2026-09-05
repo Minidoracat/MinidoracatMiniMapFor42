@@ -271,8 +271,11 @@ def check_content(cfg):
     content = repo_path(os.path.join(cfg["workshop_root"], "Contents"))
     if not os.path.isdir(os.path.join(content, "mods")):
         die(4, f"內容目錄不存在或缺 mods/：{content}")
-    notes = read_text(repo_path(cfg["changelog"]))
     version = mod_version(repo_path(cfg["mod_info"]))
+    changelog = repo_path(cfg["changelog"])
+    if not os.path.isfile(changelog):
+        die(4, f"找不到更新說明 {changelog}；先執行 gen_steam_changelog.py {version} 產生")
+    notes = read_text(changelog)
     if not notes.strip() or version not in notes.splitlines()[0]:
         die(4, f"更新說明為空或第一行不含 mod.info 版本 {version}；先執行 gen_steam_changelog.py {version}")
     gate = subprocess.run([sys.executable, "-B", os.path.join(REPO, "scripts", "verify_mod.py")],
