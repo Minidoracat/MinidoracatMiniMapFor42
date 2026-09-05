@@ -476,12 +476,17 @@ MinidoracatMiniMapAPI.registerAnimalGroup(
 MinidoracatMiniMapFor42/
 ├── link_workshop.bat              # Workshop 符號連結管理（雙擊啟動）
 ├── PZ_Test.bat                    # PZ 本地測試啟動器（雙擊啟動）
+├── Publish_Workshop.bat           # Steam Workshop 發布（雙擊選單；見「發布到 Workshop」）
 ├── scripts/
 │   ├── build_pyramids.ps1      # 產生基底 pyramid zip（呼叫 pzmap render-minimap）
 │   ├── link_workshop.ps1       # 符號連結管理腳本（PowerShell）
-│   └── PZ_Test.ps1             # 遊戲測試啟動器（PowerShell）
+│   ├── PZ_Test.ps1             # 遊戲測試啟動器（PowerShell）
+│   ├── publish_workshop.py     # Workshop 發布工具（原生 Steamworks；內容／GIF 封面／四語簡介）
+│   └── workshop_publish.json   # 發布設定（Workshop ID、擁有者、各語言簡介來源）
 ├── STEAM_DESCRIPTION.md           # Steam 商店頁描述（中文）——改動時必同步 _EN / _JP 版
 └── MOD/MinidoracatMiniMapFor42/   # Workshop 上傳根目錄
+    ├── preview.png                # 遊戲內上傳器用（APNG，256／512 正方形）
+    ├── workshop/preview.gif       # Workshop 網頁動態封面（發布工具上傳；不在 Contents，不會下載給玩家）
     └── Contents/mods/MinidoracatMiniMapFor42/42/  ← PZ 模組根目錄
         ├── mod.info
         └── media/
@@ -538,6 +543,34 @@ pwsh -NoProfile -File scripts/build_pyramids.ps1 -GamePath "D:\SteamLibrary\stea
 ### 卸載
 
 `link_workshop.bat` → **[2] 卸載**（只移除連結，不刪原始檔案）。
+
+### 發布到 Workshop
+
+雙擊 `Publish_Workshop.bat`：先檢查 Steam 用戶端是否以作者帳號登入（未登入會喚起 Steam
+並等你登入後重試），再選擇要更新的項目：
+
+| 選項 | 上傳內容 | 前置檢查 |
+|------|---------|---------|
+| 只更新 MOD 內容 | `Contents/` ＋ `STEAM_CHANGELOG.md` 作為更新說明 | `verify_mod.py` 全數通過；更新說明版本＝`mod.info` |
+| 只更新 GIF 封面 | `MOD/…/workshop/preview.gif` | GIF、≤1,024,000 bytes |
+| 只更新簡介 | 英／繁／簡／日四個語言槽（來源見 `scripts/workshop_publish.json`） | 每份 ≤8000 bytes |
+| 全部更新 | 以上全部（內容／封面／更新說明隨英文槽提交） | 以上全部 |
+
+提交後會回查 Steam：內容看 `time_updated`、封面確認仍是 GIF、簡介逐語言用 ISteamUGC 取回比對，
+任一不符即以非零碼結束。自動化／AI 呼叫：
+
+```
+uv run --no-project python -B scripts/publish_workshop.py --mode all --yes       # 或 content / preview / description
+uv run --no-project python -B scripts/publish_workshop.py --mode all --dry-run   # 只檢查、顯示計畫
+```
+
+退出碼：`0` 成功／`2` 參數或取消／`3` 未登入、帳號不是擁有者／`4` 前置檢查失敗／`5` 提交失敗／`6` 已提交但回查不符。
+非互動模式下未登入直接以 exit 3 結束，不會停在密碼提示；`--dry-run` 一樣會先做登入檢查。
+簡中槽目前沿用繁中檔（`workshop_publish.json` 的 `descriptions`）。`steam_api64.dll` 預設取 PZ 安裝目錄，
+可用環境變數 `PUBLISH_STEAM_API_DLL` 覆寫。
+
+不再使用 SteamCMD：它只能寫英文簡介槽，且遊戲內上傳器每次會把網頁封面覆回靜態 `preview.png`；
+改用本工具即可保留 GIF 封面。
 
 ## 授權
 
