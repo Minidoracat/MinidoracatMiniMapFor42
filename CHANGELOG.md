@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [42.20.4-0.26.2] - 2026-09-05
+
+### 變更
+
+- **新封面**：Workshop 預覽圖與遊戲內海報換成新繪的等距小鎮＋紙本地圖構圖
+
+### 修正
+
+- **裝了「統一中文漢化（B42Trans_CN）」的玩家在多人伺服器上街名、滑鼠高亮、沿道路導航全部失效**：該漢化把官方英文街道攔掉、改靠引擎目錄迴圈載自己的中文街道檔；單機時引擎會把它的地圖目錄納入清單所以正常，多人客戶端的清單只有伺服器指定的地圖，它的目錄從不進迴圈，結果一條街道都沒載。本 MOD 現在在「該漢化已啟用、且正規載入後仍是零條」時補上街道資料：介面語言為繁中／簡中時載它的中文街道檔，其他語言（英文、日文等）改載官方英文街道——同一台裝了統一漢化的伺服器，英文介面的玩家看到英文路名，中文介面看到中文路名，不會出現整張 `???`。沒裝該漢化、或街道資料本來就正常的人完全不受影響，也不需要改裝本作者的翻譯包。已把正確修法回報給漢化作者，他們修好後本補位自然不再觸發
+
+> 技術要點：`ensureStreetData` 於 `loadOk and count==0` 後查 `CARRIER_STREETS`（目前一筆：`B42Trans_CN` → `media/maps/Riverside, KY/streets.xml`，`langs={CH,CN}`），`getActivatedMods()`（LuaManager.java:7386）命中才處理；`Translator.getLanguage():name()`（MainOptions.lua:1828）在 langs 內載其檔、否則載 `VANILLA_STREETS`（官方 `Muldraugh, KY/streets.xml`——中文在無 CJK 字形的地圖字型下逐字畫 `?`，WorldMapStreet.java:719-721，EN 實測整張 `???`），語言取不到保守走英文；`fileExists` 才 `addStreetData`（WorldMap.java:214 以檔案去重、冪等），直達不經其 wrap、不 clear。命中留一行 `street data loaded via carrier fallback (<mod>/own|vanilla)`。根因逐字核對 `B42Trans_CN_As1/42.0/media/lua/client/ISUI/Maps/ISMapDefinitions_CN.lua`（wrap `initDirectoryStreetData` 對 Muldraugh 直接 return）。離線回歸：`test_street_backfill.lua` 32 斷言（命中／EN・JP 走英文／CH 走中文／語言取不到走英文／未啟用不介入／檔缺不載／有資料不介入／載入拋錯不兜底），另以真 wrapper＋真切片在 MP×{CN,EN,JP}／SP 各跑一次驗證。
+
 ## [42.20.4-0.26.1] - 2026-09-05
 
 ### 修正

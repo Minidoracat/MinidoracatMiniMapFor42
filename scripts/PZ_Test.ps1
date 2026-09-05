@@ -10,6 +10,10 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 $PZ_PATH = "D:\SteamLibrary\steamapps\common\ProjectZomboid"
 $SERVER_NAME = "servertest"
 $SERVER_MEMORY = "3072m"
+# 統一漢化（B42Trans_CN）對照伺服器：設定檔自 servertest 複製、只換 Mods=（最小組合：
+# UI 框架＋本 MOD＋統一漢化置底），驗證多人下街名／hover／導航兜底。已存在不覆蓋
+$CNTRANS_NAME = "cntrans"
+$CNTRANS_MODS = "Mods=\MinidoracatUIFor42;\MinidoracatMiniMapFor42;\B42Trans_CN"
 
 # 驗證遊戲路徑
 if (-not (Test-Path (Join-Path $PZ_PATH "ProjectZomboid64.exe"))) {
@@ -40,10 +44,44 @@ function Start-PZClient {
     Write-Host ""
 }
 
+function Ensure-CNTransConfig {
+    $dir = Join-Path $env:USERPROFILE "Zomboid\Server"
+    $ini = Join-Path $dir "$CNTRANS_NAME.ini"
+    if (Test-Path $ini) {
+        Write-Host "[漢化對照] 沿用既有 $ini" -ForegroundColor DarkGray
+        return
+    }
+    $src = Join-Path $dir "$SERVER_NAME.ini"
+    if (-not (Test-Path $src)) {
+        Write-Host "[漢化對照] 找不到來源 $src，先用 [3] 跑一次 $SERVER_NAME 產生設定" -ForegroundColor Red
+        return
+    }
+    $text = Get-Content -Raw -Encoding UTF8 $src
+    $text = $text -replace '(?m)^Mods=.*$', $CNTRANS_MODS
+    [IO.File]::WriteAllText($ini, $text, (New-Object Text.UTF8Encoding $false))
+    foreach ($suffix in @("_SandboxVars.lua", "_spawnpoints.lua", "_spawnregions.lua")) {
+        $from = Join-Path $dir "$SERVER_NAME$suffix"
+        if (Test-Path $from) { Copy-Item $from (Join-Path $dir "$CNTRANS_NAME$suffix") }
+    }
+    # 帳號庫（admin／白名單）一起帶過去，免得重建帳號。登入用 whitelist.world 比對伺服器名
+    # （ServerWorldDatabase.java:1069 `WHERE username=? AND world=?`），複製後必改欄位
+    $dbDir = Join-Path $env:USERPROFILE "Zomboid\db"
+    $dbFrom = Join-Path $dbDir "$SERVER_NAME.db"
+    $dbTo = Join-Path $dbDir "$CNTRANS_NAME.db"
+    if (Test-Path $dbFrom) {
+        Copy-Item $dbFrom $dbTo -Force
+        # SQL 用 ? 參數＋argv 傳值：PowerShell → 原生程序會剝掉引號，內嵌雙引號活不了
+        python -c "import sys,sqlite3;c=sqlite3.connect(sys.argv[1]);c.execute('update whitelist set world=?',(sys.argv[2],));c.commit()" $dbTo $CNTRANS_NAME
+        if ($LASTEXITCODE -ne 0) { Write-Host "[漢化對照] 帳號庫 world 欄位改寫失敗（需要 python），帳號可能登不進" -ForegroundColor Red }
+    }
+    Write-Host "[漢化對照] 已自 $SERVER_NAME 複製設定＋帳號庫 → $CNTRANS_NAME（$CNTRANS_MODS）" -ForegroundColor Green
+}
+
 function Start-PZServer {
+    param([string]$Name = $SERVER_NAME)
     Write-Host ""
     Write-Host "[伺服器] 啟動專用伺服器..." -ForegroundColor Cyan
-    Write-Host "[伺服器] 名稱: $SERVER_NAME"
+    Write-Host "[伺服器] 名稱: $Name"
     Write-Host "[伺服器] 記憶體: $SERVER_MEMORY"
     Write-Host ""
 
@@ -56,7 +94,7 @@ function Start-PZServer {
         "-Djava.library.path=natives/;natives/win64/;./",
         "-cp", ".;projectzomboid.jar",
         "zombie.network.GameServer",
-        "-servername", $SERVER_NAME
+        "-servername", $Name
     )
 
     Start-Process -FilePath $javaPath -ArgumentList $javaArgs -WorkingDirectory $PZ_PATH
@@ -106,6 +144,7 @@ while ($true) {
     Write-Host "  [4] 一鍵啟動：伺服器 + 1 個客戶端"
     Write-Host "  [5] 一鍵啟動：伺服器 + 2 個客戶端"
     Write-Host "  [6] 僅啟動兩個客戶端 (Host 模式用)"
+    Write-Host "  [7] 一鍵啟動：統一漢化對照伺服器 ($CNTRANS_NAME) + 1 個客戶端"
     Write-Host ""
     Write-Host "  [0] 停止所有 PZ 進程"
     Write-Host "  [Q] 離開"
@@ -168,6 +207,22 @@ while ($true) {
             Write-Host "  兩個客戶端已啟動！" -ForegroundColor Green
             Write-Host "  第一個視窗: 選擇 HOST 建立伺服器"
             Write-Host "  第二個視窗: 選擇 JOIN - LAN - 127.0.0.1"
+            Write-Host "========================================" -ForegroundColor Green
+            Write-Host ""
+            Read-Host "按 Enter 繼續"
+        }
+        "7" {
+            Ensure-CNTransConfig
+            Start-PZServer -Name $CNTRANS_NAME
+            Write-Host "[自動] 等待伺服器啟動 (15秒)..." -ForegroundColor DarkGray
+            Start-Sleep -Seconds 15
+            Start-PZClient -Debug
+            Write-Host "========================================" -ForegroundColor Green
+            Write-Host "  全部啟動完成！" -ForegroundColor Green
+            Write-Host "  伺服器: $CNTRANS_NAME（統一漢化 B42Trans_CN，無 LangFor42）"
+            Write-Host "  連線位址: 127.0.0.1"
+            Write-Host "  驗收: 世界地圖街名中文、hover 變藍、導航沿路；"
+            Write-Host "        console.txt 應有 'street data loaded via carrier fallback (B42Trans_CN)'"
             Write-Host "========================================" -ForegroundColor Green
             Write-Host ""
             Read-Host "按 Enter 繼續"

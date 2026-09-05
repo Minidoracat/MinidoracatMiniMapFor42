@@ -1324,7 +1324,26 @@ end
 -- getStreetsAPI，探測失敗補載必也失敗，fail-open 只剩「對已載入實例重 clear」
 -- 的風險（codex review）。Recreate／重開圖每次重跑本段，count>0 即跳過。
 -- API 出處：getStreetsAPI UIWorldMapV3.java:111；getStreetDataCount
--- WorldMapStreetsV1.java:31-37；getLotDirectories LuaManager.java:8415
+-- WorldMapStreetsV1.java:31-37；getLotDirectories LuaManager.java:8415；
+-- getActivatedMods LuaManager.java:7386；addStreetData WorldMapStreetsV1.java:27-29
+-- → WorldMap.java:193-220（以檔案去重，冪等）；fileExists LuaManager.java:5463
+--
+-- 已知「純資料載體」漢化：第三方漢化 wrap initDirectoryStreetData 攔掉官方
+-- Muldraugh 英文街道、把中文檔放在自帶的 media/maps/<dir>/ 靠目錄迴圈載入——
+-- 單機引擎會把有 map.info 的目錄納入清單所以成立；MP 客戶端清單＝伺服器 Map=
+-- （通常只有 Muldraugh, KY），該目錄從不進迴圈 ⇒ 兩邊都不載＝0 條，街名／hover／
+-- 導航整組失效（2026-09-05 玩家實證，B42Trans_CN ISMapDefinitions_CN.lua 14 行
+-- 逐字核對）。本表只在「該 MOD 啟用＋補載後仍 0 條」時直接 addStreetData：介面
+-- 語言在 langs 內載它自己的中文檔；其他語言（EN 等）載官方英文——中文檔在無 CJK
+-- 字形的地圖字型下逐字畫成 `?`（WorldMapStreet.java:719-721，2026-09-05 EN 實測
+-- 整張 `???`），同 LangFor42 MapStreets_Flx 的語言閘規則。未啟用者不進判斷、
+-- 有資料者早已 return，對其他人零行為差異。它日後修好（count>0）本表自然失效。
+-- LangFor42 不在表內：它顯式 addStreetData 自己的檔、自帶語言閘，MP 本就正常。
+-- Translator.getLanguage():name() 用例 MainOptions.lua:1828（實證值 CH／CN／EN／JP）
+local VANILLA_STREETS = "media/maps/Muldraugh, KY/streets.xml"
+local CARRIER_STREETS = {
+    { mod = "B42Trans_CN", file = "media/maps/Riverside, KY/streets.xml", langs = { CH = true, CN = true } },
+}
 -- test:street-backfill:start（scripts/test_street_backfill.lua 抽本區段）
 local function ensureStreetData(mapUI)
     if not (MapUtils and MapUtils.initDefaultStreetData) then return end
@@ -1335,20 +1354,50 @@ local function ensureStreetData(mapUI)
     if okBefore and before > 0 then return end
     local loadOk, loadErr = nil, nil -- nil＝fail-closed 未嘗試（log 印 skipped）
     if okBefore then loadOk, loadErr = pcall(MapUtils.initDefaultStreetData, mapUI) end
+    local okAfter, after = pcall(streetCount)
+    -- 已知載體兜底：正規補載跑完仍 0 條才試（見 CARRIER_STREETS 註解）
+    local carrier = nil
+    if loadOk and okAfter and after == 0 then
+        local okMods, mods = pcall(getActivatedMods)
+        local active = {}
+        if okMods and mods then
+            for i = 1, mods:size() do active[mods:get(i - 1)] = true end
+        end
+        local okLang, lang = pcall(function() return Translator.getLanguage():name() end)
+        for _, c in ipairs(CARRIER_STREETS) do
+            if active[c.mod] then
+                local file = (okLang and c.langs[lang]) and c.file or VANILLA_STREETS
+                if fileExists(file) then
+                    pcall(function() mapUI.mapAPI:getStreetsAPI():addStreetData(file) end)
+                    carrier = c.mod .. "/" .. (file == c.file and "own" or "vanilla")
+                end
+            end
+        end
+        okAfter, after = pcall(streetCount)
+    end
     -- 留痕（每實例一次，旗標掛在 mapUI 上：實例隨世界／Recreate 重建，不需事件
     -- 重置——OnGameStart 晚於 OnCreatePlayer→InitPlayer，用它重置會壓掉新世界
     -- 首次補載的 log，codex review）：探測拋錯／載入拋錯／載入後仍空，三者都是
     -- 「街名、hover 高亮、導航路線整組失效」且原版零提示。載入拋錯不看 count
     -- （多目錄載到一半炸掉 count 已 >0，仍是部分路網）。lot dirs 數：0＝引擎地圖
-    -- 清單本身為空，>0＝清單裡沒有 streets.xml（MOD 地圖常態）
-    local okAfter, after = pcall(streetCount)
-    if mapUI._minidoracatStreetWarned or (loadOk and okAfter and after > 0) then return end
+    -- 清單本身為空，>0＝清單裡沒有 streets.xml（MOD 地圖常態）。載體兜底命中
+    -- 也留一行：支援時一眼看出是第三方載入層在 MP 失效
+    if mapUI._minidoracatStreetWarned then return end
+    if loadOk and okAfter and after > 0 then
+        if carrier then
+            mapUI._minidoracatStreetWarned = true
+            log("street data loaded via carrier fallback (" .. carrier
+                .. "): its own loader yielded 0 streets on this map instance (MP lot dirs?)")
+        end
+        return
+    end
     mapUI._minidoracatStreetWarned = true
     local okDirs, dirs = pcall(getLotDirectories)
     log("street data load problem (lot dirs=" .. tostring(okDirs and dirs and dirs:size() or "?")
         .. ", probe=" .. (okBefore and "ok" or ("error: " .. tostring(before)))
         .. ", load=" .. (loadOk == nil and "skipped" or loadOk and "ok" or ("error: " .. tostring(loadErr)))
         .. ", count=" .. tostring(okAfter and after or "?")
+        .. (carrier and (", carrier=" .. carrier) or "")
         .. "): street names, hover highlight and route navigation may be unavailable")
 end
 -- test:street-backfill:end

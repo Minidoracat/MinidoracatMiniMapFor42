@@ -13,9 +13,13 @@ file:close()
 local body = assert(source:match(
     "%-%- test:street%-backfill:start[^\n]*\n(.-)\n%-%- test:street%-backfill:end"),
     "找不到 street-backfill 測試區段")
+-- 已知載體表與官方檔常數在切片外（頂層 local），抽真值：測試不得自帶第二份資料
+local vanilla = assert(source:match("\n(local VANILLA_STREETS = [^\n]+)"), "找不到 VANILLA_STREETS")
+local carriers = assert(source:match("\n(local CARRIER_STREETS = %b{})"), "找不到 CARRIER_STREETS")
 
 local compile = loadstring or load
 local prelude = "local logs = {}\nlocal function log(msg) logs[#logs + 1] = msg end\n"
+    .. vanilla .. "\n" .. carriers .. "\n"
 local suffix = "return { ensureStreetData = ensureStreetData, logs = logs }\n"
 
 -- 每案例各自載入一份（logs 是 prelude 內的 local）
@@ -24,12 +28,16 @@ local function newModule()
 end
 
 local calls, dirsSize = 0, 1
+local activeMods, existingFiles, added = {}, {}, {}
+local uiLang = "CN"
+Translator = { getLanguage = function() return { name = function() return uiLang end } end }
 
--- counts 逐次供給（模擬補載前／後兩次探測），耗盡沿用最後值；
--- countErr＝探測拋錯（getStreetsAPI 漂移面）、loaderErr＝載入函式自己拋錯、
--- dirsErr＝getLotDirectories 拋錯。回傳一個新的 mapUI 實例
+-- counts 逐次供給（模擬補載前／後探測），耗盡沿用最後值，另加上兜底 addStreetData
+-- 進來的條數；countErr＝探測拋錯、loaderErr＝載入函式自己拋錯、dirsErr＝
+-- getLotDirectories 拋錯。回傳一個新的 mapUI 實例
 local function install(counts, countErr, loaderErr, dirsErr)
     calls = 0
+    for k in pairs(added) do added[k] = nil end
     local i = 0
     MapUtils = {
         initDefaultStreetData = function()
@@ -41,20 +49,19 @@ local function install(counts, countErr, loaderErr, dirsErr)
         if dirsErr then error("no dirs", 0) end
         return { size = function() return dirsSize end }
     end
-    local streets = {
-        getDataCount = function()
+    getActivatedMods = function()
+        return { size = function() return #activeMods end, get = function(_, idx) return activeMods[idx + 1] end }
+    end
+    fileExists = function(p) return existingFiles[p] == true end
+    local api = {
+        getStreetDataCount = function()
             if countErr then error("boom", 0) end
             i = i + 1
-            return counts[i] or counts[#counts]
+            return (counts[i] or counts[#counts]) + #added
         end,
+        addStreetData = function(_, p) added[#added + 1] = p end,
     }
-    return {
-        mapAPI = {
-            getStreetsAPI = function()
-                return { getStreetDataCount = streets.getDataCount }
-            end,
-        },
-    }
+    return { mapAPI = { getStreetsAPI = function() return api end } }
 end
 
 local pass, fail = 0, 0
@@ -124,6 +131,70 @@ m = newModule()
 ok(pcall(m.ensureStreetData, install({ 0, 0 }, false, false, true)),
     "getLotDirectories 拋錯不得外傳")
 ok(has(m.logs[1], "lot dirs=?"), "拿不到 lot dirs 要用 ? 佔位：" .. tostring(m.logs[1]))
+
+-- 9. 已知載體兜底（B42Trans_CN 在 MP 攔掉 Muldraugh、Riverside 不進迴圈 ⇒ 正規補載 0 條）：
+--    該 MOD 啟用＋檔案存在 ⇒ 直接 addStreetData 它的檔、count>0、留一行 carrier log
+m = newModule()
+activeMods = { "B42Trans_CN" }
+existingFiles = { ["media/maps/Riverside, KY/streets.xml"] = true }
+m.ensureStreetData(install({ 0, 0 }))
+ok(calls == 1, "兜底前正規補載仍要先跑一次")
+ok(#added == 1 and added[1] == "media/maps/Riverside, KY/streets.xml",
+    "兜底應直接載該 MOD 自己的中文檔，實得 " .. tostring(added[1]))
+ok(#m.logs == 1 and has(m.logs[1], "carrier fallback (B42Trans_CN/own)"),
+    "兜底命中要留痕：" .. tostring(m.logs[1]))
+
+-- 9b. 介面語言非 CH/CN（EN／JP／取不到）⇒ 兜底改載官方英文，不載中文檔
+--     （中文在無 CJK 字形的地圖字型下整張 `???`，2026-09-05 EN 實測）
+for _, lang in ipairs({ "EN", "JP" }) do
+    m = newModule()
+    uiLang = lang
+    existingFiles = { ["media/maps/Riverside, KY/streets.xml"] = true, ["media/maps/Muldraugh, KY/streets.xml"] = true }
+    m.ensureStreetData(install({ 0, 0 }))
+    ok(#added == 1 and added[1] == "media/maps/Muldraugh, KY/streets.xml",
+        lang .. " 介面應載官方英文，實得 " .. tostring(added[1]))
+    ok(has(m.logs[1], "carrier fallback (B42Trans_CN/vanilla)"), lang .. " 留痕應標 vanilla：" .. tostring(m.logs[1]))
+end
+-- 9c. CH 介面照載中文檔
+m = newModule()
+uiLang = "CH"
+m.ensureStreetData(install({ 0, 0 }))
+ok(#added == 1 and added[1] == "media/maps/Riverside, KY/streets.xml", "CH 介面應載中文檔")
+-- 9d. Translator 取不到（拋錯）⇒ 保守走官方英文
+m = newModule()
+local savedTranslator = Translator
+Translator = nil
+m.ensureStreetData(install({ 0, 0 }))
+Translator = savedTranslator
+ok(#added == 1 and added[1] == "media/maps/Muldraugh, KY/streets.xml", "語言取不到應載官方英文")
+uiLang = "CN"
+
+-- 10. 未啟用該 MOD ⇒ 完全不進兜底（沒裝的人零行為差異）
+m = newModule()
+activeMods = {}
+m.ensureStreetData(install({ 0, 0 }))
+ok(#added == 0, "未啟用不得 addStreetData")
+ok(#m.logs == 1 and has(m.logs[1], "count=0") and not has(m.logs[1], "carrier"),
+    "未啟用走一般空容器 log：" .. tostring(m.logs[1]))
+
+-- 11. 啟用但檔案不在（該 MOD 改版搬路徑）⇒ 不載、不炸
+m = newModule()
+activeMods = { "B42Trans_CN" }
+existingFiles = {}
+m.ensureStreetData(install({ 0, 0 }))
+ok(#added == 0, "檔案不存在不得 addStreetData")
+
+-- 12. 正規補載已有資料 ⇒ 兜底不介入（LangFor42／英文玩家／單機 B42Trans_CN）
+m = newModule()
+existingFiles = { ["media/maps/Riverside, KY/streets.xml"] = true }
+m.ensureStreetData(install({ 0, 7 }))
+ok(#added == 0 and #m.logs == 0, "有資料時兜底不得介入")
+
+-- 13. 正規補載拋錯 ⇒ 不兜底（狀態未知，不疊加）
+m = newModule()
+m.ensureStreetData(install({ 0, 0 }, false, true))
+ok(#added == 0 and has(m.logs[1], "load=error"), "載入拋錯不得兜底")
+activeMods, existingFiles = {}, {}
 
 if fail > 0 then
     print(string.format("test_street_backfill: %d passed, %d FAILED", pass, fail))
