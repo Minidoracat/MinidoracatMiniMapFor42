@@ -57,6 +57,9 @@ local function mkContext(pn)
     function c:isVisible() return self.visible end
     function c:hideAndChildren() self.visible = false; self.hides = self.hides + 1 end
     function c:clear() self.options = {} end
+    function c:getOptionFromName(name) -- 同原版 ISContextMenu.lua:889
+        for _, o in ipairs(self.options) do if o.name == name then return o end end
+    end
     return c
 end
 local function menuOf(pn)

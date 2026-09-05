@@ -91,12 +91,8 @@ local function installWMRightMouseUp()
         end
         if not context then return handled end
         local setLabel = getText("UI_MinidoracatMiniMap_SetTarget")
-        local opts = context.options
-        if opts then
-            for i = 1, #opts do
-                if opts[i].name == setLabel then return true end -- 鏈裡兩層都是我們：已加過
-            end
-        end
+        -- 鏈裡兩層都是我們：已加過（getOptionFromName＝ISContextMenu.lua:889）
+        if context:getOptionFromName(setLabel) then return true end
         local worldX = self.mapAPI:uiToWorldX(x, y) -- 2 參 uiToWorld 用例 ISWorldMap.lua:939-940
         local worldY = self.mapAPI:uiToWorldY(x, y)
         context:addOption(setLabel, self, self.onMinidoracatSetTarget, worldX, worldY)
