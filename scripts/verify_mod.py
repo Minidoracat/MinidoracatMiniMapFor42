@@ -392,6 +392,20 @@ for f in descs:
 if descs:
     fail("Steam 描述 ≤8000 bytes", over) if over else ok(f"Steam 描述 ≤8000 bytes（{len(descs)} 檔）")
 
+# ---- 9b. Steam 更新說明單一版本節 ----
+# publish_workshop.py 把 STEAM_CHANGELOG.md 整檔送成本版的更新說明；gen_steam_changelog.py
+# 是覆寫不是累加。手動在檔頭「疊」新版會讓舊版節在 Workshop 更新紀錄重複出現
+#（0.26.2／0.26.3 兩版實踩）。恰一個 [h1] 才算對。
+steam_cl = os.path.join(REPO, "STEAM_CHANGELOG.md")
+if os.path.isfile(steam_cl):
+    with open(steam_cl, encoding="utf-8") as fh:
+        h1s = [l.strip() for l in fh if l.startswith("[h1]")]
+    if len(h1s) == 1:
+        ok("Steam 更新說明只含本版一節")
+    else:
+        fail("Steam 更新說明只含本版一節",
+             [f"{len(h1s)} 個 [h1]：{' | '.join(h1s)}——只留本版，舊版節刪掉（gen_steam_changelog.py 重生即可）"])
+
 # ---- 10. 沙盒選項翻譯配對 ----
 for m in MEDIA_DIRS:
     sb = os.path.join(m, "sandbox-options.txt")
