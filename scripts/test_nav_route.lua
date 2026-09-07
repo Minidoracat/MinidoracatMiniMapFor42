@@ -931,11 +931,13 @@ end
                 "正式 RoadPatch：每個官方非鐵路 segment 有 metadata")
         end
     end
-    assert(metadataCount == patch.surfaceCount and patch.addCount == 3
+    assert(metadataCount == patch.surfaceCount and patch.addCount == 5
         and patch.bridgeCount == 6 and patch.rejectedCandidateCount == 8
-        and patch.removeCount == 3,
-        "正式 RoadPatch：6 bridge 翻案＋3 manual add（湖畔土徑、Bank Road 北段、"
-        .. "Hog Wallow–KY-60 缺段）＋3 remove（Bank Road L 角段）；dirt-edge 兩筆使用者實測否決")
+        and patch.removeCount == 8,
+        "正式 RoadPatch：6 bridge 翻案＋5 manual add（湖畔土徑、Bank Road 北段、"
+        .. "Hog Wallow–KY-60 缺段、Crooked Eye Road 北端角、West Maple St 雙轉角）"
+        .. "＋8 remove（Bank Road L 角 3 段、Crooked Eye 2 段、West Maple 3 段）；"
+        .. "dirt-edge 兩筆使用者實測否決")
     assert(#streets == patch.geometryCount + 1 + patch.addCount + patch.bridgeCount,
         "正式 RoadPatch：add/bridge 條目 append 至 patched 表尾")
     local officialBuilder = mod.newBuild(streets, nil)
@@ -1012,6 +1014,59 @@ end
         assert(sawCorner, "Hog Wallow–KY-60：路線經過切角頂點 (4490.5,10645.5)")
         assert(r.len > 300 and r.len < 320,
             "Hog Wallow–KY-60：路線長 ≈ 56+182.6+70.4（實得 " .. tostring(r.len) .. "）")
+    end
+    -- Crooked Eye Road 北端角（2026-09-06 交叉驗證）：官方 polyline 的頂點
+    -- (7397.5,10442.5) 落在 tertiary 多邊形西外 3.5 格、raster 全 dirt-candidate；
+    -- 真礫石路是往東北的圓角。patch 移除官方段 2-3、以 6 點折線取代；東西向→南向
+    -- 路線必須走圓角頂點，且不得再經過舊直角頂點。
+    do
+        local g = officialBuilder.graph
+        local r = mod.findRoute(g, 7700, 10400.5, 7397.5, 10700)
+        assertRouteMetadata(r, "Crooked Eye Road 北端角")
+        local sawRound, sawOldCorner = false, false
+        for i = 1, #r.pts, 2 do
+            local x, y = r.pts[i], r.pts[i + 1]
+            if math.abs(x - 7400.5) < 1e-6 and math.abs(y - 10448.5) < 1e-6 then sawRound = true end
+            if math.abs(x - 7397.5) < 1e-6 and math.abs(y - 10442.5) < 1e-6 then sawOldCorner = true end
+        end
+        assert(sawRound, "Crooked Eye Road：路線經過圓角頂點 (7400.5,10448.5)")
+        assert(not sawOldCorner, "Crooked Eye Road：路線不再經過舊直角頂點 (7397.5,10442.5)")
+        local crooked
+        for i = 1, patch.geometryCount do
+            local pts = streets[i].pts
+            if #pts == 10 and pts[1] == 7796 and pts[2] == 10400.5 then crooked = streets[i] end
+        end
+        assert(crooked and not crooked.segRemoved[1] and not crooked.segRemoved[2]
+            and crooked.segRemoved[3] and crooked.segRemoved[4],
+            "Crooked Eye Road：官方段 2-3 移除、段 0-1 保留")
+        assert(mod.streetSearchable(crooked), "Crooked Eye Road：保留段讓街道仍可搜尋")
+    end
+    -- West Maple St 雙轉角（2026-09-06 交叉驗證）：官方兩個直角頂點 (6014,6638)、
+    -- (6014,6698) 落在 tertiary 多邊形外 4.95／1.41 格，真鋪面是兩段圓角。patch 移除
+    -- 官方段 0-2、以 9 點折線取代；西→東路線必須走圓角，且不得再經過兩個舊直角頂點。
+    do
+        local g = officialBuilder.graph
+        local r = mod.findRoute(g, 5900, 6638, 6200, 6698.5)
+        assertRouteMetadata(r, "West Maple St 雙轉角")
+        local sawRound, sawOldCorner = false, false
+        for i = 1, #r.pts, 2 do
+            local x, y = r.pts[i], r.pts[i + 1]
+            if math.abs(x - 6014) < 1e-6 and math.abs(y - 6650.5) < 1e-6 then sawRound = true end
+            if math.abs(x - 6014) < 1e-6
+                and (math.abs(y - 6638) < 1e-6 or math.abs(y - 6698) < 1e-6) then
+                sawOldCorner = true
+            end
+        end
+        assert(sawRound, "West Maple St：路線經過圓角頂點 (6014,6650.5)")
+        assert(not sawOldCorner, "West Maple St：路線不再經過舊直角頂點 (6014,6638)/(6014,6698)")
+        local maple
+        for i = 1, patch.geometryCount do
+            local pts = streets[i].pts
+            if #pts == 10 and pts[1] == 5818 and pts[2] == 6638 then maple = streets[i] end
+        end
+        assert(maple and maple.segRemoved[1] and maple.segRemoved[2] and maple.segRemoved[3]
+            and not maple.segRemoved[4], "West Maple St：官方段 0-2 移除、段 3 保留")
+        assert(mod.streetSearchable(maple), "West Maple St：保留段讓街道仍可搜尋")
     end
 end
 

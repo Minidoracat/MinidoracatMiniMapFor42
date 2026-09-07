@@ -105,9 +105,14 @@
     }
   ],
   "remove": [
+    "48d89c8d5f1b1e9e55ac18822b38bcc1c129dde8f8e77a8474f124200e908053:0",
+    "48d89c8d5f1b1e9e55ac18822b38bcc1c129dde8f8e77a8474f124200e908053:1",
+    "48d89c8d5f1b1e9e55ac18822b38bcc1c129dde8f8e77a8474f124200e908053:2",
     "aebb75485b96db37f6d1e315407f0be3481740949ba2869db03c48b9848ee717:0",
     "aebb75485b96db37f6d1e315407f0be3481740949ba2869db03c48b9848ee717:1",
-    "aebb75485b96db37f6d1e315407f0be3481740949ba2869db03c48b9848ee717:2"
+    "aebb75485b96db37f6d1e315407f0be3481740949ba2869db03c48b9848ee717:2",
+    "c78f7d201c0452ae73a31bc03d4141a72553876dca5ab134415cb1e035f7af3f:2",
+    "c78f7d201c0452ae73a31bc03d4141a72553876dca5ab134415cb1e035f7af3f:3"
   ],
   "width": [],
   "surface": [],
@@ -223,6 +228,56 @@
       "surface": "paved",
       "searchable": false,
       "reason": "Hog Wallow Road 北端缺段（2026-09-03，玩家 RubyDiamond 回報「小段沒鏈接」x4490 y10650）：官方 polyline 北端止於 (4483,10744)，但 road-surfaces-full-v2 逐格實證鋪面路帶（class paved、寬 8：x 4479-4486）續向北至 y≈10650，於 45° 切角轉東（y 10642-10649）直抵 KY-60，缺 182.6 格。折線起點與官方北端節點重合、尾點落 KY-60 兩段共用頂點 (4571.5,10646) 併節點；中線 185 個取樣格全數 paved。稽核 row-span 於該區零 detailed candidate（缺段與官方路帶連成同一鋪面分量、無獨立訊號），屬稽核盲點。"
+    },
+    {
+      "id": "m:muldraugh-crooked-eye-road-1",
+      "operation": "add",
+      "points": [
+        7528.5,
+        10442.5,
+        7408.5,
+        10442.5,
+        7404.0,
+        10445.0,
+        7400.5,
+        10448.5,
+        7397.5,
+        10454.0,
+        7397.5,
+        10846.5
+      ],
+      "width": 5.0,
+      "surface": "gravel",
+      "searchable": false,
+      "reason": "Crooked Eye Road 官方 polyline 幾何錯（自動交叉驗證，線索來源：第三方手修清單座標，判定與幾何全部以本 repo 證據重驗）：streetIndex 542 的頂點 (7397.5,10442.5) 距最近 highway=tertiary 多邊形邊緣 -3.536 格、raster class=dirt-candidate、±1 格窗=dirt-candidate——落在真路面外。移除官方段 2,3、保留段 0,1（街道仍可搜尋），以 6 點折線取代；折線每個頂點經 highway 多邊形＋raster 雙證據驗在路面上（new 頂點 class：(7408.5,10442.5)=gravel, (7404,10445)=gravel, (7400.5,10448.5)=gravel, (7397.5,10454)=gravel, (7397.5,10846.5)=gravel），端點與保留段端點同座標靠 ATTACH_END 併節點。surface=gravel 取中線取樣 class 眾數實證。"
+    },
+    {
+      "id": "m:muldraugh-west-maple-st-1",
+      "operation": "add",
+      "points": [
+        5818.0,
+        6638.0,
+        6002.0,
+        6638.0,
+        6007.0,
+        6640.5,
+        6011.5,
+        6645.0,
+        6014.0,
+        6650.5,
+        6014.0,
+        6691.0,
+        6017.0,
+        6696.5,
+        6021.5,
+        6698.0,
+        6256.5,
+        6698.5
+      ],
+      "width": 4.0,
+      "surface": "paved",
+      "searchable": false,
+      "reason": "West Maple St 官方 polyline 幾何錯（自動交叉驗證，線索來源：第三方手修清單座標，判定與幾何全部以本 repo 證據重驗）：streetIndex 601 的頂點 (6014,6638) 距最近 highway=tertiary 多邊形邊緣 -4.950 格、raster class=dirt-candidate、±1 格窗=dirt-candidate——落在真路面外。移除官方段 0,1,2、保留段 3（街道仍可搜尋），以 9 點折線取代；折線每個頂點經 highway 多邊形＋raster 雙證據驗在路面上（new 頂點 class：(6002,6638)=paved, (6007,6640.5)=paved, (6011.5,6645)=paved, (6014,6650.5)=paved, (6014,6691)=paved, (6017,6696.5)=paved, (6021.5,6698)=paved），端點與保留段端點同座標靠 ATTACH_END 併節點。surface=paved 取中線取樣 class 眾數實證。"
     }
   ]
 }

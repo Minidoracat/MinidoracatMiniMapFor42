@@ -876,20 +876,8 @@ local function isAdornAlways()
 end
 
 
--- 沙盒 MapAllKnown（開始時全部已知）的 42.20.3 補位：MP 的 all-known 原由
--- PlayerVisitedPacket 在收完 visited 同步後 setKnownInCells 全圖實現
--- （42.20.2 PlayerVisitedPacket.java:66-68），42.20.3 該封包被移除、僅剩 SP 的
--- WorldMapVisited.load 路徑（42.20.3 WorldMapVisited.java:892-895）——MP 下
--- 沙盒開了也不再全圖（引擎回歸，實測 servertest MapAllKnown=true 失效）。
--- 補位：client 端關 HideUnvisited（引擎鏈 UIWorldMap.java:183-186 →
--- setVisited(null)＝未探索遮罩整層不畫、pyramid 影像全示）。伺服器沙盒明示
--- 全開＝無「穿透求透明」條目的洩漏疑慮；官方日後修回＝冪等重設無害。
--- MP 客戶端 SandboxVars 由伺服器同步，呼叫點（InitPlayer/initDataAndStyle）
--- 皆在 OnGameStart 之後＝安全讀取點（AGENTS.md 沙盒時序）
-local function mapAllKnownEnabled()
-    return SandboxVars and SandboxVars.Map and SandboxVars.Map.MapAllKnown == true
-end
 -- 把圖層開關套到指定小地圖 mapAPI（引擎選項名出自 WorldMapRenderer.java）
+-- test:map-toggles:start
 local function applyToggleOptions(mapAPI)
     mapAPI:setBoolean("Players", getBoolOption("Players", true))
     if isClient() then
@@ -916,9 +904,8 @@ local function applyToggleOptions(mapAPI)
     -- 街名顯示（資料已於 InitPlayer wrapper 補載；此值只控畫不畫，
     -- StreetRenderData.java:45 為唯一閘門，故存檔即生效）
     mapAPI:setBoolean("ShowStreetNames", getBoolOption("StreetNames", true))
-    -- MapAllKnown 補位（小地圖面）
-    if mapAllKnownEnabled() then mapAPI:setBoolean("HideUnvisited", false) end
 end
+-- test:map-toggles:end
 
 -- 外框底色不透明度：縮放 outer／bottomPanel／titleBar 的 backgroundColor.a
 -- （原版值首次套用時快照在 _minidoracatBgA，切回「原版」可還原）。
@@ -1407,18 +1394,16 @@ end
 -- 註：初建其實也會經內部 overlayPaper 觸發下方 wrap 補掛（instance 於
 -- ISWorldMap.lua:1506 先賦值、:1514 才 init）——此處是刻意冗餘的顯式主掛載點，
 -- 不依賴「initDataAndStyle 內部一定呼叫 overlayPaper」這個原版細節。
+-- test:worldmap-init:start
 local originalInitDataAndStyle = ISWorldMap.initDataAndStyle
 function ISWorldMap:initDataAndStyle()
     originalInitDataAndStyle(self)
-    -- MapAllKnown 補位（世界地圖面）：改 instance 欄位而非直寫引擎選項——
-    -- ShowWorldMap 每次開圖都以 self.hideUnvisitedAreas 重套
-    -- （ISWorldMap.lua:1515），直寫會被蓋回；欄位改 false 則齒輪面板同步一致
-    if mapAllKnownEnabled() then self.hideUnvisitedAreas = false end
     local ok, err = pcall(applyMiniMapPyramids, self)
     if not ok then
         log("init failed: " .. tostring(err))
     end
 end
+-- test:worldmap-init:end
 
 -- 樣式重建黏著（實測回饋：世界地圖沒有 MOD 地圖圖案）：原版會在遊戲中途重跑
 -- initDefaultStyleV3＋overlayPaper 把本 MOD 圖層洗掉——觸發點：prerender 的
@@ -2773,5 +2758,70 @@ Core.getLoadedMapDirs = getLoadedMapDirs -- _NavRoute.lua：cell 勝出閘門的
 Core.visibleWorldAABB = visibleWorldAABB -- _NavRoute.lua：路線繪製的世界視窗剔除（共用單一實作）
 Core.copyCoordsText = copyCoordsText -- _WorldMapNav.lua：右鍵複製座標（共用剪貼簿＋琥珀回饋）
 Core.ready = true -- 模組檔載入閘門：最後設定＝主檔完整走完才放行
+
+-- MapAllKnown 只代表 known，不代表 visited；保留原版 HideUnvisited，讓原生 shader
+-- 區分深霧／已知未到訪的薄霧／已到訪。SP 已在 WorldMapVisited.getInstance 載入時補 known。
+-- MP 的 PlayerVisited 可晚到且整包覆寫，沒有 Lua 完成事件（RequestDataPacket.java:315-345）。
+-- 不拿角落當完成哨兵：角落已知仍可能只收到局部探索。每 tick 輪轉 32 個 unit rows，
+-- known-only OR 不改 visited；全知時不設 changed，也不重傳霧貼圖。
+-- ponytail: 最壞需 ceil(世界高度 cells / 4) ticks 收斂；引擎提供接收事件後改為收完補一次。
+-- test:map-known:start
+do
+    local nextKnownY
+    local knownWarned = false
+
+    local function repairMapKnown()
+        -- 與 Policy 一樣讀 Java 權威值，不讓其他 MOD 改寫 SandboxVars 鏡像就揭露地圖。
+        if not isClient() or getSandboxOptions():getOptionByName("Map.MapAllKnown"):getValue() ~= true then
+            nextKnownY = nil
+            return
+        end
+        local grid = getWorld():getMetaGrid()
+        local minCX, minCY = grid:getMinX(), grid:getMinY()
+        local maxCX, maxCY = grid:getMaxX(), grid:getMaxY()
+        local visited = WorldMapVisited.getInstance()
+        local minY, endY = minCY * 256, (maxCY + 1) * 256
+        if not nextKnownY or nextKnownY < minY or nextKnownY >= endY then
+            visited:setKnownInCells(minCX, minCY, maxCX, maxCY)
+            nextKnownY = minY
+            return
+        end
+        local minX, endX = minCX * 256, (maxCX + 1) * 256
+        local bandEnd = math.min(nextKnownY + 1024, endY)
+        -- isKnown(rect) 是 ANY-of：false 才證明整帶全未知，可一次修復、只上傳一次霧貼圖。
+        -- true 不能當整帶已知，仍逐帶 OR；內縮 1 格抵銷 isKnown 自帶的 +/-1 halo。
+        if not visited:isKnown(minX + 1, nextKnownY + 1, endX - 1, bandEnd - 1) then
+            visited:setKnownInCells(minCX, minCY, maxCX, maxCY)
+            nextKnownY = minY
+        else
+            visited:setKnownInSquares(minX, nextKnownY, endX, bandEnd)
+            nextKnownY = bandEnd < endY and bandEnd or minY
+        end
+    end
+
+    local function tickMapKnown()
+        local ok, err = pcall(repairMapKnown)
+        if not ok and not knownWarned then
+            knownWarned = true
+            log("map known repair failed: " .. tostring(err))
+        end
+    end
+
+    local function stopMapKnown()
+        Events.OnTickEvenPaused.Remove(tickMapKnown)
+        nextKnownY = nil
+        knownWarned = false
+    end
+
+    Events.OnGameStart.Add(function()
+        stopMapKnown()
+        if not isClient() then return end
+        Events.OnTickEvenPaused.Add(tickMapKnown)
+        tickMapKnown()
+    end)
+    Events.OnDisconnect.Add(stopMapKnown)
+    Events.OnMainMenuEnter.Add(stopMapKnown)
+end
+-- test:map-known:end
 
 log("loaded (hooks: ISWorldMap:initDataAndStyle + ISMiniMap.InitPlayer + button bar + gear panel + hotkey + mod options + zombie dots + edge zoom)")

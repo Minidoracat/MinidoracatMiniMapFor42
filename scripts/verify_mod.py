@@ -452,6 +452,7 @@ _lua_tests = [
     ("test_street_backfill.lua", "街道資料補載 gate", False),
     ("test_nav_kick.lua", "導航引擎冷啟動狀態機", False),
     ("test_worldmap_nav.lua", "世界地圖右鍵選單合併／開圖重包", False),
+    ("test_fog_of_war.lua", "深霧／薄霧與多人已知區域修復", False),
 ]
 for _script, _label, _may_skip in _lua_tests:
     _gate = f"Lua 單元測試（{_script}：{_label}）"
@@ -469,20 +470,23 @@ for _script, _label, _may_skip in _lua_tests:
     else:
         fail(_gate, ["無輸出"]) if not _lines else ok(f"{_gate}：{_lines[-1]}")
 
-# ---- 20. Phase B 路網稽核契約測試 ----
-_audit_gate = "路網稽核契約測試（test_audit_streets.py）"
-_audit_sentinel = "test_audit_streets: OK"
-_r = subprocess.run(
-    [sys.executable, os.path.join("scripts", "tests", "test_audit_streets.py")],
-    capture_output=True, text=True, cwd=REPO)
-_lines = [line for line in (_r.stdout or "").splitlines() if line.strip()]
-_err_tail = (_r.stderr or "").splitlines()[-3:]
-if _r.returncode != 0:
-    fail(_audit_gate, (_lines[-3:] or []) + _err_tail)
-elif not _lines or _lines[-1] != _audit_sentinel:
-    fail(_audit_gate, ["缺少預期 sentinel：%s" % _audit_sentinel] + _lines[-3:])
-else:
-    ok("%s：%s" % (_audit_gate, _audit_sentinel))
+# ---- Python 路網稽核與交叉檢查契約 ----
+for _script, _label in (
+        ("test_audit_streets", "路網稽核契約"),
+        ("test_xcheck_street_patches", "道路交叉檢查資料安全")):
+    _gate = f"{_label}測試（{_script}.py）"
+    _sentinel = f"{_script}: OK"
+    _r = subprocess.run(
+        [sys.executable, os.path.join("scripts", "tests", _script + ".py")],
+        capture_output=True, text=True, cwd=REPO)
+    _lines = [line for line in (_r.stdout or "").splitlines() if line.strip()]
+    _err_tail = (_r.stderr or "").splitlines()[-3:]
+    if _r.returncode != 0:
+        fail(_gate, (_lines[-3:] or []) + _err_tail)
+    elif not _lines or _lines[-1] != _sentinel:
+        fail(_gate, ["缺少預期 sentinel：%s" % _sentinel] + _lines[-3:])
+    else:
+        ok("%s：%s" % (_gate, _sentinel))
 
 # ---- 總結 ----
 print()

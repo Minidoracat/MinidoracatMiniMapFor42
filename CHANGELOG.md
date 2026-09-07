@@ -1,6 +1,13 @@
 # Changelog
 
-## [Unreleased]
+## [42.20.4-0.26.4] - 2026-09-07
+
+### 修正
+
+- **兩處導航線與自動駕駛被帶離路面的轉角**：歪眼路（Crooked Eye Road）北端和西楓樹街（West Maple St）兩個轉角，遊戲內建的街道資料把實際的圓弧轉角畫成直角，轉角點落在真實路面外 3.5～5 格，導航線在這兩處會斜切出路面再繞回來、自駕經過時會退化爬行。道路修補層現在改用貼合實際鋪面的折線取代這兩段轉角，兩條街照樣搜尋得到
+- **地圖全開後仍保留未到訪的薄霧**：修正 0.17.0 起，開啟「開始時全部已知」後，本 MOD 連探索薄霧一起關閉，導致走過與沒走過的地方亮度完全相同的問題。世界地圖與小地圖現在恢復區分未到訪／已到訪區域；多人模式也保留全圖已知，探索資料較晚同步時會自動補正。更新後重啟遊戲即可，不需要除錯模式、重建或覆蓋存檔
+
+> 技術要點：新增 `scripts/xcheck_street_patches.py`——第三方手修街道清單（Derpy Autodrive `Vanilla_patch.lua`）只當座標線索，逐頂點用本 repo 自己的證據重判（vanilla `worldmap.xml` highway 多邊形含點測試＋距邊緣距離、`road-surfaces-full-v2` raster ±1 格窗 class），多邊形外緣留 1.0 格容差吸收逐 cell 切邊鋸齒。272 筆有效項目中 265 筆判 cosmetic（對方為自駕循跡把直角拉成圓角、官方資料本身無誤，不收）、4 筆 confirmed、3 筆路口共用頂點 ambiguous（重判後亦 cosmetic）；confirmed 中 2 筆過可行性閘門自動產生 approvals（`remove` 官方段＋`manualRoads` add，中線取樣 533／496 格全數 gravel／paved），Deer Trail Road 與 Saltlick Lane 因移除窗口吃掉全街、無官方段可留（街道搜尋會失效）列待人工。`scripts/test_nav_route.lua` 正式區塊計數鎖 add 3→5、remove 3→8，並各加一組 findRoute 幾何情境（違規證明：換回舊生成檔兩組各自紅）。報告 `target/street-xcheck.json` 不入庫。
 
 ## [42.20.4-0.26.3] - 2026-09-06
 
