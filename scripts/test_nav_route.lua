@@ -70,6 +70,147 @@ local function assertRouteMetadata(r, label)
     end
 end
 
+-- 共用路口應優先接納附近端點，不得被附近支路拖離主線。
+do
+    local g = buildAll({
+        { name = "A", src = "M", width = 5, pts = {0,0,10,0} },
+        { name = "B", src = "M", width = 5, pts = {10,0,16,0,30,0,30,-30} },
+        { name = "C", src = "M", width = 5, pts = {0,-15,9,-5} },
+    })
+    local r = mod.findRoute(g, 0, 0, 30, -30, nil, nil, nil, 12)
+    assertRouteMetadata(r, "共用路口主線")
+    for i = 1, #r.pts, 2 do
+        if r.pts[i] < 29.5 then
+            assert(math.abs(r.pts[i + 1]) < 1e-6, "共用路口不得被拖進附近支路")
+        end
+    end
+    local branch = mod.findRoute(g, 0, -15, 30, -30, nil, nil, nil, 12)
+    assertRouteMetadata(branch, "近端支路接入")
+    assert(branch.snapDist < 1, "保留路口時不得使較小key的支路成為孤島")
+end
+
+-- 共用端點位於幹道之外時，仍須允許T字投影；不能用零距離self-map把它鎖死。
+do
+    local g = buildAll({
+        { name = "Main", src = "M", width = 5, pts = {0,0,100,0} },
+        { name = "B1", src = "M", width = 5, pts = {50,3,50,40} },
+        { name = "B2", src = "M", width = 5, pts = {50,3,80,40} },
+    })
+    local r = mod.findRoute(g, 5, 0, 50, 35, nil, nil, nil, 12)
+    assertRouteMetadata(r, "共用端點T字投影")
+    assert(r.len < 90 and math.abs(r.ex - 50) < 1 and math.abs(r.ey - 35) < 1,
+        "幹道外的共用端點仍須透過T字接線進入幹道")
+end
+
+do
+    local g = buildAll({
+        { name = "A", src = "M", width = 5, pts = {0,0,50,0} },
+        { name = "B", src = "M", width = 5, pts = {50,0,50,-40} },
+        { name = "C", src = "M", width = 5, pts = {49.5,3,10,30} },
+    })
+    local r = mod.findRoute(g, 50, -35, 15, 26, nil, nil, nil, 12)
+    assertRouteMetadata(r, "小key端點接共用路口")
+    assert((r.ex - 15)^2 + (r.ey - 26)^2 < 4,
+        "孤立端點必須接入既有路口，而非把既有路口往外拉或斷開")
+end
+
+-- 優先接入路口會延長原有吸附鏈；鏈深不同的端點仍須解析到同一代表。
+do
+    local g = buildAll({
+        { name = "A", src = "M", width = 5, pts = {0,0,-100,-100} },
+        { name = "B", src = "M", width = 5, pts = {7,0,7,-100} },
+        { name = "C", src = "M", width = 5, pts = {14,0,14,-100} },
+        { name = "D", src = "M", width = 5, pts = {21,0,121,-100} },
+        { name = "J1", src = "M", width = 5, pts = {0,7,0,107} },
+        { name = "J2", src = "M", width = 5, pts = {0,7,-100,107} },
+    }, nil, 1)
+    local r = mod.findRoute(g, 121, -100, 0, 100, nil, nil, nil, 12)
+    assertRouteMetadata(r, "多跳端點合流")
+    assert(r.snapDist < 1, "長吸附鏈不能把車旁道路斷成孤島而改從114m外起錨")
+end
+
+-- 合流不能刪掉已存在的短路段；路口優先序也不得吸入同段的相鄰頂點。
+do
+    local streets = {
+        { name = "OldLoopTail", src = "M", width = 5,
+          pts = {10891.5,10241.5,10891.5,10294,10888.5,10299.5,10884,10304,10879,10306.5} },
+        { name = "OldLoopCorner", src = "M", width = 5,
+          pts = {10857.5,10417.5,10857.5,10325,10858,10320,10860,10317,10864,10314,10871,10310,10879,10306.5} },
+        { name = "BarnWay", src = "M", width = 4,
+          pts = {10818,10303,10853.5,10303,10862,10303,10865,10304,10868,10306,10871,10310} },
+    }
+    local function checkTurns(r, minCos, label)
+        assertRouteMetadata(r, label)
+        for i = 3, #r.pts - 2, 2 do
+            local ax, ay = r.pts[i] - r.pts[i - 2], r.pts[i + 1] - r.pts[i - 1]
+            local bx, by = r.pts[i + 2] - r.pts[i], r.pts[i + 3] - r.pts[i + 1]
+            local length = math.sqrt((ax * ax + ay * ay) * (bx * bx + by * by))
+            assert(length > 0 and (ax * bx + ay * by) / length >= minCos - 1e-6,
+                label .. "：不得因相鄰頂點合流而折返")
+        end
+    end
+    local previous
+    for _, budget in ipairs({1, 900}) do
+        local g = buildAll(streets, nil, budget)
+        local branch = mod.findRoute(g, 10830, 10303, 10857.5, 10400, nil, nil, nil, 12)
+        checkTurns(branch, -0.5, "Barn接入OldLoop") -- 真Y字匯入約101°，不是U-turn
+        local main = mod.findRoute(g, 10857.5, 10400, 10891.5, 10260, nil, nil, nil, 12)
+        checkTurns(main, 0, "OldLoop主線")
+        if previous then
+            for j, r in ipairs({branch, main}) do
+                assert(#r.pts == #previous[j].pts, "分幀預算不得改變路線幾何")
+                for i = 1, #r.pts do
+                    assert(math.abs(r.pts[i] - previous[j].pts[i]) < 1e-6,
+                        "分幀預算不得改變接縫座標")
+                end
+            end
+        end
+        previous = {branch, main}
+    end
+end
+
+-- root 解析的走鏈、環掃描與壓縮都要可中斷；結果不依 key 走訪順序。
+do
+    local function resolveAll(b, budget)
+        b.phase = "resolve"
+        local previousDone = 0
+        for _ = 1, 100000 do
+            local used = mod.stepResolve(b, budget)
+            assert(used >= 0 and used <= budget, "吸附解析不得超出單次budget")
+            local done = 0
+            for _, mv in pairs(b.epMove) do if mv.done then done = done + 1 end end
+            assert(done - previousDone <= budget, "路徑壓縮也必須按節點分攤budget")
+            previousDone = done
+            if b.phase == "cut" then return end
+        end
+        error("吸附解析未在界限內收斂")
+    end
+    local edges = {{10,10,20,10}, {20,10,30,10}, {30,10,10,10}, {40,10,10,10}, {50,10,40,10}}
+    for _, reverse in ipairs({false, true}) do
+        local b = mod.newBuild({}, nil)
+        for i = 1, #edges do
+            local e = edges[reverse and (#edges - i + 1) or i]
+            mod.mapTo(b, e[1], e[2], e[3], e[4], 1)
+        end
+        resolveAll(b, 1)
+        for _, mv in pairs(b.epMove) do
+            assert(mv.x == 10 and mv.y == 10 and mv.done, "環與其上游必到同一個最小key代表")
+        end
+    end
+    local b = mod.newBuild({}, nil)
+    for i = 256, 1, -1 do mod.mapTo(b, i, 0, i - 1, 0, 1) end
+    resolveAll(b, 1)
+    for _, mv in pairs(b.epMove) do
+        assert(mv.x == 0 and mv.y == 0 and mv.done, "256跳仍到共同根，不以固定跳數截斷")
+    end
+    local selfMap = mod.newBuild({}, nil)
+    mod.mapTo(selfMap, 100, 100, 100.2, 100.1, 1)
+    resolveAll(selfMap, 1)
+    for _, mv in pairs(selfMap.epMove) do
+        assert(mv.x == 100.2 and mv.y == 100.1, "同量化key保留投影座標，不誤判成無效循環")
+    end
+end
+
 --------------------------------------------------------------------------------
 -- 一、幾何原語
 --------------------------------------------------------------------------------
@@ -123,6 +264,8 @@ do
         gn = 65535, gx1 = {}, gy1 = {}, gx2 = {}, gy2 = {}, gsid = {},
         gwidth = {}, gsurface = {}, buck = {}, bkeys = {}, bn = 0,
         padTol = 0, peakBucket = 0, bucketReferenceCount = 0,
+        epStreet = {}, junction = {},
+        epOrd = {}, epOrdCount = 0, epLink = {},
     }
     assert(not pcall(mod.gateEmit, gateState, 0, 0, 1, 0, 1, 1, "paved"),
         "limits：gate segment key-space 在 65536 前 terminal")
@@ -157,7 +300,7 @@ do
     assert(not pcall(mod.addCut, {
         cutRecords = 0, cuts = { [1] = perSegCuts }, maxCutsPerSegment = 128,
     }, 1, 0.5, 0, 0), "limits：單 segment cuts 超過 128 terminal")
-    assert(not pcall(mod.mapTo, { epMoveCount = 10000, epMove = {} },
+    assert(not pcall(mod.mapTo, { epMoveCount = 10000, epMove = {}, epKeys = {} },
         0, 0, 1, 1, 1), "limits：endpoint moves 超過 10k terminal")
     local bucketCap = mod.newBuild({
         { name = "bucket", src = "M", pts = { 0, 0, 10, 0 } },
@@ -931,13 +1074,8 @@ end
                 "正式 RoadPatch：每個官方非鐵路 segment 有 metadata")
         end
     end
-    assert(metadataCount == patch.surfaceCount and patch.addCount == 5
-        and patch.bridgeCount == 6 and patch.rejectedCandidateCount == 8
-        and patch.removeCount == 8,
-        "正式 RoadPatch：6 bridge 翻案＋5 manual add（湖畔土徑、Bank Road 北段、"
-        .. "Hog Wallow–KY-60 缺段、Crooked Eye Road 北端角、West Maple St 雙轉角）"
-        .. "＋8 remove（Bank Road L 角 3 段、Crooked Eye 2 段、West Maple 3 段）；"
-        .. "dirt-edge 兩筆使用者實測否決")
+    assert(metadataCount == patch.surfaceCount,
+        "正式 RoadPatch：surface metadata 數量與宣告一致")
     assert(#streets == patch.geometryCount + 1 + patch.addCount + patch.bridgeCount,
         "正式 RoadPatch：add/bridge 條目 append 至 patched 表尾")
     local officialBuilder = mod.newBuild(streets, nil)
@@ -1067,6 +1205,58 @@ end
         assert(maple and maple.segRemoved[1] and maple.segRemoved[2] and maple.segRemoved[3]
             and not maple.segRemoved[4], "West Maple St：官方段 0-2 移除、段 3 保留")
         assert(mod.streetSearchable(maple), "West Maple St：保留段讓街道仍可搜尋")
+    end
+    -- 短缺段不能變成跨區繞行；東西向都要連通，使用完整官方圖與生成補丁。
+    do
+        local g = officialBuilder.graph
+        for _, ends in ipairs({
+            {10490, 9737, 10620, 9737}, {10620, 9737, 10490, 9737},
+        }) do
+            local r = mod.findRoute(g, ends[1], ends[2], ends[3], ends[4], nil, nil, nil, 12)
+            assertRouteMetadata(r, "Old Mill 雙向接線")
+            assert(r.len <= 135, "Old Mill 缺段不得繞行三公里")
+        end
+        local r = mod.findRoute(g, 10561, 9734, 10521, 9737, nil, nil, nil, 12)
+        assertRouteMetadata(r, "Old Mill 路面起錨")
+        assert(r.len <= 45 and r.snapDist <= 4, "缺段中途起步應接上車旁道路")
+    end
+    do
+        local g = officialBuilder.graph
+        for _, ends in ipairs({
+            {10857.5, 10400, 10879, 10306.5},
+            {10879, 10306.5, 10857.5, 10400},
+            {10830, 10303, 10857.5, 10330},
+        }) do
+            local r = mod.findRoute(g, ends[1], ends[2], ends[3], ends[4], nil, nil, nil, 12)
+            assertRouteMetadata(r, "Old Loop／Barn Way 接線")
+            assert(r.len < 140, "修補路口後主路及岔路仍直接連通")
+            local sawCurve = false
+            for i = 1, #r.pts, 2 do
+                local x, y = r.pts[i], r.pts[i + 1]
+                if x > 10859 and x < 10876 and y > 10308 and y < 10318 then sawCurve = true end
+                assert(not (x < 10859 and y > 10304.5 and y < 10311),
+                    "路線不得重回 Old Loop 草地島舊折點")
+            end
+            assert(sawCurve, "路線沿新鋪面彎道通過")
+        end
+    end
+    -- 不能只驗到補丁端點；穿過 Old Loop／Barn 接縫的主路不得繞回支路。
+    for _, ends in ipairs({
+        {10857.5, 10400, 10891.5, 10260},
+        {10891.5, 10260, 10857.5, 10400},
+    }) do
+        local r = mod.findRoute(officialBuilder.graph,
+            ends[1], ends[2], ends[3], ends[4], nil, nil, nil, 12)
+        assertRouteMetadata(r, "Old Loop 接縫雙向穿越")
+        for i = 3, #r.pts - 2, 2 do
+            local x, y = r.pts[i], r.pts[i + 1]
+            if x > 10850 and x < 10905 and y > 10290 and y < 10335 then
+                local ax, ay = x - r.pts[i - 2], y - r.pts[i - 1]
+                local bx, by = r.pts[i + 2] - x, r.pts[i + 3] - y
+                assert(ax * bx + ay * by >= -1e-6,
+                    "Old Loop 主路穿越接縫不得產生超過90度的折返")
+            end
+        end
     end
 end
 

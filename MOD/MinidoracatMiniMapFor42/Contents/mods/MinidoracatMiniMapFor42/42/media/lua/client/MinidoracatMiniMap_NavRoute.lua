@@ -42,8 +42,8 @@
 --   同步做＝數十 ms > 16.7ms 幀預算會掉幀（codex review），分幀後 ~23 tick
 --   （<0.5s）完成；kickEngine 同步部分只做容器蒐集（輕）。
 -- - 建圖（一次性，OnTick 分幀）：cell gate 預切 → 段對交點/T 字投影（64 格
---   spatial bucket，桶內配對、桶內游標＝budget 硬上限）→ 切割成節點/邊
---   （座標量化 join）。每 tick 固定操作預算（STEP_BUDGET），60fps 下 1~3 秒
+--   spatial bucket，桶內配對、桶內游標＝budget 硬上限）→ 吸附鏈共同根解析
+--   → 切割成節點/邊（座標量化 join）。每 tick 固定操作預算（STEP_BUDGET），60fps 下 1~3 秒
 --   完成，不卡渲染幀（對比：Navigator 在 OnGameStart 同步全算，是其負評
 --   「黑屏/卡頓」主因）。
 -- - 尋路（設目標/偏航重算時）：A* 二元堆＋generation stamp 陣列（免每次清表）；
@@ -116,6 +116,7 @@ local MAX_WIDTH = 64
 local MIN_WORLD_COORD = -32768
 local MAX_WORLD_COORD = 32767.5
 local MAX_GATE_SEGMENTS = 65535
+local EP_PAIR_BASE = (MAX_GATE_SEGMENTS + 1) * 2 -- 每段至多兩個端點，無向pair key不碰撞
 local MAX_GRAPH_NODES = 99999
 local MAX_PAIR_WORK = 100000 -- official security-pass=8059；>12x headroom
 local MAX_PAIR_SCAN_WORK = 125000 -- official=30320；>4x headroom
@@ -588,10 +589,17 @@ function NavCore.newBuild(streets, winnerOf)
         cuts = {},
         seenPair = {}, pairWork = 0, pairScanWork = 0, cutRecords = 0,
         maxCutsPerSegment = 0,
-        epMove = {}, epMoveCount = 0,
+        epMove = {}, epMoveCount = 0, epStreet = {}, junction = {},
+        epOrd = {}, epOrdCount = 0, epLink = {},
+        epKeys = {}, rpath = {}, ri = 1, rn = 0, rid = 0,
         bi = 1, ci = 1, pii = nil, pjj = nil,
         tsBuf = {}, graph = nil,
     }
+end
+
+local QOFF = 65536 -- 量化座標偏移：同 BKOFF，負世界座標防碰撞
+local function quantKey(x, y)
+    return (floor(x * JOIN_INV + 0.5) + QOFF) * 200000 + (floor(y * JOIN_INV + 0.5) + QOFF)
 end
 
 local function gateEmit(b, x1, y1, x2, y2, sid, width, surface)
@@ -599,6 +607,24 @@ local function gateEmit(b, x1, y1, x2, y2, sid, width, surface)
     local n = b.gn + 1
     if n > MAX_GATE_SEGMENTS then error("gate segment key-space limit exceeded") end
     b.gn = n
+    -- 跨街共用端點有合流優先權，避免既有路口被附近單一路段頂點拖走。
+    local k1, k2 = quantKey(x1, y1), quantKey(x2, y2)
+    local s1, s2 = b.epStreet[k1], b.epStreet[k2]
+    if s1 == nil then b.epStreet[k1] = sid elseif s1 ~= sid then b.junction[k1] = true end
+    if s2 == nil then b.epStreet[k2] = sid elseif s2 ~= sid then b.junction[k2] = true end
+    -- 既有路段的兩端不得再合流成一點；序號讓無向連邊可用精確整數key。
+    local o1 = b.epOrd[k1]
+    if not o1 then
+        o1 = b.epOrdCount + 1
+        b.epOrdCount, b.epOrd[k1] = o1, o1
+    end
+    local o2 = b.epOrd[k2]
+    if not o2 then
+        o2 = b.epOrdCount + 1
+        b.epOrdCount, b.epOrd[k2] = o2, o2
+    end
+    if o1 > o2 then o1, o2 = o2, o1 end
+    b.epLink[o1 * EP_PAIR_BASE + o2] = true
     b.gx1[n], b.gy1[n], b.gx2[n], b.gy2[n], b.gsid[n] = x1, y1, x2, y2, sid
     b.gwidth[n], b.gsurface[n] = width, surface
     -- 配對 bucket 登記外擴 padTol（最大半寬和＋餘裕）：吸附容差跨桶（主線
@@ -699,17 +725,13 @@ end
 -- 端點＝跨街近端點（吸附成同一路口）。吸附是 T 字連通的關鍵：投影切點與支路
 -- 端點可差半寬（3-4 格）> 0.5 格量化合併距，只切不移則切了也不連（codex
 -- review）；同 d2 競爭取小者，同量化 key 的共享端點一起移動
-local QOFF = 65536 -- 量化座標偏移：同 BKOFF，負世界座標防碰撞
-local function quantKey(x, y)
-    return (floor(x * JOIN_INV + 0.5) + QOFF) * 200000 + (floor(y * JOIN_INV + 0.5) + QOFF)
-end
-
 local function mapTo(b, fx, fy, tx2, ty2, d2)
     local key = quantKey(fx, fy)
     local cur = b.epMove[key]
     if not cur then
         b.epMoveCount = b.epMoveCount + 1
         if b.epMoveCount > MAX_EP_MOVES then error("endpoint move limit exceeded") end
+        b.epKeys[b.epMoveCount] = key
     end
     if not cur or d2 < cur.d2 then
         b.epMove[key] = { x = tx2, y = ty2, d2 = d2 }
@@ -727,12 +749,18 @@ local function tryAttach(b, ex, ey, ax, ay, bx2, by2, cutSeg, tol)
     if da2 <= endTol or db2 <= endTol then
         local px2, py2 = ax, ay
         if db2 < da2 then px2, py2 = bx2, by2 end
-        -- 合流到量化 key 較小者——deterministic 決勝消滅「互吸交換不收斂」
-        -- （兩端點對彼此投影各 clamp 到對方，若各自單向吸＝座標交換、量化後仍
-        -- 兩節點）
+        -- 未宣告端點接入既有路口；同等身分才用小 key 決勝。T字投影仍走下方分支。
         local ka, kb = quantKey(ex, ey), quantKey(px2, py2)
         if ka ~= kb then
-            if ka < kb then
+            local oa, ob = b.epOrd[ka], b.epOrd[kb]
+            if oa > ob then oa, ob = ob, oa end
+            if b.epLink[oa * EP_PAIR_BASE + ob] then return end
+            local ja, jb = b.junction[ka], b.junction[kb]
+            if jb and not ja then
+                mapTo(b, ex, ey, px2, py2, d2)
+            elseif ja and not jb then
+                mapTo(b, px2, py2, ex, ey, d2)
+            elseif ka < kb then
                 mapTo(b, px2, py2, ex, ey, d2)
             else
                 mapTo(b, ex, ey, px2, py2, d2)
@@ -764,14 +792,82 @@ local function processPair(b, i, j)
     tryAttach(b, x4, y4, x1, y1, x2, y2, i, tol)
 end
 
--- 端點吸附解析（stepCut 用）：沿映射走最多 3 層（處理鏈式吸附 a←b←c）。
--- 端點合流一律往小 key 走（無環）；T 字吸附目標是幹道中段點，通常無再映射
-local function resolveMoved(b, x, y)
-    for _ = 1, 3 do
-        local mv = b.epMove[quantKey(x, y)]
-        if not mv or (mv.x == x and mv.y == y) then return x, y end
-        x, y = mv.x, mv.y
+-- 階段 2.5：先把吸附鏈解析到共同代表，再建圖；不能按固定跳數截斷成不同節點。
+-- 走鏈、環內選根與路徑壓縮各處理一筆就計一次 budget，長鏈也能跨 tick 續跑。
+-- T 字可能形成環，環內取最小 key 的座標；壓縮後 done 節點不再改根。
+local function stepResolve(b, budget)
+    local ops = 0
+    local keys, moves = b.epKeys, b.epMove
+    while ops < budget do
+        if b.rCycle then
+            local i = b.rCycleI
+            local pk = b.rpath[i]
+            local mv = moves[pk]
+            local nk = quantKey(mv.x, mv.y)
+            if nk < b.rRootKey then
+                b.rRootKey, b.rRootX, b.rRootY = nk, mv.x, mv.y
+            end
+            if pk == b.rCycle then
+                b.rCycle, b.rCycleI = nil, nil
+                b.rCompress = b.rn
+            else
+                b.rCycleI = i - 1
+            end
+        elseif b.rCompress then
+            local i = b.rCompress
+            local mv = moves[b.rpath[i]]
+            mv.x, mv.y, mv.done = b.rRootX, b.rRootY, true
+            b.rpath[i] = nil
+            if i == 1 then
+                b.rk, b.rn, b.rCompress = nil, 0, nil
+                b.rRootKey, b.rRootX, b.rRootY = nil, nil, nil
+            else
+                b.rCompress = i - 1
+            end
+        elseif not b.rk then
+            local idx = b.ri
+            local start = keys[idx]
+            if not start then
+                b.phase, b.rpath = "cut", nil
+                return ops
+            end
+            b.ri = idx + 1
+            local mv = moves[start]
+            if not mv.done then
+                b.rn, b.rpath[1], b.rid, b.rk = 1, start, idx, start
+                mv.walk = idx
+            end
+        else
+            local mv = moves[b.rk]
+            local tx, ty = mv.x, mv.y
+            local nk = quantKey(tx, ty)
+            local nextMove = moves[nk]
+            local rootX, rootY
+            if not nextMove or (nextMove.x == tx and nextMove.y == ty) then
+                rootX, rootY = tx, ty
+            elseif nextMove.done then
+                rootX, rootY = nextMove.x, nextMove.y
+            elseif nextMove.walk == b.rid then
+                b.rCycle, b.rCycleI = nk, b.rn
+                b.rRootKey, b.rRootX, b.rRootY = nk, tx, ty
+            else
+                local n = b.rn + 1
+                b.rn, b.rpath[n], b.rk = n, nk, nk
+                nextMove.walk = b.rid
+            end
+            if rootX ~= nil then
+                b.rRootX, b.rRootY, b.rCompress = rootX, rootY, b.rn
+            end
+        end
+        ops = ops + 1
     end
+    return ops
+end
+
+-- resolve 期已壓成根座標，cut 期只需單查。
+local function resolveMoved(b, x, y)
+    local mv = b.epMove[quantKey(x, y)]
+    if mv then return mv.x, mv.y end
     return x, y
 end
 
@@ -784,7 +880,7 @@ local function stepPairs(b, budget)
     while ops < budget do
         local key = b.bkeys[b.bi]
         if not key then
-            b.phase = "cut"
+            b.phase = "resolve"
             return ops
         end
         local list = b.buck[key]
@@ -930,7 +1026,8 @@ local function stepCut(b, budget)
             b.phase = "done"
             -- 建圖完成即釋放中間產物（bucket/切點/去重表佔記憶體大頭）
             b.buck, b.bkeys, b.cuts, b.seenPair = nil, nil, nil, nil
-            b.epMove = nil
+            b.epMove, b.epStreet, b.junction, b.epKeys = nil, nil, nil, nil
+            b.epOrd, b.epLink = nil, nil
             b.gx1, b.gy1, b.gx2, b.gy2, b.gsid = nil, nil, nil, nil, nil
             b.gwidth, b.gsurface = nil, nil
             return ops
@@ -998,6 +1095,8 @@ function NavCore.step(b, budget)
             spent = spent + stepGate(b, budget - spent)
         elseif b.phase == "pairs" then
             spent = spent + stepPairs(b, budget - spent)
+        elseif b.phase == "resolve" then
+            spent = spent + stepResolve(b, budget - spent)
         elseif b.phase == "cut" then
             spent = spent + stepCut(b, budget - spent)
         else
@@ -1458,6 +1557,7 @@ NavCore.edgeTravelCost = edgeTravelCost
 NavCore.graphNode = graphNode
 NavCore.addCut = addCut
 NavCore.mapTo = mapTo
+NavCore.stepResolve = stepResolve
 NavCore.gateEmit = gateEmit
 NavCore.queryStep = queryStep
 -- test:navroute-core:end
@@ -1868,7 +1968,18 @@ local function ensureRoute(key, target, px, py, weight)
             -- 車就在線上卻被 addon 當「起點太遠」拒啟動。首算時 progressIdx=1、
             -- d＝到首點距離，兩種定義相同；之後只有投影距離才是要越野接線的長度。
             rs.route.snapDist = d
-            if d <= DEVIATION_DIST then return rs.route end
+            -- 倒車退出首點後，s被夾0，舊線看不見新跑道；由擁有路網的這層重新snap。
+            -- 只認投影仍在首段、沿反方向至少一個移動閾值；後段折返到附近不算。
+            local behindStart = false
+            local pts = rs.route.pts
+            if idx == 1 and pts and #pts >= 4 then
+                local dx, dy = pts[3] - pts[1], pts[4] - pts[2]
+                local length2 = dx * dx + dy * dy
+                local along = (px - pts[1]) * dx + (py - pts[2]) * dy
+                behindStart = length2 > 1e-12 and along < 0
+                    and along * along >= REBUILD_MOVE_DIST * REBUILD_MOVE_DIST * length2
+            end
+            if d <= DEVIATION_DIST and not behindStart then return rs.route end
             if now - (rs.lastBuildMs or 0) < REBUILD_COOLDOWN_MS then return rs.route end
             -- 原地（或近乎原地）重算必得同一條線：snap 只看座標，位移不足時重跑
             -- A* 只是白燒＋換掉 table identity。深野外目標首點必遠、偏航恆成立，

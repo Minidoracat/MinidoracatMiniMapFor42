@@ -105,6 +105,9 @@
     }
   ],
   "remove": [
+    "a87fed3caa424afa2aa4d4bd4d6657f4b6931efbe509daa9c443974cbbb3bedd:11",
+    "a87fed3caa424afa2aa4d4bd4d6657f4b6931efbe509daa9c443974cbbb3bedd:12",
+    "b0ae2e3fb25ff48c5c56a7f3e28fd39440afc858569fb8623589cec3066d358c:1",
     "48d89c8d5f1b1e9e55ac18822b38bcc1c129dde8f8e77a8474f124200e908053:0",
     "48d89c8d5f1b1e9e55ac18822b38bcc1c129dde8f8e77a8474f124200e908053:1",
     "48d89c8d5f1b1e9e55ac18822b38bcc1c129dde8f8e77a8474f124200e908053:2",
@@ -117,6 +120,41 @@
   "width": [],
   "surface": [],
   "manualRoads": [
+    {
+      "id": "m:muldraugh-old-loop-barn-corner",
+      "operation": "add",
+      "points": [
+        10857.5, 10417.5,
+        10857.5, 10325,
+        10858, 10320,
+        10860, 10317,
+        10864, 10314,
+        10871, 10310,
+        10879, 10306.5
+      ],
+      "width": 5,
+      "surface": "paved",
+      "searchable": false,
+      "reason": "Old Loop Road 與 Barn Way 路口資料修正（2026-09-08）：官方 L 頂點落在草地島，新線沿實際鋪面中心帶，取代官方段 11、12；兩端接保留官方頂點，Barn Way 經 10871,10310 共用點接入。路口段36個中線取樣全paved，包含南向直段為paved 113、gravel 16。接縫折返由 NavCore 共用路口優先序修正，不再以延伸資料搬移症狀。"
+    },
+    {
+      "id": "m:muldraugh-barn-way-junction",
+      "operation": "add",
+      "points": [10853.5, 10303, 10862, 10303, 10865, 10304, 10868, 10306, 10871, 10310],
+      "width": 4,
+      "surface": "paved",
+      "searchable": false,
+      "reason": "Barn Way 路口與 Old Loop 同步接線（2026-09-08）：原尾點停在草地島邊，移除尾段 1、保留段 0 的街道搜尋。新線沿鋪面接至 Old Loop 新中線共用點，24 個中線取樣全為 paved，避免修正彎道後岔路懸空或再經舊草地頂點。"
+    },
+    {
+      "id": "m:muldraugh-old-mill-garnettsville-link",
+      "operation": "add",
+      "points": [10521, 9737, 10599, 9737],
+      "width": 8,
+      "surface": "paved",
+      "searchable": false,
+      "reason": "Old Mill Road 東端與 W Garnettsville Road 西端之間缺少 78 格路網（2026-09-08 使用者實測可行駛）。pinned road-surfaces-full-v2 的中線 79 個取樣格全為 paved，路寬沿用兩端官方 8 格。起訖分別接官方端點，不移除既有道路；同時恢復通往 Dixie Highway 的連接。"
+    },
     {
       "id": "m:muldraugh-lakehouse-trail",
       "operation": "add",

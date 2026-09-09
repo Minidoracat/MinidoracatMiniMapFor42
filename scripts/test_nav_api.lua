@@ -343,8 +343,12 @@ local REBUILD_MOVE_DIST = constOf("REBUILD_MOVE_DIST")
 assert(DEVIATION_DIST < 19,
     "C0: DEVIATION_DIST 須小於實測病灶的 19 格偏航，實得 " .. DEVIATION_DIST)
 
+local coreBody = assert(source:match(
+    "%-%- test:navroute%-core:start[^\n]*\n(.-)\n%-%- test:navroute%-core:end"))
+local realCore = assert(compile(coreBody .. "\nreturn NavCore", "nav-cache-core"))()
 local cachePrelude = ([=[
 local floor, sqrt = math.floor, math.sqrt
+local routeDistance = ...
 local DEVIATION_DIST, REBUILD_COOLDOWN_MS = %s, %s
 local REBUILD_MOVE_DIST, NOROAD_RETRY_DIST = %s, %s
 local navRoutes = {}
@@ -358,32 +362,15 @@ local function dist2(ax, ay, bx, by)
     return dx * dx + dy * dy
 end
 local NavCore = {
-    -- 真投影（非常數 stub）：偏航閾值是本節的受測對象，量測面必須是真幾何
-    distToRoute = function(route, x, y)
-        local pts = route.pts
-        local bestD2, bi, bx, by = math.huge, 1, pts[1], pts[2]
-        for i = 1, #pts / 2 - 1 do
-            local ax, ay = pts[i * 2 - 1], pts[i * 2]
-            local cx, cy = pts[i * 2 + 1], pts[i * 2 + 2]
-            local dx, dy = cx - ax, cy - ay
-            local l2 = dx * dx + dy * dy
-            local t = 0
-            if l2 > 1e-12 then
-                t = ((x - ax) * dx + (y - ay) * dy) / l2
-                if t < 0 then t = 0 elseif t > 1 then t = 1 end
-            end
-            local qx, qy = ax + dx * t, ay + dy * t
-            local d2v = dist2(x, y, qx, qy)
-            if d2v < bestD2 then bestD2, bi, bx, by = d2v, i, qx, qy end
-        end
-        return sqrt(bestD2), bi, bx, by
-    end,
+    distToRoute = routeDistance,
     findRoute = function(graph, sx, sy, tx, ty, ax, ay, ar, approachWeight)
         findCalls[#findCalls + 1] = { sx = sx, sy = sy, tx = tx, ty = ty, w = approachWeight }
         if nextErr then return nil, nextErr end
         if not nextRoute then return nil end
+        local pts = {}
+        for i = 1, #nextRoute do pts[i] = nextRoute[i] end
         return {
-            pts = { nextRoute[1], nextRoute[2], nextRoute[3], nextRoute[4] },
+            pts = pts,
             sx = nextRoute[1], sy = nextRoute[2],
             snapDist = sqrt(dist2(sx, sy, nextRoute[1], nextRoute[2])),
         }
@@ -404,7 +391,7 @@ return { ensureRoute = ensureRoute, navRoutes = navRoutes, engine = engine,
     setNow = function(v) nowMs = v end,
     setNext = function(r, e) nextRoute, nextErr = r, e end }
 ]=]
-local C = assert(compile(cachePrelude .. cacheBody .. "\n" .. cacheSuffix, "nav-cache"))()
+local C = assert(compile(cachePrelude .. cacheBody .. "\n" .. cacheSuffix, "nav-cache"))(realCore.distToRoute)
 local tgt = { x = 10744.8, y = 9717.5 }
 
 -- C1: 首算寫入 buildX/buildY（偏航重算的位移閘門需要它；漏寫＝閘門永遠擋住）
@@ -487,5 +474,36 @@ assert(#C.findCalls == calls0 + 1, "C7: 車上同權重命中快取")
 cr = C.ensureRoute(2, tgt2, 8001, 8000, 3)
 assert(#C.findCalls == calls0 + 2 and C.findCalls[calls0 + 2].w == 3, "C7: 下車換回權重 3 重算")
 
+-- C8：倒車到路線起點後方，側向仍在12格容差內，也要把退出的跑道交回新路線。
+do
+    local target = { x = 10592, y = 10097 }
+    C.setNow(60000)
+    C.setNext({10592, 9996.9, 10592, 10097})
+    local original = C.ensureRoute(3, target, 10593.8, 9996.9, 12)
+    C.setNext({10592, 9985.5, 10592, 10097})
+    C.setNow(60100)
+    assert(C.ensureRoute(3, target, 10593.8, 9985.5, 12) == original,
+        "C8: 起點後方仍遵守既有冷卻，不因倒車每幀重算")
+    C.setNow(60000 + REBUILD_COOLDOWN_MS + 1)
+    assert(C.ensureRoute(3, target, 10600, 9996.9, 12) == original,
+        "C8: 純側向8格不屬起點反向延長線，仍沿用快取")
+    assert(C.ensureRoute(3, target, 10592.5, 9992, 12) == original,
+        "C8: 小幅後退不足8格不重算")
+    local reanchored = C.ensureRoute(3, target, 10593.8, 9985.5, 12)
+    assert(reanchored ~= original and reanchored.snapDist < 2
+            and reanchored.pts[2] < 9986,
+        "C8: 倒車11.4格後路線重新從車旁起算，不能把真跑道留在s=0之外")
+    C.setNow(70000)
+    assert(C.ensureRoute(3, target, 10593.8, 9985.5, 12) == reanchored,
+        "C8: 原地不再反覆重錨")
+
+    C.setNow(80000)
+    C.setNext({10592,9996.9,10592,10097,10612,10097,10612,9946.9,10592,9946.9,10592,9986.9})
+    local loop = C.ensureRoute("loop", target, 10592, 9996.9, 12)
+    C.setNow(80000 + REBUILD_COOLDOWN_MS + 1)
+    assert(C.ensureRoute("loop", target, 10592, 9984, 12) == loop,
+        "C8: 已在折返路線後段，不因落在首段後方誤判重算")
+end
+
 print("test_nav_api: OK（nav API v5＋requestRoute A1-A12＋requestDetour A13-A18"
-    .. "＋ensureRoute 快取/偏航 C0-C7）")
+    .. "＋ensureRoute 快取/偏航 C0-C8）")
