@@ -226,8 +226,18 @@ do
     ct, cu = mod.segCross(0, 0, 100, 0, 100, 0, 100, 100)
     assert(ct == 1 and cu == 0, "交點：端點觸碰回 clamp 切點")
     local buf = {}
-    local n = mod.cellBoundaryTs(200, 10, 600, 10, buf)
-    assert(n == 4 and buf[1] == 0 and buf[n] == 1, "cell 切點：跨 256/512 兩界＋首尾")
+    -- 切點落在 300 格街道覆蓋界（WorldMapStreet），不是 256 實體地塊界：鎖實際
+    -- t 值＝兩個格網不得互換（修前按 256 對同一線段給 0.112/0.624）
+    local n = mod.cellBoundaryTs(200, 10, 700, 10, buf)
+    assert(n == 4 and buf[1] == 0 and buf[4] == 1
+        and math.abs(buf[2] - 0.2) < 1e-12 and math.abs(buf[3] - 0.8) < 1e-12,
+        "cell 切點：跨 300/600 兩界的實際 t＝0.2/0.8")
+    n = mod.cellBoundaryTs(700, 10, 200, 10, buf)
+    assert(n == 4 and math.abs(buf[2] - 0.2) < 1e-12 and math.abs(buf[3] - 0.8) < 1e-12,
+        "cell 切點：反向線段仍回同一組升冪 t")
+    n = mod.cellBoundaryTs(0, -700, 0, -200, buf)
+    assert(n == 4 and math.abs(buf[2] - 0.2) < 1e-12 and math.abs(buf[3] - 0.8) < 1e-12,
+        "cell 切點：負世界座標切在 -600/-300 街道格界")
 end
 
 -- key-space/resource hard gates：座標 q2/bucket 無碰撞、4096 點上限用線性 concat、
@@ -373,30 +383,31 @@ end
 --------------------------------------------------------------------------------
 do
     local streets = {
-        { name = "Long", src = "A", pts = { 0, 10, 600, 10 } },    -- 跨 cell 0/1/2
-        { name = "BOnly", src = "B", pts = { 260, 20, 500, 20 } }, -- cell 1 內
+        -- 900 格＝跨 300 格街道格 0/1/2，敗者落在正中格（首尾兩格都留）
+        { name = "Long", src = "A", pts = { 0, 10, 900, 10 } },
+        { name = "BOnly", src = "B", pts = { 310, 40, 590, 40 } }, -- 街道格 1 內
     }
     local winner = function(cx, cy)
         if cx == 1 and cy == 0 then return "B" end
         return "A"
     end
     local g = buildAll(streets, winner)
-    assert(route(g, 10, 10, 590, 10) == nil, "gate：敗者中段被裁＝斷連")
-    local rb = route(g, 270, 20, 490, 20)
-    assert(rb and rb.len > 200 and rb.len < 240, "gate：勝者段保留可尋路")
+    assert(route(g, 10, 10, 890, 10) == nil, "gate：敗者中段被裁＝斷連")
+    local rb = route(g, 320, 40, 580, 40)
+    assert(rb and rb.len > 250 and rb.len < 270, "gate：勝者段保留可尋路")
     local g2 = buildAll(streets, nil)
-    local r2 = route(g2, 10, 10, 590, 10)
-    assert(r2 and r2.len > 570 and r2.len < 600, "gate：fail-open 全段保留")
+    local r2 = route(g2, 10, 10, 890, 10)
+    assert(r2 and r2.len > 860 and r2.len < 900, "gate：fail-open 全段保留")
     -- 未知來源（src=nil，byIndex 兜底收入的翻譯 MOD 全量容器）：winnerOf 有效
     -- 時必須 fail-open 不裁——漏此分支＝LangFor42 環境整份路網被裁光（回歸）
     local g3 = buildAll({
-        { name = "ZhAll", src = nil, pts = { 0, 10, 600, 10 } },
+        { name = "ZhAll", src = nil, pts = { 0, 10, 900, 10 } },
     }, winner)
-    local r3 = route(g3, 10, 10, 590, 10)
-    assert(r3 and r3.len > 570 and r3.len < 600, "gate：src=nil fail-open 不裁")
+    local r3 = route(g3, 10, 10, 890, 10)
+    assert(r3 and r3.len > 860 and r3.len < 900, "gate：src=nil fail-open 不裁")
     -- SP carrier dir 回歸（codex review）：LangFor42 的 'Riverside, KY' 在 SP
     -- 會進 lot dirs、byRel 命中成 src——但該 dir 無 lotheader＝無裁決立場，
-    -- winnerOf 三參契約（src 該 cell 無 lot → 回 nil fail-open）必須傳遞 src
+    -- winnerOf 三參契約（src 在該街道格無 lot → 回 nil fail-open）必須傳遞 src
     local seenSrc = nil
     local carrierWinner = function(cx, cy, src)
         seenSrc = src
@@ -404,11 +415,107 @@ do
         return "Muldraugh, KY"
     end
     local g4 = buildAll({
-        { name = "ZhAll2", src = "Riverside, KY", pts = { 0, 10, 600, 10 } },
+        { name = "ZhAll2", src = "Riverside, KY", pts = { 0, 10, 900, 10 } },
     }, carrierWinner)
     assert(seenSrc == "Riverside, KY", "gate：winnerOf 收到第三參 src")
-    local r4 = route(g4, 10, 10, 590, 10)
-    assert(r4 and r4.len > 570 and r4.len < 600, "gate：carrier src fail-open 不裁")
+    local r4 = route(g4, 10, 10, 890, 10)
+    assert(r4 and r4.len > 860 and r4.len < 900, "gate：carrier src fail-open 不裁")
+end
+
+--------------------------------------------------------------------------------
+-- 六之二、街道覆蓋格（300）× 實體地塊格（256）契約：抽 production
+-- makeWinnerOf 接在 navroute-core 之後編譯——floor/STREET_CELL/LOT_CELL 全讀
+-- production，測試不手抄常數（任一格網漂移即被本區段的實際數值斷言抓到）。
+-- 佔格判定鏡像 MapFiles.postLoad:120-134：lx=floor(cx*300/256)、ly 同理，該
+-- dir 需同時有 lx_ly 與 (lx+1)_(ly+1).lotheader 才算佔住這個 300 格街道格。
+-- 全域 map priority 缺失/拋錯/形狀錯誤仍 terminal；per-cell 未佔格＝fail-open。
+--------------------------------------------------------------------------------
+do
+    local winnerBody = assert(source:match(
+        "(local function makeWinnerOf%(%).-)\n\n%-%- 抽取準備"),
+        "找不到 makeWinnerOf production 區段")
+    local prelude = [[
+local Core = {}
+local lotSet = {}
+local function fileExists(path) return lotSet[path] == true end
+local function addLots(dir, cx0, cx1, cy0, cy1)
+    for cx = cx0, cx1 do
+        for cy = cy0, cy1 do
+            lotSet["media/maps/" .. dir .. "/" .. cx .. "_" .. cy .. ".lotheader"] = true
+        end
+    end
+end
+]]
+    local makeWinner, winnerCore, addLots = assert(compile(
+        body .. "\n" .. prelude .. winnerBody .. "\nreturn makeWinnerOf, Core, addLots",
+        "winner-factory"))()
+
+    local fn, err = makeWinner()
+    assert(fn == nil and err, "winner：getLoadedMapDirs 缺失須失敗")
+    winnerCore.getLoadedMapDirs = function() error("boom") end
+    fn, err = makeWinner()
+    assert(fn == nil and err, "winner：priority provider throw 須失敗")
+    winnerCore.getLoadedMapDirs = function() return { A = 1, B = 1 } end
+    fn, err = makeWinner()
+    assert(fn == nil and err, "winner：duplicate priority index 須失敗")
+
+    -- 佔格＝對角兩 lot 齊備。街道格 (0,0) → lx,ly=0 → 需 0_0 與 1_1；只有 0_0
+    -- ＝該 dir 只鋪到 300 格的一角，正是 Tikitown 邊緣被誤判成佔格的形狀
+    winnerCore.getLoadedMapDirs = function() return { A = 1 } end
+    addLots("A", 0, 0, 0, 0)
+    fn = assert(makeWinner())
+    assert(fn(0, 0, nil) == nil and fn(0, 0, nil) == nil,
+        "winner：單一 lx_ly lot 不足以佔住 300 街道格（重複查詢同答）")
+    addLots("A", 1, 1, 1, 1)
+    fn = assert(makeWinner())
+    assert(fn(0, 0, nil) == "A" and fn(0, 0, nil) == "A",
+        "winner：lx_ly 與對角 (lx+1)_(ly+1) 齊備才佔格（重複查詢同答）")
+    assert(fn(99, 99, "Carrier") == nil,
+        "winner：carrier src 無 lot 仍 per-cell fail-open")
+
+    -- 負街道格用 floor 而非截斷：(-1,-1) → lx,ly=floor(-1*300/256)=-2，需
+    -- -2_-2 配 -1_-1；截斷會算成 -1 而去要 0_0，把負座標地圖包整片誤判
+    winnerCore.getLoadedMapDirs = function() return { Negative = 1 } end
+    addLots("Negative", -2, -2, -2, -2)
+    fn = assert(makeWinner())
+    assert(fn(-1, -1, nil) == nil, "winner：負街道格對角另一塊缺失＝未佔格")
+    addLots("Negative", -1, -1, -1, -1)
+    fn = assert(makeWinner())
+    assert(fn(-1, -1, nil) == "Negative", "winner：負街道格取 floor（-2_-2 配 -1_-1）")
+
+    -- Tikitown 型跨圖幹道（真座標最小 fixture，非整份 Workshop）：KY 163 在
+    -- x=7003，MOD 重畫到 y=7801、原版線續到 8150；MOD lot 覆蓋 cx 25..30 ×
+    -- cy 26..30（y 到 7936）。街道格 (23,25) 需 26_29+27_30＝MOD 佔格（勝）；
+    -- (23,26) 需 26_30+27_31，27_31 不存在＝MOD 未佔格 → 原版幹道保留。修前按
+    -- 256 實體格裁，MOD 只憑邊緣 lot 27_30 就吃掉 y 7680..7936，原版線被裁出
+    -- 7801..7936 的 135 格空洞（橋接已撤回＝直接不可達），跨圖導航整段斷掉。
+    local TIKI, VAN = "Tikitown", "Muldraugh, KY"
+    winnerCore.getLoadedMapDirs = function() return { [TIKI] = 1, [VAN] = 2 } end
+    addLots(TIKI, 25, 30, 26, 30)
+    addLots(VAN, 20, 40, 20, 40)
+    local wof = assert(makeWinner())
+    local g = buildAll({
+        { name = "KY-163", src = TIKI, width = 8, pts = { 7003, 7568.5, 7003, 7584, 7003, 7801 } },
+        { name = "KY-163", src = VAN, width = 8, pts = { 7003, 7569, 7003, 8150 } },
+        -- 原版支路整條落在 MOD 真正佔住的街道格 (23,25) 內＝敗者，仍須裁掉
+        { name = "Vanilla Spur", src = VAN, width = 6, pts = { 7003, 7600, 7150, 7600 } },
+    }, wof)
+    for _, ends in ipairs({ { 7700, 8100 }, { 8100, 7700 } }) do
+        local r = route(g, 7003, ends[1], 7003, ends[2])
+        assertRouteMetadata(r, "Tikitown 跨圖幹道")
+        assert(math.abs(r.len - 400) < 1e-6,
+            "Tikitown：MOD→原版接線後直達 400 格，實得 " .. tostring(r.len))
+        assert(math.abs(r.pts[1] - 7003) < 1e-6 and math.abs(r.pts[2] - ends[1]) < 1e-6
+            and math.abs(r.pts[#r.pts - 1] - 7003) < 1e-6
+            and math.abs(r.pts[#r.pts] - ends[2]) < 1e-6,
+            "Tikitown：路線兩端貼合查詢位置，不靠遠距離接線掩蓋斷路")
+    end
+    local spur = route(g, 7003, 7700, 7140, 7600)
+    assertRouteMetadata(spur, "Tikitown 敗者支路")
+    for i = 1, #spur.pts, 2 do
+        assert(math.abs(spur.pts[i] - 7003) < 2,
+            "Tikitown：MOD 真正佔格內的原版敗者支路仍被裁，修復不得一律放行")
+    end
 end
 --------------------------------------------------------------------------------
 -- 七、斷連兩島 → nil（snap 各自命中但 A* 無路；不可錯給直線假路徑）
@@ -845,14 +952,16 @@ do
     local patchedGraph = buildAll(streets, nil)
     local indexStreet = {
         name = "Winner", src = "A", width = 6,
-        pts = { 0, 10, 300, 10, 600, 10 }, segRemoved = { true, false },
+        pts = { 0, 10, 300, 10, 900, 10 }, segRemoved = { true, false },
     }
     local ax, ay = mod.streetIndexAnchor(indexStreet, function(cx)
         if cx == 1 then return "B" end
         return "A"
     end, {})
-    assert(ax == 512 and ay == 10,
-        "street index：跳過 removed/敗者 cell，錨定首個實際保留子段")
+    -- seg1 被 removed；seg2 前半落在敗者街道格 1，錨點取街道格 2 的起點 600
+    -- （按 256 格切會誤錨在 512）
+    assert(ax == 600 and ay == 10,
+        "street index：跳過 removed／敗者街道格，錨定首個實際保留子段")
     assert(route(patchedGraph, 31, 0, 49, 0),
         "RoadPatch apply：non-searchable add 仍進同一 patched graph")
     local addIdentity = streets[2]
@@ -1013,33 +1122,6 @@ do
         == "ef3e998ad3ac78d5535ff38d9eb7be28f970a7bc2790bd11b01a48c045ee137d",
         "正式 RoadPatch：綁定 dirt-edge v2 audit")
     local streets = {}
--- map priority 全域取得失敗必 terminal；僅 carrier/per-cell 維持 fail-open。
-do
-    local winnerBody = source:match(
-        "(local function makeWinnerOf%(%).-)\n\n%-%- 抽取準備")
-    assert(winnerBody, "找不到 makeWinnerOf production 區段")
-    local prelude = [[
-local Core = {}
-local function fileExists(path) return path:find("/A/0_0.lotheader", 1, true) ~= nil end
-]]
-    local factory = assert((loadstring or load)(
-        prelude .. winnerBody .. "\nreturn makeWinnerOf, Core", "winner-factory"))
-    local makeWinner, winnerCore = factory()
-    local fn, err = makeWinner()
-    assert(fn == nil and err, "winner：getLoadedMapDirs 缺失須失敗")
-    winnerCore.getLoadedMapDirs = function() error("boom") end
-    fn, err = makeWinner()
-    assert(fn == nil and err, "winner：priority provider throw 須失敗")
-    winnerCore.getLoadedMapDirs = function() return { A = 1, B = 1 } end
-    fn, err = makeWinner()
-    assert(fn == nil and err, "winner：duplicate priority index 須失敗")
-    winnerCore.getLoadedMapDirs = function() return { A = 1 } end
-    fn, err = makeWinner()
-    assert(fn and not err and fn(0, 0, nil) == "A",
-        "winner：有效全域 priority 建立 winner")
-    assert(fn(99, 99, "Carrier") == nil,
-        "winner：carrier src 無 lot 仍 per-cell fail-open")
-end
 
     for member in pairs(patch.geometrySet) do
         local geometry, widthQ = member:match("^(.-)|w:(%-?%d+)$")

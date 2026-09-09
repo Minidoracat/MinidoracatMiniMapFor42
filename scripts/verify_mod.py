@@ -432,7 +432,7 @@ if os.path.isfile(_cl):
                     leaks.append(f"CHANGELOG.md:{lineno} {desc}（{mm.group()[:40]}）")
     fail("CHANGELOG 無基礎設施洩漏樣式", leaks) if leaks else ok("CHANGELOG 無基礎設施洩漏樣式")
 
-# ---- 12-19. Lua 單元測試 ----
+# ---- Lua 單元測試 ----
 # _Skin.lua 是家族 UI 框架的 thin adapter：test_skin_adapter.lua 驗四態，缺同層
 # framework repo 時腳本自印 SKIP（SKIP＝防線沒跑到，不能列 PASS）。
 # test_admin_policy.lua 抽整份 Policy 原檔、只換 PZ 全域為假物件，驗 Java 真相源
@@ -450,7 +450,9 @@ _lua_tests = [
     ("test_server_nav_share.lua", "伺服器導航分享 never-bypass", False),
     ("test_admin_view_marker.lua", "ADMIN VIEW 標記與 fallback", False),
     ("test_street_backfill.lua", "街道資料補載 gate", False),
-    ("test_nav_kick.lua", "導航引擎冷啟動狀態機", False),
+    ("test_nav_kick.lua", "導航冷啟動與退化街道隔離", False),
+    ("test_nav_route.lua", "導航路網與街道覆蓋邊界", False),
+    ("test_nav_api.lua", "導航 API 與路線快取", False),
     ("test_worldmap_nav.lua", "世界地圖右鍵選單合併／開圖重包", False),
     ("test_fog_of_war.lua", "深霧／薄霧與多人已知區域修復", False),
 ]

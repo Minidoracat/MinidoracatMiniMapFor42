@@ -29,10 +29,10 @@
 --   宣告方法 getNumPoints/getPointX/getPointY/getTranslatedText（WorldMapStreet.java）
 --   ——不碰 getPoints()：StreetPoints 繼承的 TFloatArrayList 未曝露，繼承方法
 --   在 Lua 不保證可用（claude review）
--- - 踩坑：WorldMapStreets 容器未曝露（只能整顆交給 getStreets）；引擎
---   combinedStreets 對多來源是無條件疊加、無 cell 勝出邏輯
---   （WorldMapStreets.java:419-431 combine 逐條 createCopy）——本檔自帶
---   lotheader cell gate（見 winnerOf）
+-- - getStreets 回每檔未裁切的原始街道；引擎另以 initObscuredCells →
+--   clipToObscuredCells 裁成 splitStreets，combine 才複製到繪圖容器
+--   （WorldMapStreets.java:155-175/419-431、WorldMapStreet.java:565-621）。
+--   本檔只裁自己的路網，覆蓋判定對齊 MapFiles.hasCell300（見 makeWinnerOf）。
 -- - fileExists：LuaManager.java:5553-5560；getTimestampMs：LuaManager.java:9267-9274
 -- - worldToUIX/worldToUIY/drawLine 參數序：沿主檔已驗證用法（drawNavIndicator）
 --
@@ -92,8 +92,8 @@ local NavCore = {}
 local floor, sqrt, huge = math.floor, math.sqrt, math.huge
 
 -- 核心常數（置於 test 區段內＝離線測試與遊戲共用同一份，零漂移）
-local CELL = 256              -- B42 lotheader cell 格網（AGENTS.md 座標系鐵則；已以
-                              -- Oak St 座標帶 ÷256 對 42_25..47_26.lotheader 實證）
+local STREET_CELL = 300       -- 街道覆蓋格：WorldMapStreet.java:593-598
+local LOT_CELL = 256          -- 實體地塊格；轉換契約 MapFiles.java:120-134
 local BUCKET = 64             -- 空間索引桶邊長（世界格）
 local JOIN_INV = 2            -- 節點量化倒數（1/2＝0.5 格精度）
 local DEFAULT_HALFW = 2.5     -- width 缺值時的半寬（vanilla 常見 width=5）
@@ -185,7 +185,7 @@ local function bucketRange(x1, y1, x2, y2, pad)
         floor((loy - pad) / BUCKET), floor((hiy + pad) / BUCKET)
 end
 
--- 收集線段跨 cell 邊界的 t 值（升冪、含 0/1 端），供 gate 預切
+-- 收集線段跨 300 格街道覆蓋邊界的 t 值（升冪、含 0/1 端），供 gate 預切
 local function cellBoundaryTs(x1, y1, x2, y2, out)
     local n = 0
     out[1] = 0
@@ -194,17 +194,17 @@ local function cellBoundaryTs(x1, y1, x2, y2, out)
     if dx > 1e-9 or dx < -1e-9 then
         local lo, hi = x1, x2
         if lo > hi then lo, hi = hi, lo end
-        for k = floor(lo / CELL) + 1, floor(hi / CELL) do
+        for k = floor(lo / STREET_CELL) + 1, floor(hi / STREET_CELL) do
             n = n + 1
-            out[n] = (k * CELL - x1) / dx
+            out[n] = (k * STREET_CELL - x1) / dx
         end
     end
     if dy > 1e-9 or dy < -1e-9 then
         local lo, hi = y1, y2
         if lo > hi then lo, hi = hi, lo end
-        for k = floor(lo / CELL) + 1, floor(hi / CELL) do
+        for k = floor(lo / STREET_CELL) + 1, floor(hi / STREET_CELL) do
             n = n + 1
-            out[n] = (k * CELL - y1) / dy
+            out[n] = (k * STREET_CELL - y1) / dy
         end
     end
     n = n + 1
@@ -519,7 +519,7 @@ function NavCore.streetIndexAnchor(street, winnerOf, tsBuf)
                 if t1 - t0 > 1e-9 then
                     local tm = (t0 + t1) * 0.5
                     local mx, my = x1 + (x2 - x1) * tm, y1 + (y2 - y1) * tm
-                    local winner = winnerOf(floor(mx / CELL), floor(my / CELL), street.src)
+                    local winner = winnerOf(floor(mx / STREET_CELL), floor(my / STREET_CELL), street.src)
                     if winner == nil or winner == street.src then
                         return x1 + (x2 - x1) * t0, y1 + (y2 - y1) * t0
                     end
@@ -650,9 +650,9 @@ local function gateEmit(b, x1, y1, x2, y2, sid, width, surface)
     end
 end
 
--- 階段一：cell gate 預切——沿 cell 邊界切開、以子段中點 cell 的勝出地圖過濾。
--- winnerOf 回 nil（該 cell 無任何 lotheader＝無世界資料）＝保留：資料誤差把街
--- 畫出地圖邊緣 1 格時不誤殺，幽靈風險僅限玩家根本到不了的無地圖處。
+-- 階段一：依引擎的 300 格街道覆蓋邊界預切，再按子段中點的勝出來源過濾。
+-- 沒有覆蓋者、來源未佔該街道格或純資料載體時保留；不可把邊緣的整個
+-- 256 格 lotheader 都當成道路覆蓋，否則會裁斷 MOD 道路與原版幹道的接線。
 local function stepGate(b, budget)
     local ops = 0
     while ops < budget do
@@ -687,7 +687,7 @@ local function stepGate(b, budget)
                         local tm = (t0 + t1) * 0.5
                         local mx = x1 + (x2 - x1) * tm
                         local my = y1 + (y2 - y1) * tm
-                        local w = b.winnerOf(floor(mx / CELL), floor(my / CELL), street.src)
+                        local w = b.winnerOf(floor(mx / STREET_CELL), floor(my / STREET_CELL), street.src)
                         if w == nil or street.src == nil or w == street.src then
                             gateEmit(b, x1 + (x2 - x1) * t0, y1 + (y2 - y1) * t0,
                                 x1 + (x2 - x1) * t1, y1 + (y2 - y1) * t1,
@@ -1588,14 +1588,12 @@ local navRoutes = {} -- [pn] = { state="ok|noroad", route=, tx=, ty=, progressId
                      --          failX=, failY= }
                      -- buildX/buildY＝上次 A* 的起點；偏航重算的位移閘門用
 
--- cell 勝出查詢工廠：dir 優先序取自主檔 getLoadedMapDirs（index 1＝最高，同名
--- cell 覆蓋其後——IsoMetaGrid 覆蓋語義見 AGENTS.md）；lotheader 存在性即該 dir
--- 在此 cell 有世界資料。回傳 fn(cx, cy, src)：src 在此 cell 無 lotheader＝
--- carrier dir（純資料載體——LangFor42 的 'Riverside, KY' 在 SP 會進 lot dirs、
--- byRel 命中成 src，但該 dir 無任何世界資料）→ 回 nil fail-open：carrier 沒有
--- lot 覆蓋裁決立場，硬套勝出判定＝整份中文路網被裁光（codex review，SP 情境）。
--- 全域 map priority 缺失/拋錯/形狀錯誤時不可建 ready graph；只有 per-cell
--- src=nil／carrier src 無 lot 維持既有 fail-open。
+-- 街道覆蓋查詢：dir 優先序取自主檔 getLoadedMapDirs（index 1＝最高）。
+-- 鏡像 MapFiles.postLoad/hasCell300（42.20.4 MapFiles.java:120-134）：
+-- 街道格原點換算成 256 格 lot，原點與對角 (+1,+1) 兩個 lot 都存在才算覆蓋。
+-- WorldMapStreets.initObscuredCells（:155-175）只裁來源自身也佔用的街道格；
+-- 來源邊緣未佔用、src=nil 或純街道載體（如 LangFor42）維持 fail-open。
+-- 全域 map priority 缺失/拋錯/形狀錯誤仍不可建 ready graph。
 local function makeWinnerOf()
     if type(Core.getLoadedMapDirs) ~= "function" then
         return nil, "getLoadedMapDirs missing"
@@ -1617,22 +1615,26 @@ local function makeWinnerOf()
     end
     if count == 0 then return nil, "map priority empty" end
     local cacheWin, cacheDir = {}, {}
+    local function hasStreetCell(dir, cx, cy, key)
+        local dk = dir .. ":" .. key
+        local has = cacheDir[dk]
+        if has == nil then
+            local lx = floor(cx * STREET_CELL / LOT_CELL)
+            local ly = floor(cy * STREET_CELL / LOT_CELL)
+            has = fileExists("media/maps/" .. dir .. "/" .. lx .. "_" .. ly .. ".lotheader")
+                and fileExists("media/maps/" .. dir .. "/" .. (lx + 1) .. "_" .. (ly + 1) .. ".lotheader")
+            cacheDir[dk] = has
+        end
+        return has
+    end
     return function(cx, cy, src)
         local key = cx * 100000 + cy
-        if src then
-            local dk = src .. ":" .. key
-            local has = cacheDir[dk]
-            if has == nil then
-                has = fileExists("media/maps/" .. src .. "/" .. cx .. "_" .. cy .. ".lotheader")
-                cacheDir[dk] = has
-            end
-            if not has then return nil end
-        end
+        if src and not hasStreetCell(src, cx, cy, key) then return nil end
         local winner = cacheWin[key]
-        if winner ~= nil then return winner == false and nil or winner end
+        if winner ~= nil then return winner or nil end
         for i = 1, maxIdx do
             local dir = ordered[i]
-            if dir and fileExists("media/maps/" .. dir .. "/" .. cx .. "_" .. cy .. ".lotheader") then
+            if dir and hasStreetCell(dir, cx, cy, key) then
                 cacheWin[key] = dir
                 return dir
             end
@@ -1734,44 +1736,52 @@ local function stepExtract(ex)
                 error("processed street limit exceeded")
             end
             local n = st:getNumPoints()
-            if n < 2 or n > MAX_POINTS_PER_STREET then
+            if n > MAX_POINTS_PER_STREET then
                 error("street point limit/geometry invalid")
             end
-            local name = st:getTranslatedText() or ""
-            local x0, y0 = st:getPointX(0), st:getPointY(0)
-            local xl, yl = st:getPointX(n - 1), st:getPointY(n - 1)
-            local sig = n .. ":" .. floor(x0 * 2 + 0.5) .. ":" .. floor(y0 * 2 + 0.5)
-                .. ":" .. floor(xl * 2 + 0.5) .. ":" .. floor(yl * 2 + 0.5)
-            if not ex.seenSig[sig] and not NavCore.isRailroadStreet(name, x0, y0) then
-                local pts = {}
-                for pi = 0, n - 1 do
-                    pts[pi * 2 + 1] = st:getPointX(pi)
-                    pts[pi * 2 + 2] = st:getPointY(pi)
+            if n < 2 then
+                if not logOnce.shortstreet then
+                    logf("shortstreet", string.format(
+                        "ignoring streets with fewer than 2 points (first source=%s, index=%d, points=%d)",
+                        entry.src or "unknown", ex.si - 1, n))
                 end
-                local width = st:getWidth()
-                if not validStreetPoints(pts) or not validWidth(width) then
-                    error("street geometry/width invalid")
+            else
+                local name = st:getTranslatedText() or ""
+                local x0, y0 = st:getPointX(0), st:getPointY(0)
+                local xl, yl = st:getPointX(n - 1), st:getPointY(n - 1)
+                local sig = n .. ":" .. floor(x0 * 2 + 0.5) .. ":" .. floor(y0 * 2 + 0.5)
+                    .. ":" .. floor(xl * 2 + 0.5) .. ":" .. floor(yl * 2 + 0.5)
+                if not ex.seenSig[sig] and not NavCore.isRailroadStreet(name, x0, y0) then
+                    local pts = {}
+                    for pi = 0, n - 1 do
+                        pts[pi * 2 + 1] = st:getPointX(pi)
+                        pts[pi * 2 + 2] = st:getPointY(pi)
+                    end
+                    local width = st:getWidth()
+                    if not validStreetPoints(pts) or not validWidth(width) then
+                        error("street geometry/width invalid")
+                    end
+                    if ex.totalSegments + n - 1 > MAX_RAW_SEGMENTS then
+                        error("raw segment limit exceeded")
+                    end
+                    if ex.outN >= MAX_STREETS then error("street count limit exceeded") end
+                    local searchable = true
+                    if #name > MAX_STREET_NAME_LENGTH
+                        or ex.searchNameChars + #name > MAX_SEARCH_NAME_CHARS
+                    then
+                        name, searchable = "", false
+                        ex.omittedSearchNames = ex.omittedSearchNames + 1
+                    else
+                        ex.searchNameChars = ex.searchNameChars + #name
+                    end
+                    ex.totalSegments = ex.totalSegments + n - 1
+                    ex.seenSig[sig] = true
+                    ex.outN = ex.outN + 1
+                    ex.out[ex.outN] = {
+                        name = name, src = entry.src, width = width, pts = pts,
+                        searchable = searchable,
+                    }
                 end
-                if ex.totalSegments + n - 1 > MAX_RAW_SEGMENTS then
-                    error("raw segment limit exceeded")
-                end
-                if ex.outN >= MAX_STREETS then error("street count limit exceeded") end
-                local searchable = true
-                if #name > MAX_STREET_NAME_LENGTH
-                    or ex.searchNameChars + #name > MAX_SEARCH_NAME_CHARS
-                then
-                    name, searchable = "", false
-                    ex.omittedSearchNames = ex.omittedSearchNames + 1
-                else
-                    ex.searchNameChars = ex.searchNameChars + #name
-                end
-                ex.totalSegments = ex.totalSegments + n - 1
-                ex.seenSig[sig] = true
-                ex.outN = ex.outN + 1
-                ex.out[ex.outN] = {
-                    name = name, src = entry.src, width = width, pts = pts,
-                    searchable = searchable,
-                }
             end
         end
     end
