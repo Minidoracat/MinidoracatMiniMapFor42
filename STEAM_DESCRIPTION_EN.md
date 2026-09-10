@@ -15,7 +15,7 @@ Overlays "map images rendered from the actual in-game view" onto the B42 world m
 [list]
 [*] [b]Image-based world map & mini-map[/b] — matches the in-game view; switch back to vanilla vector style anytime
 [*] [b]Navigation target + road-following route[/b]: right-click to set a target — a route is computed along actual roads (auto-replans when you stray; deep-wilderness targets route to the nearest road), with flag + edge arrow + distance, auto-clears on arrival; share to your faction and teammates get the route too
-[*] [b]Map search[/b]: magnifier button or right-click "Search map…" — coordinates, street names ([u]English and translated names both work[/u]) or facility categories (pharmacy, gun store etc. across the 20 categories), sorted by distance; jump to the world map (gold pulsing marker) or set as navigation target directly
+[*] [b]Map search[/b]: magnifier button or right-click "Search map…" — coordinates, street names ([u]English and translated names both work[/u]) or facility categories (pharmacy, gun store etc. across the 20 categories), sorted by distance; jump to the world map (gold pulsing marker) or set as navigation target directly. Streets whose source can be confirmed are tagged "Mod map: <map name>" — it only tells you which map the street comes from, it does not mean anything is wrong
 [*] [b]Mini-map hotkey + floating icon[/b]: default / (rebindable), works even when the sandbox disables the mini-map; the always-on icon toggles the map (left-click) and ghost mode (right-click), drag to reposition
 [*] [b]Free sizing[/b]: four presets + edge-drag resizing with memory; the button bar stays put — no hover-expanding
 [*] [b]Live zombie dots[/b] (off by default): real-time zombie positions with adjustable color / size / opacity / cap; vanilla heatmap toggle included
@@ -33,7 +33,7 @@ Overlays "map images rendered from the actual in-game view" onto the B42 world m
 [b]⚠️ -debug users[/b]: HOME is a hidden engine render-debug key (halves FPS). This mod defaults to / and auto-migrates old bindings; a conflict shows an orange warning bar.
 
 [h2]🧩 Map mod support[/h2]
-Pair with the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps pack[/url]: mini-map images + boundary outlines for many map mods, auto-detected — shown only when the matching map mod is enabled.
+Pair with the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps pack[/url]: mini-map images + boundary outlines for many map mods, auto-detected — shown only when the matching map mod is enabled. From 42.20.4-0.27.0 use map pack 42.20.4-0.9.0 or newer: update both and restart the game.
 Map mod authors can ship their own support: render a [b]minidoracat_minimap.pyramid.zip[/b] into [b]media/minimap/[/b] — [u]no Lua needed[/u].
 
 [h2]🗺️ Built-in POIs + zone layer API[/h2]

@@ -53,6 +53,7 @@
     "UI_MinidoracatMiniMap_SearchNoResult": "No results",
     "UI_MinidoracatMiniMap_SearchKindCoord": "Coord",
     "UI_MinidoracatMiniMap_SearchKindStreet": "Street",
+    "UI_MinidoracatMiniMap_SearchModMapSource": "MOD map: %1",
     "UI_MinidoracatMiniMap_SearchKindPoi": "Place",
     "UI_MinidoracatMiniMap_SearchBasement": " (basement)",
     "UI_MinidoracatMiniMap_SearchBasementKey": "basement",

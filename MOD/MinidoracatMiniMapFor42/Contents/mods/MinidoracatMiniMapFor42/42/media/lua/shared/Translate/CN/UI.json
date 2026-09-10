@@ -53,6 +53,7 @@
     "UI_MinidoracatMiniMap_SearchNoResult": "无结果",
     "UI_MinidoracatMiniMap_SearchKindCoord": "坐标",
     "UI_MinidoracatMiniMap_SearchKindStreet": "街道",
+    "UI_MinidoracatMiniMap_SearchModMapSource": "MOD 地图：%1",
     "UI_MinidoracatMiniMap_SearchKindPoi": "设施",
     "UI_MinidoracatMiniMap_SearchBasement": "（地下室）",
     "UI_MinidoracatMiniMap_SearchBasementKey": "地下室",

@@ -99,6 +99,45 @@ local function boundedInsert(arr, cap, entry)
     if i + 1 <= cap then arr[i + 1] = entry end
 end
 
+local streetMapSources
+local function streetSourceHint(dir)
+    if type(dir) ~= "string" then return nil end
+    if not streetMapSources then
+        local active, sources = {}, {}
+        local mods = getActivatedMods()
+        for i = 0, mods:size() - 1 do active[mods:get(i)] = true end
+        for _, pack in ipairs(Core.registeredPacks or {}) do
+            for _, entry in ipairs(pack.entries or {}) do
+                if type(entry.mapDir) == "string" and entry.mapDir ~= ""
+                    and type(entry.mapMod) == "string" and active[entry.mapMod] then
+                    local key = entry.mapDir:lower()
+                    local previous = sources[key]
+                    if previous == nil then
+                        sources[key] = { mapMod = entry.mapMod, mapDir = entry.mapDir, nameKey = entry.nameKey }
+                    elseif previous then
+                        if previous.mapMod ~= entry.mapMod then
+                            sources[key] = false
+                        elseif previous.nameKey ~= entry.nameKey then
+                            previous.nameKey = nil
+                        end
+                    end
+                end
+            end
+        end
+        streetMapSources = sources
+    end
+    local source = streetMapSources[dir:lower()]
+    if not source then return nil end
+    local name = source.mapDir
+    if type(source.nameKey) == "string" then
+        local ok, localized = pcall(getTextOrNull, source.nameKey)
+        if ok and type(localized) == "string" and localized ~= "" and localized ~= source.nameKey then
+            name = localized
+        end
+    end
+    return getText("UI_MinidoracatMiniMap_SearchModMapSource", name)
+end
+
 -- 結果列最終化：座標取整＋右欄文字/寬度/類型標籤一次性預格式化
 -- （listDrawItem 每幀直用，零配置）
 local function finalizeItem(it)
@@ -109,6 +148,7 @@ local function finalizeItem(it)
     local tm = getTextManager()
     it.tagW = tm:MeasureStringX(UIFont.Small, it.tag)
     it.rightW = tm:MeasureStringX(UIFont.Small, it.right)
+    if it.kind == "street" then it.sourceHint = streetSourceHint(it.sourceDir) end
     return it
 end
 
@@ -127,19 +167,20 @@ local function doSearch(text, px, py)
     local q = text:lower()
     -- 街道名：有界最近-N（review：同名街跨城大量重複——抽取序截斷會把「離玩家
     -- 最近的那段」擠出清單，且介面右欄顯示距離、必須按距離組織）。
-    -- st.low＝索引建立時預小寫（NavRoute 攤平，免每鍵 1100 次配置）
+    -- 譯名與原名共用即時道路錨點；小寫索引建圖時一次計算。
     local streets = Core.navStreetIndex and Core.navStreetIndex() or nil
     if streets then
         local hits = {}
         local seen = nil -- 首點精確鍵（引擎命中的街，烘焙英文項去重用；lazy 建）
         for i = 1, #streets do
             local st = streets[i]
-            if st.low ~= "" and st.low:find(q, 1, true) then
+            if (st.low ~= "" and st.low:find(q, 1, true))
+                or (st.originalLow and st.originalLow:find(q, 1, true)) then
                 local d = math.sqrt(dist2(px, py, st.x, st.y))
                 -- 剪枝早退：滿載且比末位遠→不配置 entry table（與 POI 分支對稱）
                 if #hits < MAX_STREET_RESULTS or d < hits[#hits].d then
                     boundedInsert(hits, MAX_STREET_RESULTS, { kind = "street",
-                        label = st.name, x = st.x, y = st.y, d = d })
+                        label = st.name, x = st.x, y = st.y, d = d, sourceDir = st.sourceDir })
                     seen = seen or {}
                     seen[math.floor(st.x) * 100000 + math.floor(st.y)] = true
                 end
@@ -310,14 +351,16 @@ local function winRefresh(win, force)
         return
     end
     for i = 1, #results do
-        win.list:addItem(results[i].label, results[i])
+        local result = results[i]
+        local row = win.list:addItem(result.label, result, result.sourceHint)
+        if result.sourceHint then row.height = win.list.itemheight + win.list._minidoracatSourceLineH end
     end
 end
 
 -- 清單項自繪：hover/選中圓角填色＋kind 徽章色點＋名稱＋右對齊座標與距離。
 -- 每幀熱路徑：文字/寬度全用 doSearch 預格式化欄位，零配置；視窗外列早退
 local function listDrawItem(self, y, item, alt)
-    local hgt = self.itemheight
+    local hgt = item.height or self.itemheight
     -- 可見性早退（stencil 之外自己也省：捲出視窗的列不畫不量）
     local ys = self:getYScroll()
     if y + hgt < -ys or y > self.height - ys then return y + hgt end
@@ -344,11 +387,15 @@ local function listDrawItem(self, y, item, alt)
     local ty = y + self._minidoracatTextY -- 垂直置中偏移（建構時按字高算）
     if it and it.kind and it.kind ~= "info" then
         local kc = KIND_COLORS[it.kind] or KIND_COLORS.coord
-        self:drawRect(tx, y + math.floor(hgt / 2) - 3, 6, 6, 1, kc.r, kc.g, kc.b)
+        self:drawRect(tx, y + math.floor(self.itemheight / 2) - 3, 6, 6, 1, kc.r, kc.g, kc.b)
         self:drawText(it.tag, tx + 12, ty, kc.r, kc.g, kc.b, 1, UIFont.Small)
         self:drawText(it.label, tx + 12 + it.tagW + 10, ty, 1, 1, 1, 1, UIFont.Small)
         self:drawText(it.right, self.width - it.rightW - 14, ty,
             0.62, 0.62, 0.62, 1, UIFont.Small)
+        if it.sourceHint then
+            self:drawText(it.sourceHint, tx + 12, ty + self._minidoracatSourceLineH,
+                0.62, 0.62, 0.62, 1, UIFont.Small)
+        end
     else
         self:drawText(item.text, tx, ty, 0.62, 0.62, 0.62, 1, UIFont.Small)
     end
@@ -410,6 +457,7 @@ local function createSearchWindow(pn)
     win.list.drawBorder = false
     win.list.backgroundColor = { r = 0, g = 0, b = 0, a = 0.25 }
     win.list._minidoracatTextY = math.floor((rowH - fhS) / 2) -- 文字垂直置中
+    win.list._minidoracatSourceLineH = fhS + 2
     win.list.doDrawItem = listDrawItem
     win:addChild(win.list)
     win.list:setOnMouseDoubleClick(win, function(target)
@@ -552,5 +600,6 @@ Events.OnGameStart.Add(function()
         pcall(function() searchWin.entry:unfocus() end)
     end
     searchWin = nil
+    streetMapSources = nil
     Core.searchPing = nil
 end)

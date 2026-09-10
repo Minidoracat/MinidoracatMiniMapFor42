@@ -287,6 +287,7 @@ local function cloneStreet(street)
     local baseWidth = validWidth(street.width) and street.width or DEFAULT_HALFW * 2
     local copy = {
         name = type(street.name) == "string" and street.name or "",
+        originalName = street.originalName,
         src = street.src, width = street.width, pts = pts,
         searchable = street.searchable,
         segRemoved = {}, segWidth = {}, segSurface = {},
@@ -1562,6 +1563,9 @@ NavCore.gateEmit = gateEmit
 NavCore.queryStep = queryStep
 -- test:navroute-core:end
 
+Core.validStreetPoints = validStreetPoints
+Core.validStreetWidth = validWidth
+
 --------------------------------------------------------------------------------
 -- 遊戲整合：抽取器 / winnerOf / OnTick 編譯泵 / ensureRoute / 繪製
 --------------------------------------------------------------------------------
@@ -1643,6 +1647,7 @@ local function makeWinnerOf()
         return nil
     end
 end
+Core.makeStreetWinner = makeWinnerOf
 
 -- 抽取準備（同步、輕量）：蒐集 street data 容器清單。known＝lot dirs 逐一
 -- by-rel 命中者（rel 與 ISMapDefinitions.lua:35 加入字串同構、equalsIgnoreCase
@@ -1746,39 +1751,56 @@ local function stepExtract(ex)
                         entry.src or "unknown", ex.si - 1, n))
                 end
             else
-                local name = st:getTranslatedText() or ""
-                local x0, y0 = st:getPointX(0), st:getPointY(0)
-                local xl, yl = st:getPointX(n - 1), st:getPointY(n - 1)
-                local sig = n .. ":" .. floor(x0 * 2 + 0.5) .. ":" .. floor(y0 * 2 + 0.5)
+                local originalName = st:getTranslatedText() or ""
+                local name = Core.streetDisplayName and Core.streetDisplayName(originalName, entry.src) or originalName
+                local repair = Core.streetRepair and Core.streetRepair(st, entry.src, ex.si - 1)
+                local replacement = repair and repair.replacementPoints
+                local pointCount = replacement and #replacement / 2 or n
+                local rawX0, rawY0 = st:getPointX(0), st:getPointY(0)
+                local rawXL, rawYL = st:getPointX(n - 1), st:getPointY(n - 1)
+                local rawSig = n .. ":" .. floor(rawX0 * 2 + 0.5) .. ":" .. floor(rawY0 * 2 + 0.5)
+                    .. ":" .. floor(rawXL * 2 + 0.5) .. ":" .. floor(rawYL * 2 + 0.5)
+                local x0 = replacement and replacement[1] or rawX0
+                local y0 = replacement and replacement[2] or rawY0
+                local xl = replacement and replacement[#replacement - 1] or rawXL
+                local yl = replacement and replacement[#replacement] or rawYL
+                local sig = pointCount .. ":" .. floor(x0 * 2 + 0.5) .. ":" .. floor(y0 * 2 + 0.5)
                     .. ":" .. floor(xl * 2 + 0.5) .. ":" .. floor(yl * 2 + 0.5)
-                if not ex.seenSig[sig] and not NavCore.isRailroadStreet(name, x0, y0) then
+                if replacement and ex.seenSig[sig] then ex.seenSig[rawSig] = true end
+                if not ex.seenSig[rawSig] and not ex.seenSig[sig]
+                    and not NavCore.isRailroadStreet(originalName, rawX0, rawY0) then
                     local pts = {}
-                    for pi = 0, n - 1 do
-                        pts[pi * 2 + 1] = st:getPointX(pi)
-                        pts[pi * 2 + 2] = st:getPointY(pi)
+                    for pi = 0, pointCount - 1 do
+                        pts[pi * 2 + 1] = replacement and replacement[pi * 2 + 1] or st:getPointX(pi)
+                        pts[pi * 2 + 2] = replacement and replacement[pi * 2 + 2] or st:getPointY(pi)
                     end
                     local width = st:getWidth()
                     if not validStreetPoints(pts) or not validWidth(width) then
                         error("street geometry/width invalid")
                     end
-                    if ex.totalSegments + n - 1 > MAX_RAW_SEGMENTS then
+                    if ex.totalSegments + pointCount - 1 > MAX_RAW_SEGMENTS then
                         error("raw segment limit exceeded")
                     end
                     if ex.outN >= MAX_STREETS then error("street count limit exceeded") end
                     local searchable = true
+                    if originalName == name then originalName = nil end
+                    local nameChars = #name + (originalName and #originalName or 0)
                     if #name > MAX_STREET_NAME_LENGTH
-                        or ex.searchNameChars + #name > MAX_SEARCH_NAME_CHARS
+                        or (originalName and #originalName > MAX_STREET_NAME_LENGTH)
+                        or ex.searchNameChars + nameChars > MAX_SEARCH_NAME_CHARS
                     then
-                        name, searchable = "", false
+                        name, originalName, searchable = "", nil, false
                         ex.omittedSearchNames = ex.omittedSearchNames + 1
                     else
-                        ex.searchNameChars = ex.searchNameChars + #name
+                        ex.searchNameChars = ex.searchNameChars + nameChars
                     end
-                    ex.totalSegments = ex.totalSegments + n - 1
+                    ex.totalSegments = ex.totalSegments + pointCount - 1
                     ex.seenSig[sig] = true
+                    ex.seenSig[rawSig] = true -- 同一容器的 byIndex 重訪不可把舊輪廓再加入。
                     ex.outN = ex.outN + 1
                     ex.out[ex.outN] = {
                         name = name, src = entry.src, width = width, pts = pts,
+                        originalName = originalName,
                         searchable = searchable,
                     }
                 end
@@ -1847,7 +1869,11 @@ Events.OnTick.Add(function()
                     local ax, ay = NavCore.streetIndexAnchor(st, wof, indexTs)
                     if ax then
                         sn = sn + 1
-                        sidx[sn] = { name = st.name, low = st.name:lower(), x = ax, y = ay }
+                        sidx[sn] = {
+                            name = st.name, low = st.name:lower(), x = ax, y = ay,
+                            sourceDir = st.src,
+                            originalLow = st.originalName and st.originalName:lower() or nil,
+                        }
                     end
                 end
                 engine.streetIndex = sidx

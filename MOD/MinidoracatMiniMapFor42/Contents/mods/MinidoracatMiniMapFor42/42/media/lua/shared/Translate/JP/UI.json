@@ -51,6 +51,7 @@
     "UI_MinidoracatMiniMap_SearchNoResult": "結果なし",
     "UI_MinidoracatMiniMap_SearchKindCoord": "座標",
     "UI_MinidoracatMiniMap_SearchKindStreet": "通り",
+    "UI_MinidoracatMiniMap_SearchModMapSource": "MODマップ：%1",
     "UI_MinidoracatMiniMap_SearchKindPoi": "施設",
     "UI_MinidoracatMiniMap_SearchBasement": "（地下室）",
     "UI_MinidoracatMiniMap_SearchBasementKey": "地下室",

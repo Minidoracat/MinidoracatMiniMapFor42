@@ -87,6 +87,8 @@ eq(M.winSelectedItem(fakeWin(okItem)), okItem, "正常項通過")
 do
     local seg3 = source:match("(local function doSearch.-\nend)\n\n%-%-%-")
     assert(seg3, "找不到 doSearch 區段（結構變了？同步更新錨點）")
+    local finalizer = assert(source:match("(local function finalizeItem.-\nend)\n"))
+    local sourceHints = assert(source:match("(local streetMapSources.-\nend)\n"))
     local prelude = [[
 local function dist2(ax, ay, bx, by)
     local dx, dy = bx - ax, by - ay
@@ -111,8 +113,13 @@ local TEXTS = {
     UI_MinidoracatMiniMap_SearchKindStreet = "Street",
     UI_MinidoracatMiniMap_SearchKindPoi = "Place",
     Cat_food = "Food", Cat_gun = "Armory",
+    UI_MinidoracatMiniMap_SearchModMapSource = "MOD map: %1", UI_MapA = "Localized Map A",
 }
-local function getText(k) return TEXTS[k] or k end
+local function getText(k, arg)
+    local text = (TEXTS[k] or k):gsub("%%1", function() return arg or "" end)
+    return text
+end
+local function getTextOrNull(k) return TEXTS[k] end
 local function getTextManager()
     return { MeasureStringX = function(_, _, s) return #s * 6 end }
 end
@@ -122,16 +129,24 @@ local math = math
 local function kindTag(kind) return getText("UI_MinidoracatMiniMap_SearchKind"
     .. (kind == "coord" and "Coord" or kind == "street" and "Street" or "Poi")) end
 local function fmtDist(d) return tostring(math.floor(d)) .. "m" end
-local function finalizeItem(it)
-    it.x = math.floor(it.x); it.y = math.floor(it.y)
-    it.tag = kindTag(it.kind)
-    it.right = ""
-    it.tagW, it.rightW = 0, 0
-    return it
+local function getActivatedMods()
+    return { size = function() return 2 end, get = function(_, i) return i == 0 and "Enabled" or "Other" end }
 end
-local Core = { navStreetIndex = function()
-    return { { name = "Oak St", low = "oak st", x = 100, y = 100 } }
-end }
+local fixtureStreets = { { name = "Oak St", low = "oak st", originalLow = "original avenue", x = 100, y = 100 } }
+local Core = { navStreetIndex = function() return fixtureStreets end, registeredPacks = { { owner = "Pack", entries = {
+    { mapDir = "Map A", mapMod = "Enabled", nameKey = "UI_MapA" },
+    { mapDir = "Map A", mapMod = "Enabled", nameKey = "UI_MapA", streetNames = {} },
+    { mapDir = "Map B", mapMod = "Enabled", nameKey = "UI_Missing" },
+    { mapDir = "Disabled", mapMod = "Off" },
+    { mapDir = "Unowned" },
+    { mapDir = "Variant", mapMod = "Off", nameKey = "UI_Missing" },
+    { mapDir = "Variant", mapMod = "Enabled", nameKey = "UI_MapA" },
+    { mapDir = "Ambiguous", mapMod = "Enabled", nameKey = "UI_MapA" },
+    { mapDir = "Ambiguous", mapMod = "Other", nameKey = "UI_Missing" },
+    { mapDir = "Ambiguous", mapMod = "Enabled", nameKey = "UI_MapA" },
+    { mapDir = "Same mod", mapMod = "Enabled", nameKey = "UI_MapA" },
+    { mapDir = "Same mod", mapMod = "Enabled", nameKey = "UI_Missing" },
+} } } }
 MinidoracatMiniMapPOICategories = { CATEGORIES = {
     food = { nameKey = "Cat_food" },
     gun = { nameKey = "Cat_gun" },
@@ -142,9 +157,9 @@ MinidoracatMiniMapPOIData = {
     { cat = "gun", rn = 1, r = { { x = 90, y = 90, w = 4, h = 4 } }, u = 1 },
 }
 ]]
-    local chunk3 = assert((loadstring or load)(prelude .. seg3
-        .. "\nreturn doSearch", "search-dosearch"))
-    local doSearch = chunk3()
+    local chunk3 = assert((loadstring or load)(prelude .. sourceHints .. "\n" .. finalizer .. "\n" .. seg3
+        .. "\nreturn doSearch, function(items) fixtureStreets = items end", "search-dosearch"))
+    local doSearch, setStreets = chunk3()
     -- 「basement」前綴：地下條目全類別命中（2 筆 u=1），label 帶後綴
     local r = doSearch("base", 0, 0)
     eq(#r, 2, "basement 前綴：恰 2 筆地下條目")
@@ -161,6 +176,27 @@ MinidoracatMiniMapPOIData = {
     eq(doSearch("st", 0, 0)[1].kind, "street", "st 命中的是街道")
     eq(#doSearch("as", 0, 0), 0, "中段子串 as 不觸發（前綴語義）")
     eq(#doSearch("(", 0, 0), 0, "括號不觸發（匹配鍵無標點）")
+    local byOriginal, byDisplay = doSearch("original avenue", 0, 0), doSearch("oak", 0, 0)
+    eq(#byOriginal, 1, "原名命中同一條即時道路")
+    eq(byOriginal[1].label, byDisplay[1].label, "原名與譯名搜尋顯示同一結果")
+    eq(byOriginal[1].x, byDisplay[1].x, "原名搜尋沿用即時道路 X")
+    eq(byOriginal[1].y, byDisplay[1].y, "原名搜尋沿用即時道路 Y")
+    local item = { name = "Oak St", low = "oak st", originalLow = "original avenue", x = 123, y = 456 }
+    for _, dir in ipairs({ "Muldraugh, KY", "Riverside, KY", "Unknown", "Disabled", "Unowned", "Ambiguous" }) do
+        item.sourceDir = dir; setStreets({ item })
+        eq(doSearch("oak", 0, 0)[1].sourceHint, nil, "不可把原版、翻譯載體、未知或未啟用來源標成 MOD")
+    end
+    item.sourceDir = "Map A"; setStreets({ item })
+    local modResult = doSearch("oak", 0, 0)[1]
+    eq(modResult.sourceHint, "MOD map: Localized Map A", "沒有街名翻譯表的 MOD 也能識別來源")
+    eq(doSearch("original avenue", 0, 0)[1].sourceHint, modResult.sourceHint, "原名搜尋保留相同來源提示")
+    eq(modResult.x, 123, "來源提示不改導航 X"); eq(modResult.y, 456, "來源提示不改導航 Y")
+    item.sourceDir = "Map B"
+    eq(doSearch("oak", 0, 0)[1].sourceHint, "MOD map: Map B", "地圖名稱缺譯時使用原始目錄名")
+    item.sourceDir = "vARIANT"
+    eq(doSearch("oak", 0, 0)[1].sourceHint, "MOD map: Localized Map A", "只標示已啟用 variant，目錄比對不分大小寫")
+    item.sourceDir = "Same mod"
+    eq(doSearch("oak", 0, 0)[1].sourceHint, "MOD map: Same mod", "同來源譯名有歧義時退目錄名，不任選譯名")
 end
 
 print("test_search_logic: 全數通過")

@@ -200,7 +200,7 @@ end
 -- 整檔載入 → 冷啟動 → 泵 OnTick 到終態 → 查一次公開路線面。
 -- 容器同時由 by-rel（src=dir）與 byIndex（src=nil）命中＝真遊戲的樣子，
 -- 每筆 record 因此被走訪兩次，26/30 筆就能跨過 48 筆/tick 的分幀邊界
-local function runWorld(makeRecords)
+local function runWorld(makeRecords, displayName)
     local hits, prints = { n = 0 }, {}
     local records = makeRecords(hits)
     local recordCount = #records
@@ -230,6 +230,7 @@ local function runWorld(makeRecords)
             ready = true,
             getBoolOption = function(_, default) return default end,
             getLoadedMapDirs = function() return { [LOT_DIR] = 1 } end,
+            streetDisplayName = displayName,
         },
         fileExists = function() return true end,
         getLotDirectories = function() return javaList({ LOT_DIR }) end,
@@ -258,6 +259,7 @@ local function runWorld(makeRecords)
         if out.state == "ready" or out.state == "failed" then break end
     end
     out.route, out.routeState = api.requestRoute(0, LAT_END, LAT_END)
+    out.index = env.MinidoracatMiniMapCore.navStreetIndex()
     return out
 end
 local function why(w) return tostring(w.state) .. "｜log: " .. (w.prints[1] or "-") end
@@ -267,6 +269,28 @@ local clean = runWorld(function(hits) return lattice(hits, {}) end)
 ok(clean.state == "ready", "控制組：合法街道應建圖 ready，實為 " .. why(clean))
 ok(clean.routeState == "ok" and clean.route ~= nil,
     "控制組：對角應找得到路線，實為 " .. tostring(clean.routeState))
+
+-- 語言只能改 label，不得改選路或令翻譯後的 Railroad 成為可行駛道路。
+local function withRailroad(hits)
+    local records = lattice(hits, {})
+    records[#records + 1] = road(hits, LAT_ORIGIN, LAT_ORIGIN, LAT_END, LAT_END, "Railroad")
+    return records
+end
+local untranslated = runWorld(withRailroad)
+local translated = runWorld(withRailroad, function(name)
+    return name == "Railroad" and "Foreign rail name" or "Localized " .. name
+end)
+ok(translated.routeState == "ok" and translated.route.len == untranslated.route.len,
+    "translated labels preserve route length and railroad exclusion")
+ok(#translated.route.pts == #untranslated.route.pts, "languages use the same route point count")
+for i = 1, #untranslated.route.pts do
+    ok(translated.route.pts[i] == untranslated.route.pts[i], "languages use identical route geometry")
+end
+local foundAlias = false
+for _, item in ipairs(translated.index) do
+    if item.originalLow == "row 1" and item.name == "Localized Row 1" then foundAlias = true end
+end
+ok(foundAlias, "live road index preserves original-name search alias")
 
 -- 12. 混合資料（合法街道 ∪ 零點／單點 record）：整份路網仍要活著
 local firstShort
