@@ -165,4 +165,28 @@ local blank = street("Main", 120)
 data["media/maps/A/streets.xml"] = { blank }
 local _, blankShown = open("A")
 assert(blank.name == "Main" and blankShown[1] == "Main", "whitespace translation cannot erase source or label")
+
+-- Vanilla text dictionaries affect search labels without taking over source geometry.
+setup({})
+local original = "W Garnettsville Road"
+local textKey = "UI_WorldMapStreet_" .. original
+translations.CH = { [textKey] = "Translated vanilla road" }
+local displayName = MinidoracatMiniMapCore.streetDisplayName
+assert(displayName(original, "Muldraugh, KY") == "Translated vanilla road", "vanilla search label uses text-only dictionary")
+assert(displayName(original, "muldraugh, ky") == "Translated vanilla road", "canonical directory lookup is case-insensitive")
+assert(displayName(original, "OtherMap") == original, "same-name map MOD street does not borrow vanilla translation")
+assert(displayName(original, nil) == original, "unknown source is not assumed to be vanilla")
+assert(displayName("New Official Road", "Muldraugh, KY") == "New Official Road", "new official names remain searchable before translation")
+lang = "FR"
+translations.FR = { [textKey] = "French vanilla road" }
+assert(displayName(original, "Muldraugh, KY") == "French vanilla road", "text dictionary support is not limited to known translation languages")
+lang = "EN"
+assert(displayName(original, "Muldraugh, KY") == original, "English search label does not use Chinese dictionary")
+lang = "CH"
+translations.CH[textKey] = " \t "
+assert(displayName(original, "Muldraugh, KY") == original, "blank translation cannot erase search label")
+translations.CH[textKey] = textKey
+assert(displayName(original, "Muldraugh, KY") == original, "missing translation cannot become a visible key")
+getTextOrNull = function() error("translation read failed") end
+assert(displayName(original, "Muldraugh, KY") == original, "lookup error preserves usable original name")
 print("test_street_names: PASS (geometry, scope, variants, language, source-name retention, foreign changes, missing translations)")

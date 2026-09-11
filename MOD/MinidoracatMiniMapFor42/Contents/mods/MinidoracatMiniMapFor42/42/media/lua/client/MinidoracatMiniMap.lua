@@ -1302,8 +1302,8 @@ end
 -- 地圖載，ISWorldMap.lua:1450），ShowStreetNames 開著也無字可畫；世界地圖那條
 -- 只在 MainScreen.instance.inGame 為真的 init 分支跑一次（ISWorldMap.lua:1447-1451）
 -- ——MP 回報世界地圖側容器為空（2026-09-05），機制未實證，本函式的 log 即診斷。
--- 走同一函式（ISMapDefinitions.lua:41-49，只用 mapUI.javaObject）＝翻譯 MOD wrap
--- 它載入的中文街名（LangFor42 MapStreets_Flx）一併生效。
+-- 走同一原版載入鏈（ISMapDefinitions.lua:41-49）；翻譯 MOD 的 default／directory
+-- wrapper 一併生效，含 LangFor42 的純文字顯示窗口。
 -- 只有**明確 count==0** 才補載：initDefaultStreetData 開頭的 clearStreetData
 -- （ISMapDefinitions.lua:44）會走 combinedStreets.clear()——WorldMapStreets.clear
 -- 不清 StreetLookup 空間索引且 42.20.3 起 ObjectPool 上限 1024 < 官方 1098 條
@@ -1326,7 +1326,7 @@ end
 -- 字形的地圖字型下逐字畫成 `?`（WorldMapStreet.java:719-721，2026-09-05 EN 實測
 -- 整張 `???`），同 LangFor42 MapStreets_Flx 的語言閘規則。未啟用者不進判斷、
 -- 有資料者早已 return，對其他人零行為差異。它日後修好（count>0）本表自然失效。
--- LangFor42 不在表內：它顯式 addStreetData 自己的檔、自帶語言閘，MP 本就正常。
+-- LangFor42 不在表內：它保留官方來源，只在 directory 顯示窗口翻譯文字。
 -- Translator.getLanguage():name() 用例 MainOptions.lua:1828（實證值 CH／CN／EN／JP）
 local VANILLA_STREETS = "media/maps/Muldraugh, KY/streets.xml"
 local CARRIER_STREETS = {

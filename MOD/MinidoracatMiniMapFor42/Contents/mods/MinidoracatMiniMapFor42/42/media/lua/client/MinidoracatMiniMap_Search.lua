@@ -172,10 +172,15 @@ local function doSearch(text, px, py)
     if streets then
         local hits = {}
         local seen = nil -- 首點精確鍵（引擎命中的街，烘焙英文項去重用；lazy 建）
+        local liveOriginals -- 純文字翻譯已有即時原名錨點，不再追加烘焙舊座標。
         for i = 1, #streets do
             local st = streets[i]
             if (st.low ~= "" and st.low:find(q, 1, true))
                 or (st.originalLow and st.originalLow:find(q, 1, true)) then
+                if st.originalLow and st.sourceDir and st.sourceDir:lower() == "muldraugh, ky" then
+                    liveOriginals = liveOriginals or {}
+                    liveOriginals[st.originalLow] = true
+                end
                 local d = math.sqrt(dist2(px, py, st.x, st.y))
                 -- 剪枝早退：滿載且比末位遠→不配置 entry table（與 POI 分支對稱）
                 if #hits < MAX_STREET_RESULTS or d < hits[#hits].d then
@@ -197,6 +202,7 @@ local function doSearch(text, px, py)
             for i = 1, #en do
                 local e = en[i]
                 if e.l:find(q, 1, true)
+                    and not (liveOriginals and liveOriginals[e.l])
                     and not (seen and seen[e.x * 100000 + e.y]) then
                     local d = math.sqrt(dist2(px, py, e.x, e.y))
                     if #hits < MAX_STREET_RESULTS or d < hits[#hits].d then

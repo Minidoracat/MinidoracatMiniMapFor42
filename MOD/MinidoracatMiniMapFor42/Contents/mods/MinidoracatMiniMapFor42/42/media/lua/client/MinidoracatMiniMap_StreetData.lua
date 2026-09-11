@@ -67,8 +67,7 @@ local function logOnce(key, message)
     print("[MinidoracatMiniMap] " .. message)
 end
 local rejectedText = {}
-local function translateStreetName(original, names, translate)
-    local key = names and names[original]
+local function translateStreetName(original, key, translate)
     if not key then return original end
     local ok, value = pcall(translate, key)
     if not ok then
@@ -121,7 +120,11 @@ end
 -- 顯示譯名不影響 raw 原名與道路型別辨識。
 Core.streetDisplayName = function(original, dir)
     local source = Core.streetSource(dir)
-    return translateStreetName(original, source and source.names, currentTranslation)
+    local key = source and source.names and source.names[original]
+    if not key and type(dir) == "string" and dir:lower() == "muldraugh, ky" then
+        return translateStreetName(original, "UI_WorldMapStreet_" .. original, getTextOrNull)
+    end
+    return translateStreetName(original, key, currentTranslation)
 end
 
 local origInit = MapUtils and MapUtils.initDirectoryStreetData
@@ -217,7 +220,7 @@ function MapUtils.initDirectoryStreetData(mapUI, directory)
             local original = street:getTranslatedText() or ""
             local repair = Core.streetRepair and Core.streetRepair(street, dir, i)
             local replacement = repair and repair.replacementPoints
-            local translated = translate and translateStreetName(original, names, getTextOrNull) or original
+            local translated = translate and translateStreetName(original, names and names[original], getTextOrNull) or original
             local hidden = repair and repair.hideLabel and Core.canHideStreetLabel
                 and Core.canHideStreetLabel(repair, mapUI, dir, translated)
             if hidden then

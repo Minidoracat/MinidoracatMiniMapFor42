@@ -881,7 +881,7 @@ def render_lua(payload: dict[str, Any]) -> str:
         "-- MinidoracatMiniMapRoadPatches.lua",
         "-- 由 scripts/gen_road_patches.py 從 road-audit-v1 與人工批准清單產生；請勿手改。",
         "-- 重生：python scripts/gen_road_patches.py --audit <road-audit-full-total-work-pass.json>",
-        "-- runtime 只驗 targetSrc 容器的 full-q2-geometry+width set；不讀 XML、不計算 SHA。",
+        "-- runtime 驗官方來源或已認證載體的 full-q2-geometry+width set；不讀 XML、不計算 SHA。",
         "",
         "MinidoracatMiniMapRoadPatches = {",
         f"    schemaVersion = {payload['schemaVersion']},",

@@ -1,8 +1,8 @@
--- generated-body-sha256: 489380c1564e28b5f327c362882ed896a36a92ad0235ca9c4ebaee89ecda7031
+-- generated-body-sha256: 7344ac50b9506d238090a635ec8ea74263c53bd901ee3394781d5eb2c8d64def
 -- MinidoracatMiniMapRoadPatches.lua
 -- 由 scripts/gen_road_patches.py 從 road-audit-v1 與人工批准清單產生；請勿手改。
 -- 重生：python scripts/gen_road_patches.py --audit <road-audit-full-total-work-pass.json>
--- runtime 只驗 targetSrc 容器的 full-q2-geometry+width set；不讀 XML、不計算 SHA。
+-- runtime 驗官方來源或已認證載體的 full-q2-geometry+width set；不讀 XML、不計算 SHA。
 
 MinidoracatMiniMapRoadPatches = {
     schemaVersion = 1,
@@ -14,9 +14,9 @@ MinidoracatMiniMapRoadPatches = {
     auditSha256 = "ef3e998ad3ac78d5535ff38d9eb7be28f970a7bc2790bd11b01a48c045ee137d",
     rejectedCandidateCount = 8,
     approvalsSha256 = "3752907625ca0d30496a5214053f5d5cb890ceca546ccb73067005320673a632",
-    generatorSha256 = "96f825a211029ed68554393ade36d8d5ebcb21a60a5387f825d794ecd1924b0d",
+    generatorSha256 = "125389bf141d7b06309148868937053e18712635e8bcc69f7f9f9c53b6933189",
     rejectedEvidenceHash = "a01e40f16298f53a4aca9a45b2ffce3f5d6257a0e868fa14e36a1c450ff43bcb",
-    tag = "f99d097beabec6c6a82fa4e70130cd2bfa4307f1cb9f731b5a0ca9714147665d",
+    tag = "90cee194ef40d6aa98bbe823870149c0a7ae97db768e174613fa6ceeca1038c3",
     geometryCount = 1089,
     geometrySet = {
         ["10:12630:10566:13634:10566:13656:10576:13667:10587:13672:10597:13672:10878:13686:10906:13702:10922:13732:10938:13750:10938|w:20"] = "958371c8dd485b7fd054bdeac5e0b677d0a7bf8454095329c599f5ccca199f28",

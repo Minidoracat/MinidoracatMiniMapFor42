@@ -432,7 +432,7 @@ end
 --------------------------------------------------------------------------------
 do
     local winnerBody = assert(source:match(
-        "(local function makeWinnerOf%(%).-)\n\n%-%- 抽取準備"),
+        "%-%- test:nav%-winner:start\n(.-)\n%-%- test:nav%-winner:end"),
         "找不到 makeWinnerOf production 區段")
     local prelude = [[
 local Core = {}
@@ -864,25 +864,22 @@ do
     assert(ok and state == "applied", "RoadPatch fingerprint：翻譯名＋其他 src 仍命中")
     assert(#translated == 2, "RoadPatch fingerprint：其他 map street 原樣留在同一 patched 表")
 
-    -- src=nil 全量替換容器（LangFor42 型態）：官方幾何逐條指紋命中即套用，
-    -- 集合外街道跳過不配置；缺任一官方幾何則整包拒套
+    -- 合併後的 nil 來源不再作為補丁證據；完整容器認證由 production 抽取器處理。
     local failOpen = {
         { name = "橡樹街", src = nil, width = 6, pts = { 0, 0, 10, 0, 20, 0 } },
         { name = "濱河路", src = nil, width = 9, pts = { 500, 500, 560, 500 } },
     }
     ok, state = mod.applyRoadPatches(failOpen, patch)
-    assert(ok and state == "applied", "RoadPatch fail-open：src=nil 全量容器指紋命中")
-    assert(#failOpen == 2 and failOpen[2].segSurface == nil
-        and failOpen[2].segWidth == nil,
-        "RoadPatch fail-open：集合外街道跳過、不建 metadata")
+    assert(not ok and failOpen._roadPatchTag == nil, "未認證來源不得靠幾何聯集套補丁")
+    assert(failOpen[1].segSurface == nil and failOpen[2].segWidth == nil,
+        "拒套時不得部分修改未認證來源")
 
     local failOpenMissing = {
         { name = "濱河路", src = nil, width = 9, pts = { 500, 500, 560, 500 } },
     }
     ok, state = mod.applyRoadPatches(failOpenMissing, patch)
-    assert(not ok and state == "fingerprint mismatch"
-        and failOpenMissing._roadPatchTag == nil,
-        "RoadPatch fail-open：官方幾何缺席整包拒套")
+    assert(not ok and failOpenMissing._roadPatchTag == nil,
+        "官方來源缺席時拒套，保留原始資料")
 
     local mismatch = {
         { name = "Oak Street", src = "M", width = 7, pts = { 0, 0, 10, 0, 20, 0 } },

@@ -129,6 +129,7 @@ local MAX_PROCESSED_STREETS = 65536
 local MAX_STREET_NAME_LENGTH = 1024
 local MAX_SEARCH_NAME_CHARS = 1000000
 local MAX_RAW_SEGMENTS = 16384
+local MAX_EXTRACT_POINTS = MAX_RAW_SEGMENTS * 8 -- 包含認證時讀取、最後被去重的點
 local MAX_QUERY_WORK = 250000
 
 local function dist2(ax, ay, bx, by)
@@ -222,11 +223,9 @@ local function cellBoundaryTs(x1, y1, x2, y2, out)
     return n
 end
 
--- RoadPatch 身分只看來源容器＋完整 q2 幾何＋segment index；街名刻意不進身分，
--- 翻譯 MOD 改名仍能命中。fingerprint 另含 q2 width；具名容器只核對 targetSrc，
--- 另對 src=nil 的未知來源（fail-open）容器做逐條指紋匹配——翻譯 MOD 的全量
--- 替換容器（LangFor42 以 Riverside rel 承載官方 Muldraugh 幾何的中文版）落在
--- 此類，集合外的街道跳過，第三方 map MOD 容器（具名非 target）不受影響。
+-- 原版補丁身分以完整 q2 幾何與路寬認證，不依賴街名或翻譯包 ID。
+-- 純載體在抽取去重前逐容器認證；canonicalSrc 只決定補丁／實體覆蓋，
+-- src 仍保留原始載入來源。未認證的 nil 來源不能湊聯集套用官方補丁。
 local function validWidth(value)
     return type(value) == "number" and value == value and value >= 1
         and value <= MAX_WIDTH
@@ -269,11 +268,15 @@ local function geometryKey(pts)
     return table.concat(parts, ":", 1, #pts + 1)
 end
 
-local function fingerprintKey(street)
-    if not validWidth(street.width) then return nil end
-    local geometry = geometryKey(street.pts)
+local function fingerprintOf(pts, width)
+    if not validWidth(width) then return nil end
+    local geometry = geometryKey(pts)
     if not geometry then return nil end
-    return geometry .. "|w:" .. floor(street.width * 2 + 0.5)
+    return geometry .. "|w:" .. floor(width * 2 + 0.5)
+end
+
+local function fingerprintKey(street)
+    return fingerprintOf(street.pts, street.width)
 end
 
 local function segmentId(compact, segIndex)
@@ -289,6 +292,7 @@ local function cloneStreet(street)
         name = type(street.name) == "string" and street.name or "",
         originalName = street.originalName,
         src = street.src, width = street.width, pts = pts,
+        canonicalSrc = street.canonicalSrc,
         searchable = street.searchable,
         segRemoved = {}, segWidth = {}, segSurface = {},
     }
@@ -333,7 +337,7 @@ local function exactArray(values, count)
     return true
 end
 
-local function stagePatchStreet(staged, lookup, op, operationIds)
+local function stagePatchStreet(staged, lookup, op, operationIds, targetLow, officialDir)
     if type(op) ~= "table" or type(op.id) ~= "string" or op.id == ""
         or operationIds[op.id]
     then
@@ -354,6 +358,7 @@ local function stagePatchStreet(staged, lookup, op, operationIds)
     local street = {
         name = type(op.name) == "string" and op.name or "",
         src = op.src, width = op.width, pts = op.pts, searchable = searchable,
+        canonicalSrc = op.src:lower() == targetLow and officialDir or nil,
         segRemoved = {}, segWidth = {}, segSurface = {},
     }
     for i = 1, #op.pts / 2 - 1 do
@@ -370,13 +375,18 @@ end
 -- 完整 preflight 後才替換 streets 的數字槽：fingerprint、所有 operation 引用、
 -- remove→width/surface overrides→add→bridge；任一衝突時原 ex.out 一格都不動。
 -- 相同 tag 重入直接成功且不重複 append；不同 patch 疊套 fail closed。
-function NavCore.applyRoadPatches(streets, patch)
+function NavCore.applyRoadPatches(streets, patch, officialDir)
     if type(streets) ~= "table" or type(patch) ~= "table"
         or patch.schemaVersion ~= 1 or type(patch.tag) ~= "string"
         or type(patch.targetSrc) ~= "string" or type(patch.geometrySet) ~= "table"
         or not validCount(patch.geometryCount)
     then
         return false, "invalid patch header"
+    end
+    local targetLow = patch.targetSrc:lower()
+    officialDir = officialDir or patch.targetSrc
+    if type(officialDir) ~= "string" or officialDir:lower() ~= targetLow then
+        return false, "invalid canonical source"
     end
     if streets._roadPatchTag then
         if streets._roadPatchTag == patch.tag then return true, "already" end
@@ -399,11 +409,7 @@ function NavCore.applyRoadPatches(streets, patch)
     local targetCount = 0
     for i = 1, #streets do
         local original = streets[i]
-        local isKnownTarget = original.src == patch.targetSrc
-        -- src=nil＝未知來源容器：幾何+寬度指紋在集合內即視為官方街道；不在
-        -- 集合＝其他地圖街道，跳過不算錯。geometryCount 全數命中的總量檢查
-        -- 不變（:下方）——官方幾何缺一條照樣整包拒套。
-        if isKnownTarget or original.src == nil then
+        if (original.canonicalSrc or original.src) == officialDir then
             local fingerprint = fingerprintKey(original)
             local compact = fingerprint and patch.geometrySet[fingerprint] or nil
             if compact and not targetSeen[fingerprint] then
@@ -414,16 +420,14 @@ function NavCore.applyRoadPatches(streets, patch)
                 local ok, err = registerSegments(copy, compact, lookup)
                 if not ok then return false, err end
                 staged[i] = copy
-            elseif isKnownTarget then
-                -- 具名 target 容器：指紋不在集合＝官方內容漂移；重複＝資料異常。皆 fail
-                return false, "fingerprint mismatch"
             else
-                staged[i] = original -- src=nil 且幾何不在集合：非官方街道，原樣過
+                return false, "fingerprint mismatch"
             end
         else
             staged[i] = original -- 非 target 不配置 metadata/ID；builder 自行驗 raw
         end
     end
+    if targetCount == 0 and patch.geometryCount > 0 then return false, "no certified vanilla source" end
     if targetCount ~= patch.geometryCount then return false, "fingerprint mismatch" end
 
     local removeCount = patch.removeCount or 0
@@ -479,11 +483,11 @@ function NavCore.applyRoadPatches(streets, patch)
     end
     local operationIds = {}
     for i = 1, addCount do
-        local ok, err = stagePatchStreet(staged, lookup, patch.add[i], operationIds)
+        local ok, err = stagePatchStreet(staged, lookup, patch.add[i], operationIds, targetLow, officialDir)
         if not ok then return false, err end
     end
     for i = 1, bridgeCount do
-        local ok, err = stagePatchStreet(staged, lookup, patch.bridge[i], operationIds)
+        local ok, err = stagePatchStreet(staged, lookup, patch.bridge[i], operationIds, targetLow, officialDir)
         if not ok then return false, err end
     end
 
@@ -509,19 +513,20 @@ end
 function NavCore.streetIndexAnchor(street, winnerOf, tsBuf)
     if not NavCore.streetSearchable(street) then return nil end
     local pts, removed = street.pts, street.segRemoved
+    local source = street.canonicalSrc or street.src
     for i = 1, #pts / 2 - 1 do
         if not removed or removed[i] ~= true then
             local x1, y1 = pts[i * 2 - 1], pts[i * 2]
             local x2, y2 = pts[i * 2 + 1], pts[i * 2 + 2]
-            if not winnerOf or street.src == nil then return x1, y1 end
+            if not winnerOf or source == nil then return x1, y1 end
             local nts = cellBoundaryTs(x1, y1, x2, y2, tsBuf)
             for k = 1, nts - 1 do
                 local t0, t1 = tsBuf[k], tsBuf[k + 1]
                 if t1 - t0 > 1e-9 then
                     local tm = (t0 + t1) * 0.5
                     local mx, my = x1 + (x2 - x1) * tm, y1 + (y2 - y1) * tm
-                    local winner = winnerOf(floor(mx / STREET_CELL), floor(my / STREET_CELL), street.src)
-                    if winner == nil or winner == street.src then
+                    local winner = winnerOf(floor(mx / STREET_CELL), floor(my / STREET_CELL), source)
+                    if winner == nil or winner == source then
                         return x1 + (x2 - x1) * t0, y1 + (y2 - y1) * t0
                     end
                 end
@@ -681,6 +686,7 @@ local function stepGate(b, budget)
                 gateEmit(b, x1, y1, x2, y2, b.si, width, surface)
                 ops = ops + 2
             else
+                local source = street.canonicalSrc or street.src
                 local nts = cellBoundaryTs(x1, y1, x2, y2, b.tsBuf)
                 for k = 1, nts - 1 do
                     local t0, t1 = b.tsBuf[k], b.tsBuf[k + 1]
@@ -688,8 +694,8 @@ local function stepGate(b, budget)
                         local tm = (t0 + t1) * 0.5
                         local mx = x1 + (x2 - x1) * tm
                         local my = y1 + (y2 - y1) * tm
-                        local w = b.winnerOf(floor(mx / STREET_CELL), floor(my / STREET_CELL), street.src)
-                        if w == nil or street.src == nil or w == street.src then
+                        local w = b.winnerOf(floor(mx / STREET_CELL), floor(my / STREET_CELL), source)
+                        if w == nil or source == nil or w == source then
                             gateEmit(b, x1 + (x2 - x1) * t0, y1 + (y2 - y1) * t0,
                                 x1 + (x2 - x1) * t1, y1 + (y2 - y1) * t1,
                                 b.si, width, surface)
@@ -1596,8 +1602,9 @@ local navRoutes = {} -- [pn] = { state="ok|noroad", route=, tx=, ty=, progressId
 -- 鏡像 MapFiles.postLoad/hasCell300（42.20.4 MapFiles.java:120-134）：
 -- 街道格原點換算成 256 格 lot，原點與對角 (+1,+1) 兩個 lot 都存在才算覆蓋。
 -- WorldMapStreets.initObscuredCells（:155-175）只裁來源自身也佔用的街道格；
--- 來源邊緣未佔用、src=nil 或純街道載體（如 LangFor42）維持 fail-open。
+-- 來源邊緣未佔用或未知來源維持 fail-open；已認證載體由呼叫端傳 canonicalSrc。
 -- 全域 map priority 缺失/拋錯/形狀錯誤仍不可建 ready graph。
+-- test:nav-winner:start
 local function makeWinnerOf()
     if type(Core.getLoadedMapDirs) ~= "function" then
         return nil, "getLoadedMapDirs missing"
@@ -1648,20 +1655,12 @@ local function makeWinnerOf()
     end
 end
 Core.makeStreetWinner = makeWinnerOf
+-- test:nav-winner:end
 
--- 抽取準備（同步、輕量）：蒐集 street data 容器清單。known＝lot dirs 逐一
--- by-rel 命中者（rel 與 ISMapDefinitions.lua:35 加入字串同構、equalsIgnoreCase
--- 比對——WorldMap.java:230-236；src=dir 供 cell gate 精確裁段）；其後 byIndex
--- 全遍歷收「全部」容器（WorldMap.streetData 逐檔一筆）——含 known 重複與
--- 未知來源（如翻譯 MOD 以自有 rel 顯式載入的容器：LangFor42 的
--- 'Riverside, KY/streets.xml' 中文全量檔，MP 下不在 lot dirs、SP 下其 dir 無
--- lotheader，兩種身分推定都不成立）。重複與未知的取捨在 stepExtract 的
--- street 級簽名去重：known 先抽（帶 src），byIndex 容器逐街比對簽名——已見
--- 即跳過、未見即以 src=nil 收入（cell gate 對 nil src fail-open 不裁）。
--- 不對任何實例 addStreetData/clearStreetData：主檔 ensureStreetData 已對小地圖
--- 與世界地圖補載（走同一 MapUtils 函式），且 clearStreetData 會踩 combinedStreets.clear
--- 的 StreetLookup 幽靈＋ObjectPool 1024 上限坑（WorldMap.java:241-248、
--- WorldMapStreets.java:433-437；LangFor42 AGENTS.md 有 42.20.3 實證）
+-- 先按地圖目錄、再按 byIndex 讀取來源，保留原先去重與每 tick 計數。
+-- 每個實體容器只認證一次；來源的完整幾何集合不能由不同容器拼湊。
+-- src 保留資源來源，認證成功才另記 canonicalSrc，讓載體路網也受官方實體格覆蓋。
+-- 不對玩家地圖 add/clearStreetData；載入由 ensureStreetData 與原版 loader 負責。
 -- test:nav-extract:start（scripts/test_nav_kick.lua 抽本區段；依賴 getStreets/getLotDirectories/logf/MAX_STREET_CONTAINERS 由 prelude 注入）
 local function beginExtract(mapAPI)
     local streetsAPI = mapAPI:getStreetsAPI()
@@ -1682,35 +1681,62 @@ local function beginExtract(mapAPI)
         return nil, true
     end
     if total > MAX_STREET_CONTAINERS then error("street container limit exceeded") end
+    local patch = MinidoracatMiniMapRoadPatches
+    if type(patch) ~= "table" or patch.schemaVersion ~= 1 or type(patch.tag) ~= "string"
+        or type(patch.targetSrc) ~= "string" or patch.targetSrc == ""
+        or type(patch.geometrySet) ~= "table" or type(patch.geometryCount) ~= "number"
+        or patch.geometryCount < 1 or patch.geometryCount % 1 ~= 0
+    then
+        patch = nil
+    end
+    if patch then
+        local count = 0
+        for fingerprint, compact in pairs(patch.geometrySet) do
+            if type(fingerprint) ~= "string" or type(compact) ~= "string" or compact == "" then
+                patch = nil
+                break
+            end
+            count = count + 1
+        end
+        if patch and count ~= patch.geometryCount then patch = nil end
+    end
+    local officialDir
+    local targetLow = patch and patch.targetSrc:lower()
     local list = {}
-    local seenRel = {}
+    local seenRel, seenData = {}, {}
     local dirs = getLotDirectories()
     for i = 1, dirs:size() do
         local dir = dirs:get(i - 1)
+        if targetLow and dir:lower() == targetLow and not officialDir then officialDir = dir end
         local rel = "media/maps/" .. dir .. "/streets.xml"
-        if not seenRel[rel] then
-            seenRel[rel] = true
+        local relKey = rel:lower()
+        if not seenRel[relKey] then
+            seenRel[relKey] = true
             local data = streetsAPI:getStreetDataByRelativeFileName(rel)
             if data then
                 if #list >= MAX_STREET_CONTAINERS then error("street container limit exceeded") end
-                list[#list + 1] = { data = data, src = dir }
+                list[#list + 1] = { data = data, src = dir, repeated = seenData[data] }
+                seenData[data] = true
             end
         end
     end
     local knownN = #list
     for i = 0, total - 1 do
         if #list >= MAX_STREET_CONTAINERS then error("street container limit exceeded") end
-        list[#list + 1] = { data = streetsAPI:getStreetDataByIndex(i), src = nil }
+        local data = streetsAPI:getStreetDataByIndex(i)
+        list[#list + 1] = { data = data, src = nil, repeated = seenData[data] }
+        if data then seenData[data] = true end
     end
     if #list > knownN + knownN then
         logf("unknown", string.format(
-            "street containers: %d known by dir, %d total (extras fail-open)",
+            "street containers: %d known by dir, %d total (by-index fallback)",
             knownN, total))
     end
     return {
         list = list, li = 1, si = 0, seenSig = {}, out = {}, outN = 0,
         processedStreetCount = 0, totalSegments = 0, searchNameChars = 0,
         omittedSearchNames = 0,
+        patch = patch, officialDir = officialDir, tsBuf = {}, pointReads = 0,
     }
 end
 -- test:nav-extract:end
@@ -1719,6 +1745,21 @@ end
 -- 全是 Java bridge；同步全抽 ~15k 次 ≈ 數十 ms > 16.7ms 幀預算，會在設目標
 -- 當幀掉幀——codex review）。回 true＝抽取完成
 local EXTRACT_STREETS_PER_TICK = 48
+local function sourceOwnsRoadCells(ex, source, pts)
+    for i = 1, #pts - 2, 2 do
+        local x1, y1, x2, y2 = pts[i], pts[i + 1], pts[i + 2], pts[i + 3]
+        local n = cellBoundaryTs(x1, y1, x2, y2, ex.tsBuf)
+        for j = 1, n - 1 do
+            local t = (ex.tsBuf[j] + ex.tsBuf[j + 1]) * 0.5
+            if ex.wof(floor((x1 + (x2 - x1) * t) / STREET_CELL),
+                floor((y1 + (y2 - y1) * t) / STREET_CELL), source) ~= nil then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 local function stepExtract(ex)
     local done = 0
     while done < EXTRACT_STREETS_PER_TICK do
@@ -1727,11 +1768,15 @@ local function stepExtract(ex)
         local streets = entry.streets
         if not streets then
             streets = getStreets(entry.data)
-            entry.streets = streets
-            entry.n = streets:size()
+            entry.streets, entry.n, entry.outStart = streets, streets:size(), ex.outN
+            entry.cert = ex.patch and ex.officialDir and not entry.repeated and entry.src ~= ex.officialDir
+            entry.hits, entry.hitSet = 0, entry.cert and {} or nil
         end
         if ex.si >= entry.n then
-            entry.streets, entry.data = nil, nil
+            if entry.cert and entry.hits == ex.patch.geometryCount then
+                for i = entry.outStart + 1, ex.outN do ex.out[i].canonicalSrc = ex.officialDir end
+            end
+            entry.streets, entry.data, entry.hitSet = nil, nil, nil
             ex.li, ex.si = ex.li + 1, 0
         else
             local st = streets:get(ex.si)
@@ -1741,10 +1786,9 @@ local function stepExtract(ex)
                 error("processed street limit exceeded")
             end
             local n = st:getNumPoints()
-            if n > MAX_POINTS_PER_STREET then
-                error("street point limit/geometry invalid")
-            end
+            if n > MAX_POINTS_PER_STREET then error("street point limit/geometry invalid") end
             if n < 2 then
+                entry.cert, entry.hitSet = false, nil
                 if not logOnce.shortstreet then
                     logf("shortstreet", string.format(
                         "ignoring streets with fewer than 2 points (first source=%s, index=%d, points=%d)",
@@ -1767,42 +1811,54 @@ local function stepExtract(ex)
                 local sig = pointCount .. ":" .. floor(x0 * 2 + 0.5) .. ":" .. floor(y0 * 2 + 0.5)
                     .. ":" .. floor(xl * 2 + 0.5) .. ":" .. floor(yl * 2 + 0.5)
                 if replacement and ex.seenSig[sig] then ex.seenSig[rawSig] = true end
-                if not ex.seenSig[rawSig] and not ex.seenSig[sig]
-                    and not NavCore.isRailroadStreet(originalName, rawX0, rawY0) then
+                local duplicate = ex.seenSig[rawSig] or ex.seenSig[sig]
+                if not NavCore.isRailroadStreet(originalName, rawX0, rawY0) and (entry.cert or not duplicate) then
+                    ex.pointReads = ex.pointReads + pointCount
+                    if ex.pointReads > MAX_EXTRACT_POINTS then error("street extraction point limit exceeded") end
                     local pts = {}
                     for pi = 0, pointCount - 1 do
                         pts[pi * 2 + 1] = replacement and replacement[pi * 2 + 1] or st:getPointX(pi)
                         pts[pi * 2 + 2] = replacement and replacement[pi * 2 + 2] or st:getPointY(pi)
                     end
                     local width = st:getWidth()
-                    if not validStreetPoints(pts) or not validWidth(width) then
-                        error("street geometry/width invalid")
+                    local fingerprint
+                    if entry.cert then
+                        fingerprint = fingerprintOf(pts, width)
+                        if not fingerprint or not ex.patch.geometrySet[fingerprint]
+                            or (entry.src and sourceOwnsRoadCells(ex, entry.src, pts)) then
+                            entry.cert, entry.hitSet = false, nil
+                        elseif not entry.hitSet[fingerprint] then
+                            entry.hitSet[fingerprint] = true
+                            entry.hits = entry.hits + 1
+                        end
                     end
-                    if ex.totalSegments + pointCount - 1 > MAX_RAW_SEGMENTS then
-                        error("raw segment limit exceeded")
+                    if not duplicate then
+                        if not fingerprint and (not validStreetPoints(pts) or not validWidth(width)) then
+                            error("street geometry/width invalid")
+                        end
+                        if ex.totalSegments + pointCount - 1 > MAX_RAW_SEGMENTS then
+                            error("raw segment limit exceeded")
+                        end
+                        if ex.outN >= MAX_STREETS then error("street count limit exceeded") end
+                        local searchable = true
+                        if originalName == name then originalName = nil end
+                        local nameChars = #name + (originalName and #originalName or 0)
+                        if #name > MAX_STREET_NAME_LENGTH
+                            or (originalName and #originalName > MAX_STREET_NAME_LENGTH)
+                            or ex.searchNameChars + nameChars > MAX_SEARCH_NAME_CHARS then
+                            name, originalName, searchable = "", nil, false
+                            ex.omittedSearchNames = ex.omittedSearchNames + 1
+                        else
+                            ex.searchNameChars = ex.searchNameChars + nameChars
+                        end
+                        ex.totalSegments = ex.totalSegments + pointCount - 1
+                        ex.seenSig[sig], ex.seenSig[rawSig] = true, true
+                        ex.outN = ex.outN + 1
+                        ex.out[ex.outN] = {
+                            name = name, src = entry.src, width = width, pts = pts,
+                            originalName = originalName, searchable = searchable,
+                        }
                     end
-                    if ex.outN >= MAX_STREETS then error("street count limit exceeded") end
-                    local searchable = true
-                    if originalName == name then originalName = nil end
-                    local nameChars = #name + (originalName and #originalName or 0)
-                    if #name > MAX_STREET_NAME_LENGTH
-                        or (originalName and #originalName > MAX_STREET_NAME_LENGTH)
-                        or ex.searchNameChars + nameChars > MAX_SEARCH_NAME_CHARS
-                    then
-                        name, originalName, searchable = "", nil, false
-                        ex.omittedSearchNames = ex.omittedSearchNames + 1
-                    else
-                        ex.searchNameChars = ex.searchNameChars + nameChars
-                    end
-                    ex.totalSegments = ex.totalSegments + pointCount - 1
-                    ex.seenSig[sig] = true
-                    ex.seenSig[rawSig] = true -- 同一容器的 byIndex 重訪不可把舊輪廓再加入。
-                    ex.outN = ex.outN + 1
-                    ex.out[ex.outN] = {
-                        name = name, src = entry.src, width = width, pts = pts,
-                        originalName = originalName,
-                        searchable = searchable,
-                    }
                 end
             end
         end
@@ -1813,6 +1869,15 @@ end
 -- OnTick 編譯泵：extracting/building 才工作，其餘 O(1) 早退
 Events.OnTick.Add(function()
     if engine.state == "extracting" then
+        if not engine.extract.wof then
+            local winner, winnerErr = makeWinnerOf()
+            if not winner then
+                logf("winner", "map priority unavailable; routing disabled: " .. tostring(winnerErr))
+                engine.state, engine.extract = "failed", nil
+                return
+            end
+            engine.extract.wof = winner
+        end
         local ok, done = pcall(stepExtract, engine.extract)
         if not ok then
             logf("extract", "street extract failed: " .. tostring(done))
@@ -1837,7 +1902,7 @@ Events.OnTick.Add(function()
                 -- 仍是完全未修改的 raw 表。
                 -- pcall 第二回傳：成功時＝applied 布林，拋錯時＝例外訊息
                 local patchOk, applied, patchErr = pcall(
-                    NavCore.applyRoadPatches, ex.out, MinidoracatMiniMapRoadPatches)
+                    NavCore.applyRoadPatches, ex.out, ex.patch or MinidoracatMiniMapRoadPatches, ex.officialDir)
                 if not patchOk then
                     engine.patchState = "raw"
                     logf("roadpatch", "patch exception; using raw streets: "
@@ -1856,12 +1921,7 @@ Events.OnTick.Add(function()
                 -- 是每鍵 1100 次字串配置，移到這裡攤平為一次）。
                 -- index 與 builder 共用同一 wof；索引逐 nonremoved segment 套與
                 -- stepGate 相同的 cell winner，錨點取第一個實際保留子段起點。
-                local wof, winnerErr = makeWinnerOf()
-                if not wof then
-                    logf("winner", "map priority unavailable; routing disabled: " .. tostring(winnerErr))
-                    engine.state, engine.builder, engine.streetIndex = "failed", nil, nil
-                    return
-                end
+                local wof = ex.wof
                 local sidx, indexTs = {}, {}
                 local sn = 0
                 for i = 1, ex.outN do

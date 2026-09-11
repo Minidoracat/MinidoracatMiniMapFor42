@@ -197,6 +197,35 @@ MinidoracatMiniMapPOIData = {
     eq(doSearch("oak", 0, 0)[1].sourceHint, "MOD map: Localized Map A", "只標示已啟用 variant，目錄比對不分大小寫")
     item.sourceDir = "Same mod"
     eq(doSearch("oak", 0, 0)[1].sourceHint, "MOD map: Same mod", "同來源譯名有歧義時退目錄名，不任選譯名")
+
+    MinidoracatMiniMapStreetNames = { { n = "Bank Road", l = "bank road", x = 10, y = 10 } }
+    setStreets({
+        { name = "Localized Bank", low = "localized bank", originalLow = "bank road",
+          sourceDir = "Muldraugh, KY", x = 100, y = 100 },
+        { name = "Localized Bank", low = "localized bank", originalLow = "bank road",
+          sourceDir = "Muldraugh, KY", x = 200, y = 100 },
+    })
+    local originalResults = doSearch("bank road", 0, 0)
+    local translatedResults = doSearch("localized bank", 0, 0)
+    eq(#originalResults, 2, "純文字原名搜尋不重加過期的烘焙座標，也不合併同名真街道")
+    eq(#translatedResults, 2, "譯名保留兩條不同位置的同名街道")
+    for i = 1, 2 do
+        eq(originalResults[i].x, translatedResults[i].x, "原名與譯名使用相同即時錨點")
+        eq(originalResults[i].label, translatedResults[i].label, "原名與譯名使用相同顯示名")
+    end
+    setStreets({ { name = "Mod Bank", low = "mod bank", originalLow = "bank road",
+        sourceDir = "Map A", x = 300, y = 100 } })
+    eq(#doSearch("bank road", 0, 0), 2, "其他地圖同名原名不得擋掉舊式漢化的英文補充")
+    local crowded = {}
+    for i = 1, 40 do
+        crowded[i] = { name = "Other Road " .. i, low = "other road " .. i, x = i, y = 0 }
+    end
+    crowded[41] = { name = "Localized Bank", low = "localized bank", originalLow = "bank road",
+        sourceDir = "Muldraugh, KY", x = 1000, y = 1000 }
+    setStreets(crowded)
+    local limited = doSearch("road", 0, 0)
+    eq(limited[#limited].x, 40, "即時原名被上限剪枝時，較近的過期烘焙座標仍不得插隊")
+    MinidoracatMiniMapStreetNames = nil
 end
 
 print("test_search_logic: 全數通過")

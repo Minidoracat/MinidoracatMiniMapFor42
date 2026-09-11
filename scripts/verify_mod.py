@@ -454,6 +454,7 @@ _lua_tests = [
     ("test_street_repairs.lua", "獨立修路／顯示抑制與語系一致性", False),
     ("test_search_logic.lua", "原名／譯名搜尋共用道路錨點", False),
     ("test_nav_kick.lua", "導航冷啟動與退化街道隔離", False),
+    ("test_road_sources.lua", "官方副本來源認證與實體地圖覆蓋", False),
     ("test_nav_route.lua", "導航路網與街道覆蓋邊界", False),
     ("test_nav_api.lua", "導航 API 與路線快取", False),
     ("test_worldmap_nav.lua", "世界地圖右鍵選單合併／開圖重包", False),
