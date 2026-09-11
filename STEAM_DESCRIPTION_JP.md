@@ -68,7 +68,7 @@
 [h2]💬 フィードバック & コミュニティ[/h2]
 [url=https://discord.gg/Gur2V67]👉 Discord サーバーに参加[/url]
 
-[url=https://github.com/Minidoracat/MinidoracatMiniMapFor42/issues/new?template=road-data.yml][b]道路・経路の報告[/b][/url]：ずれ・欠落・遠回りは[b]経路・座標が写る画像＋座標テキスト[/b]と症状を一言。起終点・方向・マップMOD／版も推奨。ログ不要。地図上の問題地点を右クリックして座標をコピー。
+[url=https://github.com/Minidoracat/MinidoracatAutoDriveFor42/issues/new?template=road-data.yml][b]道路・経路の報告[/b][/url]：ずれ・欠落・遠回りは[b]経路・座標が写る画像＋座標テキスト[/b]と症状を一言。起終点・方向・マップMOD／版も推奨。ログ不要。地図上の問題地点を右クリックして座標をコピー。
 
 [h2]☕ 作者を応援[/h2]
 常に無料。ご支援はサーバーとMOD開発に使います。
