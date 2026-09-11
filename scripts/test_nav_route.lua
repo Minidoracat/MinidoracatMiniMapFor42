@@ -1183,6 +1183,68 @@ do
         assert(r.snapDist < 2,
             "snapDist 重現：重算後起錨在 2 格內（實得 " .. tostring(r.snapDist) .. "）")
     end
+    -- KY-1394雙線路口缺直通：S 1st St與Dixie兩端只接到各自近側公路，
+    -- 南北200m原會繞到東方換線，玩家原始導航呈三角倒鉤；必須在路口直接接通。
+    do
+        local g = officialBuilder.graph
+        for _, endpoints in ipairs({ { 3350, 3550 }, { 3550, 3350 } }) do
+            local sy, ty = endpoints[1], endpoints[2]
+            local r = mod.findRoute(g, 12513, sy, 12513, ty, nil, nil, nil, 12)
+            assertRouteMetadata(r, "S 1st–Dixie跨KY-1394")
+            assert(math.abs(r.len - 200) < 1,
+                "KY-1394路口：南北直通200m，不繞到東方折返；實得 " .. r.len)
+            for i = 1, #r.pts, 2 do
+                assert(math.abs(r.pts[i] - 12513) < 1,
+                    "KY-1394路口：行駛線留在南北道路，不出現東向倒鉤")
+                if i > 1 then
+                    assert((r.pts[i + 1] - r.pts[i - 1]) * (ty - sy) >= 0,
+                        "KY-1394路口：南北雙向都不沿路線倒退")
+                end
+            end
+        end
+        -- 新的南北接線不能讓東西直行改走另一側公路或繞進支路。
+        for _, y in ipairs({ 3445, 3455 }) do
+            for _, endpoints in ipairs({ { 12400, 12620 }, { 12620, 12400 } }) do
+                local r = mod.findRoute(g, endpoints[1], y, endpoints[2], y, nil, nil, nil, 12)
+                assertRouteMetadata(r, "KY-1394東西直行")
+                assert(math.abs(r.len - 220) < 1, "KY-1394東西直行仍為220m")
+                for i = 2, #r.pts, 2 do
+                    assert(math.abs(r.pts[i] - y) < 3,
+                        "KY-1394東西直行保持原側道路，不多繞一圈")
+                end
+            end
+        end
+    end
+    -- River Walk Road 河岸彎：官方與 worldmap 都畫直弦，但實際 gravel 在西南側。
+    -- 三個橫截面取自 pinned floor raster；驗導航實線在路帶，不釘修補頂點的數量。
+    do
+        local g = officialBuilder.graph
+        for _, ends in ipairs({ { 7521, 7000, 7623, 7115 }, { 7623, 7115, 7521, 7000 } }) do
+            local r = mod.findRoute(g, ends[1], ends[2], ends[3], ends[4], nil, nil, nil, 12)
+            assertRouteMetadata(r, "River Walk 河岸彎")
+            for _, band in ipairs({
+                { 7074.5, 7527, 7534 },
+                { 7086.5, 7535, 7543 },
+                { 7098.5, 7547, 7555 },
+            }) do
+                local crossed = false
+                for i = 1, #r.pts - 2, 2 do
+                    local x0, y0, x1, y1 = r.pts[i], r.pts[i + 1], r.pts[i + 2], r.pts[i + 3]
+                    if (y0 < band[1] and y1 >= band[1]) or (y1 < band[1] and y0 >= band[1]) then
+                        local x = x0 + (x1 - x0) * (band[1] - y0) / (y1 - y0)
+                        assert(x >= band[2] and x < band[3],
+                            "River Walk：導航線需留在真礫石路，y=" .. band[1] .. " x=" .. x)
+                        assert(not crossed, "River Walk：不以繞路折返取代正確彎道")
+                        crossed = true
+                    end
+                end
+                assert(crossed, "River Walk：雙向都通過河岸彎，不能斷路或改走遠路")
+            end
+            for i = 1, #r.segSurface do
+                assert(r.segSurface[i] == "gravel", "River Walk：彎道與兩端沿用實際礫石路面")
+            end
+        end
+    end
     -- Bank Road (10662,9696) L 角修正（2026-09-02）：官方 polyline 把 y 9686→9698 的
     -- 斜向過渡畫成 L 角，頂點 (10662.5,9695.5) 落在真路面西緣外 2.3 格（worldmap.xml
     -- highway 多邊形西緣 (10660,9686)→(10666,9698)），導航線斜穿院子、自駕三短臂角

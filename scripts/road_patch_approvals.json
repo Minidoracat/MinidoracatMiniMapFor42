@@ -115,7 +115,8 @@
     "aebb75485b96db37f6d1e315407f0be3481740949ba2869db03c48b9848ee717:1",
     "aebb75485b96db37f6d1e315407f0be3481740949ba2869db03c48b9848ee717:2",
     "c78f7d201c0452ae73a31bc03d4141a72553876dca5ab134415cb1e035f7af3f:2",
-    "c78f7d201c0452ae73a31bc03d4141a72553876dca5ab134415cb1e035f7af3f:3"
+    "c78f7d201c0452ae73a31bc03d4141a72553876dca5ab134415cb1e035f7af3f:3",
+    "bc0640979db3a6459ad4f650a4d27d4d1da2201203ce3dd22ba9a3fb17cadde4:9"
   ],
   "width": [],
   "surface": [],
@@ -316,6 +317,24 @@
       "surface": "paved",
       "searchable": false,
       "reason": "West Maple St 官方 polyline 幾何錯（自動交叉驗證，線索來源：第三方手修清單座標，判定與幾何全部以本 repo 證據重驗）：streetIndex 601 的頂點 (6014,6638) 距最近 highway=tertiary 多邊形邊緣 -4.950 格、raster class=dirt-candidate、±1 格窗=dirt-candidate——落在真路面外。移除官方段 0,1,2、保留段 3（街道仍可搜尋），以 9 點折線取代；折線每個頂點經 highway 多邊形＋raster 雙證據驗在路面上（new 頂點 class：(6002,6638)=paved, (6007,6640.5)=paved, (6011.5,6645)=paved, (6014,6650.5)=paved, (6014,6691)=paved, (6017,6696.5)=paved, (6021.5,6698)=paved），端點與保留段端點同座標靠 ATTACH_END 併節點。surface=paved 取中線取樣 class 眾數實證。"
+    },
+    {
+      "id": "m:muldraugh-s1st-dixie-ky1394-link",
+      "operation": "add",
+      "points": [12513, 3442, 12513, 3458],
+      "width": 14,
+      "surface": "paved",
+      "searchable": false,
+      "reason": "S 1st St／Dixie Highway 跨 KY-1394 路口缺段（2026-09-11）：官方南北中線止於 (12513,3442) 與 (12513,3458)，建圖只接各自近側的雙線公路，直行被導成向側方折返。worldmap.xml cell(41,11) 的 primary 多邊形與 objects.lua 的 Nav 矩形皆以 x=12506、width=14 貫穿路口；pinned road-surfaces-full-v2 中線17格全為paved，14格寬實際路帶 x=12506..12519 亦全鋪面。只補這16格連接，寬度沿用兩端官方14格；不移除原路、不增加街名、不放大全圖吸附容差。"
+    },
+    {
+      "id": "m:muldraugh-river-walk-south-bend",
+      "operation": "add",
+      "points": [7521, 7056, 7533, 7080, 7558, 7103, 7580, 7115],
+      "width": 6,
+      "surface": "gravel",
+      "searchable": false,
+      "reason": "River Walk Road 河岸彎修正（2026-09-11，AutoDrive issue #5）：原段9的 (7521,7056)→(7580,7115) 雖與 worldmap tertiary 多邊形中線相同，pinned floor raster 的84個約1m中線取樣卻有60個為dirt-candidate，實際gravel在西南側。只移除段9，以礫石路帶中線的四點折線取代；89個中線取樣全為gravel，兩端接回保留的段8／10。三點捷徑雖中線亦在gravel，卻明顯偏向路帶一側，故保留兩個中間轉折。寬度沿用原路6格，不增街名；北側段6／7／8與其餘道路不變。來源是實際地面raster及玩家導航截圖，不以兩份同源的官方線／多邊形互相背書。"
     }
   ]
 }

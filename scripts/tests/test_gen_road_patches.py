@@ -23,6 +23,7 @@ COUNTS_ZERO = {
     "dirt-candidate": 0,
     "natural": 0,
     "unknown": 0,
+    "dirt-edge": 0,
 }
 
 
@@ -150,6 +151,7 @@ def approval_fixture(audit_bytes, audit, *, approve=False, decide=True):
         "remove": [],
         "width": [],
         "surface": [],
+        "manualRoads": [],
     }
 
 
@@ -216,6 +218,37 @@ def test_approved_candidate_cannot_enter_street_search(tmp_path):
     approval["approvedCandidates"][0]["searchable"] = True
     approval_path.write_text(json.dumps(approval), encoding="utf-8")
     with pytest.raises(GEN.GenerationError, match="searchable must be false"):
+        GEN.generate(audit_path, approval_path, out_path)
+
+
+@pytest.mark.parametrize("width", [2, 14, 64, 1, 65])
+def test_manual_road_width_respects_street_bounds(tmp_path, width):
+    _, approval, audit_path, approval_path, out_path = write_fixture(tmp_path)
+    approval["manualRoads"] = [{
+        "id": "m:verified-junction",
+        "operation": "add",
+        "points": [10, 0, 10, 20],
+        "width": width,
+        "surface": "paved",
+        "searchable": False,
+        "reason": "官方路面確認的路口接線",
+    }]
+    approval_path.write_text(json.dumps(approval), encoding="utf-8")
+    if width in (2, 14, 64):
+        payload = GEN.generate(audit_path, approval_path, out_path)
+        assert payload["add"][0]["width"] == width
+    else:
+        out_path.write_bytes(b"previous verified output")
+        with pytest.raises(GEN.GenerationError):
+            GEN.generate(audit_path, approval_path, out_path)
+        assert out_path.read_bytes() == b"previous verified output"
+
+
+def test_automatic_candidate_keeps_narrow_audit_bounds(tmp_path):
+    _, approval, audit_path, approval_path, out_path = write_fixture(tmp_path, approve=True)
+    approval["approvedCandidates"][0]["width"] = 14
+    approval_path.write_text(json.dumps(approval), encoding="utf-8")
+    with pytest.raises(GEN.GenerationError):
         GEN.generate(audit_path, approval_path, out_path)
 
 @pytest.mark.parametrize(

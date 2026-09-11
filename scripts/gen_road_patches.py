@@ -651,11 +651,11 @@ def _candidate_operations(
 def _manual_operations(
     approvals: dict[str, Any], target_src: str, taken_ids: set[str],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """人工描線道路：無稽核證據的入口。
+    """人工核准道路：補齊未形成自動稽核候選的道路幾何。
 
     視覺可見但 class 層無訊號的路（如與周圍曠野同 dirt 材質的土徑）稽核
     row-span 找不到——訊號不存在於表面類別資料。此入口允許人工提供折線，
-    id 必須 `m:` 前綴與 candidate 證據空間分離；寬度限稽核同值域 2..8；
+    id 必須 `m:` 前綴與 candidate 證據空間分離；寬度從 2 到既有道路資料上限 MAX_WIDTH；
     searchable 強制 false；points 過同一套幾何驗證與 DP 簡化。
     """
     manual_values = _array(approvals["manualRoads"], "approvals.manualRoads")
@@ -684,9 +684,9 @@ def _manual_operations(
         surface = _string(entry["surface"], f"{where}.surface")
         if surface not in SURFACES:
             _fail(f"{where}.surface is invalid: {surface}")
-        width = _number(entry["width"], f"{where}.width", positive=True)
-        if width < 2 or width > 8:
-            _fail(f"{where}.width must be within audited road bounds 2..8")
+        width = _road_width(entry["width"], f"{where}.width")
+        if width < 2:
+            _fail(f"{where}.width must be at least 2")
         if entry["searchable"] is not False:
             _fail(f"{where}.searchable must be false")
         reason = _bounded_string(entry["reason"], f"{where}.reason", MAX_REASON_STRING)

@@ -68,6 +68,8 @@
 [h2]💬 問題回報 & 交流[/h2]
 [url=https://discord.gg/Gur2V67]👉 點此加入 Discord 伺服器[/url]
 
+[url=https://github.com/Minidoracat/MinidoracatMiniMapFor42/issues/new?template=road-data.yml][b]道路／導航線問題回報[/b][/url]：線畫到路外、缺路或繞遠，請附[b]包含導航線與座標的截圖＋可複製的文字座標[/b]，簡述哪裡不對。可補起終點、方向、地圖 MOD／版本；[b]不需 Telemetry[/b]。請在地圖上的問題點按右鍵「複製此處座標」。
+
 [h2]☕ 支持作者[/h2]
 MOD 永遠免費。喜歡的話可以請我喝杯咖啡，贊助會用在伺服器與 MOD 開發上。
 [url=https://ko-fi.com/minidoracat][img]https://raw.githubusercontent.com/Minidoracat/workshop-resources/refs/heads/main/badges/badge_kofi.png[/img][/url]
