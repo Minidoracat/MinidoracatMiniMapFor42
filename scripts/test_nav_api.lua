@@ -14,13 +14,6 @@ local srcPath = arg[1]
 local file = assert(io.open(srcPath, "rb"))
 local source = file:read("*a"):gsub("\r\n", "\n")
 file:close()
-local mainPath = arg[2] -- navApiVersion 宣告自 2026-09-03 起在 _Nav.lua
-    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Nav.lua"
-local mainFile = assert(io.open(mainPath, "rb"))
-local mainSource = mainFile:read("*a"):gsub("\r\n", "\n")
-mainFile:close()
-assert(mainSource:match("MinidoracatMiniMapAPI%.navApiVersion%s*=%s*5"),
-    "navApiVersion 必須為 5（v5＝snapDist 改投影距離語意）")
 
 local compile = loadstring or load
 
@@ -505,5 +498,5 @@ do
         "C8: 已在折返路線後段，不因落在首段後方誤判重算")
 end
 
-print("test_nav_api: OK（nav API v5＋requestRoute A1-A12＋requestDetour A13-A18"
+print("test_nav_api: OK（requestRoute A1-A12＋requestDetour A13-A18"
     .. "＋ensureRoute 快取/偏航 C0-C8）")

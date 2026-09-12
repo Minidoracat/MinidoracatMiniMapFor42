@@ -1,455 +1,457 @@
--- Addon 導航 API（registerNavGate / navGateAllows / navSetTarget / getNavTarget /
--- drawNavTargets）
--- 離線回歸測試。仿 test_ghost_gate.lua：抽 _Nav.lua 標記區段（2026-09-03 自主檔拆出）
--- →補最小 stub→組裝離線跑；nav-gate 與 nav-draw 兩區段拼在同一 chunk＝判定與繪製都跑真正的 production 碼。
+-- Addon 導航閘門（registerNavGate／navGateAllows）、繪製閘門（drawNavTargets）與
+-- 目標查詢（getNavTarget）離線回歸測試。
+-- 真 _Itinerary.lua（行程權威／navSetTarget／到站／getNavTarget）與真 _Nav.lua
+-- （gate 註冊表／繪製／編號站點／分享）依遊戲載入序載進同一沙箱＝跑 production
+-- 本體，測試不再自備 navTargets 假權威。
 -- 核心不變量（addon 是外部程式碼，錯得起但不能拖垮導航）：
 --   * 零註冊＝放行（addon 不裝零影響）
 --   * 多 gate 為 AND，且「明確回 false」才擋——忘了 return 不該讓導航靜默死掉
 --   * gate 拋錯＝fail-open，且依 owner 每場只 log 一次（不得每幀刷屏）
---   * set 被擋時不得寫入 navTargets／不得動 modData，且回 false（非 nil）
---   * set 被擋必須有 halo 提示：addon 的 reasonKey 優先、缺省退回 generic 鍵，
---     且 gate 拋錯的錯誤訊息不得被當成 reasonKey 洩漏給玩家
---   * draw 被擋只擋導航目標層（路線／分享旗／自身旗）：搜尋 ping 照畫、抵達
---     清除照跑——狀態變更不得被繪製閘門連坐（否則走到目標後目標永久黏著）
---   * getNavTarget 是純狀態讀取：槽位驗證從嚴（非 0-3 整數＝badargs）、無目標
---     回 "notarget"，且只交出兩個純量——不得洩漏 navTargets 內部 table（交出
---     參考＝addon 能繞過 navSetTarget 改目標，不重播分享也不存檔）
--- 用法：lua scripts/test_nav_gate.lua [_Nav 檔]
-local mainPath = arg[1]
-    or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Nav.lua"
+--   * set 被擋＝回 (false, "blocked", 第一個擋阻者的 reasonKey)，且行程、modData、
+--     分享通道一律不動；錯誤文字由 Core.navErrorText 決定（detailKey 優先），
+--     gate 拋錯的訊息不得被當成 reasonKey 洩漏給玩家
+--   * draw 被擋只擋導航層（路線／分享旗／行程站點）：搜尋 ping 照畫
+--   * 繪製永不改狀態：站在目標上畫幾幀也不到站、不清目標；到站只由真 OnTick 產生
+--   * getNavTarget 是純狀態讀取：槽位驗證從嚴、無活動站回 "notarget"、只交出純量
+-- 用法：lua scripts/test_nav_gate.lua [_Nav.lua] [_Itinerary.lua]
+local CLIENT = "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/"
+local navPath = arg[1] or (CLIENT .. "MinidoracatMiniMap_Nav.lua")
+local itineraryPath = arg[2] or (CLIENT .. "MinidoracatMiniMap_Itinerary.lua")
 
-local function readSource(path)
+local function readFile(path)
     local file = assert(io.open(path, "rb"))
-    local content = file:read("*a")
+    local text = file:read("*a")
     file:close()
-    return content
+    return (text:gsub("\r\n", "\n"))
 end
-local source = readSource(mainPath)
+local navSource = readFile(navPath)
+local itinerarySource = readFile(itineraryPath)
 local compile = loadstring or load
 
-local gateBody = assert(source:match(
-    "%-%- test:nav%-gate:start\n(.-)\n%-%- test:nav%-gate:end"),
-    "找不到 nav-gate 測試區段")
--- drawNavTargets 本體：production 版經標記抽取＝單一事實來源，測試裡不複製一份
--- 繪製流程（同 test_zone_render 抽 zone-render 區段的慣例）
-local drawBody = assert(source:match(
-    "%-%- test:nav%-draw:start[^\n]*\n(.-)\n%-%- test:nav%-draw:end"),
-    "找不到 nav-draw 測試區段")
-
--- prelude 提供兩區段於主檔「之前」已存在的環境：
---   gate 面：log／getSpecificPlayer／navTargets／navShared／navSaveModData／
---            Core.navShareTarget／HaloTextHelper／getText
---   draw 面：NAV_ARRIVE_DIST／navClear／drawNavIndicator／Core.drawNavRoute／
---            Core.navGetShared／Core.drawSearchPing／Core.navShareColor
--- 注意：長字串 [=[ 後的首個換行會被 Lua 吃掉，body 與 suffix 之間須補顯式 "\n"
-local prelude = [=[
-local printed, saved, shares, halos = {}, {}, {}, {}
-local cleared, flags, routeDraws, pings = {}, {}, {}, {}
-local function log(msg) printed[#printed + 1] = tostring(msg) end
-local MinidoracatMiniMapAPI = {}
-local Core = {}
-local navTargets, navShared = {}, {}
-local players = {}
-local function getSpecificPlayer(pn) return players[pn] end
-local function navSaveModData(playerObj, t)
-    saved[#saved + 1] = t and (t.x .. "," .. t.y) or "nil"
-end
-Core.navShareTarget = function(pn) shares[#shares + 1] = pn end
--- 原版 halo 壞訊息通道＋getText：只記文字（addBadText 的 playerObj 不參與判定）
-local HaloTextHelper = {
-    addBadText = function(_, text) halos[#halos + 1] = tostring(text) end,
-}
-local function getText(key) return "T:" .. tostring(key) end
--- draw 面 stub：抵達距離同主檔 NAV_ARRIVE_DIST=5（本測試只用 dist=0／1000 兩
--- 極端，常數漂移不影響判定）；navClear 兼作「狀態真的被清掉」的可觀測記錄
-local NAV_ARRIVE_DIST = 5
-local function navClear(pn, playerObj)
-    cleared[#cleared + 1] = pn
-    navTargets[pn] = nil
-end
-local function drawNavIndicator(inner, tx, ty, r, g, b, label, dist)
-    flags[#flags + 1] = { label = label, dist = dist, r = r, g = g, b = b }
-end
-local routeFail, sharedBucket = false, nil
-Core.drawNavRoute = function(inner)
-    routeDraws[#routeDraws + 1] = true
-    if routeFail then error("injected route failure") end
-end
-Core.drawSearchPing = function(inner, mapAPI) pings[#pings + 1] = true end
-Core.navGetShared = function(pn) return sharedBucket end
-Core.navShareColor = function(author) return 0.2, 0.9, 0.9 end
-]=]
-local suffix = [=[
-return { API = MinidoracatMiniMapAPI, Core = Core, printed = printed,
-    navTargets = navTargets, navShared = navShared, saved = saved,
-    players = players, shares = shares, halos = halos,
-    cleared = cleared, flags = flags, routeDraws = routeDraws, pings = pings,
-    drawNavTargets = drawNavTargets,
-    setRouteFail = function(v) routeFail = v end,
-    setSharedBucket = function(v) sharedBucket = v end }
-]=]
-local T = assert(compile(
-    prelude .. gateBody .. "\n" .. drawBody .. "\n" .. suffix, "nav-gate"))()
-local API, Core = T.API, T.Core
-
--- 每個案例重置註冊表（Core.navGates 是模組級單例）
-local function resetGates() Core.navGates = {} end
-
 --------------------------------------------------------------------------------
--- 註冊面
+-- 沙箱：只把 PZ 全域換成假物件，兩個 production 檔原封不動執行
 --------------------------------------------------------------------------------
--- N0: API 版本號存在（addon 以此判相容）；v4＝route segment surface/width metadata
-assert(API.navApiVersion == 5, "N0: navApiVersion 須為 5")
+local function fixture()
+    local printed, packets, players, handlers, events = {}, {}, {}, {}, {}
+    local client, shareAllowed = false, true
+    local draws = { route = 0, ping = 0, rects = 0, routeFail = false, texts = {} }
+    for _, name in ipairs({ "OnCreatePlayer", "OnGameStart", "OnTick", "OnServerCommand" }) do
+        handlers[name] = {}
+        events[name] = { Add = function(fn) handlers[name][#handlers[name] + 1] = fn end }
+    end
+    -- 主檔載入期一次性賦值的共用成員（_Nav.lua 在 chunk 頂端就取，須先備好）
+    local core = {
+        ready = true,
+        policy = { readBool = function() return shareAllowed end },
+        getBoolOption = function(_, default) return default end,
+        clipSegment = function(x1, y1, x2, y2) return x1, y1, x2, y2 end,
+        copyCoordsText = function() end,
+    }
+    local api = {}
+    local textManager = {
+        MeasureStringX = function(_, _, text) return #tostring(text) * 6 end,
+        getFontHeight = function() return 12 end,
+    }
+    local env = setmetatable({
+        MinidoracatMiniMapCore = core, MinidoracatMiniMapAPI = api, Events = events,
+        ISMiniMapInner = {}, -- 無 onRightMouseUp＝小地圖右鍵 wrap 不安裝（本測試不涉）
+        getSpecificPlayer = function(pn) return players[pn] end,
+        isClient = function() return client end,
+        getText = function(key) return "T:" .. tostring(key) end,
+        getTextManager = function() return textManager end,
+        getTimestampMs = function() return 0 end,
+        UIFont = { Small = 1, Medium = 2 },
+        sendClientCommand = function(_, _, command, args)
+            packets[#packets + 1] = { command = command, args = args }
+        end,
+        print = function(msg) printed[#printed + 1] = tostring(msg) end,
+    }, { __index = _G })
+    local function run(source, name)
+        local chunk
+        if setfenv then
+            chunk = assert(compile(source, name))
+            setfenv(chunk, env)
+        else
+            chunk = assert(load(source, name, "t", env))
+        end
+        chunk()
+    end
+    run(itinerarySource, "itinerary") -- 同目錄字母序：_Itinerary（I）早於 _Nav（N）
+    run(navSource, "nav")
+    -- 其他檔擁有的繪製層（_NavRoute／_Search）在此以可觀測樁掛上
+    core.drawNavRoute = function()
+        draws.route = draws.route + 1
+        if draws.routeFail then error("injected route failure") end
+    end
+    core.drawSearchPing = function() draws.ping = draws.ping + 1 end
 
--- N1: 零註冊＝放行（addon 不裝零影響）
-resetGates()
-assert(Core.navGateAllows(0, "set") == true, "N1: 零 gate 須放行")
-assert(Core.navGateAllows(0, "draw") == true, "N1: 零 gate 須放行（draw）")
-
--- N2: 引數驗證——owner 非空字串、gateFn 是 function；回 false 且不進註冊表
-resetGates()
-local badCases = {
-    { nil, function() end }, { "", function() end }, { 42, function() end },
-    { "A", nil }, { "A", "nope" },
-}
-for i = 1, #badCases do
-    local c = badCases[i]
-    assert(API.registerNavGate(c[1], c[2]) == false,
-        "N2: 壞引數須回 false（case " .. i .. "）")
-end
-assert(#Core.navGates == 0, "N2: 壞引數不得進註冊表")
-assert(#T.printed == #badCases, "N2: 每次壞引數須各記一次 log")
-
--- N3: 合法註冊回 true；同 owner 重註冊＝覆蓋（不疊加）
-resetGates()
-local hits = {}
-assert(API.registerNavGate("A", function() hits[#hits + 1] = "old"; return true end) == true,
-    "N3: 合法註冊須回 true")
-assert(API.registerNavGate("A", function() hits[#hits + 1] = "new"; return true end) == true,
-    "N3: 重註冊須回 true")
-assert(#Core.navGates == 1, "N3: 同 owner 重註冊須覆蓋、不得疊加")
-Core.navGateAllows(0, "set")
-assert(#hits == 1 and hits[1] == "new", "N3: 覆蓋後只跑新 fn")
-
---------------------------------------------------------------------------------
--- 判定面
---------------------------------------------------------------------------------
--- N4: 多 gate AND——全放行才放行；任一明確 false 即擋
-resetGates()
-API.registerNavGate("A", function() return true end)
-API.registerNavGate("B", function() return true end)
-assert(Core.navGateAllows(0, "set") == true, "N4: 兩 gate 皆放行須放行")
-API.registerNavGate("B", function() return false end)
-assert(Core.navGateAllows(0, "set") == false, "N4: 任一 gate 回 false 即擋")
-
--- N5: 只有「明確 false」才擋——nil／其他真值一律放行（addon 忘了 return 不得
---     讓導航靜默死掉）
-resetGates()
-API.registerNavGate("A", function() end) -- 無 return
-assert(Core.navGateAllows(0, "set") == true, "N5: gate 回 nil 須放行")
-API.registerNavGate("A", function() return 0 end) -- Lua 的 0 為真值
-assert(Core.navGateAllows(0, "set") == true, "N5: gate 回非 false 值須放行")
-
--- N6: context 與 playerNum 原樣傳入（addon 靠 context 區分「設目標」與「繪製」）
-resetGates()
-local seen = {}
-API.registerNavGate("A", function(pn, ctx) seen[#seen + 1] = tostring(pn) .. ":" .. tostring(ctx) end)
-Core.navGateAllows(2, "draw")
-Core.navGateAllows(0, "set")
-assert(seen[1] == "2:draw" and seen[2] == "0:set", "N6: playerNum/context 須原樣傳入")
-
--- N7: gate 拋錯＝fail-open，依 owner 只 log 一次；其餘 gate 照常判定
-resetGates()
-local before = #T.printed
-API.registerNavGate("Boom", function() error("injected gate failure") end)
-assert(Core.navGateAllows(0, "set") == true, "N7: gate 拋錯須 fail-open（放行）")
-Core.navGateAllows(0, "set")
-Core.navGateAllows(0, "draw")
-assert(#T.printed == before + 1, "N7: 拋錯須 log-once（實得 " .. (#T.printed - before) .. " 筆）")
-assert(T.printed[#T.printed]:find("nav gate error", 1, true)
-    and T.printed[#T.printed]:find("Boom", 1, true), "N7: log 須含 owner 與訊息")
-API.registerNavGate("Blocker", function() return false end)
-assert(Core.navGateAllows(0, "set") == false, "N7: 壞 gate 不得吃掉其他 gate 的擋阻")
-
--- N8: 同 owner 重註冊須重置錯誤旗標（新 fn 的錯誤值得記一次新 log）
-before = #T.printed
-API.registerNavGate("Boom", function() error("second failure") end)
-Core.navGateAllows(0, "set")
-assert(#T.printed == before + 1, "N8: 重註冊後新 fn 的錯誤須再記一次")
-
---------------------------------------------------------------------------------
--- navSetTarget 接入面
---------------------------------------------------------------------------------
-local playerObj = { x = 0, y = 0 }
-T.players[0] = playerObj
-
--- N9: 無 gate → 寫入目標、存 modData、回 true
-resetGates()
-assert(Core.navSetTarget(0, 100, 200) == true, "N9: 成功須回 true")
-assert(T.navTargets[0].x == 100 and T.navTargets[0].y == 200, "N9: 目標須寫入")
-assert(T.saved[#T.saved] == "100,200", "N9: 須存 modData")
-
--- N10: set 被擋 → 回 false，且不覆蓋既有目標、不動 modData、不重播分享
-resetGates()
-API.registerNavGate("A", function(pn, ctx) return ctx ~= "set" end)
-local savedN = #T.saved
-T.navShared[0] = true
-local sharesN = #T.shares
-assert(Core.navSetTarget(0, 777, 888) == false, "N10: 被擋須回 false（不得回 nil）")
-assert(T.navTargets[0].x == 100 and T.navTargets[0].y == 200,
-    "N10: 被擋不得覆蓋既有目標")
-assert(#T.saved == savedN, "N10: 被擋不得動 modData")
-assert(#T.shares == sharesN, "N10: 被擋不得重播分享")
-
--- N11: draw context 放行時 set 仍被擋（context 判定真的有分流，非一律擋）
-assert(Core.navGateAllows(0, "draw") == true, "N11: 該 gate 只擋 set")
-
--- N12: 無玩家 → 回 false 且不查 gate（沿舊早退語意，只是回傳值明確化）
-resetGates()
-local probed = 0
-API.registerNavGate("A", function() probed = probed + 1; return true end)
-assert(Core.navSetTarget(3, 1, 2) == false, "N12: 無玩家須回 false")
-assert(probed == 0, "N12: 無玩家不得呼叫 gate")
-assert(T.navTargets[3] == nil, "N12: 無玩家不得寫入目標")
-
--- N13: gate 放行 → 分享中會重播（既有行為未被 gate 改動）
-resetGates()
-API.registerNavGate("A", function() return true end)
-T.navShared[0] = true
-sharesN = #T.shares
-assert(Core.navSetTarget(0, 5, 6) == true, "N13: 放行須回 true")
-assert(#T.shares == sharesN + 1, "N13: 分享中須重播")
-
---------------------------------------------------------------------------------
--- 被擋回饋面（silent-failure review：拒絕必須看得見，否則玩家以為選單壞了）
---------------------------------------------------------------------------------
-local GENERIC = "UI_MinidoracatMiniMap_NavBlocked"
-
--- N14: addon 給 reasonKey → halo 用該鍵；第二回傳＝實際用掉的鍵
-resetGates()
-API.registerNavGate("A", function(pn, ctx)
-    if ctx == "set" then return false, "UI_Addon_NeedGPS" end
-    return true
-end)
-local halosN = #T.halos
-local okSet, usedKey = Core.navSetTarget(0, 11, 22)
-assert(okSet == false, "N14: 被擋須回 false")
-assert(usedKey == "UI_Addon_NeedGPS", "N14: 須回 addon 給的 reasonKey")
-assert(#T.halos == halosN + 1, "N14: 被擋須送一則 halo 提示")
-assert(T.halos[#T.halos] == "T:UI_Addon_NeedGPS", "N14: halo 文字須取 addon 的鍵")
-
--- N15: 未給／非字串／空字串 reasonKey → 一律退回主 MOD generic 鍵，且仍有提示
-resetGates()
-halosN = #T.halos
-API.registerNavGate("A", function() return false end)
-local _, k1 = Core.navSetTarget(0, 1, 1)
-API.registerNavGate("A", function() return false, 123 end)
-local _, k2 = Core.navSetTarget(0, 1, 1)
-API.registerNavGate("A", function() return false, "" end)
-local _, k3 = Core.navSetTarget(0, 1, 1)
-assert(k1 == GENERIC and k2 == GENERIC and k3 == GENERIC,
-    "N15: 缺省／非字串／空字串 reasonKey 須退回 generic 鍵")
-assert(#T.halos == halosN + 3, "N15: 三次被擋須各送一則提示")
-assert(T.halos[#T.halos] == "T:" .. GENERIC, "N15: halo 文字須取 generic 鍵")
-
--- N16: navGateAllows 第二回傳＝擋阻者的 reasonKey；放行時不得回髒值
-resetGates()
-API.registerNavGate("A", function() return false, "K1" end)
-local allowed, reason = Core.navGateAllows(0, "draw")
-assert(allowed == false and reason == "K1", "N16: 擋阻須帶回 reasonKey")
-resetGates()
-API.registerNavGate("A", function() return true, "K1" end)
-allowed, reason = Core.navGateAllows(0, "draw")
-assert(allowed == true and reason == nil, "N16: 放行不得回 reasonKey")
-
--- N17: 多 gate 短路——回報第一個擋阻者的鍵
-resetGates()
-API.registerNavGate("A", function() return true end)
-API.registerNavGate("B", function() return false, "KB" end)
-API.registerNavGate("C", function() return false, "KC" end)
-local _, firstKey = Core.navGateAllows(0, "set")
-assert(firstKey == "KB", "N17: 須回第一個擋阻者的鍵，實得 " .. tostring(firstKey))
-
--- N18: gate 拋錯的錯誤訊息不得被當成 reasonKey 洩漏給玩家（pcall 的第二回傳位）
-resetGates()
-API.registerNavGate("Boom", function() error("secret failure text") end)
-API.registerNavGate("Blocker", function() return false end)
-local _, errKey = Core.navSetTarget(0, 3, 4)
-assert(errKey == GENERIC, "N18: 錯誤訊息不得成為 reasonKey，實得 " .. tostring(errKey))
-assert(T.halos[#T.halos] == "T:" .. GENERIC, "N18: halo 須顯示 generic 鍵、非錯誤訊息")
-
--- N19: 無玩家＝無提示（沒有 playerObj 可送 halo，且不得偽造鍵）
-resetGates()
-API.registerNavGate("A", function() return false, "K" end)
-halosN = #T.halos
-local okNo, keyNo = Core.navSetTarget(3, 1, 2)
-assert(okNo == false and keyNo == nil, "N19: 無玩家須回 false 且無 reasonKey")
-assert(#T.halos == halosN, "N19: 無玩家不得送 halo")
-
--- N20: 放行成功不得送任何提示（halo 只在被擋時出現）
-resetGates()
-halosN = #T.halos
-T.navShared[0] = nil
-assert(Core.navSetTarget(0, 42, 43) == true, "N20: 放行須回 true")
-assert(#T.halos == halosN, "N20: 成功不得送 halo")
-
---------------------------------------------------------------------------------
--- drawNavTargets 整合面（review：draw 閘門分支從未被任何測試碰到）
---------------------------------------------------------------------------------
-local draw = T.drawNavTargets
-assert(type(draw) == "function", "D0: 須抽到 production 的 drawNavTargets")
-
--- 繪製表面 stub：drawNavTargets 只要求 mapAPI 做世界→UI 轉換（此處恆等）
-local function newInner()
+    local function player(pn, username)
+        local p = { x = 0, y = 0, md = {}, online = -1, name = username or ("p" .. pn) }
+        function p:getModData() return self.md end
+        function p:getVehicle() return self.vehicle end
+        function p:getX() return self.x end
+        function p:getY() return self.y end
+        function p:isDead() return self.dead == true end
+        function p:getOnlineID() return self.online end
+        function p:getUsername() return self.name end
+        function p:transmitModData() end
+        players[pn] = p
+        core.navLoadItinerary(pn)
+        return p
+    end
+    -- 繪製表面：drawNavTargets 只要求 mapAPI 做世界→UI 轉換（此處恆等）＋繪製方法
+    local function inner(pn)
+        return {
+            playerNum = pn or 0, width = 200, height = 200,
+            mapAPI = {
+                worldToUIX = function(_, wx) return wx end,
+                worldToUIY = function(_, _, wy) return wy end,
+            },
+            drawRect = function() draws.rects = draws.rects + 1 end,
+            drawRectBorder = function() end,
+            drawLine = function() end,
+            drawText = function(_, text) draws.texts[#draws.texts + 1] = tostring(text) end,
+        }
+    end
     return {
-        playerNum = 0, width = 200, height = 200,
-        mapAPI = {
-            worldToUIX = function(_, wx, wy) return wx end,
-            worldToUIY = function(_, wx, wy) return wy end,
-        },
+        core = core, api = api, printed = printed, packets = packets, draws = draws,
+        player = player, inner = inner,
+        client = function(v) client = v end,
+        share = function(v) shareAllowed = v end,
+        fire = function(event, ...)
+            for _, fn in ipairs(handlers[event]) do fn(...) end
+        end,
+        resetDraws = function()
+            draws.route, draws.ping, draws.rects, draws.routeFail = 0, 0, 0, false
+            for i = #draws.texts, 1, -1 do draws.texts[i] = nil end
+        end,
     }
 end
-T.players[0] = { getX = function() return 0 end, getY = function() return 0 end }
 
-local function clear(t) for i = #t, 1, -1 do t[i] = nil end end
-local function resetDraw()
-    resetGates()
-    T.setRouteFail(false)
-    T.setSharedBucket(nil)
-    clear(T.flags); clear(T.routeDraws); clear(T.pings); clear(T.cleared)
+local function eq(a, b, why) assert(a == b, why .. ": " .. tostring(a) .. " != " .. tostring(b)) end
+local function trip(t, pn) return t.core.navItineraryState(pn or 0) end
+local function edit(t, op, a, b, c, pn)
+    pn = pn or 0
+    local st = trip(t, pn)
+    return t.core.navEditItinerary(pn, st and st.revision or 0, op, a, b, c)
 end
-
--- D1: 放行＝全畫（路線層、分享旗、搜尋 ping、自身旗），遠距不清除
-resetDraw()
-T.navTargets[0] = { x = 1000, y = 0 }
-T.setSharedBucket({ Bob = { x = 300, y = 0 } })
-draw(newInner())
-assert(#T.routeDraws == 1, "D1: 放行須畫路線層")
-assert(#T.pings == 1, "D1: 須畫搜尋 ping")
-assert(#T.cleared == 0, "D1: 遠距不得清除目標")
-assert(#T.flags == 2, "D1: 須畫分享旗＋自身旗，實得 " .. #T.flags)
-assert(T.flags[1].label == "Bob" and T.flags[1].dist == 300,
-    "D1: 第一支＝分享旗（作者名＋距離）")
-assert(T.flags[2].label == nil and T.flags[2].dist == 1000,
-    "D1: 第二支＝自身金旗＋距離")
-
--- D2: draw 被擋＝導航目標層全不畫（路線／分享旗／自身旗），搜尋 ping 照畫
-resetDraw()
-T.navTargets[0] = { x = 1000, y = 0 }
-T.setSharedBucket({ Bob = { x = 300, y = 0 } })
-local seenCtx = {}
-API.registerNavGate("A", function(pn, ctx) seenCtx[#seenCtx + 1] = ctx; return false end)
-draw(newInner())
-assert(seenCtx[1] == "draw", "D2: 繪製路徑須以 context=draw 問閘門")
-assert(#T.routeDraws == 0, "D2: 被擋不得畫路線層（連 A* 都不該算）")
-assert(#T.flags == 0, "D2: 被擋不得畫分享旗／自身旗")
-assert(#T.pings == 1, "D2: 搜尋 ping 不屬導航目標層，被擋仍須畫")
-assert(T.navTargets[0] ~= nil, "D2: 遠距被擋不得動狀態")
-
--- D3: draw 被擋＋已抵達＝清除照跑（否則走到目標後目標永久黏著）
-resetDraw()
-T.navTargets[0] = { x = 0, y = 0 }
-API.registerNavGate("A", function() return false end)
-draw(newInner())
-assert(#T.cleared == 1 and T.cleared[1] == 0, "D3: 被擋仍須執行抵達清除")
-assert(T.navTargets[0] == nil, "D3: 抵達後目標須清空")
-assert(#T.flags == 0, "D3: 被擋不得畫旗標")
-
--- D4: 被擋＋無導航目標＝搜尋 ping 仍畫（無目標早退不得吃掉 ping）
-resetDraw()
-T.navTargets[0] = nil
-API.registerNavGate("A", function() return false end)
-draw(newInner())
-assert(#T.pings == 1, "D4: 無目標時搜尋 ping 仍須畫")
-assert(#T.flags == 0, "D4: 無目標不得畫旗標")
-
--- D5: 放行＋路線層拋錯＝fail-open 續畫旗標，且依實例 log-once（不得每幀刷屏）
-resetDraw()
-T.navTargets[0] = { x = 1000, y = 0 }
-T.setRouteFail(true)
-local inner = newInner()
-local printedN = #T.printed
-draw(inner)
-draw(inner)
-assert(#T.printed == printedN + 1,
-    "D5: 路線錯誤須 log-once，實得 " .. (#T.printed - printedN))
-assert(T.printed[#T.printed]:find("nav route draw failed", 1, true),
-    "D5: log 須指名路線繪製失敗")
-assert(#T.flags == 2, "D5: 路線壞掉不得連坐旗標（兩幀各一支自身旗），實得 " .. #T.flags)
-
--- D6: 抵達清除後同幀不再畫自身旗（既有早退契約）
-resetDraw()
-T.navTargets[0] = { x = 0, y = 0 }
-draw(newInner())
-assert(#T.routeDraws == 1, "D6: 放行時路線層仍先畫（抵達判定在其後）")
-assert(#T.cleared == 1, "D6: 抵達須清除")
-assert(#T.flags == 0, "D6: 抵達同幀不得再畫自身旗")
+local function start(t, pn)
+    pn = pn or 0
+    return t.api.startNavItinerary(pn, trip(t, pn).revision)
+end
+local function hasText(t, want)
+    for _, text in ipairs(t.draws.texts) do
+        if text == want then return true end
+    end
+    return false
+end
 
 --------------------------------------------------------------------------------
--- getNavTarget 查詢面（nav API v2）
+-- 一、註冊與判定（真 registerNavGate／navGateAllows）
 --------------------------------------------------------------------------------
--- G0: 槽位邊界——0-3 皆為合法槽位（分割畫面四人），越界回 badargs
-for pn = 0, 3 do
-    T.navTargets[pn] = { x = pn * 10, y = pn * 10 + 1 }
-    local gx, gy = API.getNavTarget(pn)
-    assert(gx == pn * 10 and gy == pn * 10 + 1,
-        "G0: 槽位 " .. pn .. " 須回該槽目標，實得 " .. tostring(gx) .. "," .. tostring(gy))
+do
+    local t = fixture()
+    local API, Core = t.api, t.core
+    local function reset() Core.navGates = {} end
+
+    -- G1: 零註冊＝放行（addon 不裝零影響）
+    eq(Core.navGateAllows(0, "set"), true, "G1 零 gate 放行 set")
+    eq(Core.navGateAllows(0, "draw"), true, "G1 零 gate 放行 draw")
+
+    -- G2: 引數驗證——owner 非空字串、gateFn 是 function；回 false、不進註冊表、各記一次 log
+    local badCases = {
+        { nil, function() end }, { "", function() end }, { 42, function() end },
+        { "A", nil }, { "A", "nope" },
+    }
+    local logs = #t.printed
+    for i = 1, #badCases do
+        eq(API.registerNavGate(badCases[i][1], badCases[i][2]), false,
+            "G2 壞引數須回 false（case " .. i .. "）")
+    end
+    eq(#Core.navGates, 0, "G2 壞引數不得進註冊表")
+    eq(#t.printed - logs, #badCases, "G2 每次壞引數各記一次 log")
+
+    -- G3: 合法註冊回 true；同 owner 重註冊＝覆蓋（不疊加）
+    reset()
+    local hits = {}
+    eq(API.registerNavGate("A", function() hits[#hits + 1] = "old"; return true end), true,
+        "G3 合法註冊回 true")
+    eq(API.registerNavGate("A", function() hits[#hits + 1] = "new"; return true end), true,
+        "G3 重註冊回 true")
+    eq(#Core.navGates, 1, "G3 同 owner 重註冊須覆蓋")
+    Core.navGateAllows(0, "set")
+    eq(#hits, 1, "G3 覆蓋後只跑一個 fn")
+    eq(hits[1], "new", "G3 跑的是新 fn")
+
+    -- G4: 多 gate AND——全放行才放行，任一明確 false 即擋
+    reset()
+    API.registerNavGate("A", function() return true end)
+    API.registerNavGate("B", function() return true end)
+    eq(Core.navGateAllows(0, "set"), true, "G4 兩 gate 皆放行")
+    API.registerNavGate("B", function() return false end)
+    eq(Core.navGateAllows(0, "set"), false, "G4 任一 false 即擋")
+
+    -- G5: 只有「明確 false」才擋（addon 忘了 return 不得讓導航靜默死掉）
+    reset()
+    API.registerNavGate("A", function() end)
+    eq(Core.navGateAllows(0, "set"), true, "G5 回 nil 須放行")
+    API.registerNavGate("A", function() return 0 end)
+    eq(Core.navGateAllows(0, "set"), true, "G5 回非 false 真值須放行")
+
+    -- G6: playerNum／context 原樣傳入（addon 靠 context 分「設目標」與「繪製」）
+    reset()
+    local seen = {}
+    API.registerNavGate("A", function(pn, ctx) seen[#seen + 1] = tostring(pn) .. ":" .. tostring(ctx) end)
+    Core.navGateAllows(2, "draw")
+    Core.navGateAllows(0, "set")
+    eq(seen[1], "2:draw", "G6 第一次原樣傳入")
+    eq(seen[2], "0:set", "G6 第二次原樣傳入")
+
+    -- G7: gate 拋錯＝fail-open，依 owner log-once；壞 gate 不得吃掉別人的擋阻
+    reset()
+    logs = #t.printed
+    API.registerNavGate("Boom", function() error("injected gate failure") end)
+    eq(Core.navGateAllows(0, "set"), true, "G7 拋錯須 fail-open")
+    Core.navGateAllows(0, "set")
+    Core.navGateAllows(0, "draw")
+    eq(#t.printed - logs, 1, "G7 拋錯須 log-once")
+    assert(t.printed[#t.printed]:find("nav gate error", 1, true), "G7 log 須指名 gate 錯誤")
+    assert(t.printed[#t.printed]:find("Boom", 1, true), "G7 log 須含 owner")
+    API.registerNavGate("Blocker", function() return false end)
+    eq(Core.navGateAllows(0, "set"), false, "G7 壞 gate 不得吃掉擋阻")
+
+    -- G8: 同 owner 重註冊須重置錯誤旗標（新 fn 的錯誤值得記一次新 log）
+    logs = #t.printed
+    API.registerNavGate("Boom", function() error("second failure") end)
+    Core.navGateAllows(0, "set")
+    eq(#t.printed - logs, 1, "G8 重註冊後新 fn 的錯誤須再記一次")
+
+    -- G9: 第二回傳＝第一個擋阻者的 reasonKey；放行不得回髒值
+    reset()
+    API.registerNavGate("A", function() return false, "K1" end)
+    local allowed, reason = Core.navGateAllows(0, "draw")
+    eq(allowed, false, "G9 擋阻")
+    eq(reason, "K1", "G9 帶回 reasonKey")
+    reset()
+    API.registerNavGate("A", function() return true, "K1" end)
+    allowed, reason = Core.navGateAllows(0, "draw")
+    eq(allowed, true, "G9 放行")
+    eq(reason, nil, "G9 放行不得回 reasonKey")
+    reset()
+    API.registerNavGate("A", function() return true end)
+    API.registerNavGate("B", function() return false, "KB" end)
+    API.registerNavGate("C", function() return false, "KC" end)
+    local _, firstKey = Core.navGateAllows(0, "set")
+    eq(firstKey, "KB", "G9 短路回第一個擋阻者的鍵")
 end
-local outOfRange = { -1, 4, 100 }
-for i = 1, #outOfRange do
-    local gx, why = API.getNavTarget(outOfRange[i])
-    assert(gx == nil and why == "badargs",
-        "G0: 越界槽位須回 badargs（case " .. i .. "），實得 " .. tostring(why))
+
+--------------------------------------------------------------------------------
+-- 二、set 閘門接入真行程：拒絕不得改行程／不得靜默
+--------------------------------------------------------------------------------
+do
+    local t = fixture()
+    local API, Core = t.api, t.core
+    local p = t.player(0)
+
+    -- S1: 無 gate＝寫入單站行程、持久化、立即可查
+    assert(Core.navSetTarget(0, 100, 200, "Depot"), "S1 無 gate 須成功")
+    eq(trip(t).phase, "navigating", "S1 單站直接導航")
+    eq(trip(t).count, 1, "S1 單站")
+    eq(p.md.MinidoracatMiniMapItinerary.stops[1].x, 100, "S1 須存 modData")
+    local gx, gy = API.getNavTarget(0)
+    eq(gx, 100, "S1 查得目標 x")
+    eq(gy, 200, "S1 查得目標 y")
+
+    -- S2: set 被擋＝(false, blocked, reasonKey)，行程／modData 一律不動
+    Core.navGates = {}
+    API.registerNavGate("A", function(_, ctx) return ctx ~= "set", "UI_Addon_NeedGPS" end)
+    local revision, stored = trip(t).revision, p.md.MinidoracatMiniMapItinerary
+    local ok, reason, detail = Core.navSetTarget(0, 777, 888)
+    eq(ok, false, "S2 被擋須回 false（不得回 nil）")
+    eq(reason, "blocked", "S2 被擋理由")
+    eq(detail, "UI_Addon_NeedGPS", "S2 帶回 addon 的 reasonKey")
+    eq(trip(t).revision, revision, "S2 被擋不得改 revision")
+    eq(p.md.MinidoracatMiniMapItinerary, stored, "S2 被擋不得動 modData")
+    eq(API.getNavTarget(0), 100, "S2 被擋不得覆蓋既有目標")
+    eq(Core.navGateAllows(0, "draw"), true, "S2 該 gate 只擋 set")
+    eq(Core.navErrorText(reason, detail), "T:UI_Addon_NeedGPS", "S2 錯誤文字優先 detailKey")
+
+    -- S3: 行程編輯同走 set 閘門，被擋不得加站
+    local okEdit, whyEdit, detailEdit = edit(t, "append", 300, 400)
+    eq(okEdit, false, "S3 append 被擋")
+    eq(whyEdit, "blocked", "S3 append 理由")
+    eq(detailEdit, "UI_Addon_NeedGPS", "S3 append 帶 reasonKey")
+    eq(trip(t).count, 1, "S3 被擋不得加站")
+
+    -- S4: gate 拋錯的訊息不得成為 reasonKey；退回 generic 行程錯誤鍵
+    Core.navGates = {}
+    API.registerNavGate("Boom", function() error("secret failure text") end)
+    API.registerNavGate("Blocker", function() return false end)
+    local _, whyBoom, detailBoom = Core.navSetTarget(0, 3, 4)
+    eq(whyBoom, "blocked", "S4 仍被擋")
+    eq(detailBoom, nil, "S4 錯誤訊息不得成為 reasonKey")
+    eq(Core.navErrorText(whyBoom, detailBoom), "T:UI_MinidoracatMiniMap_TripError_blocked",
+        "S4 無 detailKey 退回 generic 行程錯誤鍵")
+
+    -- S5: 無玩家＝(false, noplayer)，不問 gate、不建槽位
+    Core.navGates = {}
+    local probed = 0
+    API.registerNavGate("A", function() probed = probed + 1; return true end)
+    local okNo, whyNo = Core.navSetTarget(3, 1, 2)
+    eq(okNo, false, "S5 無玩家須回 false")
+    eq(whyNo, "noplayer", "S5 無玩家理由")
+    eq(probed, 0, "S5 無玩家不得呼叫 gate")
+    eq(trip(t, 3), nil, "S5 無玩家不得建行程")
+    local noneX, noneWhy = API.getNavTarget(3)
+    eq(noneX, nil, "S5 空槽位無目標")
+    eq(noneWhy, "notarget", "S5 空槽位回 notarget")
+    eq(trip(t, 3), nil, "S5 查詢不得建出槽位條目")
+
+    -- S6: 放行成功＝不帶錯誤理由，且新目標立刻生效
+    Core.navGates = {}
+    local okSet, reasonSet = Core.navSetTarget(0, 42, 43)
+    eq(okSet, true, "S6 放行須回 true")
+    eq(reasonSet, "ok", "S6 成功不帶錯誤理由")
+    eq(API.getNavTarget(0), 42, "S6 新目標立刻生效")
 end
 
--- G1: 型別／NaN／±Infinity／非整數一律 badargs（從嚴同 requestRoute：壞槽位會
---     靜靜讀到別人的槽位，錯得無聲）
-local badPn = { nil, "0", true, {}, function() end,
-    0 / 0, math.huge, -math.huge, 1.5, -0.5 }
-for i = 1, 10 do
-    local gx, why = API.getNavTarget(badPn[i])
-    assert(gx == nil and why == "badargs",
-        "G1: 壞 playerNum 須回 badargs（case " .. i .. "），實得 "
-        .. tostring(gx) .. "," .. tostring(why))
+--------------------------------------------------------------------------------
+-- 三、分享通道：目標變更撤回分享，後續站編輯不重播
+--------------------------------------------------------------------------------
+do
+    local t = fixture()
+    t.client(true)
+    local p = t.player(0, "Alice")
+    p.online = 7
+    assert(t.core.navSetTarget(0, 120, 130), "H0 前置寫入")
+    t.core.navShareTarget(0)
+    eq(#t.packets, 1, "H1 分享須送封包")
+    eq(t.packets[1].command, "shareTarget", "H1 分享封包名")
+    assert(t.core.navSetTarget(0, 140, 150), "H2 換目標")
+    eq(t.packets[#t.packets].command, "clearShared", "H2 目標變更須撤回分享")
+    local sent = #t.packets
+    assert(edit(t, "append", 400, 400), "H3 加後續站")
+    eq(#t.packets, sent, "H3 後續站編輯不得動分享通道")
 end
 
--- G2: 無目標＝(nil, "notarget")，且查詢不得憑空建出槽位條目（純讀取）
-T.navTargets[2] = nil
-local gx2, why2 = API.getNavTarget(2)
-assert(gx2 == nil and why2 == "notarget",
-    "G2: 無目標須回 notarget，實得 " .. tostring(why2))
-assert(T.navTargets[2] == nil, "G2: 查詢不得建出槽位條目")
+--------------------------------------------------------------------------------
+-- 四、繪製閘門與「繪製永不改狀態」
+--------------------------------------------------------------------------------
+do
+    local t = fixture()
+    local API, Core = t.api, t.core
+    t.client(true)
+    local p = t.player(0, "Alice")
+    assert(edit(t, "append", 30, 30, "First"), "D0 第一站")
+    assert(edit(t, "append", 60, 60, "Second"), "D0 第二站")
+    assert(API.setNavContinuation(0, trip(t).revision, false), "D0 明確驗逐點手動到站")
+    assert(start(t), "D0 出發")
+    t.fire("OnServerCommand", "MinidoracatMiniMap", "sharedTarget",
+        { author = "Bob", to = "Alice", x = 90, y = 90 })
+    local inner = t.inner(0)
 
--- G3: 不查 player、不寫任何狀態（無 playerObj 的槽位仍讀得到目標；modData 與
---     分享通道不得被碰）
-T.players[1] = nil
-T.navTargets[1] = { x = 7, y = 8 }
-local savedG, sharesG, halosG = #T.saved, #T.shares, #T.halos
-local px, py = API.getNavTarget(1)
-assert(px == 7 and py == 8, "G3: 不得查 player（無玩家的槽位仍須回目標）")
-assert(#T.saved == savedG and #T.shares == sharesG and #T.halos == halosG,
-    "G3: 查詢不得寫 modData／重播分享／送 halo")
+    -- D1: 放行＝路線層、分享旗、搜尋 ping、編號站點全畫
+    t.resetDraws()
+    Core.drawNavTargets(inner)
+    eq(t.draws.route, 1, "D1 放行須畫路線層")
+    eq(t.draws.ping, 1, "D1 須畫搜尋 ping")
+    assert(hasText(t, "Bob"), "D1 須畫分享者旗標")
+    assert(hasText(t, "127m"), "D1 分享旗須帶距離")
+    assert(hasText(t, "1/2"), "D1 目前站須畫 目前/總數")
+    assert(hasText(t, "2"), "D1 未到站須畫編號")
 
--- G4: identity protection——只交出純量，addon 拿不到內部 table 的參考，改回傳
---     值不可能影響主 MOD 狀態（未來若有人改回傳 table，此段會炸）
-T.navTargets[0] = { x = 12, y = 34 }
-local ix, iy = API.getNavTarget(0)
-assert(type(ix) == "number" and type(iy) == "number", "G4: 兩回傳須皆為 number")
-assert(ix ~= T.navTargets[0] and iy ~= T.navTargets[0],
-    "G4: 不得交出 navTargets 內部 table 本體")
-ix, iy = -999, -888 -- 純量指派只動本地變數
-assert(T.navTargets[0].x == 12 and T.navTargets[0].y == 34,
-    "G4: 改動回傳值不得影響內部狀態")
+    -- D2: draw 被擋＝導航層全不畫，搜尋 ping 照畫，狀態一律不動
+    Core.navGates = {}
+    API.registerNavGate("A", function(_, ctx) return ctx ~= "draw" end)
+    local revision, stored = trip(t).revision, p.md.MinidoracatMiniMapItinerary
+    t.resetDraws()
+    Core.drawNavTargets(inner)
+    eq(t.draws.route, 0, "D2 被擋不得畫路線層（連 A* 都不該算）")
+    eq(#t.draws.texts, 0, "D2 被擋不得畫分享旗／站點")
+    eq(t.draws.ping, 1, "D2 搜尋 ping 不屬導航層，被擋仍須畫")
+    eq(trip(t).revision, revision, "D2 繪製不得改 revision")
+    eq(p.md.MinidoracatMiniMapItinerary, stored, "D2 繪製不得寫 modData")
 
--- G5: 即時讀取（非快照）——內部狀態改了，下次查詢須跟上；navSetTarget 寫入後
---     亦立刻可見（API 與主線讀同一份狀態）
-T.navTargets[0].x = 56
-assert(API.getNavTarget(0) == 56, "G5: 須即時反映內部狀態變更")
-resetGates()
-T.players[0] = { getX = function() return 0 end, getY = function() return 0 end }
-assert(Core.navSetTarget(0, 321, 654) == true, "G5: 前置寫入須成功")
-local sx, sy = API.getNavTarget(0)
-assert(sx == 321 and sy == 654, "G5: navSetTarget 寫入須立刻可查")
+    -- D3: 站在目標上，放行或被擋都不得到站、不得清目標；到站只由真 OnTick 產生
+    p.x, p.y = 30, 30
+    t.resetDraws()
+    Core.drawNavTargets(inner)
+    Core.navGates = {}
+    Core.drawNavTargets(inner)
+    Core.drawNavTargets(inner)
+    eq(trip(t).phase, "navigating", "D3 繪製不得到站")
+    eq(trip(t).stops[1].status, "pending", "D3 繪製不得推進站點")
+    assert(Core.navGetTarget(0) ~= nil, "D3 繪製不得清目標")
+    t.fire("OnTick")
+    eq(trip(t).phase, "waiting", "D3 真 tick 才到站")
+    eq(trip(t).stops[1].status, "arrived", "D3 到站記在站點上")
+    eq(API.getNavTarget(0), nil, "D3 等待中不提前暴露下一站")
 
-print("test_nav_gate: OK（註冊 N0-N3＋判定 N4-N8＋navSetTarget 接入 N9-N13"
-    .. "＋被擋回饋 N14-N20＋draw 整合 D0-D6＋getNavTarget G0-G5）")
+    -- D4: 路線層拋錯＝fail-open 續畫站點，且依實例 log-once
+    assert(start(t), "D4 前往第二站")
+    t.resetDraws()
+    t.draws.routeFail = true
+    local logs = #t.printed
+    Core.drawNavTargets(inner)
+    Core.drawNavTargets(inner)
+    eq(#t.printed - logs, 1, "D4 路線錯誤須 log-once")
+    assert(t.printed[#t.printed]:find("nav route draw failed", 1, true),
+        "D4 log 須指名路線繪製失敗")
+    assert(hasText(t, "2/2"), "D4 路線壞掉不得連坐站點繪製")
+
+    -- D5: 行程清空＝站點層不畫，分享旗與搜尋 ping 仍照畫（無行程不得吃掉其他層）
+    t.draws.routeFail = false
+    assert(edit(t, "clear"), "D5 清空行程")
+    t.resetDraws()
+    Core.drawNavTargets(inner)
+    eq(trip(t), nil, "D5 行程已清空")
+    assert(hasText(t, "Bob"), "D5 分享旗不受行程清空影響")
+    assert(not hasText(t, "2/2"), "D5 清空後不得再畫站點")
+    eq(t.draws.ping, 1, "D5 無行程時搜尋 ping 仍須畫")
+end
+
+--------------------------------------------------------------------------------
+-- 五、getNavTarget 查詢面（唯讀、從嚴、只交出純量）
+--------------------------------------------------------------------------------
+do
+    local t = fixture()
+    local API, Core = t.api, t.core
+    -- Q1: 四槽分割畫面各讀自己的活動站
+    for pn = 0, 3 do
+        t.player(pn)
+        assert(Core.navSetTarget(pn, pn * 10, pn * 10 + 1), "Q1 槽位 " .. pn .. " 前置寫入")
+    end
+    for pn = 0, 3 do
+        local gx, gy = API.getNavTarget(pn)
+        eq(gx, pn * 10, "Q1 槽位 " .. pn .. " x")
+        eq(gy, pn * 10 + 1, "Q1 槽位 " .. pn .. " y")
+    end
+
+    -- Q2: 型別／NaN／±Infinity／非整數／越界一律 badargs（壞槽位會靜靜讀到別人的槽）
+    local badPn = { -1, 4, 100, "0", true, {}, 1.5, -0.5, 0 / 0, math.huge, -math.huge }
+    for i = 1, #badPn do
+        local gx, why = API.getNavTarget(badPn[i])
+        assert(gx == nil and why == "badargs", "Q2 壞 playerNum 須 badargs（case " .. i .. "）")
+    end
+    local nilX, nilWhy = API.getNavTarget(nil)
+    assert(nilX == nil and nilWhy == "badargs", "Q2 nil playerNum 須 badargs")
+
+    -- Q3: 無活動站（暫停）＝notarget，行程本身仍在
+    assert(Core.navPauseItinerary(0, "manual"), "Q3 暫停")
+    local pausedX, pausedWhy = API.getNavTarget(0)
+    assert(pausedX == nil and pausedWhy == "notarget", "Q3 暫停須回 notarget")
+    eq(trip(t).count, 1, "Q3 暫停不刪行程")
+
+    -- Q4: 只交出純量，改回傳值不影響內部狀態；讀取即時反映新目標
+    local ix, iy = API.getNavTarget(1)
+    assert(type(ix) == "number" and type(iy) == "number", "Q4 兩回傳須皆為 number")
+    ix, iy = -999, -888
+    eq(API.getNavTarget(1), 10, "Q4 改回傳值不得影響內部狀態")
+    assert(Core.navSetTarget(1, 555, 666), "Q4 改寫目標")
+    local sx, sy = API.getNavTarget(1)
+    eq(sx, 555, "Q4 即時反映新目標 x")
+    eq(sy, 666, "Q4 即時反映新目標 y")
+end
+
+print("test_nav_gate: OK（註冊/判定 G1-G9＋set 閘門 S1-S6＋分享撤回 H1-H3"
+    .. "＋繪製閘門與繪製唯讀 D1-D5＋getNavTarget Q1-Q4）")

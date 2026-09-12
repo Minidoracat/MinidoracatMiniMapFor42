@@ -22,8 +22,8 @@
 
 [h2]🧰 主要功能[/h2]
 [list]
-[*] [b]導航目標＋沿道路路線[/b]：右鍵設目標，沿道路規劃路線；偏離重算、深野外導向最近道路。旗標＋邊緣箭頭＋距離，抵達自動清除；陣營分享後隊友也有路線
-[*] [b]地圖搜尋[/b]：放大鏡或右鍵「搜尋地圖…」查座標、街名（[u]原名／譯名[/u]）、20 類設施，距離排序；可跳大地圖（金色脈動標記）或設導航目標。「MOD 地圖：名稱」只標示已確認的街道來源，不代表有錯
+[*] [b]多目標導航[/b]：最多16點，可加尾、指定插入或先去優先目標，並排序、移除／復原、略過與預覽。新行程自動接續，停靠點或逐點模式等你繼續（舊行程維持逐點）；車上須停妥。沿路導航、偏離重算，陣營只分享目前點
+[*] [b]搜尋／行程視窗[/b]：放大鏡或 ;（可改鍵）開啟，支援收合。查座標、街名（[u]原名／譯名[/u]）、20類設施；可跳大地圖或加入行程。「MOD 地圖：名稱」只表示確認過的來源
 [*] [b]小地圖快捷鍵＋浮動圖標[/b]：預設 /（可改鍵），沙盒沒開小地圖也能自建；常駐圖標左鍵開關、右鍵切穿透，可拖曳擺放
 [*] [b]尺寸自由調[/b]：四檔預設＋拖曳邊緣自由縮放，自動記憶；按鈕列常駐不跳動
 [*] [b]精準殭屍點位[/b]（預設關）：即時殭屍位置點，顏色／大小／透明度／上限可調；另有原版熱度圖開關
@@ -55,7 +55,7 @@
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps[/url]——地圖 MOD 的圖像＋框線
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]MOD Compatibility[/url]——動物圖標追加狗、馬等
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones[/url]——伺服器自訂區域顯示
-[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3792675881]AutoDrive[/url]——GPS 導航、駕駛 HUD 與沿路網自動駕駛
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3792675881]AutoDrive[/url]——多站自駕需本體0.28.0+、AutoDrive0.8.0+；更新後完整重啟遊戲
 [/list]
 
 [h2]📋 MOD 資訊[/h2]

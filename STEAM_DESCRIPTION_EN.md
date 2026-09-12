@@ -22,8 +22,8 @@ The map background is pre-rendered: player construction, demolition and tree cut
 
 [h2]🧰 Main features[/h2]
 [list]
-[*] [b]Navigation target + road route[/b]: right-click a target; routes follow roads, replan on deviation and lead wilderness targets to the nearest road. Flag + edge arrow + distance, cleared on arrival; faction sharing gives teammates a route too
-[*] [b]Map search[/b]: magnifier or right-click "Search map…" for coordinates, [u]original and translated street names[/u] and 20 facility categories, sorted by distance. Jump to the world map (gold pulsing marker) or set a target. "MOD map: name" identifies a confirmed street source, not an error
+[*] [b]Multi-target navigation[/b]: up to 16 targets; append, insert or prioritize, reorder, remove/undo, skip and preview. New trips auto-continue; marked stopovers or step mode wait for you (existing trips stay step-by-step). Vehicles stop first. Road routes replan on deviation; faction sharing covers the current target only
+[*] [b]Search / trip window[/b]: open with the magnifier or ; (rebindable), with collapse support. Search coordinates, [u]original/translated street names[/u] and 20 facility categories; show a result on the map or add it to the trip. "MOD map: name" identifies a confirmed source
 [*] [b]Mini-map hotkey + floating icon[/b]: default / (rebindable), works even when the sandbox disables the mini-map; the always-on icon toggles the map (left-click) and ghost mode (right-click), drag to reposition
 [*] [b]Free sizing[/b]: four presets + edge-drag resizing with memory; the button bar stays put — no hover-expanding
 [*] [b]Live zombie dots[/b] (off by default): real-time zombie positions with adjustable color / size / opacity / cap; vanilla heatmap toggle included
@@ -55,7 +55,7 @@ With the required library installed, the [b]main mod[/b] works without addons; c
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps[/url] — images + outlines for map mods
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]MOD Compatibility[/url] — adds dogs, horses and more to animal icons
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones[/url] — server-defined zone display
-[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3792675881]AutoDrive[/url] — GPS navigation, driver HUD and road-network autodrive
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3792675881]AutoDrive[/url] — multi-target driving needs MiniMap 0.28.0+ and AutoDrive 0.8.0+; fully restart after updating
 [/list]
 
 [h2]📋 Mod info[/h2]

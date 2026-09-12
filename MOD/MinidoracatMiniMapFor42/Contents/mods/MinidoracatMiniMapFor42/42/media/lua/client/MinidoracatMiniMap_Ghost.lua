@@ -389,7 +389,7 @@ local function toggleGhost()
     opt:setValue(not opt:getValue())
     ghostHintUntil = getTimestampMs() + 1500
     applyGhost()
-    PZAPI.ModOptions:save() -- 放尾端（FloatIconPos 慣例）：save 異常也不留
+    PZAPI.ModOptions:save() -- 放尾端：save 異常也不留
     -- 「值已翻但未套用」的半套狀態；跨重啟保留、三設定面同值
 end
 

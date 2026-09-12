@@ -2,11 +2,16 @@
 -- 本檔範圍：導航目標的「沿道路路線」引擎（0.17.0）——自官方街道資料建路網圖、
 -- A* 尋路、偏航追蹤、雙表面（小地圖/世界地圖）路線繪製。完全自製，不依賴任何
 -- 第三方 MOD；資料源只用引擎已載入的 streets.xml（42.20.0 官方 Lua API）。
--- 與主檔分工：目標狀態（navTargets/分享/抵達清除/旗標繪製）全在主檔；本檔只把
--- 「玩家→目標」的直線升級為路線多段線，畫在旗標之下（主檔 drawNavTargets 開頭
--- 呼叫 Core.drawNavRoute）。目標寫入路徑不需通知本檔：ensureRoute 每幀比對
--- target 座標與 route 錨點，恢復（InitPlayer/OnCreatePlayer 直寫 navTargets）、
--- 變更、清除一律收斂（codex/grok review：恢復路徑不經 navSetTarget）。
+-- 與主檔分工：行程權威狀態全在 _Itinerary（站點、順序、目前站、進度、持久化），
+-- Core.navGetTarget 提供「目前活動站」投影；本檔不讀寫行程權威，只把「玩家→
+-- 目標」的直線升級為路線多段線，畫在旗標之下（主檔 drawNavTargets 開頭呼叫
+-- Core.drawNavRoute），另算剩餘行程的分段預覽（多站行程預設自動啟用，
+-- navSetPreview 可手動開關，navPreviewState 讀狀態；
+-- 自有快取不碰活動段）。ensureRoute 每幀比對 target 座標與
+-- route 錨點；活動站更換或取消另由 navInvalidateRoute 立即清快取。
+-- 狀態變更只走非繪製路徑：活動段確定無路／引擎失敗由 OnTick 的維護（或 addon
+-- 查詢面）以 Core.navRouteResult 通知一次，繪製幀永不通知；預覽自身的失敗
+-- 只標預覽狀態，不動行程。
 -- 拆檔緣由：主檔 Kahlua 主 chunk locvar 貼 200 上限（同 _Settings/_WorldMapNav）；
 -- 載入序＝同目錄字母序，本檔在主檔後（'.' < '_'）、_Settings/_WorldMapNav 前，
 -- 只讀主檔一次性賦值的穩定引用。
@@ -1597,6 +1602,10 @@ local navRoutes = {} -- [pn] = { state="ok|noroad", route=, tx=, ty=, progressId
                      --          progX=, progY=, lastBuildMs=, buildX=, buildY=,
                      --          failX=, failY= }
                      -- buildX/buildY＝上次 A* 的起點；偏航重算的位移閘門用
+-- 行程全程預覽的獨立快取（v6）：宣告在這裡＝與 navRoutes 同受 OnGameStart 世界
+-- 重置管轄，但兩張表永不互相讀寫（活動段 identity／進度只屬 navRoutes）。
+-- [pn] = { state=, revision=, graph=, weight=, segs=, total=, done=, dist= }
+local navPreview = {}
 
 -- 街道覆蓋查詢：dir 優先序取自主檔 getLoadedMapDirs（index 1＝最高）。
 -- 鏡像 MapFiles.postLoad/hasCell300（42.20.4 MapFiles.java:120-134）：
@@ -1866,8 +1875,8 @@ local function stepExtract(ex)
     return false
 end
 
--- OnTick 編譯泵：extracting/building 才工作，其餘 O(1) 早退
-Events.OnTick.Add(function()
+-- 純路網計算在暫停時也要推進：SP 大地圖預設會暫停；其餘狀態 O(1) 早退。
+Events.OnTickEvenPaused.Add(function()
     if engine.state == "extracting" then
         if not engine.extract.wof then
             local winner, winnerErr = makeWinnerOf()
@@ -2012,12 +2021,16 @@ Events.OnGameStart.Add(function()
     engine.searchState = "ok"
     engine.streetIndex = nil
     for pn in pairs(navRoutes) do navRoutes[pn] = nil end
+    -- 換世界＝預覽整筆丟棄（含開關本身）：新世界的行程與路網都是另一套，
+    -- 留著舊段等於在新地圖上畫幽靈線
+    for pn in pairs(navPreview) do navPreview[pn] = nil end
     for k in pairs(logOnce) do logOnce[k] = nil end
 end)
 
 local function clearRoute(pn)
     navRoutes[pn] = nil
 end
+Core.navInvalidateRoute = clearRoute
 
 local function failNavEngine(err)
     logf("astar", "route search error; routing disabled this world: " .. tostring(err))
@@ -2025,10 +2038,10 @@ local function failNavEngine(err)
     for key in pairs(navRoutes) do navRoutes[key] = nil end
 end
 
--- 路線狀態收斂（每繪製幀，便宜路徑優先）：target 消失→清；target 變更→重算；
--- 每幀增量投影更新行進進度（progressIdx/progX/progY 供裁切繪製），偏航 >12 格
--- → 3s 冷卻重算；無路狀態→位移 64 格才重試。恢復寫入（InitPlayer/
--- OnCreatePlayer 直寫 navTargets 不經 navSetTarget）由 target 座標比對收斂。
+-- 路線狀態收斂（繪製幀＋OnTick 維護各一條路徑，便宜路徑優先）：target 消失→清；
+-- target 變更→重算；增量投影更新行進進度（progressIdx/progX/progY 供裁切繪製），
+-- 偏航 >12 格 → 3s 冷卻重算；無路狀態→位移 64 格才重試。目標投影由 _Itinerary
+-- 維護，本函式一律以 target 座標與 route 錨點比對收斂，不需要任何寫入通知。
 -- key：自己的目標＝pn（數字）；陣營分享目標＝"pn:作者"（字串）——同表混 key
 -- test:nav-cache:start（scripts/test_nav_api.lua 抽本區段跑快取／偏航回歸測試）
 -- 兩端 approach（越野接線）的權重：徒步 ×3（穿田是合理捷徑）、車上 ×12（車過不了
@@ -2039,7 +2052,23 @@ end
 local function approachWeightFor(playerObj)
     return playerObj:getVehicle() and 12 or 3
 end
-local function ensureRoute(key, target, px, py, weight)
+-- v6 行程：活動段「確定」無路／尋路失敗才通知主檔（契約 6.3：暫時未就緒不等於
+-- noroad/failed，所以 pending／extracting／building 一律不進來）。
+-- **只有非繪製呼叫端可以通知**：主檔會據此暫停行程並存檔，那是狀態變更，
+-- 不得由繪製幀觸發（契約 6.1：兩張圖開幾張、重繪幾次都不可改變行程）。
+-- 因此 ensureRoute 多一個 notify 旗標——OnTick 的活動段維護與 addon 查詢面
+-- （requestRoute）傳 true，drawOneRoute 不傳；requestDetour 只回報該次改道結果。
+-- 收斂條件三層：只認數字 key（分享路線的 "pn:作者" 字串 key 不是行程）、
+-- 主檔掛得出回呼、且該座標仍是目前活動目標（addon 查非活動目標時不得誤報）。
+-- 是否暫停由 _Itinerary 按 phase 判定，本檔只驗活動目標座標。離線測試切片中
+-- Core 是未定義全域＝nil，整個通知靜默略過。
+local function navLegResult(key, tx, ty, state)
+    if type(key) ~= "number" or not (Core and Core.navRouteResult) then return end
+    local t = Core.navGetTarget and Core.navGetTarget(key)
+    if not t or t.x ~= tx or t.y ~= ty then return end
+    Core.navRouteResult(key, state)
+end
+local function ensureRoute(key, target, px, py, weight, notify)
     local rs = navRoutes[key]
     if not target then
         if rs then clearRoute(key) end
@@ -2051,6 +2080,10 @@ local function ensureRoute(key, target, px, py, weight)
         if rs.state == "noroad" then
             local fdx, fdy = px - rs.failX, py - rs.failY
             if fdx * fdx + fdy * fdy < NOROAD_RETRY_DIST * NOROAD_RETRY_DIST then
+                if notify and not rs.notified then
+                    rs.notified = true
+                    navLegResult(key, target.x, target.y, "noroad")
+                end
                 return nil
             end
         elseif rs.route then
@@ -2090,6 +2123,10 @@ local function ensureRoute(key, target, px, py, weight)
     local route, aerr = NavCore.findRoute(engine.graph, px, py, target.x, target.y,
         nil, nil, nil, weight)
     if aerr then
+        -- failed 不在這裡通知：engine 是全域終態，extract／建圖／winner 失敗
+        -- 同樣會讓活動段永遠算不出路，卻不經過本函式。統一由 OnTick 的活動段
+        -- 維護（見 nav-preview 區段 legStep）對「engine.state == failed 且仍有
+        -- 活動目標」的 slot 通知一次，一條路徑、不重送。
         failNavEngine(aerr)
         return nil, "failed"
     end
@@ -2106,7 +2143,8 @@ local function ensureRoute(key, target, px, py, weight)
         "no route: player(%d,%d) target(%d,%d) - straight-line flag fallback",
         floor(px), floor(py), floor(target.x), floor(target.y)))
     navRoutes[key] = { state = "noroad", tx = target.x, ty = target.y,
-        failX = px, failY = py, approachWeight = weight }
+        failX = px, failY = py, approachWeight = weight, notified = notify == true }
+    if notify then navLegResult(key, target.x, target.y, "noroad") end
     return nil
 end
 -- test:nav-cache:end
@@ -2236,7 +2274,9 @@ local function drawRoutePolyline(inner, route, mapAPI, startIdx, startX, startY,
     end
 end
 
-local function drawApproach(inner, mapAPI, x1, y1, x2, y2)
+local function drawApproach(inner, mapAPI, x1, y1, x2, y2, style)
+    -- style 省略＝活動段原本的青色細線；預覽的未來段傳自己的淡樣式，共用同一條
+    -- 投影／裁切路徑，不另開第二份繪製實作
     local ux1 = mapAPI:worldToUIX(x1, y1)
     local uy1 = mapAPI:worldToUIY(x1, y1)
     local ux2 = mapAPI:worldToUIX(x2, y2)
@@ -2249,7 +2289,12 @@ local function drawApproach(inner, mapAPI, x1, y1, x2, y2)
         cx1, cy1, cx2, cy2 = ux1, uy1, ux2, uy2
     end
     if cx1 then
-        inner:drawLine(nil, cx1, cy1, cx2, cy2, 1, 0.5, 0.05, 0.86, 1.0)
+        if style then
+            inner:drawLine(nil, cx1, cy1, cx2, cy2,
+                style.w, style.a, style.r, style.g, style.b)
+        else
+            inner:drawLine(nil, cx1, cy1, cx2, cy2, 1, 0.5, 0.05, 0.86, 1.0)
+        end
     end
 end
 
@@ -2274,6 +2319,279 @@ local function drawOneRoute(inner, mapAPI, key, target, px, py, weight, styleU, 
     return true
 end
 
+--------------------------------------------------------------------------------
+-- 全程預覽（v6 多停靠點行程，契約 6.6「路線」節）：剩餘行程的分段形狀預覽。
+-- 與活動段徹底分家——只讀 engine.graph、只寫自己的 navPreview[pn]；不進
+-- ensureRoute／navRoutes，不呼叫 requestRoute／requestDetour，不把各段拼成
+-- 一條 Follower 路線。活動路線的 table identity、progressIdx 與 detour 覆寫
+-- 因此完全不受預覽影響。
+-- 分段：玩家當下位置 → 第一個 pending → 其後每個 pending；行程上限 16 站＝
+-- 最多 16 段。每個 OnTick 全域只算一段（A* 毫秒級，但 16 段同幀＝爆幀預算）。
+-- 失效只認三件事：行程 revision、路網 identity（重建／換世界）、徒步/車上
+-- approach 權重。玩家移動不失效：預覽是「之後要走的形狀」，實際出發時
+-- ensureRoute 會從當下位置另取活動路線（契約：新段不沿用預覽的假定起點），
+-- 而第一段每幀都被活動青線覆蓋在上面。
+-- 失敗語意：預覽自己的 noroad／A* 例外只標預覽狀態＋log-once 診斷，絕不
+-- failNavEngine（會清掉正在行駛那段的快取）、也不走 navLegResult（行駛中的
+-- 行程不因未來段算不出來而暫停）。
+-- test:nav-preview:start
+local PREVIEW_MAX_SEGS = 16 -- 契約 6.2 首版行程上限 16 站
+-- 淡青未來線（比活動段 ROUTE_OVER 細一階、半透明）＋深底：與活動青線同色系
+-- 但明顯次級，兩者重疊時活動線壓在上面仍清楚可辨
+local PREVIEW_UNDER = { r = 0.0, g = 0.06, b = 0.10, a = 0.45, w = 3 }
+local PREVIEW_OVER = { r = 0.35, g = 0.78, b = 1.0, a = 0.45, w = 1 }
+
+-- 多站預設顯示剩餘路段，啟用只在非繪製維護節拍。
+-- 明確關閉綁目前角色；下次維護發現物件不同或槽位空才移除，不寫存檔。
+-- 單站仍可手動開啟。
+local previewOff = {}
+
+-- 隱藏／未開啟的地圖也要能泵冷引擎：kickEngine 只要 inner.mapAPI 的 streets
+-- 容器，不需要可見表面（同 _Search.lua winRefresh 的既有做法）。小地圖每次取
+-- 當下實例（Recreate 會換 inner，存快照＝抱死容器）；世界地圖用單例。
+-- 不 add/clearStreetData、不開關任何視窗、不碰玩家地圖狀態。
+local function navKickAvailable(pn)
+    if engine.state ~= "idle" then return engine.state end
+    local mm = getPlayerMiniMap and getPlayerMiniMap(pn)
+    local inner = mm and mm.inner
+    if inner then kickEngine(inner) end
+    if engine.state == "idle" and ISWorldMap_instance then
+        kickEngine(ISWorldMap_instance)
+    end
+    return engine.state
+end
+
+local function previewReset(pv)
+    pv.segs, pv.total, pv.done, pv.dist = nil, 0, 0, 0
+    pv.revision, pv.graph, pv.weight = nil, nil, nil
+    pv.noroad = nil
+    pv.state = "idle"
+end
+
+-- 重排分段（行程／路網／權重任一變動）：只收 pending 站，順序即行程順序。
+-- 筆數用行程自己的 trip.count（契約 6.2 的衍生計數，已由主檔驗過連續槽），
+-- 不用 # 猜長度。壞座標當場停收（NaN 進 A* 後所有距離比較恆為 false＝白跑
+-- 整張路網）。
+local function previewPlan(pv, trip, px, py, weight)
+    local stops = trip.stops
+    local segs, n = {}, 0
+    local fx, fy = px, py
+    local count = (type(stops) == "table" and type(trip.count) == "number")
+        and trip.count or 0
+    for i = 1, count do
+        local s = stops[i]
+        if type(s) == "table" and s.status == "pending" then
+            if n >= PREVIEW_MAX_SEGS then break end
+            local bx, by = s.x, s.y
+            if type(bx) ~= "number" or bx ~= bx or type(by) ~= "number" or by ~= by then
+                break
+            end
+            n = n + 1
+            segs[n] = { ax = fx, ay = fy, bx = bx, by = by }
+            fx, fy = bx, by
+        end
+    end
+    pv.segs, pv.total, pv.done, pv.dist = segs, n, 0, 0
+    pv.noroad = nil
+    pv.revision, pv.graph, pv.weight = trip.revision, engine.graph, weight
+    pv.state = n > 0 and "pending" or "idle"
+end
+
+-- 算一段。distance 逐段累加「路網長＋兩端接線」；沒算完的段一律不入帳，
+-- 所以 done < total 時 distance 永遠是「已算出部分」而非完整門到門總長
+-- （route.len 不含兩端 approach，契約明令不可直接當總距離）。
+local function previewSegment(pv, weight)
+    local seg = pv.segs[pv.done + 1]
+    local route, aerr = NavCore.findRoute(engine.graph, seg.ax, seg.ay, seg.bx, seg.by,
+        nil, nil, nil, weight)
+    if aerr then
+        -- 只標預覽：不動引擎、不碰行程。done 維持真實完成數——把它推到 total
+        -- 等於謊報進度，還會讓繪製端對沒算出的段畫出假直線
+        logf("preview", "itinerary preview search error: " .. tostring(aerr))
+        pv.state = "failed"
+        return
+    end
+    seg.route = route or false
+    if route then
+        pv.dist = pv.dist + route.len
+            + sqrt(dist2(seg.ax, seg.ay, route.sx, route.sy))
+            + sqrt(dist2(route.ex, route.ey, seg.bx, seg.by))
+    else
+        -- 無路段：距離記直線估計（畫出來的就是這條手動指引線），狀態降 noroad。
+        -- 這只是預覽診斷，不代表該站不可達，也不通知行程。
+        pv.noroad = true
+        pv.dist = pv.dist + sqrt(dist2(seg.ax, seg.ay, seg.bx, seg.by))
+    end
+    pv.done = pv.done + 1
+    if pv.done >= pv.total then pv.state = pv.noroad and "noroad" or "ok" end
+end
+
+-- 回 true＝本 tick 的單段預算已用掉
+local function previewStep(pn, pv)
+    local playerObj = getSpecificPlayer(pn)
+    local trip = playerObj and Core.navItineraryState and Core.navItineraryState(pn) or nil
+    if not trip then -- 換角色／換世界／沒有行程：不留殘骸
+        if pv.segs then previewReset(pv) end
+        pv.state = "idle" -- 明寫：上一輪可能停在 disabled/failed，不得黏著
+        return false
+    end
+    -- NavRoute 選項與既有導航 gate（GPS 道具）：路線本身被擋時預覽照算＝白燒
+    -- A*，且畫面上也不該出現。兩者都是可恢復的外部條件，故用 disabled 而非
+    -- failed（failed 專指本場尋路真的壞了）；條件一恢復下個 tick 就重排。
+    if getBoolOption("NavRoute", true) ~= true
+        or (Core.navGateAllows and not Core.navGateAllows(pn, "draw"))
+    then
+        if pv.segs then previewReset(pv) end
+        pv.state = "disabled"
+        return false
+    end
+    if engine.state ~= "ready" then
+        -- 舊段屬於已作廢的路網，先丟再說；idle 時順手泵一次冷引擎
+        if pv.segs then previewReset(pv) end
+        pv.state = engine.state == "failed" and "failed" or "idle"
+        if engine.state == "idle" then navKickAvailable(pn) end
+        return false
+    end
+    local weight = approachWeightFor(playerObj)
+    if pv.revision ~= trip.revision or pv.graph ~= engine.graph or pv.weight ~= weight then
+        previewPlan(pv, trip, playerObj:getX(), playerObj:getY(), weight)
+    end
+    if pv.state == "failed" or pv.done >= pv.total then return false end
+    previewSegment(pv, weight)
+    return true
+end
+
+-- 活動段的非繪製維護（契約 6.1：進度／狀態更新只由非繪製處理）：兩張地圖都
+-- 關著時沒有任何繪製幀，ensureRoute 不會被呼叫，「無路」「引擎壞了」就永遠
+-- 發現不了，行程會卡在載入中。這裡按固定間隔泵一次：idle→冷啟動、
+-- ready→ensureRoute(notify)、failed→通知一次。
+-- approach 段不進來：契約 6.3 明令車已停在道路端點後不再尋路、不因無路重複
+-- 暫停，只留直線指引。
+local LEG_TICKS = 15 -- ~0.25s（繪製開著時本來就每幀收斂，這裡只是關圖時的兜底）
+local legTick = 0
+local function legStep(pn)
+    local t = Core.navGetTarget and Core.navGetTarget(pn)
+    if not t then return end
+    local playerObj = getSpecificPlayer(pn)
+    if not playerObj then return end
+    local trip = Core.navItineraryState and Core.navItineraryState(pn)
+    if trip and trip.phase == "approach" then return end
+    if engine.state == "failed" then
+        -- 確定失敗（extract／建圖／winner／A* 任一種都收斂到這個終態）
+        navLegResult(pn, t.x, t.y, "failed")
+        return
+    end
+    if engine.state == "idle" then
+        navKickAvailable(pn)
+        return
+    end
+    if engine.state ~= "ready" then return end
+    ensureRoute(pn, t, playerObj:getX(), playerObj:getY(), approachWeightFor(playerObj), true)
+end
+
+-- 多站行程的預設啟用（非繪製路徑）：沒有狀態、沒被明確關閉、該槽有角色且
+-- 行程有兩站以上就建狀態，之後由 previewStep 照既有節奏一段一段算。
+local function previewAuto(pn)
+    local playerObj = getSpecificPlayer(pn)
+    if previewOff[pn] and previewOff[pn] ~= playerObj then
+        previewOff[pn] = nil -- 換角色／換世界：關閉意願不跨角色沿用
+    end
+    if navPreview[pn] or previewOff[pn] or not playerObj then return end
+    local trip = Core.navItineraryState and Core.navItineraryState(pn)
+    if trip and type(trip.count) == "number" and trip.count >= 2 then
+        navPreview[pn] = { state = "idle", total = 0, done = 0, dist = 0 }
+    end
+end
+
+-- 活動段失敗會改行程狀態：保留 OnTick，在 _Itinerary 的到站判定之後處理。
+Events.OnTick.Add(function()
+    legTick = legTick + 1
+    if legTick >= LEG_TICKS then
+        legTick = 0
+        for pn = 0, 3 do legStep(pn) end
+    end
+end)
+
+-- 預覽是純計算；SP 暫停看圖也要持續排程，不推進站點或控制車輛。
+local previewTick = 0
+Events.OnTickEvenPaused.Add(function()
+    previewTick = previewTick + 1
+    if previewTick >= LEG_TICKS then
+        previewTick = 0
+        for pn = 0, 3 do previewAuto(pn) end
+    end
+    for pn, pv in pairs(navPreview) do
+        if previewStep(pn, pv) then return end
+    end
+end)
+
+local function previewSlot(pn)
+    return type(pn) == "number" and pn == pn and pn % 1 == 0 and pn >= 0 and pn <= 3
+end
+-- 已算出的段是否仍屬「目前這一版行程＋目前這張路網」。編輯（含到站進度）到
+-- 下一個 tick 重排之間必有空窗，讀取面與繪製面都得自己驗一次，否則會端出／
+-- 畫出上一版 revision 的結果。權重不在此列：換車/下車只是同一版行程換條更合適
+-- 的線，舊線仍是這版行程的形狀。
+local function previewStale(pn, pv)
+    local trip = Core.navItineraryState and Core.navItineraryState(pn)
+    return not trip or pv.revision ~= trip.revision or pv.graph ~= engine.graph
+end
+-- UI：明確開／關剩餘行程預覽。關＝整筆丟棄（零殘留）＋記下關閉意願（見
+-- previewOff：綁當下角色，換角色才失效），不改任何 NavRoute 選項、不碰活動
+-- 路線。開＝清掉關閉意願並立刻建狀態（單站行程唯一的開啟途徑）。
+-- 回 true＝已套用；false＝壞槽位。
+Core.navSetPreview = function(pn, enabled)
+    if not previewSlot(pn) then return false end
+    if enabled ~= true then
+        navPreview[pn] = nil
+        previewOff[pn] = getSpecificPlayer(pn)
+        return true
+    end
+    previewOff[pn] = nil
+    if not navPreview[pn] then
+        navPreview[pn] = { state = "idle", total = 0, done = 0, dist = 0 }
+    end
+    return true
+end
+-- UI：回 state, done, total, distance。state＝off（未開）／disabled（NavRoute
+-- 選項關）／idle（無行程或路網未就緒）／pending（算到一半）／ok／noroad／failed。
+-- distance 只含「已算出的段」，未全就緒時不是完整總距離——UI 以 done==total
+-- 且 state=="ok" 判定可否當總長顯示。
+Core.navPreviewState = function(pn)
+    local pv = previewSlot(pn) and navPreview[pn] or nil
+    if not pv then return "off", 0, 0, 0 end
+    if pv.segs and previewStale(pn, pv) then return "pending", 0, 0, 0 end
+    return pv.state or "idle", pv.done or 0, pv.total or 0, pv.dist or 0
+end
+Core.navKickAvailable = navKickAvailable
+-- test:nav-preview:end
+
+-- 未來段：先畫（活動青線隨後蓋上）。遵守 NavRoute 選項（呼叫端已查）、共用
+-- drawRoutePolyline 的視窗剔除／抽樣／clip。approach 只是手動直線指引，
+-- 不因此要求道路可達；整段無路者就只有那條直線。
+-- test:nav-preview-draw:start（scripts/test_itinerary_routes.lua 抽本區段；
+-- drawRoutePolyline／drawApproach 由該測試換成記錄樁，驗兩個表面同一份結果）
+local function drawPreview(inner, mapAPI, pn)
+    local pv = navPreview[pn]
+    if not (pv and pv.segs) then return end
+    if previewStale(pn, pv) then return end -- 編輯後的空窗不畫上一版的線
+    -- 目前段只由活動線／手動指引畫，避免走過的路與舊改道以預覽殘留。
+    local first = Core.navGetTarget(pn) and 2 or 1
+    for i = first, pv.done do
+        local seg = pv.segs[i]
+        local route = seg.route
+        if route then
+            drawRoutePolyline(inner, route, mapAPI, 1, route.sx, route.sy,
+                PREVIEW_UNDER, PREVIEW_OVER)
+            drawApproach(inner, mapAPI, seg.ax, seg.ay, route.sx, route.sy, PREVIEW_OVER)
+            drawApproach(inner, mapAPI, route.ex, route.ey, seg.bx, seg.by, PREVIEW_OVER)
+        else
+            drawApproach(inner, mapAPI, seg.ax, seg.ay, seg.bx, seg.by, PREVIEW_OVER)
+        end
+    end
+end
+-- test:nav-preview-draw:end
+
 -- 主入口（主檔 drawNavTargets 開頭呼叫＝畫在旗標/箭頭之下；inner＝小地圖 inner
 -- 或 ISWorldMap，共用 mapAPI/width/height/playerNum——相容論證同主檔 nav 一節）
 local function drawNavRoute(inner)
@@ -2284,6 +2602,9 @@ local function drawNavRoute(inner)
     local px, py = playerObj:getX(), playerObj:getY()
     local weight = approachWeightFor(playerObj)
     local mapAPI = inner.mapAPI
+    -- 未來段先畫：分享線與活動青線隨後蓋上。放在 target 早退之前——draft／
+    -- waiting／paused 沒有活動目標，但剩餘行程照樣要看得見
+    drawPreview(inner, mapAPI, pn)
     local target = Core.navGetTarget and Core.navGetTarget(pn) or nil
     -- 陣營分享目標的路線（接收方本地各自算路，零網路增量；沙盒閘門在
     -- navGetShared 內）。key 掃除：桶裡消失的作者，其殘留 route 一併清
@@ -2304,6 +2625,15 @@ local function drawNavRoute(inner)
     end
     if not target then
         if navRoutes[pn] then clearRoute(pn) end
+        return
+    end
+    -- approach（車停在道路端點、離站點還有一段越野）：契約 6.3／6.6 明令不再
+    -- 尋路——只畫玩家→站點的手動直線指引，不進 ensureRoute（不重算、不重試、
+    -- 不再因無路重複回報）。上一段行駛用的快取留著不動，換目標時自然收斂。
+    local phase = Core.navItineraryState and Core.navItineraryState(pn)
+    phase = phase and phase.phase
+    if phase == "approach" then
+        drawApproach(inner, mapAPI, px, py, target.x, target.y)
         return
     end
     if engine.state == "idle" then kickEngine(inner) end
@@ -2380,8 +2710,9 @@ MinidoracatMiniMapAPI.requestRoute = function(playerNum, targetX, targetY)
     local playerObj, argState = apiPlayer(playerNum, targetX, targetY)
     if not playerObj then return nil, argState end
     apiTarget.x, apiTarget.y = targetX, targetY
+    -- 查詢面本身是非繪製呼叫（AutoDrive 的控制迴圈），確定無路可以直接通知行程
     local route, routeState = ensureRoute(playerNum, apiTarget,
-        playerObj:getX(), playerObj:getY(), approachWeightFor(playerObj))
+        playerObj:getX(), playerObj:getY(), approachWeightFor(playerObj), true)
     if routeState or engine.state ~= "ready" then
         return route, routeState or engine.state
     end

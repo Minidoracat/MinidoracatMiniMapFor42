@@ -458,6 +458,10 @@ _lua_tests = [
     ("test_nav_route.lua", "導航路網與街道覆蓋邊界", False),
     ("test_nav_api.lua", "導航 API 與路線快取", False),
     ("test_worldmap_nav.lua", "世界地圖右鍵選單合併／開圖重包", False),
+    ("test_nav_gate.lua", "addon 導航閘門／繪製唯讀／目標查詢", False),
+    ("test_itinerary.lua", "多站行程權威與 token 擁有權", False),
+    ("test_itinerary_ui.lua", "行程 UI 確認、錯誤提示與頁面切換", False),
+    ("test_itinerary_routes.lua", "剩餘行程預覽與活動路線分層", False),
     ("test_fog_of_war.lua", "深霧／薄霧與多人已知區域修復", False),
 ]
 for _script, _label, _may_skip in _lua_tests:

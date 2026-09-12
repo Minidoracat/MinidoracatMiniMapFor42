@@ -228,4 +228,113 @@ MinidoracatMiniMapPOIData = {
     MinidoracatMiniMapStreetNames = nil
 end
 
+-- 完整搜尋模組：資料故障不能冒充查無命中，恢復提示也不能被當作導航座標。
+do
+    local prelude = [[
+local state, streetIndex = "ready", {}
+local targetX, targetY = 900, 900
+local player = { getX = function() return 0 end, getY = function() return 0 end }
+local MinidoracatMiniMapCore = {
+    ready = true,
+    navEngineState = function() return state end,
+    navStreetIndex = function() return streetIndex end,
+    -- 新契約：navSetTarget 回 (ok, reason, detailKey)，UI 靠 ok 決定是否報錯
+    navSetTarget = function(_, x, y) targetX, targetY = x, y; return true end,
+}
+local Events = {
+    OnGameStart = { Add = function() end },
+    OnGameBoot = { Add = function() end },
+    OnKeyPressed = { Add = function() end },
+}
+local UIFont = { Small = 1 }
+local function getSpecificPlayer() return player end
+local function getTimestampMs() return 0 end
+-- 視窗不在時的錯誤出口（winMessage 退原版 halo 壞訊息通道）
+local HaloTextHelper = { addBadText = function() end }
+local function getText(key)
+    if key == "Cat_food" then return "Food" end
+    return key
+end
+local function getTextManager()
+    return { MeasureStringX = function(_, _, text) return #text * 6 end }
+end
+local MinidoracatMiniMapPOICategories = { CATEGORIES = { food = { nameKey = "Cat_food" } } }
+local MinidoracatMiniMapPOIData = { { cat = "food", rn = 1, r = { { x = 10, y = 20, w = 4, h = 4 } } } }
+]]
+    local suffix = [[
+return {
+    refresh = winRefresh, setTarget = winSetTarget,
+    setState = function(value, index) state, streetIndex = value, index end,
+    target = function() return targetX, targetY end,
+}
+]]
+    local ui = assert((loadstring or load)(prelude .. source .. "\n" .. suffix, "search-refresh"))()
+    local text = "missing street"
+    local win = {
+        playerNum = 0, entry = { getInternalText = function() return text end },
+        list = { items = {}, selected = 1 },
+    }
+    for _, name in ipairs({ "gotoBtn", "addBtn", "insertBtn", "priorityBtn", "replaceBtn" }) do
+        win[name] = { setEnable = function(self, enabled) self.enable = enabled end }
+    end
+    function win.list:clear() self.items = {}; self.selected = 1 end
+    function win.list:addItem(label, item, tooltip)
+        local row = { text = label, item = item, tooltip = tooltip }
+        self.items[#self.items + 1] = row
+        return row
+    end
+    ui.refresh(win, false)
+    local noMatch = win.list.items[1].text
+    ui.setState("failed", nil)
+    ui.refresh(win, false)
+    local failedMessage = win.list.items[1].text
+    assert(failedMessage ~= noMatch, "街道載入失敗不得顯示成查無命中")
+    for i = 1, #win.list.items do
+        win.list.selected = i
+        ui.setTarget(win)
+        local tx, ty = ui.target()
+        eq(tx, 900, "故障與恢復提示不得改導航 X")
+        eq(ty, 900, "故障與恢復提示不得改導航 Y")
+    end
+    ui.setState("nodata", nil)
+    ui.refresh(win, false)
+    local unavailable = win.list.items[1].text
+    assert(unavailable ~= noMatch and unavailable ~= failedMessage, "缺資料須與查無命中、載入故障分開")
+    ui.setState("extracting", nil)
+    ui.refresh(win, false)
+    assert(win.list.items[1].text ~= unavailable, "同查詢開始載入時須更新缺資料提示")
+    ui.setState("building", {})
+    ui.refresh(win, false)
+    eq(win.list.items[1].text, noMatch, "街名索引已就緒，不等路網建圖即可查無命中")
+    ui.setState("failed", {})
+    ui.refresh(win, false)
+    eq(win.list.items[1].text, noMatch, "路網建圖失敗不得冒充已就緒街名索引故障")
+    ui.setState("failed", { { name = "Missing Street", low = "missing street", x = 40, y = 60 } })
+    ui.refresh(win, true)
+    ui.setTarget(win)
+    local tx, ty = ui.target()
+    eq(tx, 40, "路網失敗後有效街名結果仍可設導航 X")
+    eq(ty, 60, "路網失敗後有效街名結果仍可設導航 Y")
+    ui.setState("failed", nil)
+    text = "Food"
+    ui.refresh(win, false)
+    ui.setTarget(win)
+    tx, ty = ui.target()
+    eq(tx, 12, "街道資料故障不妨礙設施搜尋 X")
+    eq(ty, 22, "街道資料故障不妨礙設施搜尋 Y")
+    text = "12895,3499"
+    ui.refresh(win, false)
+    ui.setTarget(win)
+    tx, ty = ui.target()
+    eq(tx, 12895, "街道資料故障不妨礙座標搜尋 X")
+    eq(ty, 3499, "街道資料故障不妨礙座標搜尋 Y")
+    text = ""
+    ui.refresh(win, false)
+    assert(win.list.items[1].item.kind == "info", "空白搜尋只提供不可選取的說明")
+    ui.setTarget(win)
+    tx, ty = ui.target()
+    eq(tx, 12895, "空白說明不得改導航 X")
+    eq(ty, 3499, "空白說明不得改導航 Y")
+end
+
 print("test_search_logic: 全數通過")

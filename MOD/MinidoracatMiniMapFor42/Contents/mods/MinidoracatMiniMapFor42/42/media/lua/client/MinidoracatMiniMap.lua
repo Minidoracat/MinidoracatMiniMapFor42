@@ -966,8 +966,6 @@ local RESIZE_MAX_RATIO = 0.85 -- 尺寸上限 = 玩家螢幕短邊 85%（實測 
 
 -- 縮放 hook／外框調色／取消縮放本體在 MinidoracatMiniMap_Resize.lua（載入序在本檔之後），
 -- 本檔呼叫點一律呼叫時查 Core.installResizeHooks／Core.chromeTintBorder＋nil 防呆。
--- 導航目標表（InitPlayer wrapper 載回 modData 寫入；導航邏輯已拆至 _Nav.lua，經 Core.navTargets 共享同一實例）
-local navTargets = {}
 -- 按鈕列擴充前置宣告（InitPlayer 要用；本體見按鈕列一節）。統一設定視窗已拆至
 -- MinidoracatMiniMap_Settings.lua，開窗入口改經 Core.toggleSettingsWindow 呼叫時查表
 local installMinidoracatButtons
@@ -1235,9 +1233,6 @@ if PZAPI and PZAPI.ModOptions then
     -- 故改用 ModOptions；做成可見欄位讓玩家能手動清空還原。
     modOptions:addTextEntry("CustomSize", "UI_MinidoracatMiniMap_CustomSize", "",
         "UI_MinidoracatMiniMap_CustomSize_tooltip")
-    -- 浮動圖標位置（"x,y"）：拖曳圖標時自動寫入；同 CustomSize 做可見欄位可手動清空還原
-    modOptions:addTextEntry("FloatIconPos", "UI_MinidoracatMiniMap_FloatIconPos", "",
-        "UI_MinidoracatMiniMap_FloatIconPos_tooltip")
 
     -- 按「接受/套用」時由 MainOptions:apply 呼叫（3789）。該函式先跑 gameOptions:apply()
     -- （3787）把 UI 值寫回 option，所以此處 getValue() 已是新值。
@@ -1539,14 +1534,8 @@ if ISMiniMap and ISMiniMap.InitPlayer then
                 pcall(ensureStreetData, minimap.inner)
             end
             pcall(applyChromeOpacity, minimap)
-            -- 導航目標持久化載回（存於角色 modData，見下方導航一節）
-            local pObj = getSpecificPlayer(playerNum)
-            local md = pObj and pObj:getModData()
-            if md and md.MinidoracatMiniMapTX and md.MinidoracatMiniMapTY then
-                navTargets[playerNum] = { x = md.MinidoracatMiniMapTX, y = md.MinidoracatMiniMapTY }
-            else
-                navTargets[playerNum] = nil -- 新角色/無目標：清掉同槽位舊角色殘值
-            end
+            -- 同角色的 UI 重建不重載或覆蓋行程；載入與遷移統一在 _Itinerary.lua。
+            if Core.navLoadItinerary then Core.navLoadItinerary(playerNum) end
             -- 按鈕列擴充（C＝回中、=＝圖層、齒輪＝設定視窗；見設定視窗一節）
             if installMinidoracatButtons then pcall(installMinidoracatButtons, minimap) end
             -- 穿透模式非事件面（consume 旗標/外框變淡）重建後重套（狀態跨重啟持久）
@@ -2510,10 +2499,8 @@ if WorldMapOptions and WorldMapOptions.createChildren then
 end
 
 --------------------------------------------------------------------------------
--- 導航目標（右鍵選單／旗標／抵達／陣營分享／nav gate API）、座標列與管理員檢視
--- 標記已拆至 MinidoracatMiniMap_Nav.lua（Kahlua 主 chunk locvar 上限對策，
--- 2026-09-03）。navTargets 表仍在本檔（InitPlayer 載回 modData 需寫入），經
--- Core.navTargets 共享；下方 prerender wrap 呼叫時查 Core.*（同 _WorldMapNav.lua 慣例）。
+-- 導航顯示／選單／分享在 _Nav.lua；行程與非繪製到站更新在 _Itinerary.lua。
+-- 本檔只接繪製與 UI 重建，不持有另一份導航目標。
 --------------------------------------------------------------------------------
 
 if ISMiniMapInner and ISMiniMapInner.prerender then
@@ -2546,9 +2533,6 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         -- 中小地圖暫缺 mod 疊加層（原版底圖照畫）——可接受
         if ISWorldMap_instance and ISWorldMap_instance:isVisible()
             and ISWorldMap_instance.playerNum == (self.playerNum or 0) then
-            -- 早退前先跑導航到達的純狀態判定（codex review）：抵達清除是狀態
-            -- 變更非繪製，MP 車輛乘客/外力位移可在 M 開著時抵達，不得連坐跳過
-            pcall(Core.navCheckArrival, self)
             return
         end
         -- Zone 填色＝mod 加繪最底層（base map 之上，安全屋/框線之下）
@@ -2694,7 +2678,6 @@ Core.unifiedCsvSet = unifiedCsvSet
 -- 管理員檢視（雙層政策的客戶端讀取面）：Policy 為 nil＝舊版共用檔／載入失敗，
 -- 模組檔沿用「Core.policy 為 nil ⇒ 沒有管理員檢視」的 fail-closed 判斷
 Core.policy = Policy
-Core.navTargets = navTargets -- _Nav.lua：導航目標表（InitPlayer 載回 modData 寫入本表，模組檔取同一實例）
 local zoneCatErrLogged = {} -- zoneExternalCategories 的 provider 失敗 log-once（依 owner）
 -- 統一視窗「自訂區域」區塊用：收集外部 provider 當前 zone 的 distinct category
 -- （排序穩定；無 category 的 zone 不列——類別是伺服器 zones.json 選配欄位）。

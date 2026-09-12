@@ -68,7 +68,7 @@ local function world(sources, dirs, physical)
         getVehicle = function() return {} end }
     local env = setmetatable({
         print = function(line) prints[#prints + 1] = line end,
-        Events = { OnTick = tick, OnGameStart = event() },
+        Events = { OnTick = event(), OnTickEvenPaused = tick, OnGameStart = event() },
         MinidoracatMiniMapAPI = {}, MinidoracatMiniMapRoadPatches = patch,
         MinidoracatMiniMapCore = { ready = true, getBoolOption = function(_, fallback) return fallback end,
             getLoadedMapDirs = function() return loadedDirs end },

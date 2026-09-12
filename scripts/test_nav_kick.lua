@@ -2,7 +2,7 @@
 -- 與 nav-kick（kickEngine）兩個區段，以 stub mapAPI／getTimestampMs 驗狀態機。
 -- 守 2026-09-05 MP 回報的根因修正：空容器（total==0）不得進 failed 終態、冷卻
 -- per-inner（同幀多表面不互相飢餓）、其他失敗仍 failed 且不殘留 nodata。
--- 另加一組「整檔載入」實驗（隔離 env、真 OnTick 泵）：守零點／單點 street
+-- 另加一組「整檔載入」實驗（隔離 env、僅派 OnTickEvenPaused）：守零點／單點 street
 -- record 不得害整份路網退場（2026-09-09 Tikitown 類 MOD 地圖回報）。
 -- 用法：lua scripts/test_nav_kick.lua [_NavRoute.lua 路徑]
 local navPath = arg[1]
@@ -224,7 +224,7 @@ local function runWorld(makeRecords, displayName)
         type = type, tostring = tostring, tonumber = tonumber,
         error = error, pcall = pcall, select = select,
         print = function(line) prints[#prints + 1] = tostring(line) end,
-        Events = { OnTick = tick, OnGameStart = event() },
+        Events = { OnTick = event(), OnTickEvenPaused = tick, OnGameStart = event() },
         MinidoracatMiniMapAPI = {},
         MinidoracatMiniMapCore = {
             ready = true,

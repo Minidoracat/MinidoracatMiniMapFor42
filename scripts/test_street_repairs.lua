@@ -80,7 +80,7 @@ local function setup(op, lang, options)
     }
     local env = setmetatable({
         MinidoracatMiniMapCore = core, MinidoracatMiniMapAPI = {},
-        Events = { OnTick = ticks, OnGameStart = event() },
+        Events = { OnTick = event(), OnTickEvenPaused = ticks, OnGameStart = event() },
         Translator = { getLanguage = function() return { name = function() return lang end } end },
         getTextOrNull = function()
             if options.translationError then error("bad translation formatter") end

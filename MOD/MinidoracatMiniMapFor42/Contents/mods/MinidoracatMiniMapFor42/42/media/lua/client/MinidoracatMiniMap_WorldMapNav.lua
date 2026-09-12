@@ -18,11 +18,11 @@ if not (Core and Core.ready) then return end
 -- 複製回饋寫 self._minidoracatCopiedUntil＝座標列琥珀提示錨定世界地圖實例
 --------------------------------------------------------------------------------
 function ISWorldMap:onMinidoracatSetTarget(worldX, worldY)
-    Core.navSetTarget(self.playerNum or 0, worldX, worldY)
+    Core.navPromptTarget(self.playerNum or 0, worldX, worldY, nil, "replace")
 end
 
 function ISWorldMap:onMinidoracatClearTarget()
-    Core.navClearTarget(self.playerNum or 0)
+    Core.navPromptClear(self.playerNum or 0)
 end
 
 function ISWorldMap:onMinidoracatShareTarget()
@@ -39,6 +39,21 @@ function ISWorldMap:onMinidoracatSearch()
     if Core.toggleSearchWindow then
         Core.toggleSearchWindow(self.playerNum or 0)
     end
+end
+
+function ISWorldMap:onMinidoracatAddStop(worldX, worldY)
+    Core.navPromptTarget(self.playerNum or 0, worldX, worldY, nil, "append")
+end
+-- 先去這裡：插在第一個待前往站之前並明確開始導航（不啟自駕）。取代舊的
+-- 「設為下一站」（op=next）——沒有別名，也沒有留舊語意入口
+function ISWorldMap:onMinidoracatPriorityStop(worldX, worldY)
+    Core.navPromptTarget(self.playerNum or 0, worldX, worldY, nil, "priority")
+end
+function ISWorldMap:onMinidoracatItinerary()
+    Core.toggleSearchWindow(self.playerNum or 0, "itinerary")
+end
+function ISWorldMap:onMinidoracatPauseNav()
+    Core.navPauseItinerary(self.playerNum or 0, "cancelled")
 end
 
 --------------------------------------------------------------------------------
@@ -95,16 +110,31 @@ local function installWMRightMouseUp()
         if context:getOptionFromName(setLabel) then return true end
         local worldX = self.mapAPI:uiToWorldX(x, y) -- 2 參 uiToWorld 用例 ISWorldMap.lua:939-940
         local worldY = self.mapAPI:uiToWorldY(x, y)
+        -- 加點入口順序（與小地圖一致）：加到行程最後（主要）→插在指定停靠點之前
+        -- （子選單列出待前往站，Core.navInsertSubMenu 共用同一份錨點防線）→
+        -- 先去這裡→取代整趟（會立刻出發，故排在後面且一律先確認）→行程管理。
+        -- 冪等標記仍是 SetTarget 那一項（只是不再排第一個）
+        context:addOption(getText("UI_MinidoracatMiniMap_TripAdd"), self,
+            self.onMinidoracatAddStop, worldX, worldY)
+        Core.navInsertSubMenu(context, self, pn, worldX, worldY)
+        context:addOption(getText("UI_MinidoracatMiniMap_TripPriority"), self,
+            self.onMinidoracatPriorityStop, worldX, worldY)
         context:addOption(setLabel, self, self.onMinidoracatSetTarget, worldX, worldY)
+        context:addOption(getText("UI_MinidoracatMiniMap_TripManage"), self,
+            self.onMinidoracatItinerary)
         -- 複製此處座標：選項文字即時帶座標（先看到再決定點不點，同小地圖）
         local cwx, cwy = math.floor(worldX), math.floor(worldY)
         context:addOption(getText("UI_MinidoracatMiniMap_CopyHere",
             string.format("%d, %d, 0", cwx, cwy)), self, self.onMinidoracatCopyCoords, cwx, cwy)
         context:addOption(getText("UI_MinidoracatMiniMap_SearchMenu"), self,
             self.onMinidoracatSearch)
-        if Core.navGetTarget(pn) then
-            context:addOption(getText("UI_MinidoracatMiniMap_ClearTarget"), self,
+        if Core.navItineraryState(pn) or Core.navItineraryError(pn) then
+            context:addOption(getText("UI_MinidoracatMiniMap_TripClear"), self,
                 self.onMinidoracatClearTarget)
+        end
+        if Core.navGetTarget(pn) then
+            context:addOption(getText("UI_MinidoracatMiniMap_TripPause"), self,
+                self.onMinidoracatPauseNav)
             if isClient() and Faction and Faction.getPlayerFaction(playerObj)
                 -- ⚠ 不傳 pn＝AllowNavShare 永不列入管理員旁路白名單（會影響其他
                 -- 玩家、需伺服器轉送的功能閘；主檔 navShareGateTick 註解同義）
@@ -135,8 +165,7 @@ end
 -- 世界地圖加繪：座標列先畫、導航後畫（導航距離標籤可壓座標膠囊之上，同小地圖
 -- 呼叫序）。prerender＝畫在子元件（按鈕列/圖例/符號面板）之下、引擎地圖與主檔
 -- zone/動物加繪之上（本檔最後載＝wrap 最外層，原鏈先跑完才輪到本檔）。
--- drawNavTargets 內建抵達清除（狀態變更），世界地圖開著時亦即時判定；
--- pcall＋實例旗標 log-once（同主檔 WM 動物繪製慣例）
+-- 本層只讀行程；抵達不依賴世界地圖是否顯示。繪製錯誤沿用 pcall＋log-once。
 --------------------------------------------------------------------------------
 -- test:wm-prerender:start
 if ISWorldMap and ISWorldMap.prerender then

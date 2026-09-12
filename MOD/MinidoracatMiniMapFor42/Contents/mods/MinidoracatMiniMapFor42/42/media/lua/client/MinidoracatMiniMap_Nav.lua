@@ -1,19 +1,7 @@
 -- MinidoracatMiniMap_Nav.lua
--- 本檔範圍：導航目標——右鍵選單「設定／清除／分享」、旗標與邊緣箭頭繪製、抵達清除、
--- 陣營分享（sendClientCommand 送出／OnServerCommand 接收）、addon nav gate API
--- （navApiVersion／registerNavGate／getNavTarget 與 Core.navSetTarget 唯一寫入口）；
--- 另含同區段的小地圖 inner 互動：座標列（drawPlayerCoords）、複製座標回呼、
--- 管理員檢視標記（drawAdminViewMarker）。路線引擎在 _NavRoute.lua，不在本檔。
--- 載入順序假設：PZ 依字母序載入同目錄 lua，'.'(0x2E) < '_'(0x5F) → 主檔必先載入並
--- 建好 MinidoracatMiniMapCore；本檔載入期只讀取其「一次性賦值」的穩定引用。本檔
--- 字母序在 _NavRoute／_Search／_Settings／_WorldMapNav／_Zones 之前——它們呼叫時查的
--- Core.nav*（navGetTarget／navGetShared／navShareColor／navGateAllows／navSetTarget…）
--- 由本檔載入期定義；_Dots／_FloatIcon／_Ghost／_Migrate／POI 載入在本檔之前，
--- 已審計皆不在載入期取用本檔成員（全部呼叫時查）。
--- 拆檔緣由（2026-09-03）：主檔主 chunk locvar 151→135（本段 16 個頂層 local），
--- 段內程式碼逐位元不變；navTargets 表仍由主檔持有（InitPlayer 載回 modData 寫入），
--- 經 Core.navTargets 共享同一實例。離線測試 test_nav_gate／test_admin_view_marker／
--- test_server_nav_share／test_livestock_visibility 改從本檔抽對應切片。
+-- 導航顯示、雙地圖選單、陣營分享與 addon gate。
+-- 行程、持久化、到站與 nav API v6 由先載入的 _Itinerary.lua 統一管理；
+-- 本檔繪製只讀行程，不清目標或推進站點。_NavRoute.lua 負責活動路線與預覽。
 local Core = MinidoracatMiniMapCore
 if not (Core and Core.ready) then return end
 
@@ -22,20 +10,14 @@ local Policy = Core.policy -- nil＝舊版共用檔缺席／載入失敗，沿�
 local getBoolOption = Core.getBoolOption
 local clipSegment = Core.clipSegment
 local copyCoordsText = Core.copyCoordsText
-local navTargets = Core.navTargets
 local function log(msg) print("[MinidoracatMiniMap] " .. tostring(msg)) end
 
 --------------------------------------------------------------------------------
--- 導航目標：右鍵小地圖選單「設定/清除/分享導航目標」。目標在視窗內畫旗標、
--- 出視窗畫邊緣箭頭＋直線距離（確保方向感）；距目標 NAV_ARRIVE_DIST 格內自動
--- 抵達清除。自己的目標存 player modData 跨存檔持久；「分享給陣營」走
--- sendClientCommand → 伺服器端過濾同陣營逐一轉送
--- （media/lua/server/MinidoracatMiniMapServer.lua），對方以青旗＋名字顯示。
+-- 目前活動站可分享給陣營；站點更換、完成或暫停即撤回，下一站須重新授權。
+-- 封包仍只包含當前座標，不傳整份行程。
 --------------------------------------------------------------------------------
--- navTargets（[playerNum] = {x=,y=}）由主檔持有（InitPlayer 載回 modData 寫入），本檔經 Core.navTargets 取同一實例
 local navShared = {}       -- [playerNum] = true（處於分享狀態，清除/移動時須同步）
 local sharedTargets = {}   -- [username] = {x=,y=}（同陣營成員分享來的，本場記憶）
-local NAV_ARRIVE_DIST = 5  -- 抵達判定（世界格）
 
 -- 沙盒關閉時清掉送、收兩側本機 cache；持續為 false 時也會清除延遲抵達的封包。
 -- Events.OnTick.Add 原版用例 client/Chat/ISChat.lua:943。
@@ -83,31 +65,16 @@ end
 -- test:nav-share-gate:end
 Events.OnTick.Add(navShareGateTick)
 
-local function navSaveModData(playerObj, t)
-    -- modData 隨角色存檔持久（IsoPlayer:getModData，Lua 泛用持久掛點）
-    local md = playerObj:getModData()
-    md.MinidoracatMiniMapTX = t and t.x or nil
-    md.MinidoracatMiniMapTY = t and t.y or nil
-    -- MP 的角色資料存在伺服器：本機改完要回傳，重連才載得到新值
-    -- （transmitModData＝IsoPlayer.java:8716）
-    if isClient() then playerObj:transmitModData() end
-end
-
-local function navClear(playerNum, playerObj)
-    navTargets[playerNum] = nil
-    navSaveModData(playerObj, nil)
-    if navShared[playerNum] then
-        navShared[playerNum] = nil
-        if isClient() then
-            sendClientCommand(playerObj, "MinidoracatMiniMap", "clearShared", {})
-        end
+Core.navTargetChanged = function(pn, playerObj)
+    if not navShared[pn] then return end
+    navShared[pn] = nil
+    playerObj = playerObj or getSpecificPlayer(pn)
+    if isClient() and playerObj and getSpecificPlayer(pn) == playerObj
+        and playerObj:getOnlineID() >= 0 then
+        sendClientCommand(playerObj, "MinidoracatMiniMap", "clearShared", {})
     end
 end
 
--- 導航動作共用實作（Core 匿名閉包＝零主 chunk locvar 成本，Kahlua 200 上限對策）：
--- 小地圖（ISMiniMapInner，本檔）與世界地圖（ISWorldMap，_WorldMapNav.lua）兩面
--- 共用同一批狀態與持久化路徑；世界地圖模組檔載入在後，經 Core 命名空間取用
-Core.navGetTarget = function(pn) return navTargets[pn] end
 -- NavRoute 分享路線用：回「給此玩家的分享目標桶」（[author]={x,y}）；沙盒
 -- 閘門與旗標繪製同源——閘門關閉時旗與路線一起消失，不會旗滅線存
 Core.navGetShared = function(pn)
@@ -150,14 +117,6 @@ end
 -- 外部程式碼壞掉不得讓核心功能連坐，更不得每幀刷屏）。零註冊時行為與加
 -- API 前逐位元相同（addon 不裝零影響）。
 -- test:nav-gate:start
--- v4：requestRoute／requestDetour 的參數與 v1-v3 route 欄位不變；route additive
--- 新增逐段 segSurface/segWidth（與 pts 段數嚴格對齊）、數值 cost/avoidPenalty、
--- approachSurface 與 patchState="applied"|"raw"。舊版消費者仍可只讀既有欄位。
--- v5（2026-09-02）：欄位與簽名全同 v4，只修 route.snapDist 語意——沿用快取時刷新成
--- 「玩家→路線最近點」的投影距離（＝偏航 d），不再是「玩家→pts[1]」；v4 在沿線前進後
--- 停車再查會把在線上的車報成起點百公尺外。消費者以 navApiVersion>=5 判定可否信任
--- snapDist 當「起點太遠」門檻（AutoDrive 對 v4 不套此門檻）。
-MinidoracatMiniMapAPI.navApiVersion = 5
 Core.navGates = {} -- { { owner=, fn=, errLogged= }, ... }
 function MinidoracatMiniMapAPI.registerNavGate(ownerModId, gateFn)
     if type(ownerModId) ~= "string" or ownerModId == "" or type(gateFn) ~= "function" then
@@ -197,89 +156,24 @@ Core.navGateAllows = function(playerNum, context)
     end
     return true
 end
--- 回 (ok, reasonKey)：ok=true＝已寫入目標；false＝無玩家或被 gate 擋。
--- 被擋必須「看得見」：右鍵選單／搜尋視窗設目標是玩家主動操作，靜默失敗＝
--- 玩家以為功能壞掉（silent-failure review 指認）。走原版 halo 壞訊息通道
--- （HaloTextHelper.addBadText，原版用例 ISVehicleMenu.lua:1197 等），addon 的
--- reasonKey 優先（能明說「缺 GPS 導航儀」），缺省／非字串退回主 MOD generic
--- 鍵。第二回傳＝實際用掉的鍵（供呼叫端與測試判斷）；無玩家時無提示亦無鍵
-Core.navSetTarget = function(pn, worldX, worldY)
-    local playerObj = getSpecificPlayer(pn)
-    if not playerObj then return false end
-    local allowed, reasonKey = Core.navGateAllows(pn, "set")
-    if not allowed then
-        if type(reasonKey) ~= "string" or reasonKey == "" then
-            reasonKey = "UI_MinidoracatMiniMap_NavBlocked"
-        end
-        HaloTextHelper.addBadText(playerObj, getText(reasonKey))
-        return false, reasonKey
-    end
-    navTargets[pn] = { x = worldX, y = worldY }
-    navSaveModData(playerObj, navTargets[pn])
-    if navShared[pn] then Core.navShareTarget(pn) end -- 分享中：移動即重新廣播
-    return true
-end
--- 目前導航目標查詢（nav API v2；消費者＝MinidoracatAutoDriveFor42 M3 自駕核心，
--- 見 docs/plan-autodrive-addon.md §5）。回「兩個純量」而非內部 table 是刻意的：
--- navTargets[pn] 是主 MOD 的持久化狀態本體，交出參考等於讓 addon 能繞過
--- Core.navSetTarget（唯一含 gate＋modData 持久化的寫入口）改目標——而且改了
--- 還不會重播分享、不會存檔，是最難查的一類靜默不一致。複製一份 {x=,y=} 也不
--- 行：自駕迴路每幀查目標，每幀配置一個 table＝白送 Kahlua GC 壓力。
--- 回 (x, y)＝兩個 number；(nil, reason) 表無值，reason＝
---   "badargs"（playerNum 非 0-3 整數）／"notarget"（該槽位目前無導航目標）
--- badargs 從嚴同 requestRoute：非整數／越界槽位會靜靜讀到別人的（或不存在的）
--- 槽位，錯得無聲。本函式不查 player（純狀態讀取，槽位無人時 navTargets 自然
--- 是 nil＝notarget）、不寫任何狀態、零配置——自駕熱路徑可直接每幀呼叫。
-function MinidoracatMiniMapAPI.getNavTarget(playerNum)
-    -- 先擋 NaN（自比不等；範圍比較對 NaN 恆為 false 擋不住），再擋越界／非整數
-    -- （±Infinity 由範圍比較擋下，故 % 1 只需處理有限值）
-    if type(playerNum) ~= "number" or playerNum ~= playerNum
-        or playerNum < 0 or playerNum > 3 or playerNum % 1 ~= 0
-    then
-        return nil, "badargs"
-    end
-    local t = navTargets[playerNum]
-    if not t then return nil, "notarget" end
-    return t.x, t.y
-end
 -- test:nav-gate:end
-Core.navClearTarget = function(pn)
-    local playerObj = getSpecificPlayer(pn)
-    if playerObj then navClear(pn, playerObj) end
-end
 Core.navShareTarget = function(pn)
     local playerObj = getSpecificPlayer(pn)
-    local t = navTargets[pn]
+    local t = Core.navGetTarget(pn)
     if not (playerObj and t and isClient()) then return end
     if not Core.navShareAllowed() then return end -- 伺服器沙盒禁用／政策模組缺席
     navShared[pn] = true
     sendClientCommand(playerObj, "MinidoracatMiniMap", "shareTarget", { x = t.x, y = t.y })
 end
 
--- 導航目標載回：掛 OnCreatePlayer（原版用例 ISPlayerData.lua:203、簽名同
--- ISPerkLog.logCreatePlayer(_player)＝playerIndex）而非只靠 ISMiniMap.InitPlayer
--- ——InitPlayer 受沙盒 AllowMiniMap 閘門（ISPlayerDataObject.lua:139-141），
--- 關閉時不跑，世界地圖側（_WorldMapNav.lua）會漏載持久目標、或讀到同槽位
--- 上一位角色的殘值（三 lane review 抓出）。InitPlayer 的載回段保留（Recreate
--- 重建路徑同步），兩處讀同一 modData、冪等
-Events.OnCreatePlayer.Add(function(pn)
-    local playerObj = getSpecificPlayer(pn)
-    if not playerObj then return end
-    local md = playerObj:getModData()
-    if md and md.MinidoracatMiniMapTX and md.MinidoracatMiniMapTY then
-        navTargets[pn] = { x = md.MinidoracatMiniMapTX, y = md.MinidoracatMiniMapTY }
-    else
-        navTargets[pn] = nil -- 新角色/無目標：清同槽位舊角色殘值
-    end
-end)
 
 -- 右鍵選單回呼（addOption 簽名同原版 debug 傳送項 ISMiniMap.lua:292）
 function ISMiniMapInner:onMinidoracatSetTarget(worldX, worldY)
-    Core.navSetTarget(self.playerNum or 0, worldX, worldY)
+    Core.navPromptTarget(self.playerNum or 0, worldX, worldY, nil, "replace")
 end
 
 function ISMiniMapInner:onMinidoracatClearTarget()
-    Core.navClearTarget(self.playerNum or 0)
+    Core.navPromptClear(self.playerNum or 0)
 end
 
 function ISMiniMapInner:onMinidoracatShareTarget()
@@ -290,6 +184,21 @@ function ISMiniMapInner:onMinidoracatSearch()
     if Core.toggleSearchWindow then
         Core.toggleSearchWindow(self.playerNum or 0)
     end
+end
+
+function ISMiniMapInner:onMinidoracatAddStop(worldX, worldY)
+    Core.navPromptTarget(self.playerNum or 0, worldX, worldY, nil, "append")
+end
+-- 先去這裡：插在第一個待前往站之前並明確開始導航（不啟自駕）。取代舊的
+-- 「設為下一站」（op=next）——沒有別名，也沒有留舊語意入口
+function ISMiniMapInner:onMinidoracatPriorityStop(worldX, worldY)
+    Core.navPromptTarget(self.playerNum or 0, worldX, worldY, nil, "priority")
+end
+function ISMiniMapInner:onMinidoracatItinerary()
+    Core.toggleSearchWindow(self.playerNum or 0, "itinerary")
+end
+function ISMiniMapInner:onMinidoracatPauseNav()
+    Core.navPauseItinerary(self.playerNum or 0, "cancelled")
 end
 
 -- 旗標：黑框桿＋色旗（drawRect 疊法同殭屍點描邊）；label（分享者名）與 dist
@@ -357,13 +266,59 @@ local function drawNavIndicator(inner, tx, ty, r, g, b, label, dist)
     end
 end
 
+local tripLabels = {}
+local TRIP_COLORS = {
+    pending = { 0.05, 0.86, 1.0 }, arrived = { 0.3, 0.95, 0.4 }, skipped = { 0.5, 0.5, 0.5 },
+}
+local function drawTripTargets(inner, pn, playerObj)
+    local trip = Core.navItineraryState(pn)
+    if not trip then tripLabels[pn] = nil; return end
+    local tm = getTextManager()
+    local fontH = tm:getFontHeight(UIFont.Small)
+    local labels = tripLabels[pn]
+    if not labels or labels.count ~= trip.count or labels.fontH ~= fontH then
+        labels = { count = trip.count, fontH = fontH, size = math.max(20, fontH + 6) }
+        for i = 1, trip.count do
+            local text = tostring(i)
+            labels[i] = { text = text, width = tm:MeasureStringX(UIFont.Small, text),
+                current = text .. "/" .. tostring(trip.count) }
+        end
+        tripLabels[pn] = labels
+    end
+    local mapAPI = inner.mapAPI
+    local current = Core.navGetTarget(pn)
+    local px, py = playerObj:getX(), playerObj:getY()
+    for i = 1, trip.count do
+        local stop = trip.stops[i]
+        local ux, uy = mapAPI:worldToUIX(stop.x, stop.y), mapAPI:worldToUIY(stop.x, stop.y)
+        if current and stop.id == current.id then
+            local dx, dy = stop.x - px, stop.y - py
+            drawNavIndicator(inner, ux, uy, 1, 0.85, 0.4, labels[i].current,
+                math.floor(math.sqrt(dx * dx + dy * dy) + 0.5))
+        elseif ux >= 0 and uy >= 0 and ux <= inner.width and uy <= inner.height then
+            local color = TRIP_COLORS[stop.status]
+            local size = labels.size
+            inner:drawRect(ux - size / 2, uy - size / 2, size, size, 0.85, 0, 0, 0)
+            inner:drawRectBorder(ux - size / 2, uy - size / 2, size, size, 1, color[1], color[2], color[3])
+            inner:drawText(labels[i].text, ux - labels[i].width / 2, uy - fontH / 2, 1, 1, 1, 1, UIFont.Small)
+            -- 完成與略過保留形狀線索，不只以顏色區別。
+            if stop.status == "arrived" then
+                inner:drawLine(nil, ux + size / 2 - 5, uy + size / 2 - 3,
+                    ux + size / 2 - 2, uy + size / 2, 2, 1, 1, 1, 1)
+                inner:drawLine(nil, ux + size / 2 - 2, uy + size / 2,
+                    ux + size / 2 + 4, uy + size / 2 - 6, 2, 1, 1, 1, 1)
+            elseif stop.status == "skipped" then
+                inner:drawLine(nil, ux - size / 2, uy + size / 2,
+                    ux + size / 2, uy - size / 2, 2, 1, 1, 1, 1)
+            end
+        end
+    end
+end
+
 -- test:nav-draw:start（scripts/test_nav_gate.lua 抽本區段跑 draw gate 整合測試）
 local function drawNavTargets(inner)
     local pn = inner.playerNum or 0
-    -- Addon 閘門（context="draw"）：只擋「導航目標層繪製與路線計算」——搜尋
-    -- 落點 ping 不屬導航目標層（搜尋是獨立功能，不該被導航道具連坐），抵達
-    -- 清除與狀態收尾亦照跑：那是狀態變更，擋掉會讓玩家走到目標後目標永久
-    -- 黏著（同 navCheckArrival 註解的「早退不得連坐狀態更新」理由）
+    -- gate 只限制顯示；到站更新在 _Itinerary.lua 的非繪製事件內。
     local allowed = Core.navGateAllows(pn, "draw")
     -- 路線層（_NavRoute.lua 掛 Core.drawNavRoute）：先畫＝墊在旗標/箭頭/分享旗
     -- 之下。收 err＋實例旗標 log-once（同動物繪製/_WorldMapNav 慣例：主檔
@@ -394,39 +349,10 @@ local function drawNavTargets(inner)
     -- 已頂 Kahlua 200 上限（LexState actvar[200]），主檔不得再增頂層 local；
     -- 動態查同 :3924 Core.drawNavRoute 慣例）。無導航目標時也要畫，須在下行早退前
     if Core.drawSearchPing then Core.drawSearchPing(inner, mapAPI) end
-    local t = navTargets[pn]
-    if not t then return end
-    if not playerObj then return end
-    local ddx = t.x - playerObj:getX()
-    local ddy = t.y - playerObj:getY()
-    local dist = math.floor(math.sqrt(ddx * ddx + ddy * ddy) + 0.5)
-    if dist <= NAV_ARRIVE_DIST then -- 抵達：自動清除（含分享清除通知）
-        navClear(pn, playerObj)
-        return
-    end
-    if not allowed then return end -- 被 gate 擋：狀態已收尾，只略過自身旗標繪製
-    drawNavIndicator(inner, mapAPI:worldToUIX(t.x, t.y), mapAPI:worldToUIY(t.x, t.y),
-        1.0, 0.85, 0.2, nil, dist) -- 自己＝金旗＋距離
+    if allowed and playerObj then drawTripTargets(inner, pn, playerObj) end
 end
 -- test:nav-draw:end
 
--- 導航到達的「純狀態」判定（codex review：WM-1 早退不得連坐狀態更新）：
--- drawNavTargets 的抵達清除是狀態變更（清 modData＋分享中送 clearShared），
--- 不是繪製——世界地圖開啟期間小地圖加繪早退，但 MP 車輛乘客/外力位移仍可能
--- 在 M 開著時抵達，清除必須照跑。從繪製函式拆出，供 WM-1 早退「前」呼叫；
--- drawNavTargets 保留自己的抵達分支（正常路徑到達時同幀即清、不多等一幀）
-local function navCheckArrival(inner)
-    local pn = inner.playerNum or 0
-    local t = navTargets[pn]
-    if not t then return end
-    local playerObj = getSpecificPlayer(pn)
-    if not playerObj then return end
-    local ddx = t.x - playerObj:getX()
-    local ddy = t.y - playerObj:getY()
-    if ddx * ddx + ddy * ddy <= NAV_ARRIVE_DIST * NAV_ARRIVE_DIST then
-        navClear(pn, playerObj)
-    end
-end
 
 -- 玩家座標列（底部置中膠囊，freelook 提示同款樣式）：一律顯示 x, y, z（與複製值
 -- 一致——顯示帶空格、剪貼簿無空格，值相同；上下樓層不跳版面）；剛複製 1.5 秒內改
@@ -574,17 +500,31 @@ if ISMiniMapInner and ISMiniMapInner.onRightMouseUp then
         local context = getPlayerContextMenu(0)
         local worldX = self.mapAPI:uiToWorldX(x, y) -- uiToWorld 用例 ISMiniMap.lua:289-290
         local worldY = self.mapAPI:uiToWorldY(x, y)
+        -- 加點入口順序（兩張地圖一致）：加到行程最後（主要）→插在指定停靠點之前
+        -- （子選單列出待前往站，Core.navInsertSubMenu 共用同一份錨點防線）→
+        -- 先去這裡→取代整趟（會立刻出發，故排在後面且一律先確認）→行程管理
+        context:addOption(getText("UI_MinidoracatMiniMap_TripAdd"), self,
+            self.onMinidoracatAddStop, worldX, worldY)
+        Core.navInsertSubMenu(context, self, pn, worldX, worldY)
+        context:addOption(getText("UI_MinidoracatMiniMap_TripPriority"), self,
+            self.onMinidoracatPriorityStop, worldX, worldY)
         context:addOption(getText("UI_MinidoracatMiniMap_SetTarget"), self,
             self.onMinidoracatSetTarget, worldX, worldY)
+        context:addOption(getText("UI_MinidoracatMiniMap_TripManage"), self,
+            self.onMinidoracatItinerary)
         -- 複製此處座標：選項文字即時帶座標（先看到再決定點不點）
         local cwx, cwy = math.floor(worldX), math.floor(worldY)
         context:addOption(getText("UI_MinidoracatMiniMap_CopyHere",
             string.format("%d, %d, 0", cwx, cwy)), self, self.onMinidoracatCopyCoords, cwx, cwy)
         context:addOption(getText("UI_MinidoracatMiniMap_SearchMenu"), self,
             self.onMinidoracatSearch)
-        if navTargets[pn] then
-            context:addOption(getText("UI_MinidoracatMiniMap_ClearTarget"), self,
+        if Core.navItineraryState(pn) or Core.navItineraryError(pn) then
+            context:addOption(getText("UI_MinidoracatMiniMap_TripClear"), self,
                 self.onMinidoracatClearTarget)
+        end
+        if Core.navGetTarget(pn) then
+            context:addOption(getText("UI_MinidoracatMiniMap_TripPause"), self,
+                self.onMinidoracatPauseNav)
             if isClient() and Faction and Faction.getPlayerFaction(playerObj)
                 and Core.navShareAllowed() then
                 -- Faction.getPlayerFaction 用例 ISFactionUI.lua:408
@@ -609,8 +549,13 @@ Events.OnServerCommand.Add(function(module, command, args)
     end
 end)
 
+Events.OnGameStart.Add(function()
+    for key in pairs(navShared) do navShared[key] = nil end
+    for key in pairs(sharedTargets) do sharedTargets[key] = nil end
+    for key in pairs(tripLabels) do tripLabels[key] = nil end
+end)
+
 -- 跨檔匯出：主檔 ISMiniMapInner:prerender wrap 與 _WorldMapNav.lua 呼叫時查表
 Core.drawNavTargets = drawNavTargets -- _WorldMapNav.lua：世界地圖側導航旗標/箭頭（共用繪製）
-Core.navCheckArrival = navCheckArrival -- 主檔 prerender：世界地圖開著時的抵達純狀態判定
 Core.drawPlayerCoords = drawPlayerCoords -- _WorldMapNav.lua：世界地圖側座標列（共用繪製）
 Core.drawAdminViewMarker = drawAdminViewMarker -- _WorldMapNav.lua：世界地圖側同款標記
