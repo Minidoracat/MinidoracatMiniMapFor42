@@ -239,6 +239,7 @@ do
     function ISPanelStub:getIsVisible() return self.visible end
     -- 模擬 UIManager flush 後的順序：同物件重 add 會移到尾端，不只是集合去重。
     function ISPanelStub:addToUIManager()
+        if self._nativeAlwaysOnTop == nil then self._nativeAlwaysOnTop = false end
         self:removeFromUIManager()
         elements[#elements + 1] = self
     end
@@ -246,6 +247,19 @@ do
         for i = #elements, 1, -1 do
             if elements[i] == self then table.remove(elements, i); return end
         end
+    end
+    function ISPanelStub:setAlwaysOnTop(value)
+        if self._nativeAlwaysOnTop ~= nil then self._nativeAlwaysOnTop = value end
+    end
+    -- UIManager.java:545-556 將原生置頂元件穩定移到最後；Lua 欄位不參與。
+    local function flushLayers()
+        local normal, top = {}, {}
+        for _, element in ipairs(elements) do
+            local layer = element._nativeAlwaysOnTop and top or normal
+            layer[#layer + 1] = element
+        end
+        for _, element in ipairs(top) do normal[#normal + 1] = element end
+        elements = normal
     end
     function ISPanelStub:bringToTop() self:addToUIManager() end
     function ISPanelStub:setCapture() end
@@ -481,6 +495,9 @@ do
         end
         local laterWindow = ISPanelStub.new(ISPanelStub, 200, 300, 40, 40)
         laterWindow:addToUIManager()
+        flushLayers()
+        check(elements[#elements] == laterWindow,
+            "家族浮鈕不越過後開視窗的原生繪製層級")
         check(notice.width == icon.width and notice.height == icon.height
             and economy.width == icon.width and economy.height == icon.height,
             "家族浮鈕：三個實際 consumer 的點擊區域一致")
@@ -818,8 +835,8 @@ return toolbarIconButtonRender, installToolbarIcon,
 end
 print()
 -- 條數守門（家族慣例）：整段被註解掉時數字變小但不會紅，靠這裡擋
--- 預設 65＝A17＋B7＋C2＋D13＋D2 21＋E5；--family-floats 再加家族 7＋家族 layout 5
-local EXPECTED_ASSERTIONS = familyFloats and 77 or 65
+-- 預設 65；--family-floats 另驗三包共用版面、重生與原生視窗層級。
+local EXPECTED_ASSERTIONS = familyFloats and 78 or 65
 if assertionCount ~= EXPECTED_ASSERTIONS then
     print("斷言條數不符：預期 " .. EXPECTED_ASSERTIONS .. "、實際 " .. assertionCount
         .. "（有測試被刪掉或跳過？）")

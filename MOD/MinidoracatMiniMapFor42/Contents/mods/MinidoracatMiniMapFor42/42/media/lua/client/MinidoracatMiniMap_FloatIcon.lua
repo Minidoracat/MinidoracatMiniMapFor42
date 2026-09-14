@@ -197,6 +197,7 @@ local function ensureFloatIcon()
     if not migrateLegacyPositionOnce() then return nil end
     local ui = FW.new({
         size = FLOAT_ICON_SIZE,
+        alwaysOnTop = false, -- 保留一般視窗層級；顯示與拖曳時仍可 bringToTop。
         colors = {
             surface = { r = 0, g = 0, b = 0, a = 0.7 },
             border = BORDER_COLOR,
