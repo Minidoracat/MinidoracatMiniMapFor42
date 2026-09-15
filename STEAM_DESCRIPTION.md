@@ -9,7 +9,7 @@
 [hr][/hr]
 
 [h2]✨ 這是什麼[/h2]
-以地圖資料與遊戲材質預先渲染全彩頂視底圖，將屋頂、樹木、道路與地表的色彩層次呈現在 B42 世界地圖與角落小地圖上。搭配資源點圖標、街名搜尋與道路導航，看地圖、找物資與規劃路線一次完成。
+將地圖資料與遊戲材質預渲染為全彩頂視底圖，顯示在 B42 世界地圖與角落小地圖。搭配資源點圖標、街名搜尋與道路導航，協助找物資、規劃路線。
 
 [h2]底圖特色[/h2]
 [list]
@@ -46,7 +46,7 @@
 
 [h2]🗺️ 內建資源點（POI）＋ Zone 圖層 API[/h2]
 原版地圖 1669 筆資源點、20 類（軍警／醫療／商業／工農業等），各有辨識色。支援染色剪影或全彩圖標、半透明區塊，設定視窗可逐類開關。位置取自官方地圖；分類依房間 [u]loot 用途[/u]，不一定符合地圖分區色塊，以實際物資為準。
-地下室設施（B42 basement，如民宅地下的酒吧、地下軍火庫）圖標帶「↓」角標、搜尋結果標「（地下室）」——地上看到的建築可能是別的。
+地下設施的圖標帶「↓」、搜尋名稱帶「（地下室）」；用途可能與地上建築不同。
 另提供 `registerZoneProvider` 區域渲染框架；搭配 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones addon[/url] 可顯示伺服器自訂區域（zones.json），並有專屬顯示距離（沙盒＋玩家滑條）。
 
 [h2]🔗 系列 MOD[/h2]
@@ -71,10 +71,10 @@
 [url=https://github.com/Minidoracat/MinidoracatAutoDriveFor42/issues/new?template=road-data.yml][b]道路／導航線問題回報[/b][/url]：線畫到路外、缺路或繞遠，請附[b]包含導航線與座標的截圖＋可複製的文字座標[/b]，簡述哪裡不對。可補起終點、方向、地圖 MOD／版本；[b]不需 Telemetry[/b]。請在地圖上的問題點按右鍵「複製此處座標」。
 
 [h2]☕ 支持作者[/h2]
-MOD 永遠免費。喜歡的話可以請我喝杯咖啡，贊助會用在伺服器與 MOD 開發上。
-[url=https://ko-fi.com/minidoracat][img]https://raw.githubusercontent.com/Minidoracat/workshop-resources/refs/heads/main/badges/badge_kofi.png[/img][/url]
+MOD 永遠免費，原始碼公開在 GitHub。贊助用於伺服器與 MOD 開發。
+[url=https://ko-fi.com/minidoracat][img]https://raw.githubusercontent.com/Minidoracat/workshop-resources/refs/heads/main/badges/badge_kofi.png[/img][/url] [url=https://github.com/Minidoracat/MinidoracatMiniMapFor42][img]https://raw.githubusercontent.com/Minidoracat/workshop-resources/refs/heads/main/badges/badge_github.png[/img][/url]
 
-[b]#地圖 #小地圖 #minimap #worldmap #Minidoracat[/b]
+[b]#Minidoracat[/b]
 
 Workshop ID: 3763913359
 Mod ID: MinidoracatMiniMapFor42

@@ -9,7 +9,7 @@
 [hr][/hr]
 
 [h2]✨ これは何？[/h2]
-地図データとゲームの材質から事前描画したフルカラーの真上視点マップ。屋根・樹木・道路・地表の色合いを B42 のワールドマップとミニマップで表示し、POI・通り名検索・道路ナビで物資探しやルート計画を支援。
+地図・材質を事前描画したフルカラー俯瞰図を、B42のワールドマップとミニマップに表示。POI・通り名検索・道路ナビで物資探しと経路計画を支援。
 
 [h2]マップ画像の特徴[/h2]
 [list]
@@ -46,7 +46,7 @@
 
 [h2]🗺️ 内蔵 POI ＋ ゾーンレイヤー API[/h2]
 バニラPOI 1669件・20分類。染色／フルカラーアイコンか半透明区画、分類別切替可。位置は公式地図、分類は部屋の[u]loot用途[/u]から判定。地図の色より実際の物資を優先。
-地下施設（B42 basement——民家の地下バー、地下武器庫など）はアイコンに「↓」マーク、検索結果に「（地下室）」を表示——地上の建物は別物の場合があります。
+地下施設はアイコンに「↓」、検索名に「（地下室）」。用途が地上と異なる場合があります。
 `registerZoneProvider` ゾーン描画フレームワークも提供；[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones addon[/url] でサーバー定義ゾーン（zones.json）を表示可、専用の表示距離（サンドボックス＋スライダー）付き。
 
 [h2]🔗 シリーズ MOD[/h2]
@@ -71,10 +71,10 @@
 [url=https://github.com/Minidoracat/MinidoracatAutoDriveFor42/issues/new?template=road-data.yml][b]道路・経路の報告[/b][/url]：ずれ・欠落・遠回りは[b]経路・座標が写る画像＋座標テキスト[/b]と症状を一言。起終点・方向・マップMOD／版も推奨。ログ不要。地図上の問題地点を右クリックして座標をコピー。
 
 [h2]☕ 作者を応援[/h2]
-常に無料。ご支援はサーバーとMOD開発に使います。
-[url=https://ko-fi.com/minidoracat][img]https://raw.githubusercontent.com/Minidoracat/workshop-resources/refs/heads/main/badges/badge_kofi.png[/img][/url]
+常に無料、ソースはGitHubで公開。ご支援はサーバーとMOD開発に使います。
+[url=https://ko-fi.com/minidoracat][img]https://raw.githubusercontent.com/Minidoracat/workshop-resources/refs/heads/main/badges/badge_kofi.png[/img][/url] [url=https://github.com/Minidoracat/MinidoracatMiniMapFor42][img]https://raw.githubusercontent.com/Minidoracat/workshop-resources/refs/heads/main/badges/badge_github.png[/img][/url]
 
-[b]#マップ #ミニマップ #minimap #worldmap #Minidoracat[/b]
+[b]#Minidoracat[/b]
 
 Workshop ID: 3763913359
 Mod ID: MinidoracatMiniMapFor42

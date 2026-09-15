@@ -9,7 +9,7 @@ Since 0.20.0, [url=https://steamcommunity.com/sharedfiles/filedetails/?id=378983
 [hr][/hr]
 
 [h2]✨ What is this[/h2]
-Pre-rendered, full-color top-down maps made from map data and game textures bring the colors of rooftops, trees, roads and terrain to the B42 world map and corner mini-map. POI icons, street search and road navigation help you find supplies and plan routes.
+Pre-rendered, full-color top-down images from map data and game textures for the B42 world map and corner mini-map. POI icons, street search and road navigation help you find supplies and plan routes.
 
 [h2]Map imagery[/h2]
 [list]
@@ -46,7 +46,7 @@ Map mod authors can ship their own support: render a [b]minidoracat_minimap.pyra
 
 [h2]🗺️ Built-in POIs + zone layer API[/h2]
 1669 vanilla POIs in 20 color-coded categories (military/medical/commercial/industrial etc.). Tinted silhouette or full-color icons, or translucent blocks; per-category toggles. Positions come from official map files, categories from room [u]loot types[/u], not necessarily the map's zoning colors: actual supplies determine the category.
-Basement facilities (B42 basements — a bar under a house, underground armories) get a "↓" corner mark on the icon and a "(basement)" suffix in search results — the building above ground may be something else.
+Basement facilities show a "↓" icon mark and "(basement)" in search results; their use may differ from the building above.
 A `registerZoneProvider` zone-rendering framework is also included; with the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones addon[/url] it displays server-defined zones (zones.json), with a dedicated display distance (sandbox + player slider).
 
 [h2]🔗 Mod series[/h2]
@@ -71,10 +71,10 @@ With the required library installed, the [b]main mod[/b] works without addons; c
 [url=https://github.com/Minidoracat/MinidoracatAutoDriveFor42/issues/new?template=road-data.yml][b]Road / route data report[/b][/url]: misplaced routes, gaps or detours — attach [b]a route screenshot showing coordinates + copyable coordinates as text[/b], and describe the problem. Endpoints, direction and map mod/version help; [b]no Telemetry required[/b]. Right-click the affected map point and choose Copy coordinates.
 
 [h2]☕ Support the author[/h2]
-The mod is free and always will be. If you enjoy it, consider buying me a coffee - tips go straight into servers and mod development.
-[url=https://ko-fi.com/minidoracat][img]https://raw.githubusercontent.com/Minidoracat/workshop-resources/refs/heads/main/badges/badge_kofi.png[/img][/url]
+Always free; source on GitHub. Tips fund servers and mod development.
+[url=https://ko-fi.com/minidoracat][img]https://raw.githubusercontent.com/Minidoracat/workshop-resources/refs/heads/main/badges/badge_kofi.png[/img][/url] [url=https://github.com/Minidoracat/MinidoracatMiniMapFor42][img]https://raw.githubusercontent.com/Minidoracat/workshop-resources/refs/heads/main/badges/badge_github.png[/img][/url]
 
-[b]#map #minimap #worldmap #Minidoracat[/b]
+[b]#Minidoracat[/b]
 
 Workshop ID: 3763913359
 Mod ID: MinidoracatMiniMapFor42
