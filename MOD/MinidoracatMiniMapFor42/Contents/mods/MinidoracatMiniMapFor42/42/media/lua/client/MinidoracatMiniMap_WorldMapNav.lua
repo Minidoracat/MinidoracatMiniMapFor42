@@ -159,6 +159,31 @@ if ISWorldMap and ISWorldMap.onRightMouseUp then
         end
     end
 end
+
+-- Extraction Mode's passive raid overlay inherits empty right-click callbacks.
+-- B42 UIElement treats their nil result as consumed even with mouse events off.
+-- Install after mod loading; preserve upstream handlers and explicit results.
+local function installExtractionMapPassThrough()
+    local overlay = type(ExtractionMode) == "table" and ExtractionMode.MapOverlay
+    if type(overlay) ~= "table" then return end
+    -- Kahlua rawget follows parent tables; pairs lists only this class's keys.
+    local own = {}
+    for key in pairs(overlay) do own[key] = true end
+    for _, method in ipairs({ "onRightMouseDown", "onRightMouseUp" }) do
+        local original = overlay[method]
+        if type(original) == "function" and not own[method]
+            and original == ISUIElement[method] then
+            overlay[method] = function(self, x, y)
+                local handled = original(self, x, y)
+                if handled == nil and self:isWantMouseEvents() == false then
+                    return false
+                end
+                return handled
+            end
+        end
+    end
+end
+Events.OnGameStart.Add(installExtractionMapPassThrough)
 -- test:wm-rightclick:end
 
 --------------------------------------------------------------------------------

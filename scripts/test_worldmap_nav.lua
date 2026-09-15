@@ -159,6 +159,42 @@ Core.drawNavTargets = function(el)
     if drawNavFail then error("injected nav failure") end
 end
 Core.drawAdminViewMarker = function() end
+
+-- Extraction Mode 相容層用的最小環境：
+--   Events.OnGameStart＝延後查全域（別的 MOD 的 class 可能比本檔晚建）；
+--   ISUIElement 空右鍵回呼＝原版（ISUIElement.lua:1555-1561）什麼都不做、回 nil；
+--   wantMouseEvents 走 javaObject 為 nil 的分支（:1837-1852）。
+local gameStartHandlers = {}
+local Events = { OnGameStart = { Add = function(fn)
+    gameStartHandlers[#gameStartHandlers + 1] = fn
+end } }
+-- PZ 的 Kahlua rawget 會沿 metatable 一路往上找（只有 pairs 只列 class 自己的 key），
+-- 靠 rawget 判斷「這個 class 自己有沒有設過」在遊戲裡會恆為非 nil＝永遠不會包
+local realRawget = rawget
+local function rawget(t, k)
+    local v = realRawget(t, k)
+    if v ~= nil then return v end
+    local mt = getmetatable(t)
+    if mt ~= nil then return rawget(mt, k) end
+    return nil
+end
+local ISUIElement = {}
+local wantReads = 0 -- isWantMouseEvents 被問過幾次：疊一層包就會多問一次
+function ISUIElement:onRightMouseDown(x, y) calls[#calls + 1] = "base-rdown" end
+function ISUIElement:onRightMouseUp(x, y) calls[#calls + 1] = "base-rup" end
+function ISUIElement:setWantMouseEvents(want) self.wantMouseEvents = want end
+function ISUIElement:isWantMouseEvents()
+    wantReads = wantReads + 1
+    return self.wantMouseEvents
+end
+-- 同原版 derive：setmetatable(child, parent); parent.__index = parent
+local function derive(parent)
+    local c = {}
+    setmetatable(c, parent)
+    parent.__index = parent
+    return c
+end
+local ISPanel = derive(ISUIElement) -- 42.20.4 的 ISPanel 未自訂右鍵回呼
 ]=]
 
 local suffix = [=[
@@ -180,6 +216,13 @@ return {
     setTrip = function(state, err) tripState, tripError = state, err end,
     setInsertAnchors = function(v) insertAnchors = v end,
     setDrawFail = function(coords, nav) drawCoordsFail = coords; drawNavFail = nav end,
+    ISUIElement = ISUIElement,
+    ISPanel = ISPanel,
+    derive = derive,
+    fireGameStart = function()
+        for _, fn in ipairs(gameStartHandlers) do fn() end
+    end,
+    wantReads = function() return wantReads end,
 }
 ]=]
 
@@ -490,5 +533,132 @@ assert(#mod.printed == before + 1 and mod.printed[#mod.printed]:find("worldmap n
 mod.setDrawFail(false, false)
 mod.clearCalls()
 
-print("test_worldmap_nav: OK（R1-R9＋N1-N5：工具透傳/前手選單合併/自建/歸屬/殘留選單/"
-    .. "行程選項閘/回呼分流/開圖重包/冪等/重包上限/加繪順序/log-once）")
+--------------------------------------------------------------------------------
+-- X1-X9: Extraction Mode（3785397275）滿版 overlay 右鍵相容
+-- 症狀：它的 overlay 是 ISPanel 子類、蓋滿整張地圖，setWantMouseEvents(false)
+-- （MapMarkers.lua:127-150）擋不住右鍵——原版 ISUIElement 的空右鍵回呼回 nil
+-- （ISUIElement.lua:1555-1561），KahluaThread.pcallBoolean 把 nil 轉 null，
+-- UIElement.java:1450-1595 的 right 分支見 null 直接 consume=true（不看
+-- consumeMouseEvents 旗標）＝右鍵被吃掉，原版 debug 與本 MOD 的導航選單都叫不出來。
+-- 相容層：開局時只對「被動且沿用原版空回呼」的那個 class 補明確的 false。
+--------------------------------------------------------------------------------
+local function passiveInstance(cls)
+    cls.__index = cls -- 同原版 :new（setmetatable(object, self); self.__index = self）
+    local o = setmetatable({}, cls)
+    o:setWantMouseEvents(false) -- MapMarkers.lua:131
+    return o
+end
+
+-- X1: 沒裝 Extraction Mode／裝了但還沒有那個 class → 開局不得出錯
+ExtractionMode = nil
+mod.fireGameStart()
+ExtractionMode = { ClientState = {} }
+mod.fireGameStart()
+
+-- X2: 它的 class 在本檔之後才建（OnTick 才掛 overlay）→ 開局才接得上
+local Overlay = mod.derive(mod.ISPanel)
+ExtractionMode = { MapOverlay = Overlay }
+local worldOverlay = passiveInstance(Overlay)
+assert(worldOverlay:onRightMouseUp(1, 2) == nil, "X2: 接上之前維持原版行為（回 nil）")
+mod.clearCalls()
+mod.fireGameStart()
+
+-- X3: 世界地圖與小地圖兩個實例共用同一 class；右鍵按下/放開都要明確回 false，
+--     且原版回呼照跑（副作用不得被吞）
+local miniOverlay = passiveInstance(Overlay)
+mod.clearCalls()
+assert(worldOverlay:onRightMouseDown(1, 2) == false, "X3: 世界地圖 overlay 右鍵按下須回 false")
+assert(worldOverlay:onRightMouseUp(1, 2) == false, "X3: 世界地圖 overlay 右鍵放開須回 false")
+assert(miniOverlay:onRightMouseDown(1, 2) == false, "X3: 小地圖 overlay 同 class 亦須回 false")
+assert(miniOverlay:onRightMouseUp(1, 2) == false, "X3: 小地圖 overlay 同 class 亦須回 false")
+assert(table.concat(mod.calls, ",") == "base-rdown,base-rup,base-rdown,base-rup",
+    "X3: 原版回呼須照常各跑一次（實得 " .. table.concat(mod.calls, ",") .. "）")
+mod.clearCalls()
+
+-- X4: 真的要吃滑鼠的實例（wantMouseEvents=true）不得被改成 false
+local activeOverlay = setmetatable({}, Overlay)
+activeOverlay:setWantMouseEvents(true)
+assert(activeOverlay:onRightMouseDown(1, 2) == nil, "X4: 想吃滑鼠時 down 須維持原版回傳")
+assert(activeOverlay:onRightMouseUp(1, 2) == nil, "X4: 想吃滑鼠時 up 須維持原版回傳")
+mod.clearCalls()
+
+-- X5: 回主選單再開一局（重複 OnGameStart）不得再包一層：行為不變、原版回呼只跑一次，
+--     且一次右鍵只問一次 isWantMouseEvents（每疊一層就多問一次＝存檔讀檔幾十次後
+--     鏈會無限長）
+mod.fireGameStart()
+mod.fireGameStart()
+mod.clearCalls()
+assert(worldOverlay:onRightMouseUp(1, 2) == false, "X5: 重複開局後行為不變")
+assert(table.concat(mod.calls, ",") == "base-rup",
+    "X5: 原版回呼仍只得跑一次（實得 " .. table.concat(mod.calls, ",") .. "）")
+local readsBefore = mod.wantReads()
+assert(activeOverlay:onRightMouseUp(1, 2) == nil, "X5: 想吃滑鼠的實例仍維持原版回傳")
+assert(mod.wantReads() - readsBefore == 1,
+    "X5: 重複開局不得再疊一層（一次右鍵問了 " .. (mod.wantReads() - readsBefore)
+    .. " 次 isWantMouseEvents）")
+
+-- X6: 父類回呼有明確回傳／副作用一律保留，只有 nil 才補 false
+local sideFx = {}
+local vanillaRightUp = mod.ISUIElement.onRightMouseUp
+mod.ISUIElement.onRightMouseUp = function(self, x, y)
+    sideFx[#sideFx + 1] = "up:" .. x .. "," .. y
+    return true
+end
+local cls6 = mod.derive(mod.ISPanel)
+ExtractionMode = { MapOverlay = cls6 }
+mod.fireGameStart()
+assert(passiveInstance(cls6):onRightMouseUp(7, 8) == true, "X6: 父類回 true 須原樣保留")
+assert(sideFx[#sideFx] == "up:7,8", "X6: 父類副作用與座標須照常發生（實得 "
+    .. tostring(sideFx[#sideFx]) .. "）")
+mod.ISUIElement.onRightMouseUp = function(self, x, y) return false end
+local cls6b = mod.derive(mod.ISPanel)
+ExtractionMode = { MapOverlay = cls6b }
+mod.fireGameStart()
+assert(passiveInstance(cls6b):onRightMouseUp(1, 2) == false, "X6: 父類回 false 亦原樣保留")
+mod.ISUIElement.onRightMouseUp = vanillaRightUp
+
+-- X7: class 自己有 handler（rawget 有值）不得被覆蓋；兩個方法各自判斷、互不牽連
+local cls7 = mod.derive(mod.ISPanel)
+local ownDowns = 0
+function cls7:onRightMouseDown(x, y) ownDowns = ownDowns + 1 end
+ExtractionMode = { MapOverlay = cls7 }
+mod.fireGameStart()
+local o7 = passiveInstance(cls7)
+local ownDownRet = o7:onRightMouseDown(1, 2)
+assert(ownDownRet == nil and ownDowns == 1,
+    "X7: 自訂 handler 須原封不動（實得 回傳 " .. tostring(ownDownRet)
+    .. "、呼叫 " .. ownDowns .. " 次）")
+assert(o7:onRightMouseUp(1, 2) == false, "X7: 另一個方法仍要獨立補上 false")
+
+-- X8: 繼承來的不是原版那份（父類或別的 MOD 自訂）→ 不碰，免得改壞人家的語意
+local base8 = mod.derive(mod.ISPanel)
+function base8:onRightMouseUp(x, y) end -- 自訂但同樣回 nil：只能靠身分判斷
+local cls8 = mod.derive(base8)
+ExtractionMode = { MapOverlay = cls8 }
+mod.fireGameStart()
+assert(passiveInstance(cls8):onRightMouseUp(1, 2) == nil,
+    "X8: 非原版的繼承 handler 不得被包（語意不明）")
+
+-- X8b: class 自己的 slot 明確指回原版那份函式（rawget 有值、身分又相同）＝它已經自行
+--      設定過，nil 語意是刻意的 → 不得改寫（只看身分會誤判成「沒人動過」）
+local cls8b = mod.derive(mod.ISPanel)
+cls8b.onRightMouseUp = mod.ISUIElement.onRightMouseUp
+cls8b.onRightMouseDown = mod.ISUIElement.onRightMouseDown
+ExtractionMode = { MapOverlay = cls8b }
+mod.fireGameStart()
+local o8b = passiveInstance(cls8b)
+assert(o8b:onRightMouseUp(1, 2) == nil, "X8b: class 自訂過的 slot 須保留原本的 nil 語意")
+assert(o8b:onRightMouseDown(1, 2) == nil, "X8b: down 同理")
+
+-- X9: 沒登記在 ExtractionMode 的面板（原版 UI／別的 MOD）不受影響
+local otherPanel = mod.derive(mod.ISPanel)
+ExtractionMode = { MapOverlay = Overlay }
+mod.fireGameStart()
+assert(passiveInstance(otherPanel):onRightMouseUp(1, 2) == nil,
+    "X9: 不相關面板須維持原版行為")
+assert(passiveInstance(otherPanel):onRightMouseDown(1, 2) == nil, "X9: down 同理")
+ExtractionMode = nil
+
+print("test_worldmap_nav: OK（R1-R9＋N1-N5＋X1-X9（含 X8b）：工具透傳/前手選單合併/自建/歸屬/殘留選單/"
+    .. "行程選項閘/回呼分流/開圖重包/冪等/重包上限/加繪順序/log-once/"
+    .. "Extraction Mode 被動 overlay 右鍵放行）")
