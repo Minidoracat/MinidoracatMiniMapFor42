@@ -500,12 +500,12 @@ MinidoracatMiniMapAPI.registerAnimalGroup(
 
 ```
 MinidoracatMiniMapFor42/
-├── link_workshop.bat              # Workshop 符號連結管理（雙擊啟動）
+├── link_workshop.bat              # 開發實體副本同步管理（雙擊啟動）
 ├── PZ_Test.bat                    # PZ 本地測試啟動器（雙擊啟動）
 ├── Publish_Workshop.bat           # Steam Workshop 發布（雙擊選單；見「發布到 Workshop」）
 ├── scripts/
 │   ├── build_pyramids.ps1      # 產生基底 pyramid zip（呼叫 pzmap render-minimap）
-│   ├── link_workshop.ps1       # 符號連結管理腳本（PowerShell）
+│   ├── link_workshop.ps1       # 實體副本同步管理（PowerShell）
 │   ├── PZ_Test.ps1             # 遊戲測試啟動器（PowerShell）
 │   ├── publish_workshop.py     # Workshop 發布工具（原生 Steamworks；內容／GIF 封面／四語簡介）
 │   └── workshop_publish.json   # 發布設定（Workshop ID、擁有者、各語言簡介來源）
@@ -543,20 +543,15 @@ pwsh -NoProfile -File scripts/build_pyramids.ps1 -GamePath "D:\SteamLibrary\stea
 第三方 MOD 自帶支援（不進地圖包）：輸出改名為約定檔名 `minidoracat_minimap.pyramid.zip`
 放進**該 MOD 自己的** `media/minimap/`，零 Lua。
 
-### 2. 掛載到遊戲目錄
+### 2. 同步到遊戲目錄
 
-雙擊 `link_workshop.bat`，選擇 **[1] 掛載**。建立兩個符號連結：
+首次可用 `link_workshop.bat` → **[1] 同步**，建立 Workshop 與 mods 兩處實體副本，不建立目錄連結。
+日常直接用 `PZ_Test.bat`，啟動前會自動同步 MOD 與家族依賴。遊戲執行中若需要換檔會拒絕啟動；完整規則見 `../pz-family-docs/tools.md`。
 
-```
-%UserProfile%\Zomboid\Workshop\MinidoracatMiniMapFor42 → <專案>\MOD\MinidoracatMiniMapFor42
-%UserProfile%\Zomboid\mods\MinidoracatMiniMapFor42     → <專案>\MOD\...\Contents\mods\MinidoracatMiniMapFor42
-```
 
-> 權限不足會自動彈 UAC；或啟用 Windows 開發人員模式免提示。
+### 3. 啟動遊戲測試
 
-### 3. 啟動遊戲測試（no-steam）
-
-雙擊 `PZ_Test.bat` 選啟動模式（客戶端 / Debug / 專用伺服器 / Host 雙開）。
+雙擊 `PZ_Test.bat`，在暗色視窗選擇連線模式、啟動內容、客戶端數量與 Debug，再按 **同步並啟動**。首次預設 no-Steam，之後記住本專案的選擇；Steam 最多一個客戶端，no-Steam 可選兩個。**漢化對照** 依所選模式啟動對照伺服器與一個 Debug 客戶端。兩端模式須一致，切換前先正常關服；不會因選模式而重置存檔。
 進遊戲啟用 MOD 後開世界地圖（M），console.txt 應出現：
 
 ```
@@ -568,7 +563,7 @@ pwsh -NoProfile -File scripts/build_pyramids.ps1 -GamePath "D:\SteamLibrary\stea
 
 ### 卸載
 
-`link_workshop.bat` → **[2] 卸載**（只移除連結，不刪原始檔案）。
+`link_workshop.bat` → **[2] 歸檔卸載**（移出受管副本，不刪原始專案與依賴）。
 
 ### 發布到 Workshop
 
