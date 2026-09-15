@@ -9,8 +9,7 @@ Project Zomboid Build 42 遊戲內世界地圖圖片化 MOD。
 經 `registerMaps` API 註冊、依啟用的地圖 MOD 自動掛載），
 並保留第三方 addon 同名約定——addon 零 Lua 即可被載入。
 
-設計決策詳見 [MinidoracatMapRendering/docs/minimap-mod-design.md](../MinidoracatMapRendering/docs/minimap-mod-design.md)
-（該文件描述初版「同名檔案」架構，現為第三方相容路徑；現行架構見下方架構節）。
+原始碼以 MIT 開源；遊戲衍生資料與素材的授權範圍見下方「授權」。
 
 > **必要前置 MOD（0.20.0 起）**：本 MOD 的視窗外觀改由家族共用介面函式庫提供，
 > 需一併訂閱 [Minidoracat UI Library for B42](https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701)
@@ -99,25 +98,8 @@ Project Zomboid Build 42 遊戲內世界地圖圖片化 MOD。
 
 ## 截圖
 
-### 繁體中文
-
-| | |
-|---|---|
-| ![統一設定視窗（圓角皮膚）](docs/screenshots/zh/01-settings-window.png) | ![小地圖圓角卡片外框](docs/screenshots/zh/02-minimap-frame.png) |
-| ![小地圖右鍵選單（導航／複製座標／搜尋／陣營分享）](docs/screenshots/zh/03-nav-menu.png) | ![沿道路導航路線（大地圖）](docs/screenshots/zh/04-nav-route-worldmap.png) |
-| ![沿道路導航路線（小地圖）](docs/screenshots/zh/05-nav-route-minimap.png) | ![分享目標的隊友路線](docs/screenshots/zh/06-nav-route-shared.png) |
-| ![地圖搜尋：中文街名](docs/screenshots/zh/07-search-street.png) | ![地圖搜尋：地下室條目](docs/screenshots/zh/08-search-basement.png) |
-| ![管理員沙盒選項](docs/screenshots/zh/09-admin-sandbox-options.png) | |
-
-### English
-
-| | |
-|---|---|
-| ![Settings: Layers](docs/screenshots/en/01-settings-layers.png) | ![Settings: Animal icons](docs/screenshots/en/02-settings-animal-icons.png) |
-| ![Mini-map context menu](docs/screenshots/en/03-nav-menu.png) | ![World map key & symbols](docs/screenshots/en/04-worldmap-key-symbols.png) |
-| ![Map search: street names](docs/screenshots/en/05-search-street.png) | ![Admin sandbox options](docs/screenshots/en/06-admin-sandbox-options.png) |
-
-Steam Workshop 用 JPG（≤2MB）在 `docs/screenshots/steam/{zh,en}/`，編號與上表一致。
+遊戲畫面與操作截圖請見 [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3763913359)。
+開發文件與截圖保留於作者本機，不包含在公開原始碼中。
 
 ## 設定
 
@@ -201,7 +183,7 @@ MOD 地圖街名翻譯改為**只翻名稱、保留原作者道路**：所有語
 原版漢化 `LangFor42` 42.20.4-1.25.0 起改用純文字字典，保留官方道路來源，並可獨立安裝；
 搭配小地圖 42.20.4-0.27.1 或更新版本，以保留中文與英文搜尋。對仍替換 XML 的語言包，只有單一完整原版幾何、
 路寬一致且不佔用實體道路格的載體才套用官方補路；部分副本、改線資料與真正地圖 MOD
-不會被當成翻譯載體，資料不足時保留原始路網。作者介面見 [Addon API](docs/addon-api.md)。
+不會被當成翻譯載體，資料不足時保留原始路網。
 
 加入陣營（faction）後右鍵選單多「分享目標給陣營」——同陣營成員的雙地圖會以
 青旗＋名字（作者專屬色）顯示你的目標並各自本地算路（由伺服器過濾轉送，
@@ -616,9 +598,19 @@ uv run --no-project python -B scripts/publish_workshop.py --mode all --dry-run  
 
 ## 授權
 
-程式碼以 [MIT License](LICENSE) 釋出。地圖渲染產物（pyramid.zip）不進版控；
-其內容衍生自 Project Zomboid 遊戲資產與各地圖 MOD，僅於 Steam Workshop 依
-The Indie Stone 政策發佈。
+原創程式碼與原創文件以 [MIT License](LICENSE) 釋出。作者使用 Codex 生成的
+40 張 POI 圖標亦在作者可授權的權利範圍內採 MIT；AI 生成不代表第三方權利保證。
+
+**MIT 不涵蓋 Project Zomboid／第三方地圖的衍生資料與素材。**
+包括 `scripts/poi_raw.json`、生成的 POI／街名／道路幾何資料、道路修正資料、
+地圖渲染產物與遊戲截圖；其來源、適用政策及其他美術的範圍列於
+[隨 MOD 提供的授權與來源聲明](MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/LICENSE.txt)。
+資料保留供本 MOD 使用，不宣稱取得遊戲資產的 MIT 再授權權利；
+原創程式碼的 MIT 權利不因上述素材政策而增加限制。
+
+Thanks to The Indie Stone for creating Project Zomboid (https://projectzomboid.com/),
+which made this possible. This is an unofficial fan production for non-commercial
+purposes made under the [Indie Stone Terms](https://projectzomboid.com/blog/support/terms-conditions/).
 
 ## 問題回報 & 交流
 

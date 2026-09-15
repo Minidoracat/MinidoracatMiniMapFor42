@@ -9,6 +9,10 @@ AGENTS.md
 .codex/
 .code-review-graph/
 .gitnexus/
+.omc-workspace
+
+# 開發文件與截圖僅保留本機，不進公開原始碼或 Git 歷史
+/docs/
 
 # 系統檔案
 .DS_Store

@@ -1,0 +1,86 @@
+Minidoracat MiniMap for B42 - Licensing and source notices
+
+1. Original code, documentation and POI icons
+
+The original program code and original documentation by Minidoracat are
+licensed under the MIT License reproduced below. Generated game-derived
+DATA is excluded as described in section 2, even when stored in a Lua file.
+
+The author reports creating the 40 POI icons using Codex image generation:
+  media/ui/poi_icons/poi_*.png
+  media/ui/poi_icons/color/poi_*.png
+These icons are also offered under MIT to the extent that Minidoracat owns
+licensable rights in them. AI generation is not a warranty of originality,
+exclusive copyright or clearance of third-party rights.
+
+2. Project Zomboid and map-derived data - NOT MIT
+
+Project Zomboid and its assets belong to The Indie Stone and their respective
+rights holders. This project's MIT license does not relicense their content.
+This exclusion includes the game-derived data in these repository files:
+  scripts/poi_raw.json
+  scripts/road_patch_approvals.json
+and these files relative to this mod's 42 directory:
+  media/lua/shared/MinidoracatMiniMapPOIData.lua
+  media/lua/shared/MinidoracatMiniMapStreetNames.lua
+  media/lua/shared/MinidoracatMiniMapRoadPatches.lua
+
+These contain building/room geometry extracted from game map files, street
+names and positions, road geometry/width sets, surface classifications and
+map-based road repairs. They are provided for this Project Zomboid mod under
+the applicable game terms, not as an independently MIT-licensed map dataset.
+Original extraction/generation algorithms remain MIT; that does not change
+the rights in their inputs or game-derived outputs.
+
+Rendered map imagery (*.pyramid.zip), screenshots and other game/map-derived
+assets are also outside MIT. Rendered map archives and development screenshots
+are not included in this public Git repository. Third-party map assets retain
+their authors' rights and require the applicable permissions; this repository
+does not grant those permissions. References to game textures or dependencies
+at runtime do not include or relicense those external files.
+
+Thanks to The Indie Stone for creating Project Zomboid (https://projectzomboid.com/),
+which made this possible. This is an unofficial fan production for non-commercial
+purposes made under the Indie Stone Terms:
+https://projectzomboid.com/blog/support/terms-conditions/
+
+Project Zomboid Modding Policy:
+https://projectzomboid.com/blog/modding-policy/
+
+Consult those policies for distribution, attribution and mod commercialisation
+rules. They govern the applicable game-related content; this notice does not
+add non-commercial or no-redistribution restrictions to the original MIT code.
+
+3. Other artwork
+
+Except for the expressly listed POI icons, poster/preview artwork, branding,
+source artwork under scripts/poster/ and media/ui/minimap_toggle.png are not
+covered by the MIT grant. They are provided for presenting this project, not
+as a separately licensed reusable artwork library. No rights in third-party
+content, trademarks or likenesses are granted by this notice.
+The poster pipeline records Codex image generation and Pillow composition;
+that provenance alone does not establish rights in every input or output.
+
+4. MIT License (for the scope in section 1)
+
+MIT License
+
+Copyright (c) 2026 Minidoracat
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
