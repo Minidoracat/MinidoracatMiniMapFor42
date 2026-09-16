@@ -71,6 +71,7 @@
 [url=https://github.com/Minidoracat/MinidoracatAutoDriveFor42/issues/new?template=road-data.yml][b]道路／導航線問題回報[/b][/url]：線畫到路外、缺路或繞遠，請附[b]包含導航線與座標的截圖＋可複製的文字座標[/b]，簡述哪裡不對。可補起終點、方向、地圖 MOD／版本；[b]不需 Telemetry[/b]。請在地圖上的問題點按右鍵「複製此處座標」。
 
 [h2]☕ 支持作者[/h2]
+覺得有幫助的話，請在這頁按個 👍 讚、到 GitHub 給個 ⭐ 星星，讓更多玩家找得到它。
 MOD 永遠免費，原始碼公開在 GitHub。贊助用於伺服器與 MOD 開發。
 [url=https://ko-fi.com/minidoracat][img]https://raw.githubusercontent.com/Minidoracat/workshop-resources/refs/heads/main/badges/badge_kofi.png[/img][/url] [url=https://github.com/Minidoracat/MinidoracatMiniMapFor42][img]https://raw.githubusercontent.com/Minidoracat/workshop-resources/refs/heads/main/badges/badge_github.png[/img][/url]
 

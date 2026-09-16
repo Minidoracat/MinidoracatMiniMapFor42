@@ -71,6 +71,7 @@ With the required library installed, the [b]main mod[/b] works without addons; c
 [url=https://github.com/Minidoracat/MinidoracatAutoDriveFor42/issues/new?template=road-data.yml][b]Road / route data report[/b][/url]: misplaced routes, gaps or detours — attach [b]a route screenshot showing coordinates + copyable coordinates as text[/b], and describe the problem. Endpoints, direction and map mod/version help; [b]no Telemetry required[/b]. Right-click the affected map point and choose Copy coordinates.
 
 [h2]☕ Support the author[/h2]
+If this helped, a 👍 on this page and a ⭐ on GitHub help other players find it.
 Always free; source on GitHub. Tips fund servers and mod development.
 [url=https://ko-fi.com/minidoracat][img]https://raw.githubusercontent.com/Minidoracat/workshop-resources/refs/heads/main/badges/badge_kofi.png[/img][/url] [url=https://github.com/Minidoracat/MinidoracatMiniMapFor42][img]https://raw.githubusercontent.com/Minidoracat/workshop-resources/refs/heads/main/badges/badge_github.png[/img][/url]
 
