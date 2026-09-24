@@ -423,6 +423,96 @@ do
 end
 
 --------------------------------------------------------------------------------
+-- 六之一、300 格覆蓋切點不是懸空端點（AutoDrive 0915 Elder Road 回報）：gate 在
+-- 格界切出的中間點若當成街道端點去吸附，會被拖到附近路口，同街整段跟著歪。
+-- 真座標：Main St 在 y=11400 的切點被拖到 9 格外的 Echo Creek 端點，Elder 西端
+-- 串鏈跟過去，整條 Elder 變成斜穿草地的 (3599,11409)→(3898,11399.5)。
+--------------------------------------------------------------------------------
+do
+    local keepAll = function(_, _, src) return src end
+    -- 路線逐段取樣，落在 x∈(lo,hi) 的點必須在 y=yc±1 內（路線不得離開該路）
+    local function assertOnRow(r, lo, hi, yc, label)
+        local sampled = 0
+        for i = 1, #r.pts - 2, 2 do
+            local x0, y0, x1, y1 = r.pts[i], r.pts[i + 1], r.pts[i + 2], r.pts[i + 3]
+            for k = 0, 20 do
+                local x, y = x0 + (x1 - x0) * k / 20, y0 + (y1 - y0) * k / 20
+                if x > lo and x < hi then
+                    sampled = sampled + 1
+                    assert(math.abs(y - yc) < 1, label .. "：路線離路 (" .. x .. "," .. y .. ")")
+                end
+            end
+        end
+        assert(sampled > 0, label .. "：路線有經過受測路段")
+    end
+    local elder = {
+        { name = "Main St", src = "M", width = 5, pts = { 3599.5, 10929, 3599.5, 11409 } },
+        { name = "Echo Creek Road", src = "M", width = 5, pts = { 3592, 11422, 3599, 11409 } },
+        { name = "Elder Road", src = "M", width = 5, pts = { 3602, 11399.5, 3898, 11399.5 } },
+        { name = "Johannes Road", src = "M", width = 5, pts = { 3900.5, 11263, 3900.5, 11599 } },
+    }
+    local g = buildAll(elder, keepAll)
+    local r = mod.findRoute(g, 3651, 11400, 3890, 11399.5, nil, nil, nil, 12)
+    assert(r and r.snapDist < 1, "覆蓋切點：Elder 路上起錨不被接到 7 格外斜線，實得 "
+        .. tostring(r and r.snapDist))
+    assertOnRow(r, 3605, 3895, 11399.5, "覆蓋切點：Elder 東行")
+    local through = mod.findRoute(g, 3595, 11416, 3900.5, 11500, nil, nil, nil, 12)
+    assert(through, "覆蓋切點：Echo Creek→Elder→Johannes 連通")
+    assertOnRow(through, 3605, 3895, 11399.5, "覆蓋切點：Echo Creek 接 Elder")
+    local mainEcho = mod.findRoute(g, 3599.5, 11000, 3592, 11422, nil, nil, nil, 12)
+    assert(mainEcho and mainEcho.len < 430, "覆蓋切點：Main St 南端仍接 Echo Creek")
+
+    -- 雙向分隔道路兩線距 8 格（KY-79 形狀）：一線在格界的切點落在另一線吸附容差內，
+    -- 舊制每 300 格把切點拖到對向車道＝路線斜穿中央分隔帶。
+    local dual = buildAll({
+        { name = "KY-79 W", src = "M", width = 6, pts = { 1870, 7000, 1870, 8900 } },
+        { name = "KY-79 E", src = "M", width = 6, pts = { 1878, 7000, 1878, 8900 } },
+    }, keepAll)
+    for _, ends in ipairs({ { 7650, 8350 }, { 8350, 7650 } }) do
+        local rd = mod.findRoute(dual, 1878, ends[1], 1878, ends[2], nil, nil, nil, 12)
+        assert(rd and math.abs(rd.len - 700) < 1, "覆蓋切點：分隔道路直行 700m，實得 "
+            .. tostring(rd and rd.len))
+        for i = 1, #rd.pts, 2 do
+            assert(math.abs(rd.pts[i] - 1878) < 1, "覆蓋切點：不斜穿中央分隔帶，x=" .. rd.pts[i])
+        end
+    end
+
+    -- 反面：前一子段被勝出過濾裁掉時，後段起點是真斷口（MOD 地圖接縫），仍須能吸附接線；
+    -- 路線必須真的走到 ModRoad 上（只驗長度會被「終點改吸幹道＋越野接線」騙過）。
+    local seam = buildAll({
+        { name = "Vanilla", src = "A", width = 5, pts = { 0, 0, 900, 0 } },
+        { name = "ModRoad", src = "B", width = 5, pts = { 10, 2, 297, 2 } },
+    }, function(cx, _, src)
+        if cx == 0 then return "B" end
+        return src == "B" and nil or "A"
+    end)
+    local rs = mod.findRoute(seam, 800, 0, 20, 2, nil, nil, nil, 12)
+    assert(rs and rs.snapDist < 1 and math.abs(rs.pts[#rs.pts - 1] - 20) < 1
+        and math.abs(rs.pts[#rs.pts] - 2) < 1,
+        "覆蓋切點：被裁接縫的切點仍接上 MOD 道路")
+
+    -- 支路端點正對切點（Taffy Lane 形狀：路口剛好在格界）：兩側子段的投影都夾在
+    -- 切點上，不能兩邊都推給鄰段而斷連；終點須落在支路上而不是改吸幹道。
+    local tee = buildAll({
+        { name = "Trunk", src = "M", width = 6, pts = { 0, 0, 900, 0 } },
+        { name = "Branch", src = "M", width = 5, pts = { 300, 4, 300, 100 } },
+    }, keepAll)
+    local rt = mod.findRoute(tee, 100, 0, 300, 90, nil, nil, nil, 12)
+    assert(rt and rt.len < 300 and math.abs(rt.pts[#rt.pts] - 90) < 1,
+        "覆蓋切點：正對切點的支路仍接上幹道")
+
+    -- 支路端點離切點不到 CUT_MERGE（0.25）且垂足跨 0.5 格量化（review 反例）：段內另切會被
+    -- stepCut 併回切點、投影又落在另一個量化格，支路成孤島；須直接接在切點節點上。
+    local sub = buildAll({
+        { name = "Trunk", src = "M", width = 5, pts = { 200, 0.2499, 400, 2.2499 } },
+        { name = "Branch", src = "M", width = 5, pts = { 299.98, 5.2497, 299.98, 60 } },
+    }, keepAll)
+    local rs = mod.findRoute(sub, 220, 0.4499, 299.98, 59, nil, nil, nil, 12)
+    assert(rs and rs.snapDist < 1 and math.abs(rs.pts[#rs.pts] - 59) < 1,
+        "覆蓋切點：格內垂足的支路仍接上幹道（不成孤島）")
+end
+
+--------------------------------------------------------------------------------
 -- 六之二、街道覆蓋格（300）× 實體地塊格（256）契約：抽 production
 -- makeWinnerOf 接在 navroute-core 之後編譯——floor/STREET_CELL/LOT_CELL 全讀
 -- production，測試不手抄常數（任一格網漂移即被本區段的實際數值斷言抓到）。
@@ -1157,7 +1247,9 @@ do
         "正式 RoadPatch：surface metadata 數量與宣告一致")
     assert(#streets == patch.geometryCount + 1 + patch.addCount + patch.bridgeCount,
         "正式 RoadPatch：add/bridge 條目 append 至 patched 表尾")
-    local officialBuilder = mod.newBuild(streets, nil)
+    -- 遊戲內 makeWinnerOf 恆有效（缺失即不建圖），官方圖必走同一條 300 格覆蓋預切；
+    -- nil 會漏掉切點吸附（0915 Elder Road 就是這樣在離線全綠、遊戲內斜穿草地）。
+    local officialBuilder = mod.newBuild(streets, function(_, _, src) return src end)
     for _ = 1, 100000 do
         if mod.step(officialBuilder, 5000) then break end
     end
@@ -1169,6 +1261,19 @@ do
         .. " cutRecords=" .. officialBuilder.cutRecords
         .. " maxCutsPerSegment=" .. officialBuilder.maxCutsPerSegment
         .. " epMoveCount=" .. officialBuilder.epMoveCount)
+    -- Elder Road（0915 截圖 3651,11400）：官方圖上仍沿 y=11399.5，不是 Main St 切點被
+    -- 拖走後的斜線；起錨就在車位下方。
+    do
+        local g = officialBuilder.graph
+        for _, ends in ipairs({ { 3651, 3890 }, { 3890, 3651 } }) do
+            local r = mod.findRoute(g, ends[1], 11400, ends[2], 11399.5, nil, nil, nil, 12)
+            assertRouteMetadata(r, "Elder Road")
+            assert(r.snapDist < 1, "Elder Road：起錨在路上，實得 " .. r.snapDist)
+            for i = 2, #r.pts, 2 do
+                assert(math.abs(r.pts[i] - 11399.5) < 1, "Elder Road：路線留在路面中線")
+            end
+        end
+    end
     -- snapDist 離線重現（AutoDrive 2026-09-01 回報：車在 (10716,9756) 目標
     -- (10744.8,9717.5) 拿到 19 格外的舊起錨）：官方 geometry＋RoadPatch 下該座標
     -- 的最近邊投影距離 1.5 格，重算後路線起點必在一個路幅內，且 snapDist 就是

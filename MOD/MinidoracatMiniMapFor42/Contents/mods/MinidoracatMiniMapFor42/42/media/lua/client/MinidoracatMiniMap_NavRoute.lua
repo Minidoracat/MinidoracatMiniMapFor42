@@ -601,7 +601,7 @@ function NavCore.newBuild(streets, winnerOf)
         seenPair = {}, pairWork = 0, pairScanWork = 0, cutRecords = 0,
         maxCutsPerSegment = 0,
         epMove = {}, epMoveCount = 0, epStreet = {}, junction = {},
-        epOrd = {}, epOrdCount = 0, epLink = {},
+        epOrd = {}, epOrdCount = 0, epLink = {}, pinned = {},
         epKeys = {}, rpath = {}, ri = 1, rn = 0, rid = 0,
         bi = 1, ci = 1, pii = nil, pjj = nil,
         tsBuf = {}, graph = nil,
@@ -613,13 +613,16 @@ local function quantKey(x, y)
     return (floor(x * JOIN_INV + 0.5) + QOFF) * 200000 + (floor(y * JOIN_INV + 0.5) + QOFF)
 end
 
-local function gateEmit(b, x1, y1, x2, y2, sid, width, surface)
-    if dist2(x1, y1, x2, y2) < 1e-6 then return end
+-- pinStart：起點是 300 格覆蓋切點且前一子段也已發出＝街道在此連續，不是懸空端點。
+-- 回傳是否真的發出（<1mm 的碎段不發，鄰段就不能把共用點當連續切點釘住）。
+local function gateEmit(b, x1, y1, x2, y2, sid, width, surface, pinStart)
+    if dist2(x1, y1, x2, y2) < 1e-6 then return false end
     local n = b.gn + 1
     if n > MAX_GATE_SEGMENTS then error("gate segment key-space limit exceeded") end
     b.gn = n
     -- 跨街共用端點有合流優先權，避免既有路口被附近單一路段頂點拖走。
     local k1, k2 = quantKey(x1, y1), quantKey(x2, y2)
+    if pinStart then b.pinned[k1] = true end
     local s1, s2 = b.epStreet[k1], b.epStreet[k2]
     if s1 == nil then b.epStreet[k1] = sid elseif s1 ~= sid then b.junction[k1] = true end
     if s2 == nil then b.epStreet[k2] = sid elseif s2 ~= sid then b.junction[k2] = true end
@@ -659,6 +662,7 @@ local function gateEmit(b, x1, y1, x2, y2, sid, width, surface)
             if #list > b.peakBucket then b.peakBucket = #list end
         end
     end
+    return true
 end
 
 -- 階段一：依引擎的 300 格街道覆蓋邊界預切，再按子段中點的勝出來源過濾。
@@ -693,6 +697,9 @@ local function stepGate(b, budget)
             else
                 local source = street.canonicalSrc or street.src
                 local nts = cellBoundaryTs(x1, y1, x2, y2, b.tsBuf)
+                -- 兩側子段都保留的切點只是資料分格，街道在此連續；前一子段被
+                -- 裁掉時切點才是真的斷口（MOD 地圖接縫），仍須能吸附。
+                local prevKept = false
                 for k = 1, nts - 1 do
                     local t0, t1 = b.tsBuf[k], b.tsBuf[k + 1]
                     if t1 - t0 > 1e-9 then
@@ -700,11 +707,14 @@ local function stepGate(b, budget)
                         local mx = x1 + (x2 - x1) * tm
                         local my = y1 + (y2 - y1) * tm
                         local w = b.winnerOf(floor(mx / STREET_CELL), floor(my / STREET_CELL), source)
-                        if w == nil or source == nil or w == source then
-                            gateEmit(b, x1 + (x2 - x1) * t0, y1 + (y2 - y1) * t0,
+                        local kept = w == nil or source == nil or w == source
+                        local emitted = false
+                        if kept then
+                            emitted = gateEmit(b, x1 + (x2 - x1) * t0, y1 + (y2 - y1) * t0,
                                 x1 + (x2 - x1) * t1, y1 + (y2 - y1) * t1,
-                                b.si, width, surface)
+                                b.si, width, surface, prevKept)
                         end
+                        prevKept = emitted
                         ops = ops + 3
                     end
                 end
@@ -751,6 +761,11 @@ local function mapTo(b, fx, fy, tx2, ty2, d2)
 end
 
 local function tryAttach(b, ex, ey, ax, ay, bx2, by2, cutSeg, tol)
+    local pinned = b.pinned
+    -- 連續切點不是懸空端點，不得被拖走（AutoDrive 0915 Elder Road：Main St 在
+    -- y=11400 的覆蓋切點被拖到 9 格外的 Echo Creek 端點，Elder 西端順著吸附鏈跟過去，
+    -- 整段路成了斜穿草地、最遠離路 9.5 格的斜線）。
+    if pinned[quantKey(ex, ey)] then return end
     local d2, t, qx, qy = projPointSeg(ex, ey, ax, ay, bx2, by2)
     if d2 > tol * tol then return end
     -- 端點 vs 段內判定用世界距離（比例 t 對長段失真，codex review）：投影點落
@@ -767,6 +782,19 @@ local function tryAttach(b, ex, ey, ax, ay, bx2, by2, cutSeg, tol)
             local oa, ob = b.epOrd[ka], b.epOrd[kb]
             if oa > ob then oa, ob = ob, oa end
             if b.epLink[oa * EP_PAIR_BASE + ob] then return end
+            if pinned[kb] then
+                -- 彼端是連續切點：只能把自己接過去，不能反向拖切點。垂足（段內或延伸線上）距切點
+                -- ≤ATTACH_END 就直接接在切點節點上——段內另切會在 stepCut 被 CUT_MERGE 併掉、投影又
+                -- 跨 0.5 格量化時支路成孤島（review 反例）；更遠的垂足交給同街鄰段的真 T 字。
+                local sx, sy = bx2 - ax, by2 - ay
+                local l2 = sx * sx + sy * sy
+                local along = ((ex - ax) * sx + (ey - ay) * sy) / l2
+                if db2 < da2 then along = along - 1 end
+                if along * along * l2 <= endTol then
+                    mapTo(b, ex, ey, px2, py2, dist2(ex, ey, px2, py2))
+                end
+                return
+            end
             local ja, jb = b.junction[ka], b.junction[kb]
             if jb and not ja then
                 mapTo(b, ex, ey, px2, py2, d2)
@@ -1039,7 +1067,7 @@ local function stepCut(b, budget)
             -- 建圖完成即釋放中間產物（bucket/切點/去重表佔記憶體大頭）
             b.buck, b.bkeys, b.cuts, b.seenPair = nil, nil, nil, nil
             b.epMove, b.epStreet, b.junction, b.epKeys = nil, nil, nil, nil
-            b.epOrd, b.epLink = nil, nil
+            b.epOrd, b.epLink, b.pinned = nil, nil, nil
             b.gx1, b.gy1, b.gx2, b.gy2, b.gsid = nil, nil, nil, nil, nil
             b.gwidth, b.gsurface = nil, nil
             return ops
