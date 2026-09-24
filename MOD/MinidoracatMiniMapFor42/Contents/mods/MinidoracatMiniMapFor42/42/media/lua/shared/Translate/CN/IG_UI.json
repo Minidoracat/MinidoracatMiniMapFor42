@@ -1,5 +1,5 @@
 {
-    "IGUI_MapOption_Isometric": "等轴测视角",
+    "IGUI_MapOption_Isometric": "等轴测投影",
     "IGUI_MapOption_PlaceNames": "地名",
     "IGUI_MapOption_RemoteSymbols": "其他玩家标记",
     "IGUI_MapOption_ZombieIntensity": "丧尸热度",
