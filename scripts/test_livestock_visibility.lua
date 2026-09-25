@@ -283,6 +283,10 @@ local safehouseBody = assert(safehouseSource:match(
 local safehousePrelude = [=[
 local distance, ndistance, playerPresent, px, py = nil, nil, true, 0, 10
 local houses, drawCount, iconCount, nameCount = {}, 0, 0, 0
+-- 快取時鐘：draw() 預設先前進 1000ms（跨過快取窗，既有斷言維持「每次都重讀」語意）；
+-- drawSame() 不前進，用來驗快取命中；allowedCalls 數 playerAllowed 跨界呼叫
+local clock, allowedCalls, username = 0, 0, "A"
+function getTimestampMs() return clock end
 -- 三顆玩家開關（預設只開範圍框，既有計數斷言只數框線）
 local opts = { Safehouses = true, SafehouseIcons = false, SafehouseNames = false }
 local function javaList(values)
@@ -314,7 +318,7 @@ end }
 local defaultPlayer = {
     getX = function() return px end,
     getY = function() return py end,
-    getUsername = function() return "A" end,
+    getUsername = function() return username end,
 }
 local function getSpecificPlayer() return playerPresent and defaultPlayer or nil end
 local function drawClippedEdge() drawCount = drawCount + 1 end
@@ -337,7 +341,7 @@ local function safehouse(x1, y1, x2, y2, mine, owner, title)
         getY = function() return y1 end,
         getX2 = function() return x2 end,
         getY2 = function() return y2 end,
-        playerAllowed = function() return mine end,
+        playerAllowed = function() allowedCalls = allowedCalls + 1; return mine end,
         getOwner = function() return owner or "Z" end,
         getTitle = function() return title or "Safehouse" end,
     }
@@ -346,10 +350,20 @@ end
 local safehouseSuffix = [=[
 return {
     draw = function()
+        clock = clock + 1000
         drawCount, iconCount, nameCount = 0, 0, 0
         drawSafehouses(inner)
         return drawCount, iconCount, nameCount
     end,
+    drawSame = function()
+        drawCount, iconCount, nameCount = 0, 0, 0
+        drawSafehouses(inner)
+        return drawCount, iconCount, nameCount
+    end,
+    advance = function(ms) clock = clock + ms end,
+    allowedCalls = function() return allowedCalls end,
+    resetAllowedCalls = function() allowedCalls = 0 end,
+    setUsername = function(value) username = value end,
     setDistance = function(value) distance = value end,
     setNameDistance = function(value) ndistance = value end,
     setPlayerPresent = function(value) playerPresent = value end,
@@ -764,6 +778,72 @@ safehouseHarness.setNameMode(3)
 safehouseHarness.setOption("Safehouses", true)
 safehouseHarness.setOption("SafehouseIcons", false)
 safehouseHarness.setOption("SafehouseNames", false)
+
+-- 快取與距離先行（2026-09-25）：幾何／成員 1 秒快取、距離閘先於 playerAllowed
+do
+    local H = safehouseHarness
+    local mutable = { x1 = 10 }
+    local moving = H.safehouse(10, 10, 20, 20, false)
+    moving.getX = function() return mutable.x1 end
+    H.setHouses({ moving })
+    H.setMode(3); H.setNameMode(3)
+    H.setPlayerPosition(0, 10); H.setDistance(10); H.setNameDistance(nil)
+    assert(H.draw() == 4, "快取前置：距離內應畫")
+    mutable.x1 = 500
+    assert(H.drawSame() == 4, "快取窗內應沿用舊幾何（不重讀 getter）")
+    H.advance(999)
+    assert(H.drawSame() == 4, "未滿 1000ms 仍應命中快取")
+    H.advance(1)
+    assert(H.drawSame() == 0, "滿 1000ms 應重建並讀到新幾何")
+    H.advance(-5000)
+    mutable.x1 = 10
+    assert(H.drawSame() == 4, "時鐘倒退應視為過期並重建")
+
+    -- 筆數變動立即重建（不等 1 秒）
+    H.setHouses({ moving, H.safehouse(10, 5, 20, 15, false) })
+    assert(H.drawSame() == 8, "清單筆數變動應立即重建")
+
+    -- 帳號變動立即重建，成員判定重查
+    H.resetAllowedCalls()
+    H.setUsername("B")
+    H.drawSame()
+    assert(H.allowedCalls() == 2, "帳號變動應重建並重查成員（2 間各 1 次）")
+    H.setUsername("A")
+
+    -- 距離先行：遠處安全屋不呼叫 playerAllowed
+    local far = H.safehouse(900, 900, 910, 910, false)
+    local near = H.safehouse(10, 10, 20, 20, true)
+    H.setHouses({ far, near })
+    H.resetAllowedCalls()
+    assert(H.draw() == 4, "距離先行：只畫近的那間")
+    assert(H.allowedCalls() == 1, "距離先行：只有通過距離閘的列才查成員")
+
+    -- 成員判定 lazy 快取：同一快取窗內重畫不再查
+    H.resetAllowedCalls()
+    H.drawSame(); H.drawSame()
+    assert(H.allowedCalls() == 0, "快取窗內成員結果應重用")
+    H.advance(1000)
+    H.drawSame()
+    assert(H.allowedCalls() == 1, "快取過期後成員應重查")
+
+    -- 名稱距離獨立：框線超距但名稱距離內，仍要查成員並畫名稱
+    H.setOption("Safehouses", true); H.setOption("SafehouseNames", true)
+    H.setHouses({ H.safehouse(10, 10, 20, 20, false) })
+    H.setDistance(5); H.setNameDistance(20)
+    local rects, _, names = H.draw()
+    assert(rects == 0 and names == 1, "框線超距、名稱在距內：只畫名稱")
+    H.setDistance(20); H.setNameDistance(5)
+    rects, _, names = H.draw()
+    assert(rects == 4 and names == 0, "框線在距內、名稱超距：只畫框線")
+
+    -- 無距離限制：全部查成員（行為同改寫前）
+    H.setDistance(nil); H.setNameDistance(nil)
+    H.setOption("SafehouseNames", false)
+    H.setHouses({ far, near })
+    H.resetAllowedCalls()
+    assert(H.draw() == 8, "無距離限制應畫全部")
+    assert(H.allowedCalls() == 2, "無距離限制時每間各查一次成員")
+end
 
 assert(not navHarness.cacheEmpty(), "導航測試初始快取缺失")
 navHarness.setAllowed(false)

@@ -29,7 +29,9 @@ local Policy = Core.policy
 -- 名稱 getTitle()（SafeHouse.java:727，預設 "Safehouse"）、屋主 getOwner()（:656）。
 -- 陣營判定：Faction.getPlayerFaction(username)（Faction.java:123，原版用例
 -- ISFactionUI.lua:408 為 IsoPlayer 版）→ faction:isOwner/isMember(owner)（:150/:154）。
--- 安全屋通常個位數，逐幀直畫免節流；單機無安全屋＝清單空＝零成本。
+-- 每幀成本：幾何與成員身分走 1 秒快取（refreshSafehouseRows），距離閘先於成員判定——
+-- 大型伺服器上安全屋可達數百，原本每幀每間 4 個座標 getter＋playerAllowed 都是跨界呼叫
+-- （2026-09-25 正式服實測 drawSafehouses 佔客戶端 Lua 取樣 1.67%）。單機無安全屋＝零成本。
 --------------------------------------------------------------------------------
 -- 沙盒模式：1=關閉、2=僅自己的、3=全部（預設；缺表視為 3）、4=自己與陣營。
 -- 管理員隱私檢視生效時 Policy 回 3 且距離閘一併放行——旁路只影響「這台客戶端畫什麼」
@@ -58,6 +60,31 @@ local function safehouseModeAllows(mode, mine, ally)
     return true
 end
 
+-- 幾何／成員快取：清單內容罕變（認領、邀請、解除），每幀重讀全服安全屋的 Java getter 是純浪費。
+-- 重建條件：逾 SH_CACHE_MS、清單筆數變、玩家帳號變、陣營物件變（含時鐘倒退）。
+-- 容忍：同筆數的增刪、範圍或成員異動最多延遲 1 秒反映；列（row）持有的 SafeHouse
+-- 參照在延遲窗內可能已被移除，仍是有效 Java 物件，最多多畫 1 秒。
+-- 成員身分 lazy：只有通過距離閘的列才呼叫 playerAllowed／陣營判定，結果存到下次重建。
+local SH_CACHE_MS = 1000
+local shCache = { at = nil, size = -1, user = nil, faction = nil, rows = {} }
+
+local function refreshSafehouseRows(list, size, username, faction)
+    local c = shCache
+    local now = getTimestampMs()
+    if c.at and now >= c.at and now - c.at < SH_CACHE_MS and c.size == size
+        and c.user == username and c.faction == faction then
+        return c.rows
+    end
+    local rows = {}
+    for i = 0, size - 1 do
+        local sh = list:get(i)
+        -- 安全屋幾何 getter＝SafeHouse.java:596-633；getX2/getY2 回 x+w/y+h
+        rows[i + 1] = { sh = sh, x1 = sh:getX(), y1 = sh:getY(), x2 = sh:getX2(), y2 = sh:getY2() }
+    end
+    c.at, c.size, c.user, c.faction, c.rows = now, size, username, faction, rows
+    return rows
+end
+
 local function drawSafehouses(inner)
     if not (SafeHouse and SafeHouse.getSafehouseList) then return end
     local wantRect = getBoolOption("Safehouses", true)
@@ -71,7 +98,8 @@ local function drawSafehouses(inner)
     if nameMode == 1 then wantName = false end
     if not (wantRect or wantIcon or wantName) then return end
     local list = SafeHouse.getSafehouseList()
-    if not list or list:size() == 0 then return end
+    local size = list and list:size() or 0
+    if size == 0 then return end
     -- 距離閘：範圍框與圖標共用 SafehouseDisplayDistance，名稱獨立 SafehouseNameDistance
     local dist = (wantRect or wantIcon) and displayDist("SafehouseDisplayDistance", pn) or nil
     local ndist = wantName and displayDist("SafehouseNameDistance", pn) or nil
@@ -89,84 +117,97 @@ local function drawSafehouses(inner)
     if (shMode == 4 or nameMode == 4) and username and Faction and Faction.getPlayerFaction then
         faction = Faction.getPlayerFaction(username)
     end
+    local rows = refreshSafehouseRows(list, size, username, faction)
     local mapAPI = inner.mapAPI
     local W, H = inner.width, inner.height
-    for i = 0, list:size() - 1 do
-        local sh = list:get(i)
-        -- 安全屋幾何 getter＝SafeHouse.java:596-633；getX2/getY2 回 x+w/y+h
-        local x1, y1 = sh:getX(), sh:getY()
-        local x2, y2 = sh:getX2(), sh:getY2()
-        -- 成員判定走 String 版 playerAllowed（SafeHouse.java:288-290）——IsoPlayer 版
-        -- （:282-285）含管理員 CanGoInsideSafehouses 後門，admin 測試會全判綠
-        local mine = username ~= nil and sh:playerAllowed(username)
-        local ally = false
-        if faction and not mine then
-            local owner = sh:getOwner()
-            ally = owner ~= nil and (faction:isOwner(owner) or faction:isMember(owner))
-        end
-        local showRect = wantRect and safehouseModeAllows(shMode, mine, ally)
-        local showIcon = wantIcon and safehouseModeAllows(shMode, mine, ally)
-        local showName = wantName and safehouseModeAllows(nameMode, mine, ally)
-        if (dist2 or ndist2) and (showRect or showIcon or showName) then
-            -- 玩家點到矩形的最近點；x2/y2 沿用上方原版 getter 原值
-            local nx = math.max(x1, math.min(px, x2))
-            local ny = math.max(y1, math.min(py, y2))
+    for idx = 1, #rows do
+        local row = rows[idx]
+        local x1, y1, x2, y2 = row.x1, row.y1, row.x2, row.y2
+        -- 距離先行：超出兩個距離閘的列不做成員判定（最近點＝玩家夾進矩形）。
+        -- 夾值用比較式而非 math.max/min：Kahlua 的 math.* 每次都是跨界 Java 呼叫，
+        -- 每幀×全服安全屋數就是本段熱點（x1<=x2、y1<=y2：SafeHouse w/h 非負）
+        local nearRI, nearName = wantRect or wantIcon, wantName
+        if dist2 or ndist2 then
+            local nx = px < x1 and x1 or (px > x2 and x2 or px)
+            local ny = py < y1 and y1 or (py > y2 and y2 or py)
             local dx, dy = px - nx, py - ny
             local d2 = dx * dx + dy * dy
-            if dist2 and d2 > dist2 then showRect, showIcon = false, false end
-            if ndist2 and d2 > ndist2 then showName = false end
+            if dist2 and d2 > dist2 then nearRI = false end
+            if ndist2 and d2 > ndist2 then nearName = false end
         end
-        if showRect or showIcon or showName then
-            -- 四角投影（worldToUIX/Y 同殭屍點位；等軸測下矩形成菱形故逐邊畫線）
-            local ux1, uy1 = mapAPI:worldToUIX(x1, y1), mapAPI:worldToUIY(x1, y1)
-            local ux2, uy2 = mapAPI:worldToUIX(x2, y1), mapAPI:worldToUIY(x2, y1)
-            local ux3, uy3 = mapAPI:worldToUIX(x2, y2), mapAPI:worldToUIY(x2, y2)
-            local ux4, uy4 = mapAPI:worldToUIX(x1, y2), mapAPI:worldToUIY(x1, y2)
-            local r, g, b = 1.0, 0.25, 0.2             -- 他人＝紅
-            if mine then r, g, b = 0.25, 0.95, 0.35     -- 自己＝綠
-            elseif ally then r, g, b = 0.35, 0.8, 1.0 end -- 同陣營＝青
-            if showRect then
-                drawClippedEdge(inner, ux1, uy1, ux2, uy2, r, g, b)
-                drawClippedEdge(inner, ux2, uy2, ux3, uy3, r, g, b)
-                drawClippedEdge(inner, ux3, uy3, ux4, uy4, r, g, b)
-                drawClippedEdge(inner, ux4, uy4, ux1, uy1, r, g, b)
+        if nearRI or nearName then
+            local sh = row.sh
+            -- 成員判定走 String 版 playerAllowed（SafeHouse.java:288-290）——IsoPlayer 版
+            -- （:282-285）含管理員 CanGoInsideSafehouses 後門，admin 測試會全判綠
+            local mine = row.mine
+            if mine == nil then
+                mine = username ~= nil and sh:playerAllowed(username)
+                row.mine = mine
             end
-            if showIcon or showName then
-                local cx = (ux1 + ux3) / 2 -- 菱形中心＝對角中點
-                local cy = (uy1 + uy3) / 2
-                local iconDrawn = false
-                if showIcon then
-                    -- 白 glyph 染色畫法與動物／載具符號共用（_Dots.lua adotsDrawGlyph；
-                    -- 模組缺席＝不畫圖標，其餘照常）；只在整顆落在視窗內時畫
-                    -- UI 框架 rev 4 art 圖示優先（呼叫時查 Core.Skin），缺則退原版 map_house
-                    local Skin = Core.Skin
-                    local tex = Skin and Skin.iconTexture and Skin.iconTexture("house")
-                        or (adotsTexture and adotsTexture(SH_ICON))
-                    local drawGlyph = Core.adotsDrawGlyph
-                    local ix, iy = cx - SH_ICON_SIZE / 2, cy - SH_ICON_SIZE / 2
-                    if tex and drawGlyph and ix >= 0 and iy >= 0
-                        and ix + SH_ICON_SIZE <= W and iy + SH_ICON_SIZE <= H then
-                        drawGlyph(inner, tex, ix, iy, SH_ICON_SIZE, r, g, b)
-                        iconDrawn = true
-                    end
+            local ally = false
+            if faction and not mine then
+                ally = row.ally
+                if ally == nil then
+                    local owner = sh:getOwner()
+                    ally = owner ~= nil and (faction:isOwner(owner) or faction:isMember(owner))
+                    row.ally = ally
                 end
-                if showName then
-                    local name = sh:getTitle()
-                    if name and name ~= "" then
-                        local tw = shNameW[name]
-                        if not tw then
-                            local tm = getTextManager()
-                            tw = tm:MeasureStringX(UIFont.Small, name) -- 用例 ISFactionUI.lua:238
-                            shNameW[name] = tw
-                            if not shFontH then shFontH = tm:getFontHeight(UIFont.Small) end
+            end
+            local showRect = nearRI and wantRect and safehouseModeAllows(shMode, mine, ally)
+            local showIcon = nearRI and wantIcon and safehouseModeAllows(shMode, mine, ally)
+            local showName = nearName and safehouseModeAllows(nameMode, mine, ally)
+            if showRect or showIcon or showName then
+                -- 四角投影（worldToUIX/Y 同殭屍點位；等軸測下矩形成菱形故逐邊畫線）
+                local ux1, uy1 = mapAPI:worldToUIX(x1, y1), mapAPI:worldToUIY(x1, y1)
+                local ux2, uy2 = mapAPI:worldToUIX(x2, y1), mapAPI:worldToUIY(x2, y1)
+                local ux3, uy3 = mapAPI:worldToUIX(x2, y2), mapAPI:worldToUIY(x2, y2)
+                local ux4, uy4 = mapAPI:worldToUIX(x1, y2), mapAPI:worldToUIY(x1, y2)
+                local r, g, b = 1.0, 0.25, 0.2             -- 他人＝紅
+                if mine then r, g, b = 0.25, 0.95, 0.35     -- 自己＝綠
+                elseif ally then r, g, b = 0.35, 0.8, 1.0 end -- 同陣營＝青
+                if showRect then
+                    drawClippedEdge(inner, ux1, uy1, ux2, uy2, r, g, b)
+                    drawClippedEdge(inner, ux2, uy2, ux3, uy3, r, g, b)
+                    drawClippedEdge(inner, ux3, uy3, ux4, uy4, r, g, b)
+                    drawClippedEdge(inner, ux4, uy4, ux1, uy1, r, g, b)
+                end
+                if showIcon or showName then
+                    local cx = (ux1 + ux3) / 2 -- 菱形中心＝對角中點
+                    local cy = (uy1 + uy3) / 2
+                    local iconDrawn = false
+                    if showIcon then
+                        -- 白 glyph 染色畫法與動物／載具符號共用（_Dots.lua adotsDrawGlyph；
+                        -- 模組缺席＝不畫圖標，其餘照常）；只在整顆落在視窗內時畫
+                        -- UI 框架 rev 4 art 圖示優先（呼叫時查 Core.Skin），缺則退原版 map_house
+                        local Skin = Core.Skin
+                        local tex = Skin and Skin.iconTexture and Skin.iconTexture("house")
+                            or (adotsTexture and adotsTexture(SH_ICON))
+                        local drawGlyph = Core.adotsDrawGlyph
+                        local ix, iy = cx - SH_ICON_SIZE / 2, cy - SH_ICON_SIZE / 2
+                        if tex and drawGlyph and ix >= 0 and iy >= 0
+                            and ix + SH_ICON_SIZE <= W and iy + SH_ICON_SIZE <= H then
+                            drawGlyph(inner, tex, ix, iy, SH_ICON_SIZE, r, g, b)
+                            iconDrawn = true
                         end
-                        local th = shFontH
-                        local tx = cx - tw / 2
-                        -- 有圖標時名稱掛圖標正下方，否則置中（同 MapBounds 名稱底墊畫法）
-                        local ty = iconDrawn and (cy + SH_ICON_SIZE / 2 + 1) or (cy - th / 2)
-                        if tx >= 2 and ty >= 2 and tx + tw <= W - 2 and ty + th <= H - 2 then
-                            inner:drawRect(tx - 3, ty - 1, tw + 6, th + 2, 0.6, 0, 0, 0)
-                            inner:drawText(name, tx, ty, r, g, b, 0.95, UIFont.Small)
+                    end
+                    if showName then
+                        local name = sh:getTitle()
+                        if name and name ~= "" then
+                            local tw = shNameW[name]
+                            if not tw then
+                                local tm = getTextManager()
+                                tw = tm:MeasureStringX(UIFont.Small, name) -- 用例 ISFactionUI.lua:238
+                                shNameW[name] = tw
+                                if not shFontH then shFontH = tm:getFontHeight(UIFont.Small) end
+                            end
+                            local th = shFontH
+                            local tx = cx - tw / 2
+                            -- 有圖標時名稱掛圖標正下方，否則置中（同 MapBounds 名稱底墊畫法）
+                            local ty = iconDrawn and (cy + SH_ICON_SIZE / 2 + 1) or (cy - th / 2)
+                            if tx >= 2 and ty >= 2 and tx + tw <= W - 2 and ty + th <= H - 2 then
+                                inner:drawRect(tx - 3, ty - 1, tw + 6, th + 2, 0.6, 0, 0, 0)
+                                inner:drawText(name, tx, ty, r, g, b, 0.95, UIFont.Small)
+                            end
                         end
                     end
                 end
