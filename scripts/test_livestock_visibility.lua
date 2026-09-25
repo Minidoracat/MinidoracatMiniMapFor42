@@ -323,7 +323,16 @@ local defaultPlayer = {
 local function getSpecificPlayer() return playerPresent and defaultPlayer or nil end
 local function drawClippedEdge() drawCount = drawCount + 1 end
 local function adotsTexture() return "tex" end
-local Core = { adotsDrawGlyph = function() iconCount = iconCount + 1 end }
+-- 視野外接框（主檔 visibleWorldAABB）：view＝nil 時回全世界；viewCalls 數跨界次數
+local view, viewCalls = nil, 0
+local Core = {
+    adotsDrawGlyph = function() iconCount = iconCount + 1 end,
+    visibleWorldAABB = function()
+        viewCalls = viewCalls + 1
+        if view then return view[1], view[2], view[3], view[4] end
+        return -1e9, 1e9, -1e9, 1e9
+    end,
+}
 function getTextManager()
     return { MeasureStringX = function() return 20 end, getFontHeight = function() return 10 end }
 end
@@ -364,6 +373,9 @@ return {
     allowedCalls = function() return allowedCalls end,
     resetAllowedCalls = function() allowedCalls = 0 end,
     setUsername = function(value) username = value end,
+    setView = function(minX, maxX, minY, maxY) view = minX and { minX, maxX, minY, maxY } or nil end,
+    viewCalls = function() return viewCalls end,
+    resetViewCalls = function() viewCalls = 0 end,
     setDistance = function(value) distance = value end,
     setNameDistance = function(value) ndistance = value end,
     setPlayerPresent = function(value) playerPresent = value end,
@@ -835,6 +847,36 @@ do
     H.setDistance(20); H.setNameDistance(5)
     rects, _, names = H.draw()
     assert(rects == 4 and names == 0, "框線在距內、名稱超距：只畫框線")
+
+    -- 視野裁切（不限距離時）：畫面外整列跳過且不查成員；相接／部分重疊仍畫
+    H.setOption("SafehouseNames", false)
+    H.setDistance(nil); H.setNameDistance(nil)
+    H.setView(0, 100, 0, 100)
+    local inView = H.safehouse(10, 10, 20, 20, false)
+    local outView = H.safehouse(500, 500, 510, 510, false)
+    local touching = H.safehouse(100, 50, 110, 60, false)   -- x1 == maxX：相接
+    local straddle = H.safehouse(-5, -5, 5, 5, false)       -- 跨左上角
+    local touchLeft = H.safehouse(-10, 50, 0, 60, false)    -- x2 == minX：相接
+    local belowView = H.safehouse(50, 150, 60, 160, false)  -- 只有 Y 超出
+    local touchTop = H.safehouse(50, -10, 60, 0, false)     -- y2 == minY：相接
+    local touchBottom = H.safehouse(50, 100, 60, 110, false) -- y1 == maxY：相接
+    H.setHouses({ inView, outView, touching, straddle, touchLeft, belowView, touchTop, touchBottom })
+    H.resetAllowedCalls()
+    assert(H.draw() == 24, "視野裁切：畫面內、四邊相接、跨邊各畫 4 邊，X 或 Y 超出不畫")
+    assert(H.allowedCalls() == 6, "視野裁切：畫面外的安全屋不查成員")
+    H.setView(200, 300, 200, 300)
+    assert(H.draw() == 0, "視野移走後全部裁掉")
+    -- 所有已開圖層都有距離閘：不計算可見範圍（省 8 次 uiToWorld）
+    H.setView(nil)
+    H.setDistance(50)
+    H.resetViewCalls()
+    H.draw()
+    assert(H.viewCalls() == 0, "框線有距離閘且名稱關閉時不應計算可見範圍")
+    H.setOption("SafehouseNames", true); H.setNameDistance(nil)
+    H.resetViewCalls()
+    H.draw()
+    assert(H.viewCalls() == 1, "名稱不限距離時應計算可見範圍")
+    H.setOption("SafehouseNames", false); H.setDistance(nil)
 
     -- 無距離限制：全部查成員（行為同改寫前）
     H.setDistance(nil); H.setNameDistance(nil)

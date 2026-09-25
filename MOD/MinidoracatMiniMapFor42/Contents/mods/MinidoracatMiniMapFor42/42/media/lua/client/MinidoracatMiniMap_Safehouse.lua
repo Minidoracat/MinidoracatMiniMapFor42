@@ -29,7 +29,7 @@ local Policy = Core.policy
 -- 名稱 getTitle()（SafeHouse.java:727，預設 "Safehouse"）、屋主 getOwner()（:656）。
 -- 陣營判定：Faction.getPlayerFaction(username)（Faction.java:123，原版用例
 -- ISFactionUI.lua:408 為 IsoPlayer 版）→ faction:isOwner/isMember(owner)（:150/:154）。
--- 每幀成本：幾何與成員身分走 1 秒快取（refreshSafehouseRows），距離閘先於成員判定——
+-- 每幀成本：幾何與成員身分走 1 秒快取（refreshSafehouseRows），距離閘與視野裁切先於成員判定——
 -- 大型伺服器上安全屋可達數百，原本每幀每間 4 個座標 getter＋playerAllowed 都是跨界呼叫
 -- （2026-09-25 正式服實測 drawSafehouses 佔客戶端 Lua 取樣 1.67%）。單機無安全屋＝零成本。
 --------------------------------------------------------------------------------
@@ -118,6 +118,15 @@ local function drawSafehouses(inner)
         faction = Faction.getPlayerFaction(username)
     end
     local rows = refreshSafehouseRows(list, size, username, faction)
+    -- 視野裁切：只在某個已開圖層沒有距離閘時才需要（有距離閘時距離先行已篩掉遠處，
+    -- 不為它多付每幀 8 次 uiToWorld 跨界）。visibleWorldAABB＝小地圖四角反投影的外接框
+    -- （主檔，等軸測下是可見菱形的超集）：矩形與它不相交＝四邊、圖標、名稱都不可能在
+    -- 視窗內，整列跳過。成本從「全服安全屋數」降為「畫面內安全屋數」
+    local vMinX, vMaxX, vMinY, vMaxY
+    if (((wantRect or wantIcon) and not dist2) or (wantName and not ndist2))
+        and Core.visibleWorldAABB then
+        vMinX, vMaxX, vMinY, vMaxY = Core.visibleWorldAABB(inner)
+    end
     local mapAPI = inner.mapAPI
     local W, H = inner.width, inner.height
     for idx = 1, #rows do
@@ -127,7 +136,9 @@ local function drawSafehouses(inner)
         -- 夾值用比較式而非 math.max/min：Kahlua 的 math.* 每次都是跨界 Java 呼叫，
         -- 每幀×全服安全屋數就是本段熱點（x1<=x2、y1<=y2：SafeHouse w/h 非負）
         local nearRI, nearName = wantRect or wantIcon, wantName
-        if dist2 or ndist2 then
+        if vMinX and (x2 < vMinX or x1 > vMaxX or y2 < vMinY or y1 > vMaxY) then
+            nearRI, nearName = false, false
+        elseif dist2 or ndist2 then
             local nx = px < x1 and x1 or (px > x2 and x2 or px)
             local ny = py < y1 and y1 or (py > y2 and y2 or py)
             local dx, dy = px - nx, py - ny
