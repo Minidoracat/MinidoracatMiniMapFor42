@@ -801,7 +801,19 @@ do
     ok, why = t.core.navGuideItinerary(0, trip(t).revision, "approach")
     assert(not ok and why == "busy" and t.api.getNavLeg(0) == claimed,
         "切換仍須先交還自駕")
+    local stopBefore = select(2, t.api.getNavLeg(0))
     assert(t.api.releaseNavLeg(0, "Auto", claimed, "manual"))
+    -- 手動交還：導航不中斷（仍 navigating、同一站、getNavTarget 仍有目標），舊 claim 失效、
+    -- 換新段 token 可再 claim。違規證明：manual 改回 paused 即紅。
+    do
+        local leg, stop, _, _, phase = t.api.getNavLeg(0)
+        assert(phase == "navigating" and stop == stopBefore and leg ~= claimed
+            and t.api.getNavTarget(0) ~= nil, "手動交還保留導航與目標")
+        local ok2, why2 = t.api.reportNavArrival(0, "Auto", claimed)
+        assert(not ok2 and why2 ~= "arrived", "舊 claim 不能再回報")
+        local again = assert(t.api.claimNavLeg(0, "Auto", leg), "新段 token 可重新接管")
+        assert(t.api.releaseNavLeg(0, "Auto", again, "manual"))
+    end
     assert(t.core.navGuideItinerary(0, trip(t).revision, "approach"))
     direct, directToken = trip(t), t.api.getNavLeg(0)
     car.stopped = false

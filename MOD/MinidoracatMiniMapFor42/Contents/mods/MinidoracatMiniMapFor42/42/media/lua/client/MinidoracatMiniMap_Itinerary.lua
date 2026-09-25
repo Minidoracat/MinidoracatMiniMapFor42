@@ -407,6 +407,14 @@ local function release(pn, owner, token, reason)
     local slot, err = owned(pn, owner, token, "release", reason, false)
     if not slot then return err == "duplicate", err end
     local trip = copyTrip(slot.trip)
+    if reason == "manual" then
+        -- 玩家自己按停止／手動接手：只交還駕駛，導航照舊（路線與小地圖指引不消失）。
+        -- 舊 claim 作廢、換一枚未接管的新段 token；要再自駕需重新 claim（停妥）。
+        trip.revision = serial()
+        publish(slot, trip, newToken(), nil, { owner = owner, token = token, operation = "release", reason = reason })
+        if getSpecificPlayer(pn) == slot.player then save(slot, trip) end
+        return true, "released"
+    end
     trip.phase, trip.reason, trip.revision = "paused", reason, serial()
     publish(slot, trip, nil, nil, { owner = owner, token = token, operation = "release", reason = reason })
     if getSpecificPlayer(pn) == slot.player then save(slot, trip) end
