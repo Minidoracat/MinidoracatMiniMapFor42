@@ -1147,7 +1147,9 @@ local function unifiedBuildAddon(ctx)
             if type(selected) ~= "number" or selected ~= selected or selected < 1
                     or not items or selected > #items then selected = default end
             combo.selected = selected - selected % 1
-            if entry.tooltip then combo.tooltip = getText(entry.tooltip) end
+            -- ISComboBox 的 tooltip 是「選項文字→說明」對照表（ISComboBox.lua:483-500、506-508），
+            -- 直接給字串會被當表索引＝永遠 nil，滑鼠移過去什麼都不出現；用 defaultTooltip。
+            if entry.tooltip then combo:setToolTipMap({ defaultTooltip = getText(entry.tooltip) }) end
             unifiedAdd(ctx, combo)
             ctx.curY = ctx.curY + ctx.rowH
         end

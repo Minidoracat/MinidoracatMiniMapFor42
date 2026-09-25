@@ -200,6 +200,7 @@ function ISComboBox:new(x, y, w, h, target, callback, arg)
     local combo = { kind = "combo", callback = callback, arg = arg, options = {} }
     function combo:initialise() end
     function combo:addOption(text) self.options[#self.options + 1] = text end
+    function combo:setToolTipMap(map) self.tooltip = map end
     return combo
 end
 local function unifiedAddBtn(ctx, x, yy, w, labelText, fn, tooltip)
@@ -237,7 +238,8 @@ check(tick.kind == "tick" and tick.checked == true, "tick getter initializes che
 checkEq(tick.tooltip, "T:UI_Show_tip", "tick tooltip wired")
 check(combo.kind == "combo" and combo.selected == 3 and #combo.options == 3,
     "combo getter and items initialize control")
-checkEq(combo.tooltip, "T:UI_Width_tip", "combo tooltip wired")
+check(type(combo.tooltip) == "table" and combo.tooltip.defaultTooltip == "T:UI_Width_tip",
+    "combo tooltip is a defaultTooltip map (vanilla ISComboBox ignores a plain string)")
 comboValue = 0 / 0
 builder.build(ctx)
 checkEq(builder.rows[#builder.rows].selected, 2, "NaN combo getter falls back to default")
