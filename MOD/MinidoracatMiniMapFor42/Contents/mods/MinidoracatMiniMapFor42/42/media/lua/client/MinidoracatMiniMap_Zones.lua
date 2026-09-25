@@ -269,7 +269,11 @@ local function zcCandidates(inner, provider, zones, disCats, scale,
     -- （zoom 檔位；halo 世界尺寸依它）／TTL／containment 框／玩家移動（閘生效時）
     if e and rawequal(e.zones, zones) and e.disCats == disCats and e.gate2 == gate2
         and e.scale == scale -- zoom 檔位未必伴隨視窗溢出：獨立失效鍵（A14-11 鎖）
-        and now >= e.builtMs and now - e.builtMs < ZC_TTL_MS
+        -- TTL 只為「外部 addon 原地 mutate」兜底；internal POI provider 一律原子換表
+        -- （MinidoracatMiniMapPOI.lua buildPoiConverted：poiZones = built），identity 鍵
+        -- 已足以失效，站立時不再每秒全量重建 ~1670 個 zone bbox（正式服取樣
+        -- zcZoneBBox 0.22-0.25%）。時鐘回撥仍重建（now < builtMs）
+        and now >= e.builtMs and (provider.internal or now - e.builtMs < ZC_TTL_MS)
         and vMinX >= e.qMinX and vMaxX <= e.qMaxX
         and vMinY >= e.qMinY and vMaxY <= e.qMaxY then
         if not gate2 then return e.list end

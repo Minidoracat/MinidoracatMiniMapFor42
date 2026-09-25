@@ -1590,6 +1590,44 @@ do
     assert(inner.polyCount == 4,
         "A14-1 TTL 過期重建應畫出 append 的 zone（得 " .. inner.polyCount .. "）")
 
+    -- A14-8 internal provider（POI 原子換表）不走 TTL：同表原地 append 過了 TTL
+    -- 仍沿用舊候選（證明站立不再每秒重建）；換表仍立即生效（A14-2 同鍵）
+    zone.clearProviders()
+    local itbl = visibleZone()
+    local icur = itbl
+    zone.addProvider("internalTtl", function() return icur end, true)
+    local ii = makeInner()
+    zone.fill(ii)
+    assert(ii.polyCount == 1, "A14-8 初繪應畫 1（得 " .. ii.polyCount .. "）")
+    itbl[2] = { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+        rects = { { x1 = 30, y1 = 30, x2 = 40, y2 = 40 } } }
+    zone.advanceClock(5000)
+    zone.fill(ii)
+    assert(ii.polyCount == 2,
+        "A14-8 internal 過 TTL 不應重建（append 探針不可見；得 " .. ii.polyCount .. "）")
+    zone.advanceClock(-20000)
+    zone.fill(ii)
+    assert(ii.polyCount == 4, "A14-8 internal 時鐘回撥仍應重建（append 可見；得 " .. ii.polyCount .. "）")
+    local inew = visibleZone()
+    inew[2] = itbl[2]
+    inew[3] = { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+        rects = { { x1 = 50, y1 = 50, x2 = 60, y2 = 60 } } }
+    icur = inew
+    zone.fill(ii)
+    assert(ii.polyCount == 7, "A14-8 internal 換表應立即重建（得 " .. ii.polyCount .. "）")
+    zone.clearProviders()
+    local tbl2 = visibleZone()
+    zone.addProvider("cacheProbe2", function() return tbl2 end)
+    local ie = makeInner()
+    zone.fill(ie)
+    tbl2[2] = { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
+        rects = { { x1 = 30, y1 = 30, x2 = 40, y2 = 40 } } }
+    zone.advanceClock(1001)
+    zone.fill(ie)
+    assert(ie.polyCount == 3, "A14-8 外部 provider 仍須 TTL 重建（得 " .. ie.polyCount .. "）")
+    zone.clearProviders()
+    zone.addProvider("cacheProbe", function() return tbl end)
+
     -- A14-6 時鐘回撥：now < builtMs 視為到期（append 立即可見，不必等 TTL）
     tbl[3] = { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2,
         rects = { { x1 = 50, y1 = 50, x2 = 60, y2 = 60 } } }
