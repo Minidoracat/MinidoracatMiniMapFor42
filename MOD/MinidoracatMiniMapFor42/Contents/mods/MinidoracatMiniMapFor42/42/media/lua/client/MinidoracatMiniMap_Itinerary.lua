@@ -538,17 +538,28 @@ local function setTarget(pn, x, y, label)
     if not coordinate(x) or not coordinate(y) or not labelValid(label) then return false, "badargs" end
     local slot, reason = writable(pn)
     if not slot then return false, reason end
-    local allowed, why = editAllowed(slot)
-    if not allowed then return false, why end
+    -- 單一目標導航中自駕控車：換目標只換目的地，沿用同一段 token 與 claim，自駕不中斷、
+    -- 直接接新路線（自駕本身支援行駛中換目標）。多站行程仍須先停止自駕才能改。
+    local old = slot.trip
+    local keep = slot.claim ~= nil and old ~= nil and old.count == 1 and old.phase == "navigating"
+    if not keep then
+        local allowed, why = editAllowed(slot)
+        if not allowed then return false, why end
+    end
     local enabled, why, detail = gate(slot, "set")
     if not enabled then return false, why, detail end
-    local id = slot.trip and slot.trip.nextStopId or 1
+    local id = old and old.nextStopId or 1
     if id >= MAX_INTEGER - 1 then return false, "limit" end
     local trip = { schemaVersion = 2, revision = 1, count = 1, nextStopId = id + 1,
         phase = "navigating", currentStopId = id, autoContinue = true, activation = "start",
         stops = { { id = id, x = x, y = y, label = label, status = "pending", pause = false } } }
-    local ok, err = commit(slot, trip, newToken(), nil)
-    if ok and Core.navKickAvailable then Core.navKickAvailable(pn) end
+    local ok, err
+    if keep then
+        ok, err = commit(slot, trip, slot.token, slot.claim)
+    else
+        ok, err = commit(slot, trip, newToken(), nil)
+        if ok and Core.navKickAvailable then Core.navKickAvailable(pn) end
+    end
     return ok, err
 end
 local function guide(pn, expectedRevision, mode)

@@ -101,6 +101,27 @@ do
     assert(edit(t, "append", 40, 0)); eq(trip(t).phase, "draft", "完成後加站回草稿")
 end
 
+-- 單一目標自駕中換目標：沿用同一 claim／token、只換目的地；多站行程仍被 claim 守住。
+do
+    local t = fixture(); local p = t.player(0); local v = vehicle(p)
+    assert(t.core.navSetTarget(0, 100, 0))
+    local claimed = assert(t.api.claimNavLeg(0, "Auto", t.api.getNavLeg(0)))
+    v.stopped = false
+    local ok, why = t.core.navSetTarget(0, 250, 40)
+    eq(ok, true, "單一目標自駕中可換目標"); eq(why, "ok", "換目標成功")
+    local leg, _, lx, ly, phase = t.api.getNavLeg(0)
+    eq(leg, claimed, "沿用同一 claim token，自駕不中斷")
+    eq(lx, 250, "目的地已換 x"); eq(ly, 40, "目的地已換 y"); eq(phase, "navigating", "仍在導航")
+    v.stopped = true; p.x, p.y, v.x, v.y = 250, 40, 250, 40
+    ok, why = t.api.reportNavArrival(0, "Auto", claimed)
+    eq(why, "arrived", "新目的地可由原 claim 回報抵達")
+    local t2 = fixture(); local p2 = t2.player(0); vehicle(p2)
+    assert(edit(t2, "append", 100, 0)); assert(edit(t2, "append", 200, 0))
+    assert(t2.api.claimNavLeg(0, "Auto", assert(start(t2))))
+    ok, why = t2.core.navSetTarget(0, 300, 0)
+    eq(ok, false, "多站行程自駕中不可換目標"); eq(why, "busy", "多站仍由 claim 守住")
+end
+
 -- 車仍移動不完成；claim 有效時 MiniMap 不擅自完成，站與幾何 token 分離。
 do
     local t = fixture(); local p = t.player(0); local v = vehicle(p)
