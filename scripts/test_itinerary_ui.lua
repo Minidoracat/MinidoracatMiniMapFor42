@@ -138,6 +138,15 @@ ISScrollingListBox = { new = function(_, x, y, w, h)
         return row
     end
     o.clear = function(self) self.items, self.selected, self.yScroll = {}, 1, 0 end
+    o.rowAt = function(self, _, y)
+        local y0 = 0
+        for i, row in ipairs(self.items) do
+            local h = row.height or self.itemheight
+            if y >= y0 and y < y0 + h then return i end
+            y0 = y0 + h
+        end
+        return -1
+    end
     -- 原版 ensureVisible（ISScrollingListBox.lua:623-639）：只把該列的頂端或底端
     -- 對齊可視範圍，沒有列內捲動也沒有逐頁捲動。列高大於清單高時必然只露出一端，
     -- 中段按幾次方向鍵都看不到——「全文讀得到」的斷言就是靠這份真實行為判定。
@@ -283,9 +292,14 @@ function getPlayerScreenWidth() return screen.w end
 function getPlayerScreenHeight() return screen.h end
 
 local halos = {}
-HaloTextHelper = { addBadText = function(playerObj, text)
-    halos[#halos + 1] = { player = playerObj, text = text }
-end }
+HaloTextHelper = {
+    addBadText = function(playerObj, text)
+        halos[#halos + 1] = { player = playerObj, text = text }
+    end,
+    addGoodText = function(playerObj, text)
+        halos[#halos + 1] = { player = playerObj, text = text, good = true }
+    end,
+}
 
 local players = {}
 local function makePlayer(x, y) return { x = x or 0, y = y or 0,
@@ -434,11 +448,27 @@ local function setTrip(pn, phase, stops, currentStopId, reason, revision, option
         autoContinue = not (options ~= nil and options.auto == false) }
     claims[pn] = options ~= nil and options.claimed == true
 end
+-- 次要動作不在底部：可見就直接按，否則照玩家路徑經「動作…」選單選同名項目
 local function pressButton(btn)
     truthy(btn, "按鈕不存在")
-    truthy(btn:isVisible(), "按鈕須可見才按得下")
     truthy(btn.enable, "按鈕應可用才按得下")
-    btn.onclick(btn.target, btn)
+    if btn:isVisible() then
+        btn.onclick(btn.target, btn)
+        return
+    end
+    local w = btn.target
+    local more = w.page == "itinerary" and w.tripMoreBtn or w.searchMoreBtn
+    truthy(more:isVisible(), "按鈕須可見，或能從動作選單選到")
+    more.onclick(more.target, more)
+    local menu = w.nativeMenu
+    for i, option in ipairs(menu.options) do
+        if option.text == btn.title then
+            menu.mouseOver = i
+            menu:onJoypadDown(Joypad.AButton)
+            return
+        end
+    end
+    error("動作選單沒有「" .. tostring(btn.title) .. "」", 2)
 end
 local function openWindow(pn, page)
     Core.toggleSearchWindow(pn, page)
@@ -544,7 +574,7 @@ truthy(#win.tripList.items >= 2, "B1: 空行程須顯示說明列（怎麼建立
 falsy(win.tripList.items[1].item.stopId, "B1: 說明列不是站點")
 local mapPings = #ISWorldMap.pings
 win.tripList.selected = 1
-truthy(win.undoBtn:isVisible(), "B2: 空行程頁仍須保留復原入口")
+truthy(win.tripMoreBtn:isVisible(), "B2: 空行程頁仍須保留復原入口（動作選單）")
 result.canUndo = true
 win._tRev = nil
 win:prerender()
@@ -992,7 +1022,7 @@ local function assertLayout(tag)
                 truthy(btn.y >= list.y + list.height and btn.y + btn.height <= w.height,
                     where .. "可見按鈕須全部落在清單之下且在視窗內")
             end
-            -- 折疊起來的次要動作隨時可用「更多動作」叫回來，不會永久不可達
+            -- 次要動作只在「動作…」選單，主要動作必須留在底部
             truthy(btn:isVisible() or defs[i].group == "more",
                 where .. "主要動作不得被折疊")
         end
@@ -1028,31 +1058,42 @@ assertLayout("I4b 320x1080 大字級（窄但高）")
 Core.toggleSearchWindow(0)
 screen = { w = 320, h = 540 }
 Core.toggleSearchWindow(0, "itinerary") -- 回到 I4 結束時的狀態（視窗開著）
--- 窄版更多動作走獨立選單，主清單仍保留至少一列且可保持選取。
+-- 次要動作一律在「動作…」原生選單，主清單仍保留至少一列且可保持選取。
 Core.toggleSearchWindow(0)
 win = openWindow(0, "itinerary")
-falsy(win.expanded, "I5: 空間不足時次要動作自動折疊")
+falsy(win.upBtn:isVisible(), "I5: 次要動作不佔底部按鈕列")
 pressButton(win.tripMoreBtn)
-falsy(win.expanded, "I5: 不強塞完整按鈕區")
-truthy(win.nativeMenu and win.nativeMenu:isVisible(), "I5: 更多動作選單可開啟")
+truthy(win.nativeMenu and win.nativeMenu:isVisible(), "I5: 動作選單可開啟")
 truthy(win.tripList.height >= win.tripList.itemheight, "I6: 操作時仍看得到選取的站")
-truthy(key(win, Keyboard.KEY_ESCAPE), "I7: ESC只消耗於關更多選單")
+truthy(key(win, Keyboard.KEY_ESCAPE), "I7: ESC只消耗於關動作選單")
 truthy(win:isVisible(), "I7: 關選單不關行程")
-falsy(win.nativeMenu:isVisible(), "I7: 更多選單已關閉")
-win.moreMode = "off"
+falsy(win.nativeMenu:isVisible(), "I7: 動作選單已關閉")
 Core.toggleSearchWindow(0)
 screen = { w = 1920, h = 1080 }
 fontHeights = { [UIFont.Small] = 14, [UIFont.Medium] = 18 }
 textManager.getFontHeight = function(_, font) return fontHeights[font] or 14 end
+
+-- I8. 右鍵：選中滑鼠下的站並在滑鼠處開出該頁全部動作；空白處不開
+setTrip(0, "draft", { stop(1, 10, 10), stop(2, 20, 20) }, nil, nil, 290)
 win = openWindow(0, "itinerary")
-falsy(win.expanded, "I8: 玩家明確收起後，換到寬畫面仍尊重他的選擇")
-pressButton(win.tripMoreBtn)
-truthy(win.expanded, "I8: 明確展開後保持展開")
--- 沒有明確選擇（moreMode=auto）且空間充足時預設展開，不白藏功能
-win.moreMode = "auto"
+win:prerender(); win:prerender()
+local _, row2 = tripRow(win, 2)
+local rowY = 2
+for i = 1, row2 - 1 do rowY = rowY + (win.tripList.items[i].height or win.tripList.itemheight) end
+win.tripList:onRightMouseUp(30, rowY)
+eq(win.tripList.selected, row2, "I8: 右鍵先選中滑鼠下的站")
+local rmenu = win.nativeMenu
+truthy(rmenu and rmenu:isVisible(), "I8: 右鍵開出動作選單")
+eq(rmenu.x, win:getAbsoluteX() + win.tripList.x + 30, "I8: 選單開在滑鼠處")
+local texts = {}
+for _, option in ipairs(rmenu.options) do texts[option.text] = option end
+truthy(texts[win.startBtn.title] and texts[win.removeBtn.title], "I8: 右鍵含主要與次要動作")
+falsy(texts[win.tripMoreBtn.title], "I8: 選單不列「動作…」自己")
+falsy(texts[win.upBtn.title].notAvailable, "I8: 第二站可上移")
+rmenu:closeAll()
+win.tripList:onRightMouseUp(30, 9999)
+falsy(win.nativeMenu:isVisible(), "I8: 空白處右鍵不開選單")
 Core.toggleSearchWindow(0)
-win = openWindow(0, "itinerary")
-truthy(win.expanded, "I9: auto 模式在空間充足時預設展開")
 
 --------------------------------------------------------------------------------
 -- J. 名稱按實測字寬換行：完整可讀、不截字、不溢出
@@ -1921,20 +1962,19 @@ do
     win = openWindow(0, "search")
     win.entry.text = "12895,3499"
     win:prerender(); win:prerender()
-    if not win.insertBtn:isVisible() then pressButton(win.searchMoreBtn) end
-    truthy(win.insertBtn:isVisible(), "Y1: 使用畫面上實際的插入按鈕")
+    local anchor = win.searchMoreBtn
     win:setX(100); win:setY(20)
     pressButton(win.insertBtn)
     local menu = win.nativeMenu
-    eq(menu.x, win:getAbsoluteX() + win.insertBtn.x, "Y1: 選單對齊插入鈕左緣")
-    eq(menu.y, win:getAbsoluteY() + win.insertBtn.y + win.insertBtn.height,
-        "Y1: 下方有空間時貼著插入鈕展開")
+    eq(menu.x, win:getAbsoluteX() + anchor.x, "Y1: 插入選單對齊動作鈕左緣")
+    eq(menu.y, win:getAbsoluteY() + anchor.y + anchor.height,
+        "Y1: 下方有空間時貼著動作鈕展開")
     menu:closeAll()
 
-    win:setY(screen.h - win.insertBtn.y - win.insertBtn.height - 1)
+    win:setY(screen.h - anchor.y - anchor.height - 1)
     pressButton(win.insertBtn)
     menu = win.nativeMenu
-    eq(menu.y + menu.height, win:getAbsoluteY() + win.insertBtn.y,
+    eq(menu.y + menu.height, win:getAbsoluteY() + anchor.y,
         "Y2: 下方不足時貼著同一顆按鈕往上展開")
     menu:closeAll()
 
@@ -1945,8 +1985,7 @@ do
     Core.toggleSearchWindow(1, "search")
     win.entry.text = "12895,3499"
     win:prerender(); win:prerender()
-    if not win.insertBtn:isVisible() then pressButton(win.searchMoreBtn) end
-    win:setX(1500 - win.insertBtn.x)
+    win:setX(1500 - win.searchMoreBtn.x)
     win:setY(20)
     pressButton(win.insertBtn)
     menu = win.nativeMenu
@@ -1978,15 +2017,7 @@ do
     win = openWindow(0, "search")
     win.entry.text = "12895,3499"
     win:prerender(); win:prerender()
-    if win.insertBtn:isVisible() then
-        pressButton(win.insertBtn)
-    else
-        pressButton(win.searchMoreBtn)
-        for i, option in ipairs(win.nativeMenu.options) do
-            if option.text == win.insertBtn.title then win.nativeMenu.mouseOver = i; break end
-        end
-        win.nativeMenu:onJoypadDown(Joypad.AButton)
-    end
+    pressButton(win.insertBtn)
     menu = win.nativeMenu
     eq(#menu.options, 17, "Y5: 可捲選單保留全部插入位置")
     truthy(menu.y >= 0 and menu.y + menu.height <= 540,
@@ -1996,6 +2027,297 @@ do
     getPlayerScreenHeight = oldHeight
     fontHeights[UIFont.Small] = oldFontH
     screen = { w = 1920, h = 1080 }
+end
+
+--------------------------------------------------------------------------------
+-- Z. 收藏／回家：Core.places* 以契約假件驗 UI 接線（權威在 _Places.lua）
+--------------------------------------------------------------------------------
+do
+    local places = { revision = 1, count = 0, places = {} }
+    local placeErr = nil
+    local placeResult = { ok = true }
+    local function setPlaces(list, homeId)
+        places = { revision = places.revision + 1, count = #list, homeId = homeId, places = list }
+    end
+    Core.placesState = function(pn) return pn == 0 and places or nil end
+    Core.placesError = function() return placeErr end
+    Core.placeLabel = function(_, p)
+        if p.label then return p.label end
+        if p.id == places.homeId then return "UI_MinidoracatMiniMap_PlaceHome" end
+        return string.format("%d, %d", p.x, p.y)
+    end
+    Core.placesErrorText = function(reason) return "PlaceError_" .. tostring(reason) end
+    Core.placesSetHome = function(pn, id)
+        record("placeHome", { pn = pn, id = id })
+        return placeResult.ok, placeResult.reason
+    end
+    Core.placesPromptRename = function(pn, id) record("placeRename", { pn = pn, id = id }) end
+    Core.placesPromptAdd = function(pn, x, y, label)
+        record("placeAdd", { pn = pn, x = x, y = y, label = label })
+    end
+    Core.placesRemove = function(pn, id)
+        record("placeRemove", { pn = pn, id = id })
+        return true
+    end
+    Core.placesGoHome = function(pn) record("goHome", { pn = pn }); return true end
+    local function selectPlace(id)
+        for i, row in ipairs(win.list.items) do
+            if row.item.placeId == id then win.list.selected = i end
+        end
+        win:prerender()
+    end
+    local function optionTexts(menu)
+        local out = {}
+        for i, option in ipairs(menu.options) do out[i] = option.text end
+        return table.concat(out, ",", 1, #out)
+    end
+    local P = "UI_MinidoracatMiniMap_"
+
+    players[0] = makePlayer(0, 0)
+    setTrip(0, "draft", { stop(1, 100, 100) }, nil, nil, 301)
+    win = openWindow(0, "search")
+    win.entry.text = ""
+    win._lastText = nil
+    win:prerender(); win:prerender()
+    linesContain(win.list.items[1].item.lines, "PlacesEmpty", "Z1: 收藏為空時先說明怎麼加入")
+    linesContain(win.list.items[2].item.lines, "SearchEmptyHint", "Z1: 原本的搜尋說明仍保留")
+    falsy(win.placeBtn.enable, "Z1: 沒選到地點時收藏鈕停用")
+
+    setPlaces({ { id = 1, x = 100, y = 0, label = "Shop" }, { id = 2, x = 300, y = 400 },
+        { id = 3, x = 30, y = 40, label = "Farm" } }, 2)
+    win:prerender(); win:prerender()
+    local items = win.list.items
+    eq(items[1].item.kind, "place", "Z2: 未輸入時列出收藏")
+    eq(items[1].item.placeId, 2, "Z2: 家排第一（即使它在收藏清單中間）")
+    truthy(items[1].item.home, "Z2: 家列帶 home 旗標")
+    eq(items[1].item.tag, P .. "PlaceHome", "Z2: 家用家標籤")
+    eq(items[1].item.label, P .. "PlaceHome", "Z2: 無名的家顯示 Core.placeLabel")
+    eq(items[2].item.placeId, 1, "Z2: 其餘照收藏順序")
+    eq(items[3].item.placeId, 3, "Z2: 其餘照收藏順序")
+    eq(items[2].item.tag, P .. "SearchKindPlace", "Z2: 其他收藏用收藏標籤")
+    eq(items[1].item.right, "(300, 400)  500m", "Z2: 右欄沿用座標＋距離格式")
+    linesContain(items[4].item.lines, "SearchEmptyHint", "Z2: 搜尋說明接在收藏之後")
+    truthy(win.addBtn.enable and win.gotoBtn.enable and win.placeBtn.enable,
+        "Z2: 選到收藏列時既有動作與收藏鈕可用")
+    clearCalls()
+    pressButton(win.addBtn)
+    eq(lastCall("edit").op, "append", "Z2: 收藏列可直接加到行程最後")
+    eq(lastCall("edit").a, 300, "Z2: 帶收藏座標 X")
+    eq(lastCall("edit").b, 400, "Z2: 帶收藏座標 Y")
+
+    -- 刷新紀律：只有 revision／錯誤／8 格位置桶改變才重建；重建以 placeId 保留選取
+    local before = win.list.items[1]
+    win:prerender(); win:prerender()
+    eq(win.list.items[1], before, "Z3: 收藏與位置未變時零重建")
+    selectPlace(3)
+    places.revision = places.revision + 1 -- 同表就地改名：只有 revision 看得出變化
+    places.places[3].label = "Barn"
+    win:prerender()
+    truthy(win.list.items[1] ~= before, "Z3: revision 變更才重建")
+    eq(win.list.items[win.list.selected].item.placeId, 3, "Z4: 重建以 placeId 保留選取")
+    eq(win.list.items[win.list.selected].item.label, "Barn", "Z4: 重建後顯示新名稱")
+    before = win.list.items[1]
+    placeErr = "unsupported"
+    win:prerender()
+    truthy(win.list.items[1] ~= before, "Z3: 錯誤狀態改變也要重建")
+    contains(listText(win.list), "PlaceError_unsupported", "Z3: 較新 schema 要說明為何不能改")
+    eq(win.list.items[1].item.placeId, 2, "Z3: 錯誤說明不擠掉家第一")
+    placeErr = nil
+    win:prerender()
+    before = win.list.items[1]
+    players[0].x = 4
+    win:prerender()
+    eq(win.list.items[1], before, "Z3: 同一 8 格桶內移動不重建")
+    players[0].x = 80
+    win:prerender()
+    truthy(win.list.items[1] ~= before, "Z3: 走出 8 格桶後重算距離")
+    players[0].x = 0
+    win:prerender()
+
+    -- 收藏鈕：選中項決定選單內容；點擊時驗 owner，失敗必顯示
+    selectPlace(1)
+    pressButton(win.placeBtn)
+    local menu = win.nativeMenu
+    eq(optionTexts(menu), P .. "PlaceMenuSetHome," .. P .. "PlaceRename," .. P .. "PlaceRemove",
+        "Z5: 非家收藏列出設為家／改名／移除")
+    clearCalls()
+    menu:onJoypadDown(Joypad.AButton)
+    eq(lastCall("placeHome").id, 1, "Z6: 設為家走 Core.placesSetHome(捕捉的 placeId)")
+    truthy(win.msgGood, "Z6: 成功回饋用成功色")
+    linesContain(win.msgLines, "HomeSet", "Z6: 成功要說出來")
+    placeResult = { ok = false, reason = "stale" }
+    pressButton(win.placeBtn)
+    win.nativeMenu:onJoypadDown(Joypad.AButton)
+    falsy(win.msgGood, "Z6: 失敗不得用成功色")
+    linesContain(win.msgLines, "PlaceError_stale", "Z6: 失敗走 placesErrorText，不得靜默")
+    placeResult = { ok = true }
+    selectPlace(2)
+    pressButton(win.placeBtn)
+    eq(optionTexts(win.nativeMenu), P .. "PlaceRename," .. P .. "PlaceRemove",
+        "Z5: 已是家不列設為家")
+    win.nativeMenu:closeAll()
+    selectPlace(1)
+    pressButton(win.placeBtn)
+    menu = win.nativeMenu
+    players[0] = makePlayer(0, 0)
+    clearCalls()
+    menu:onJoypadDown(Joypad.AButton)
+    eq(countCalls("placeHome"), 0, "Z7: 換角色後的舊選單不得改新角色的收藏")
+    win:prerender()
+    selectPlace(1)
+    pressButton(win.placeBtn)
+    win.nativeMenu.mouseOver = 2
+    clearCalls()
+    win.nativeMenu:onJoypadDown(Joypad.AButton)
+    eq(lastCall("placeRename").id, 1, "Z6: 改名走 Core.placesPromptRename")
+
+    -- 移除：共用確認面板；不驗行程 revision，只驗 owner 與收藏仍在
+    selectPlace(3)
+    pressButton(win.placeBtn)
+    win.nativeMenu.mouseOver = 3
+    UI.confirm = nil
+    clearCalls()
+    win.nativeMenu:onJoypadDown(Joypad.AButton)
+    local panel = UI.confirm
+    truthy(panel, "Z8: 移除收藏先確認")
+    eq(panel.payload.op, "placeRemove", "Z8: 確認面板 op=placeRemove")
+    eq(panel.payload.placeId, 3, "Z8: 帶捕捉的 placeId")
+    contains(linesText(panel.lines), "PlaceConfirmRemove|Barn", "Z8: 確認文字帶顯示名稱")
+    eq(panel.actionBtn.title, P .. "PlaceRemove", "Z8: 動作鈕是明確動詞")
+    eq(countCalls("placeRemove"), 0, "Z8: 確認前不得移除")
+    setTrip(0, "navigating", { stop(1, 100, 100) }, 1, nil, 302)
+    pressButton(panel.actionBtn)
+    eq(lastCall("placeRemove") and lastCall("placeRemove").id, 3,
+        "Z9: 行程 revision 改變不影響收藏移除（不走行程 revision 檢查）")
+    Core.navPromptPlaceRemove(0, 1)
+    panel = UI.confirm
+    setPlaces({ { id = 2, x = 300, y = 400 }, { id = 3, x = 30, y = 40, label = "Barn" } }, 2)
+    clearCalls()
+    pressButton(panel.actionBtn)
+    eq(countCalls("placeRemove"), 0, "Z10: 收藏已不存在時拒絕")
+    linesContain(win.msgLines, "PlaceError_stale", "Z10: 並明確回報")
+    Core.navPromptPlaceRemove(0, 3)
+    panel = UI.confirm
+    players[0] = makePlayer(0, 0)
+    clearCalls()
+    pressButton(panel.actionBtn)
+    eq(countCalls("placeRemove"), 0, "Z10: 換角色後的舊面板不得移除新角色的收藏")
+    UI.confirm = nil
+    Core.navPromptPlaceRemove(0, 99)
+    falsy(UI.confirm, "Z10: 不存在的收藏不開確認")
+    linesContain(win.msgLines, "PlaceError_stale", "Z10: 而是回報 stale")
+
+    -- 非收藏結果：只列加入收藏；座標結果不帶預設名稱，其他結果帶結果名稱
+    win.entry.text = "12895,3499"
+    win:prerender(); win:prerender()
+    pressButton(win.placeBtn)
+    eq(optionTexts(win.nativeMenu), P .. "PlaceAdd", "Z11: 非收藏結果只列加入收藏")
+    clearCalls()
+    win.nativeMenu:onJoypadDown(Joypad.AButton)
+    local added = lastCall("placeAdd")
+    eq(added.x, 12895, "Z11: 帶結果座標 X")
+    eq(added.y, 3499, "Z11: 帶結果座標 Y")
+    falsy(added.label, "Z11: 座標結果不把座標字串存成名稱（搬家後會說謊）")
+    local oldIndex = Core.navStreetIndex
+    Core.navStreetIndex = function() return { { name = "Oak St", low = "oak st", x = 40, y = 60 } } end
+    win.entry.text = "oak"
+    win:prerender(); win:prerender()
+    pressButton(win.placeBtn)
+    win.nativeMenu:onJoypadDown(Joypad.AButton)
+    eq(lastCall("placeAdd").label, "Oak St", "Z11: 其他結果以結果名稱當預設名稱")
+    Core.navStreetIndex = oldIndex
+
+    -- 回家：行程頁主要列（停止之後、更多之前），永遠可按，鍵盤／手把可達
+    Core.toggleSearchWindow(0, "itinerary")
+    local homeAt, pauseAt, moreAt
+    for i, d in ipairs(win.tripBtns) do
+        if d.btn == win.homeBtn then homeAt = i end
+        if d.btn == win.pauseBtn then pauseAt = i end
+        if d.btn == win.tripMoreBtn then moreAt = i end
+    end
+    truthy(homeAt == pauseAt + 1 and homeAt < moreAt and win.tripBtns[homeAt].group == nil,
+        "Z12: 回家是主要動作，在停止之後、更多之前")
+    trips[0] = nil
+    win._tRev = nil
+    win:prerender()
+    truthy(win.homeBtn:isVisible() and win.homeBtn.enable, "Z12: 沒有行程時回家仍可按")
+    clearCalls()
+    pressButton(win.homeBtn)
+    eq(lastCall("goHome") and lastCall("goHome").pn, 0, "Z12: 回家走 Core.placesGoHome(pn)")
+    local found
+    for i, entry in ipairs(win.tripFocus) do
+        if entry.el == win.homeBtn then found = i end
+    end
+    truthy(found, "Z13: 回家在手把／鍵盤焦點鏈中")
+    win.focus = nil
+    local guard = 0
+    while win.focus ~= found and guard < 40 do
+        key(win, Keyboard.KEY_TAB)
+        guard = guard + 1
+    end
+    eq(win.focus, found, "Z13: 鍵盤 TAB 走得到回家")
+    clearCalls()
+    key(win, Keyboard.KEY_RETURN)
+    eq(countCalls("goHome"), 1, "Z13: Enter 觸發回家")
+    clearCalls()
+    win:onJoypadDown(Joypad.AButton)
+    eq(countCalls("goHome"), 1, "Z13: 手把 A 觸發回家")
+
+    -- 窄版大字：回家不被折疊；收藏鈕經「更多」原生選單可達並開出收藏選單
+    Core.toggleSearchWindow(0)
+    screen = { w = 320, h = 540 }
+    fontHeights = { [UIFont.Small] = 26, [UIFont.Medium] = 33 }
+    win = openWindow(0, "itinerary")
+    truthy(win.homeBtn:isVisible() and win.homeBtn.x + win.homeBtn.width <= win.width
+        and win.homeBtn.y + win.homeBtn.height <= win.height, "Z14: 窄版回家仍在視窗內可按")
+    Core.toggleSearchWindow(0, "search")
+    win.entry.text = ""
+    win._lastText = nil
+    win:prerender(); win:prerender()
+    eq(win.list.items[1].item.placeId, 2, "Z14: 窄版仍是家排第一")
+    pressButton(win.searchMoreBtn)
+    local pick
+    for i, option in ipairs(win.nativeMenu.options) do
+        if option.text == win.placeBtn.title then pick = i end
+    end
+    truthy(pick and not win.nativeMenu.options[pick].notAvailable, "Z14: 更多選單含可用的收藏")
+    win.nativeMenu.mouseOver = pick
+    win.nativeMenu:onJoypadDown(Joypad.AButton)
+    eq(optionTexts(win.nativeMenu), P .. "PlaceRename," .. P .. "PlaceRemove",
+        "Z14: 經更多選單開出收藏選單")
+    win.nativeMenu:closeAll()
+    Core.toggleSearchWindow(0)
+    screen = { w = 1920, h = 1080 }
+    fontHeights = { [UIFont.Small] = 14, [UIFont.Medium] = 18 }
+
+    -- navMessage：視窗不在時退 halo，好壞分通道
+    Core.navMessage(0, "done", true)
+    eq(halos[#halos].text, "done", "Z15: 視窗不在時退 halo")
+    truthy(halos[#halos].good, "Z15: good=true 走 addGoodText")
+    Core.navMessage(0, "oops")
+    falsy(halos[#halos].good, "Z15: 其餘走 addBadText")
+
+    -- 缺 _Places（單獨抽載）：不列收藏、收藏鈕停用、回家顯示 generic 錯誤，不丟錯
+    for _, name in ipairs({ "placesState", "placesError", "placeLabel", "placesErrorText",
+        "placesSetHome", "placesPromptRename", "placesPromptAdd", "placesRemove", "placesGoHome" }) do
+        Core[name] = nil
+    end
+    win = openWindow(0, "search")
+    win.entry.text = ""
+    win._lastText = nil
+    win:prerender(); win:prerender()
+    linesContain(win.list.items[1].item.lines, "SearchEmptyHint", "Z16: 缺 _Places 時只剩搜尋說明")
+    win.entry.text = "12895,3499"
+    win:prerender(); win:prerender()
+    truthy(win.addBtn.enable, "Z16 前提: 選到了真地點")
+    falsy(win.placeBtn.enable, "Z16: 缺 _Places 時收藏鈕停用")
+    Core.toggleSearchWindow(0, "itinerary")
+    pressButton(win.homeBtn)
+    linesContain(win.msgLines, "TripError_failed", "Z16: 缺 _Places 時回家顯示 generic 錯誤")
+    UI.confirm = nil
+    Core.navPromptPlaceRemove(0, 1)
+    falsy(UI.confirm, "Z16: 缺 _Places 時移除不開確認也不丟錯")
+    Core.toggleSearchWindow(0)
 end
 
 -- X. 真 Core／UI 聯測：raw trip 與 public claim 表面必須真的接得上。
@@ -2108,4 +2430,5 @@ print("test_itinerary_ui: 全數通過（A 開窗切頁收合 / B 提示列防�
     .. "I 版面不超 viewport / J 實寬換行 / K 刷新與選取保留 / L 繪製路徑與文字不疊 / "
     .. "M 快捷鍵入口 / N 分割畫面 ping / Q 接續模式兩入口 / R 插入錨點防線 / "
     .. "S 逐站停等與認領鎖定 / T 搜尋頁動作可用性 / U 全文出口 / "
-    .. "V 全文列逐行可讀 / W 插入錨點有界標籤與全文出口 / X 真 Core 接管與直線指引 / Y 按鈕錨定）")
+    .. "V 全文列逐行可讀 / W 插入錨點有界標籤與全文出口 / X 真 Core 接管與直線指引 / Y 按鈕錨定 / "
+    .. "Z 收藏清單與回家）")

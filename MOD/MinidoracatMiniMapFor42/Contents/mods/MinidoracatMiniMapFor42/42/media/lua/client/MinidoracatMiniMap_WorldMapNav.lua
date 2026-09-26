@@ -122,6 +122,7 @@ local function installWMRightMouseUp()
         context:addOption(setLabel, self, self.onMinidoracatSetTarget, worldX, worldY)
         context:addOption(getText("UI_MinidoracatMiniMap_TripManage"), self,
             self.onMinidoracatItinerary)
+        if Core.placesAddMenu then Core.placesAddMenu(context, pn, worldX, worldY) end
         -- 複製此處座標：選項文字即時帶座標（先看到再決定點不點，同小地圖）
         local cwx, cwy = math.floor(worldX), math.floor(worldY)
         context:addOption(getText("UI_MinidoracatMiniMap_CopyHere",

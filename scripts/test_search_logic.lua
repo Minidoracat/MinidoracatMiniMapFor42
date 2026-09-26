@@ -274,7 +274,7 @@ return {
         playerNum = 0, entry = { getInternalText = function() return text end },
         list = { items = {}, selected = 1 },
     }
-    for _, name in ipairs({ "gotoBtn", "addBtn", "insertBtn", "priorityBtn", "replaceBtn" }) do
+    for _, name in ipairs({ "gotoBtn", "addBtn", "insertBtn", "priorityBtn", "replaceBtn", "placeBtn" }) do
         win[name] = { setEnable = function(self, enabled) self.enable = enabled end }
     end
     function win.list:clear() self.items = {}; self.selected = 1 end

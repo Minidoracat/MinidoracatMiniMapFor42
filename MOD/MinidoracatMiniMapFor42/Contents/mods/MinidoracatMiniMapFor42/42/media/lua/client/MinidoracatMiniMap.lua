@@ -975,13 +975,13 @@ local function resizeMax(playerNum)
     return math.floor(math.min(getPlayerScreenWidth(playerNum), getPlayerScreenHeight(playerNum)) * RESIZE_MAX_RATIO)
 end
 
--- 9 顆按鈕（M - + ◇視角 C XY 搜尋 ⚙ X）的最小可容寬度抬高 Core.RESIZE_MIN：必須在 InitPlayer 讀
+-- 10 顆按鈕（M - + ◇視角 C XY 搜尋 家 ⚙ X）的最小可容寬度抬高 Core.RESIZE_MIN：必須在 InitPlayer 讀
 -- CustomSize 夾限「之前」呼叫——installMinidoracatButtons 的同款回寫發生在視窗建立
 -- 之後，救不到舊存小尺寸（如 180x180）的本 session 首次建立（X 鈕會溢出右緣）。
 -- 字級在 InitPlayer 時已就緒：鈕寬同原版 BUTTON_HGT 公式 getFontHeight(Small)+6
 local function raiseResizeMinForButtons()
     local bw = getTextManager():getFontHeight(UIFont.Small) + 6
-    local minW = 9 * bw + 8 * 2 + CHROME_BORDER * 2 + 4 -- 9 鈕＋8×2px 間距＋卡片外框 ×2＋4
+    local minW = 10 * bw + 9 * 2 + CHROME_BORDER * 2 + 4 -- 10 鈕＋9×2px 間距＋卡片外框 ×2＋4
     if minW > Core.RESIZE_MIN then Core.RESIZE_MIN = minW end
 end
 
@@ -1799,6 +1799,8 @@ local function toolbarIconButtonRender(self)
             color = Skin.COLORS.ACCENT_AMBER
         elseif key == "locate" and not self.mouseOver then
             color = Skin.COLORS.TEXT_MUTED
+        elseif key == "house" and not self.mouseOver and not self._minidoracatHasHome then
+            color = Skin.COLORS.TEXT_MUTED -- 未設家：暗色；照樣可按，按下說明如何設定
         else
             color = self.mouseOver and Skin.COLORS.ACCENT_AMBER or Skin.COLORS.TEXT_PRIMARY
         end
@@ -1823,7 +1825,7 @@ local function installToolbarIcon(button, owner, key, fallback)
 end
 -- test:minimap-toolbar-icons:end
 
--- 按鈕列重排：9 顆（M - + ◇視角 定位 複製 尋 ⚙ X）以動態間距塞進 inner 寬度
+-- 按鈕列重排：10 顆（M - + ◇視角 定位 複製 尋 家 ⚙ X）以動態間距塞進 inner 寬度
 -- （原版置中排版只按 5 顆算，ISMiniMap.lua:417）
 local function relayoutBottomButtons(mm)
     -- 逐鈕 append＋顯式計數：候選含可缺席鈕（perspBtn 材質降級＝nil），
@@ -1840,6 +1842,7 @@ local function relayoutBottomButtons(mm)
     addBtn(mm._minidoracatCenterBtn)
     addBtn(mm._minidoracatCopyBtn)
     addBtn(mm._minidoracatSearchBtn)
+    addBtn(mm._minidoracatHomeBtn)
     addBtn(mm.button4)
     addBtn(mm.button6)
     local n = bn
@@ -1960,6 +1963,23 @@ installMinidoracatButtons = function(mm)
     end
     mm.bottomPanel:addChild(searchBtn)
     mm._minidoracatSearchBtn = searchBtn
+    -- 回家（缺框架退回「H」）：取代目前行程成單站「家」並開始導航；未設家時仍可按，
+    -- 由 Core.placesGoHome 說明設定方法（tooltip 只在滑鼠停留時出現，不能當唯一說明）
+    local homeBtn = ISButton:new(0, ref.y, ref.width, ref.height, "H", mm, function(target)
+        if Core.placesGoHome then Core.placesGoHome(target.playerNum or 0) end
+    end)
+    homeBtn:initialise()
+    local homeTip, noHomeTip = getText("UI_MinidoracatMiniMap_BtnGoHome"), getText("UI_MinidoracatMiniMap_HomeNotSet")
+    homeBtn.tooltip = homeTip
+    installToolbarIcon(homeBtn, mm, "house", "H")
+    homeBtn.prerender = function(self)
+        local has = Core.placesHome and Core.placesHome(mm.playerNum or 0) ~= nil or false
+        self._minidoracatHasHome = has
+        self.tooltip = has and homeTip or noHomeTip
+        ISButton.prerender(self)
+    end
+    mm.bottomPanel:addChild(homeBtn)
+    mm._minidoracatHomeBtn = homeBtn
     -- 「=」圖層面板鈕已退役：引擎原生三項移入統一視窗「圖層顯示」區。
     -- 原版面板機制（getVisibleOptions/onTickBox wrap 等）保留不拆——
     -- 面板已無入口，但第三方 MOD 若開啟它，注入與回寫仍正確
@@ -1969,7 +1989,7 @@ installMinidoracatButtons = function(mm)
     if mm.button2 then mm.button2.tooltip = getText("UI_MinidoracatMiniMap_BtnZoomOut") end
     if mm.button3 then mm.button3.tooltip = getText("UI_MinidoracatMiniMap_BtnZoomIn") end
     if mm.button6 then mm.button6.tooltip = getText("UI_MinidoracatMiniMap_BtnClose") end
-    -- 按鈕列皮膚化：9 顆（原版 5＋本 MOD 4）統一淡框淡底＋hover 亮階——同
+    -- 按鈕列皮膚化：10 顆（原版 5＋本 MOD 5）統一淡框淡底＋hover 亮階——同
     -- _Settings unifiedAddBtn 樣式（fade 混色 ISButton:prerender :117-133、
     -- 守衛 shouldDrawBackground/shouldDrawBorder :91-100）。鈕底半透明化後
     -- 露出 outer 黑 0.8 底（ISMiniMap.lua:675），與統一設定視窗同基調。
@@ -1990,18 +2010,20 @@ installMinidoracatButtons = function(mm)
     skinBtn(copyBtn)
     skinBtn(mm._minidoracatPerspBtn)
     skinBtn(searchBtn)
-    local n = relayoutBottomButtons(mm) or 9
+    skinBtn(homeBtn)
+    local n = relayoutBottomButtons(mm) or 10
     -- n 顆按鈕的最小可容寬度回寫尺寸下限（n＝order 表實際數量，單一來源）：UI 字型
     -- 放大時 BUTTON_HGT 跟著變大，動態墊高避免縮到溢出。InitPlayer 另以
     -- raiseResizeMinForButtons 在 CustomSize 夾限前先抬——本回寫發生在視窗建立後，
     -- 只服務「本 session 後續拖曳」的下限
     local minW = n * ref.width + (n - 1) * 2 + (mm.borderSize or 2) * 2 + 4
     if minW > Core.RESIZE_MIN then Core.RESIZE_MIN = minW end
-    -- ponytail: C/XY/視角/搜尋 四顆新鈕都未登記手把導航列（原版 insertNewLineOfButtons 於
+    -- ponytail: C/XY/視角/搜尋/家 五顆新鈕都未登記手把導航列（原版 insertNewLineOfButtons 於
     -- createChildren 一次性登記，事後補列會亂序）——手把用戶：顯示開關走 ESC 選項頁、
     -- 視角另有兩條可達路徑（原版小地圖選項面板 Isometric 勾選 ISMiniMap.lua:104、
     -- 世界地圖 perspectiveBtn），複製功能手把不可達（滑鼠限定）；搜尋亦滑鼠限定
-    -- （放大鏡鈕＋兩處右鍵選單皆無手把路徑）——目前無替代入口，需要時再補登記
+    -- （放大鏡鈕＋兩處右鍵選單皆無手把路徑）——目前無替代入口，需要時再補登記；
+    -- 回家的鍵盤／手把路徑是行程頁的「回家」鈕（; 開窗後有焦點鏈；開窗本身同搜尋限制）
     -- 外框皮膚化：替換實例 prerender——重演原版邏輯（ISMiniMap.lua:452-468，
     -- 42.20.3 原文：setPosition＋adornments hover 判斷＋inner:prerenderHack），
     -- 僅把直角 drawRectStatic/drawRectBorderStatic（:462-463）換成圓角皮膚。

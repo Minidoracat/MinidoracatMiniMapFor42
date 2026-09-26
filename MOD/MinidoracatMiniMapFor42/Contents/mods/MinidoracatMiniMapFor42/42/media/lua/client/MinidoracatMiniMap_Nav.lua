@@ -349,6 +349,14 @@ local function drawNavTargets(inner)
     -- 已頂 Kahlua 200 上限（LexState actvar[200]），主檔不得再增頂層 local；
     -- 動態查同 :3924 Core.drawNavRoute 慣例）。無導航目標時也要畫，須在下行早退前
     if Core.drawSearchPing then Core.drawSearchPing(inner, mapAPI) end
+    -- 家／收藏標記不是導航，不受 draw gate 限制；畫在行程旗標之下。錯誤 log-once
+    if Core.drawPlaces then
+        local placesOk, placesErr = pcall(Core.drawPlaces, inner)
+        if not placesOk and not inner._minidoracatPlacesErrLogged then
+            inner._minidoracatPlacesErrLogged = true
+            log("places draw failed: " .. tostring(placesErr))
+        end
+    end
     if allowed and playerObj then drawTripTargets(inner, pn, playerObj) end
 end
 -- test:nav-draw:end
@@ -512,6 +520,7 @@ if ISMiniMapInner and ISMiniMapInner.onRightMouseUp then
             self.onMinidoracatSetTarget, worldX, worldY)
         context:addOption(getText("UI_MinidoracatMiniMap_TripManage"), self,
             self.onMinidoracatItinerary)
+        if Core.placesAddMenu then Core.placesAddMenu(context, pn, worldX, worldY) end
         -- 複製此處座標：選項文字即時帶座標（先看到再決定點不點）
         local cwx, cwy = math.floor(worldX), math.floor(worldY)
         context:addOption(getText("UI_MinidoracatMiniMap_CopyHere",

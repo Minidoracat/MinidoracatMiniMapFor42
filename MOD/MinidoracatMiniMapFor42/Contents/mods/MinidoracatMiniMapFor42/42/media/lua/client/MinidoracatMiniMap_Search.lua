@@ -18,6 +18,8 @@
 -- ／先去這裡（op=priority：插在第一個待前往站之前並明確開始導航，不啟自駕）／取代整趟
 -- （op=replace，次要動作且一律先確認）。選不到結果時（空字串／載入中／查無命中的
 -- 說明列）這些動作一律停用——不留按了沒反應的按鈕。
+-- 未輸入時列出收藏（家第一，權威在 _Places.lua，本檔只現查唯讀狀態）；「收藏」鈕以
+-- 原生選單依選中項提供設為家／改名／移除或加入收藏。行程頁另有永遠可按的「回家」。
 --
 -- 【行程頁】行程權威完全在 _Itinerary.lua：本檔每次刷新用 Core.navItineraryState
 -- 現查唯讀狀態，**不留第二份 stops／revision**，所有變更一律經
@@ -114,6 +116,7 @@ end
 local function kindTag(kind)
     if kind == "coord" then return getText("UI_MinidoracatMiniMap_SearchKindCoord") end
     if kind == "street" then return getText("UI_MinidoracatMiniMap_SearchKindStreet") end
+    if kind == "place" then return getText("UI_MinidoracatMiniMap_SearchKindPlace") end
     return getText("UI_MinidoracatMiniMap_SearchKindPoi")
 end
 
@@ -175,7 +178,7 @@ end
 local function finalizeItem(it)
     it.x = math.floor(it.x)
     it.y = math.floor(it.y)
-    it.tag = kindTag(it.kind)
+    it.tag = it.home and getText("UI_MinidoracatMiniMap_PlaceHome") or kindTag(it.kind)
     it.right = string.format("(%d, %d)  %s", it.x, it.y, fmtDist(it.d))
     local tm = getTextManager()
     it.tagW = tm:MeasureStringX(UIFont.Small, it.tag)
@@ -314,6 +317,7 @@ local KIND_COLORS = {
     coord = { r = 1, g = 0.85, b = 0.4 },     -- 琥珀（同皮膚 ACCENT）
     street = { r = 0.05, g = 0.86, b = 1.0 }, -- 青（同路線色語）
     poi = { r = 0.3, g = 0.95, b = 0.4 },     -- 綠
+    place = { r = 1, g = 0.55, b = 0.8 },     -- 粉：收藏（家另有文字標籤，不靠顏色區分）
 }
 
 -- 站點編號徽章色（與 _Nav 地圖上的編號標記同語義，跨 lane 對齊）
@@ -334,6 +338,7 @@ local PHASE_COLORS = {
     completed = { r = 0.3, g = 0.95, b = 0.4 },
 }
 local WARN_COLOR = { r = 1, g = 0.45, b = 0.3 }
+local GOOD_COLOR = { r = 0.3, g = 0.95, b = 0.4 }
 local MUTED_COLOR = { r = 0.62, g = 0.62, b = 0.62 }
 
 -- 選中項防呆（review blocking：list:clear() 會把 selected 重設 1，而「載入中/
@@ -459,13 +464,15 @@ local function tripErrorText(reason, detailKey)
     return getText("UI_MinidoracatMiniMap_TripError_failed")
 end
 
--- 視窗內訊息列（開窗時的操作回饋必須看得見；視窗不在／已收合＝退原版 halo
--- 壞訊息，同 navSetTarget 既有通道——右鍵地圖直接編輯行程時不能靜默失敗）
-local function winMessage(pn, text)
+-- 視窗內訊息列（開窗時的操作回饋必須看得見；視窗不在／已收合＝退原版 halo，
+-- 同 navSetTarget 既有通道——右鍵地圖直接編輯行程時不能靜默失敗）。
+-- good＝成功回饋（綠字／addGoodText），其餘一律當失敗（警告色／addBadText）
+local function winMessage(pn, text, good)
     local win = searchWin
     if win and win:isVisible() and not win.collapsed and (win.playerNum or 0) == pn then
         win.msgLines = wrapLines(text, win.width - 20, MSG_LINES)
         win.msgUntil = getTimestampMs() + MSG_MS
+        win.msgGood = good == true
         -- 訊息列只預留固定行數：放不下就把完整文字併進可捲清單（錯誤原因不得只剩
         -- 「...」）；兩頁的刷新 cache 一併作廢，那一列才會長出來／收回去
         win.msgFull = win.msgLines.truncated and text or nil
@@ -473,11 +480,48 @@ local function winMessage(pn, text)
         return
     end
     local playerObj = getSpecificPlayer(pn)
-    if playerObj then HaloTextHelper.addBadText(playerObj, text) end
+    if not playerObj then return end
+    if good then
+        HaloTextHelper.addGoodText(playerObj, text)
+    else
+        HaloTextHelper.addBadText(playerObj, text)
+    end
+end
+
+-- 收藏（_Places.lua）共用的訊息通道：契約 places-contract「Search.lua 需提供」
+Core.navMessage = function(pn, text, good)
+    winMessage(pn or 0, text, good)
 end
 
 local function winError(pn, reason, detailKey)
     winMessage(pn, tripErrorText(reason, detailKey))
+end
+
+-- 收藏轉接（權威在 _Places.lua）。字母序 P 先於 S，但離線測試會單獨抽載本檔：
+-- Core.places* 一律事件期現查，缺席時不列收藏、動作回 generic 錯誤，不得丟錯
+local function placesRead(pn)
+    local read = Core.placesState
+    return read and read(pn) or nil
+end
+
+local function placesErrorText(reason)
+    local translate = Core.placesErrorText
+    if translate then return translate(reason) end
+    return tripErrorText(reason)
+end
+
+local function placeById(pn, id)
+    local ps = placesRead(pn)
+    for i = 1, (ps and ps.count or 0) do
+        if ps.places[i].id == id then return ps.places[i] end
+    end
+    return nil
+end
+
+local function placeName(pn, place)
+    local label = Core.placeLabel
+    if label then return label(pn, place) end
+    return place.label or string.format("%d, %d", place.x, place.y)
 end
 
 -- 單筆原子編輯統一入口：失敗必顯示原因（不得靜默）。
@@ -680,7 +724,7 @@ local function applyPage(win)
         local onPage = shown and ((defs == win.tripBtns) == trip)
         for i = 1, #defs do
             local d = defs[i]
-            d.btn:setVisible(onPage and (d.group ~= "more" or win.expanded))
+            d.btn:setVisible(onPage and d.group ~= "more")
         end
     end
     win.g = win.geom[win.page]
@@ -692,14 +736,12 @@ local function applyPage(win)
             or "UI_MinidoracatMiniMap_SearchTabSearch")
         win.titleW = getTextManager():MeasureStringX(UIFont.Medium, win.titleText)
     end
-    win.titleX = math.max(10, math.floor((win.collapseBtn.x - win.titleW) / 2))
+    -- 依整個視窗置中；只有會碰到右上角按鈕時才往左讓
+    win.titleX = math.max(10, math.min(math.floor((win.width - win.titleW) / 2),
+        win.collapseBtn.x - 8 - win.titleW))
     win.collapseBtn:setTitle(win.collapsed and "+" or "-")
     win.collapseBtn.tooltip = getText(win.collapsed and "UI_MinidoracatMiniMap_TripExpand"
         or "UI_MinidoracatMiniMap_TripCollapse")
-    local moreText = getText(win.expanded and "UI_MinidoracatMiniMap_TripMoreHide"
-        or "UI_MinidoracatMiniMap_TripMoreShow")
-    win.searchMoreBtn:setTitle(moreText)
-    win.tripMoreBtn:setTitle(moreText)
     if win.collapsed then
         if win.entry.unfocus then win.entry:unfocus() end
         win.focus = nil
@@ -768,25 +810,25 @@ local function openNativeMenu(win, button, fill)
     return menu
 end
 
--- 次要動作放不下時改用原生可捲動選單，不能把行程清單壓到零高度。
-local function toggleMore(win)
-    if not win.expanded and not win.moreFits then
-        local defs = win.page == "itinerary" and win.tripBtns or win.searchBtns
-        openNativeMenu(win, win.page == "itinerary" and win.tripMoreBtn or win.searchMoreBtn, function(menu)
-            for i = 1, #defs do
-                local d = defs[i]
-                if d.group == "more" then
-                    local intent = d.field == "manualBtn"
-                        and { phase = win._tPhase, revision = win._tRev } or nil
-                    local option = menu:addOption(d.btn.title, win, d.action, intent)
-                    option.notAvailable = d.btn.enable == false
-                end
+-- 「動作…」鈕與清單右鍵共用同一份原生選單（可捲動、走原版鍵盤／手把路由）。
+-- 按鈕只列次要動作（主要動作已在底部）；右鍵列出該頁全部動作。anchor＝相對視窗的
+-- 定位框，後續二層選單（插入位置／收藏）沿用同一處
+local function openActions(win, anchor, all)
+    local trip = win.page == "itinerary"
+    local defs = trip and win.tripBtns or win.searchBtns
+    local moreBtn = trip and win.tripMoreBtn or win.searchMoreBtn
+    win.actionAnchor = anchor or moreBtn
+    openNativeMenu(win, win.actionAnchor, function(menu)
+        for i = 1, #defs do
+            local d = defs[i]
+            if d.btn ~= moreBtn and (all or d.group == "more") then
+                local intent = d.field == "manualBtn"
+                    and { phase = win._tPhase, revision = win._tRev } or nil
+                local option = menu:addOption(d.btn.title, win, d.action, intent)
+                option.notAvailable = d.btn.enable == false
             end
-        end)
-        return
-    end
-    win.moreMode = win.expanded and "off" or "on"
-    relayoutWindow(win, win.playerNum or 0)
+        end
+    end)
 end
 
 -- 關窗統一走這裡（codex review blocking：只 hide/remove 不 unfocus 會讓
@@ -864,9 +906,65 @@ local function winInsertStop(win)
         Core.navPromptTarget(pn, it.x, it.y, it.label, "append")
         return
     end
-    local button = win.insertBtn:isVisible() and win.insertBtn or win.searchMoreBtn
+    local button = win.actionAnchor or win.searchMoreBtn
     openNativeMenu(win, button, function(menu)
         Core.navInsertOptions(menu, win, pn, it.x, it.y, it.label)
+    end)
+end
+
+-- 收藏選單的點擊：建立選項時捕捉 owner（角色物件本體）與 placeId，延遲點擊先驗
+-- owner（換角色＝不碰新角色），收藏是否仍在由 Core 以 stale 回報。缺函式＝generic
+-- 錯誤；失敗一律經 navMessage 顯示，不得靜默
+local function placeMenuApply(_, payload)
+    if type(payload) ~= "table" then return end
+    local pn = payload.pn
+    local playerObj = getSpecificPlayer(pn)
+    if playerObj == nil or playerObj ~= payload.owner then return end
+    local op = payload.op
+    local fn = op == "home" and Core.placesSetHome or op == "rename" and Core.placesPromptRename
+        or op == "remove" and Core.navPromptPlaceRemove or op == "add" and Core.placesPromptAdd
+    if not fn then
+        winMessage(pn, placesErrorText("failed"))
+        return
+    end
+    if op == "add" then
+        fn(pn, payload.x, payload.y, payload.label)
+    elseif op == "home" then
+        local ok, reason = fn(pn, payload.placeId)
+        if ok then
+            winMessage(pn, getText("UI_MinidoracatMiniMap_HomeSet"), true)
+        else
+            winMessage(pn, placesErrorText(reason))
+        end
+    else
+        fn(pn, payload.placeId)
+    end
+end
+
+-- 收藏：選中收藏列＝設為家（已是家不列）／改名／移除；選中其他結果＝加入收藏。
+-- 座標結果不帶預設名稱：名字寫成座標字串，搬家（setHomeAt 保留名稱）後會說謊
+local function winPlaceMenu(win)
+    local it = winSelectedItem(win)
+    if not it then return end
+    local pn = win.playerNum or 0
+    local owner = getSpecificPlayer(pn)
+    if not owner then return end
+    local button = win.actionAnchor or win.searchMoreBtn
+    openNativeMenu(win, button, function(menu)
+        if it.kind == "place" then
+            if not it.home then
+                menu:addOption(getText("UI_MinidoracatMiniMap_PlaceMenuSetHome"), win, placeMenuApply,
+                    { pn = pn, owner = owner, op = "home", placeId = it.placeId })
+            end
+            menu:addOption(getText("UI_MinidoracatMiniMap_PlaceRename"), win, placeMenuApply,
+                { pn = pn, owner = owner, op = "rename", placeId = it.placeId })
+            menu:addOption(getText("UI_MinidoracatMiniMap_PlaceRemove"), win, placeMenuApply,
+                { pn = pn, owner = owner, op = "remove", placeId = it.placeId })
+        else
+            menu:addOption(getText("UI_MinidoracatMiniMap_PlaceAdd"), win, placeMenuApply,
+                { pn = pn, owner = owner, op = "add", x = it.x, y = it.y,
+                    label = it.kind ~= "coord" and it.label or nil })
+        end
     end)
 end
 
@@ -892,6 +990,19 @@ local function confirmApply(panel)
     confirmClose(panel)
     local playerObj = getSpecificPlayer(pn)
     if playerObj == nil or playerObj ~= payload.owner then return end -- 換角色＝不碰新角色
+    if payload.op == "placeRemove" then
+        -- 收藏與行程無關：不驗行程 revision（自駕推進行程不該讓移除收藏失效），
+        -- 只驗收藏仍在；移除本身由 Core 做原子寫入
+        if not placeById(pn, payload.placeId) then
+            winMessage(pn, placesErrorText("stale"))
+            return
+        end
+        local remove = Core.placesRemove
+        local ok, reason = false, "failed"
+        if remove then ok, reason = remove(pn, payload.placeId) end
+        if not ok then winMessage(pn, placesErrorText(reason)) end
+        return
+    end
     local st = tripState(pn)
     if tripRevision(st) ~= payload.revision or tripErrorReason(pn) ~= payload.error then
         winError(pn, "stale")
@@ -1091,6 +1202,19 @@ Core.navPromptClear = function(pn)
     tripPrompt(pn, count > 0 and "UI_MinidoracatMiniMap_TripConfirmClear"
         or "UI_MinidoracatMiniMap_TripConfirmClearBroken", tostring(count),
         "UI_MinidoracatMiniMap_TripClear", { op = "clear" })
+end
+
+-- 移除收藏：共用確認面板（op=placeRemove；confirmApply 只驗 owner 與收藏仍在）
+Core.navPromptPlaceRemove = function(pn, id)
+    pn = pn or 0
+    local place = placeById(pn, id)
+    if not place then
+        winMessage(pn, placesErrorText("stale"))
+        return
+    end
+    local label = placeName(pn, place)
+    tripPrompt(pn, "UI_MinidoracatMiniMap_PlaceConfirmRemove", label,
+        "UI_MinidoracatMiniMap_PlaceRemove", { op = "placeRemove", placeId = id, label = label })
 end
 
 --------------------------------------------------------------------------------
@@ -1293,6 +1417,17 @@ local function tripClear(win)
     Core.navPromptClear(win.playerNum or 0)
 end
 
+-- 回家：永遠可按（未設家／已在家由 Core.placesGoHome 自己說明）；缺函式＝generic 錯誤
+local function tripGoHome(win)
+    local pn = win.playerNum or 0
+    local go = Core.placesGoHome
+    if not go then
+        winMessage(pn, placesErrorText("failed"))
+        return
+    end
+    go(pn)
+end
+
 --------------------------------------------------------------------------------
 -- 刷新
 --------------------------------------------------------------------------------
@@ -1356,6 +1491,29 @@ local function addInfoRow(list, text)
     return first
 end
 
+-- 收藏列（搜尋頁未輸入時）：家第一，其餘照收藏順序；以 placeId 保留選取。
+-- unsupported（較新 schema，拒絕寫入）接在清單後說明；invalid 依契約當空清單
+local function addPlaceRows(win, pn, ps, err, px, py, keepId)
+    local list = win.list
+    local count = ps and ps.count or 0
+    if count == 0 then addInfoRow(list, getText("UI_MinidoracatMiniMap_PlacesEmpty")) end
+    for pass = 1, 2 do
+        for i = 1, count do
+            local place = ps.places[i]
+            local home = place.id == ps.homeId
+            if home == (pass == 1) then
+                local item = finalizeItem({ kind = "place", placeId = place.id, home = home,
+                    x = place.x, y = place.y, label = placeName(pn, place),
+                    d = math.sqrt(dist2(px, py, place.x, place.y)) })
+                local row = list:addItem(item.label, item)
+                prepareRow(list, row, item, 24 + item.tagW + 10, item.rightW)
+                if keepId == place.id then list.selected = row.itemindex end
+            end
+        end
+    end
+    if err == "unsupported" then addInfoRow(list, placesErrorText(err)) end
+end
+
 local function winRefresh(win, force)
     -- 選取相依的動作（滑鼠改選不會動 cache key）先處理，成本只是純量比較：
     -- 空字串／載入中／查無命中的說明列不是地點，五個目標動作一律停用——按鈕亮著
@@ -1368,27 +1526,45 @@ local function winRefresh(win, force)
         win.insertBtn:setEnable(has)
         win.priorityBtn:setEnable(has)
         win.replaceBtn:setEnable(has)
+        win.placeBtn:setEnable(has and Core.placesState ~= nil)
     end
     -- 引擎冷啟動／nodata 重試泵（每幀，prerender 呼叫）：沒設導航目標時 drawNavRoute
     -- 在 kick 前就 return，搜尋是唯一入口（codex review）。實際泵送（小地圖 live inner
     -- ＋世界地圖單例、非 idle O(1) 早退、nodata per-inner 節流）收斂在 _NavRoute 的
     -- Core.navKickAvailable，本檔不再各自取表面
-    if Core.navKickAvailable then Core.navKickAvailable(win.playerNum or 0) end
+    local pn = win.playerNum or 0
+    if Core.navKickAvailable then Core.navKickAvailable(pn) end
     local text = win.entry:getInternalText() or ""
-    -- cache key＝文字＋引擎狀態雙欄位（review：索引屬非同步建置，只鍵文字會在
-    -- ready 後永遠停在「載入中」；欄位比較零每幀字串配置）
-    local st = Core.navEngineState and Core.navEngineState() or "unknown"
-    if not force and text == win._lastText and st == win._lastState then return end
-    local playerObj = getSpecificPlayer(win.playerNum or 0)
+    local playerObj = getSpecificPlayer(pn)
     if not playerObj then return end -- 不寫 key：玩家回來後同 key 仍要能刷（review）
+    local px, py = playerObj:getX(), playerObj:getY()
+    -- cache key＝文字＋引擎狀態雙欄位（review：索引屬非同步建置，只鍵文字會在
+    -- ready 後永遠停在「載入中」；欄位比較零每幀字串配置）。未輸入時另鍵收藏
+    -- revision／錯誤與玩家 8 格位置桶（同行程頁：站著不動零重建）
+    local st = Core.navEngineState and Core.navEngineState() or "unknown"
+    local ps, pRev, pErr, bx, by = nil, nil, nil, nil, nil
+    if text == "" then
+        ps = placesRead(pn)
+        pRev = ps and ps.revision or nil
+        pErr = Core.placesError and Core.placesError(pn) or nil
+        bx, by = math.floor(px / 8), math.floor(py / 8)
+    end
+    if not force and text == win._lastText and st == win._lastState and pRev == win._pRev
+        and pErr == win._pErr and bx == win._pBx and by == win._pBy then
+        return
+    end
     win._lastText = text
     win._lastState = st
+    win._pRev, win._pErr, win._pBx, win._pBy = pRev, pErr, bx, by
+    local keep = winSelectedItem(win)
+    local keepId = keep and keep.kind == "place" and keep.placeId or nil
     win.list:clear()
     win._searchSel = nil -- 清單重建：下個 prerender 依新的選取重算動作可用性
-    local results = doSearch(text, playerObj:getX(), playerObj:getY())
+    local results = doSearch(text, px, py)
     if #results == 0 then
         if text == "" then
-            -- 還沒輸入：空清單＋灰按鈕自己不會講話，明說要輸入什麼才有動作
+            -- 還沒輸入：先列收藏（缺 _Places 時不列），再明說要輸入什麼才有動作
+            if Core.placesState then addPlaceRows(win, pn, ps, pErr, px, py, keepId) end
             addInfoRow(win.list, getText("UI_MinidoracatMiniMap_SearchEmptyHint"))
         else
             -- 街名索引與路網可分別就緒；建圖失敗不能誤報已可用的街名索引失敗。
@@ -1793,18 +1969,17 @@ end
 -- 版面
 --------------------------------------------------------------------------------
 -- 按實際字寬貪婪換列：放不進本列就換下一列，單顆超寬就獨佔整列（不截字）。
--- newRow＝強制換列（保持動作分組：主要動作永遠是第一批）。
--- expanded=false 時跳過 group=="more" 的次要動作（窄畫面／大字級折疊）。回總高
-local function layoutButtons(defs, x, y, availW, btnH, gap, expanded)
+-- 次要動作（group=="more"）不排在底部，改由「動作…」選單提供。回總高
+local function layoutButtons(defs, x, y, availW, btnH, gap)
     local tm = getTextManager()
     local cx, cy, rows = x, y, 1
     for i = 1, #defs do
         local d = defs[i]
-        if expanded or d.group ~= "more" then
+        if d.group ~= "more" then
             local bw = tm:MeasureStringX(UIFont.Small, d.btn.title or d.text) + 24
             if d.altKey then bw = math.max(bw, tm:MeasureStringX(UIFont.Small, d.text) + 24) end
             if bw > availW then bw = availW end
-            if cx > x and ((d.newRow and true) or cx + bw > x + availW) then
+            if cx > x and cx + bw > x + availW then
                 cx, cy, rows = x, cy + btnH + gap, rows + 1
             end
             d.btn:setX(cx)
@@ -1907,44 +2082,36 @@ relayoutWindow = function(win, pn)
         return
     end
     local tabsY = titleH + pad
-    local tabsH = layoutButtons(win.tabs, pad, tabsY, availW, btnH, gap, true)
+    local tabsH = layoutButtons(win.tabs, pad, tabsY, availW, btnH, gap)
     local bodyY = tabsY + tabsH + 8
     -- 模式列固定在行程頁頂部（清單之外）：接續模式是整趟行程的前提，
     -- 不能跟著清單捲走，也不能被次要動作折疊
-    local modeH = layoutButtons(win.modeBtns, pad, 0, availW, btnH, gap, true)
+    local modeH = layoutButtons(win.modeBtns, pad, 0, availW, btnH, gap)
     local modeTop = bodyY + modeH + 6
     local listY = {
         search = bodyY + entryH + 8,
         itinerary = modeTop + HEAD_LINES * lineH * 2 + 8,
     }
     local baseY = math.max(listY.search, listY.itinerary)
-    local function blockH(expanded)
-        return math.max(
-            layoutButtons(win.searchBtns, pad, 0, availW, btnH, gap, expanded),
-            layoutButtons(win.tripBtns, pad, 0, availW, btnH, gap, expanded))
-    end
-    local fullBlock, leanBlock = blockH(true), blockH(false)
-    local function heightFor(block, rows)
+    local block = math.max(
+        layoutButtons(win.searchBtns, pad, 0, availW, btnH, gap),
+        layoutButtons(win.tripBtns, pad, 0, availW, btnH, gap))
+    local function heightFor(rows)
         return baseY + block + rowH * rows + msgH + pad + 8
     end
     -- 極窄／大字時連主要動作都擠不下：狀態與預覽改隨清單捲動，資訊不刪不截。
-    win.scrollInfo = heightFor(leanBlock, 1) > maxH
+    win.scrollInfo = heightFor(1) > maxH
     if win.scrollInfo then
         listY.itinerary = modeTop
         baseY = math.max(listY.search, listY.itinerary)
     end
-    -- 至少保留一列；更多動作若放不下，按鈕改開原生選單而非重疊主清單。
-    win.moreFits = heightFor(fullBlock, 1) <= maxH
-    local expanded = win.moreMode ~= "off" and win.moreFits
-    win.expanded = expanded
-    local block = expanded and fullBlock or leanBlock
-    local h = math.min(heightFor(block, 8), maxH)
+    local h = math.min(heightFor(8), maxH)
     win:setHeight(h)
     local btnTop = h - pad - block
     local msgY = btnTop - msgH
-    layoutButtons(win.searchBtns, pad, btnTop, availW, btnH, gap, expanded)
-    layoutButtons(win.tripBtns, pad, btnTop, availW, btnH, gap, expanded)
-    layoutButtons(win.modeBtns, pad, bodyY, availW, btnH, gap, true)
+    layoutButtons(win.searchBtns, pad, btnTop, availW, btnH, gap)
+    layoutButtons(win.tripBtns, pad, btnTop, availW, btnH, gap)
+    layoutButtons(win.modeBtns, pad, bodyY, availW, btnH, gap)
     local function fitList(listEl, y)
         listEl:setX(pad)
         listEl:setY(y)
@@ -2106,7 +2273,15 @@ local function createSearchWindow(pn)
     win.playerNum = pn
     win.page = "search"
     win.collapsed = false
-    win.moreMode = "auto"
+    -- 清單右鍵：先選中滑鼠下的列（同原版 onMouseDown 的 rowAt），再在滑鼠處開動作選單
+    local function rowMenu(list, x, y)
+        local row = list:rowAt(x, y)
+        if row < 1 then return true end
+        list.selected = row
+        pageRefresh(win, false)
+        openActions(win, { x = list.x + x, y = list.y + y + list:getYScroll(), height = 0 }, true)
+        return true
+    end
     -- 標題列：收合／關閉
     win.collapseBtn = ISButton:new(0, 0, 10, 10, "-", win, toggleCollapsed)
     win.collapseBtn:initialise()
@@ -2149,6 +2324,7 @@ local function createSearchWindow(pn)
     win.list.backgroundColor = { r = 0, g = 0, b = 0, a = 0.25 }
     win.list.doDrawItem = listDrawItem
     win:addChild(win.list)
+    win.list.onRightMouseUp = rowMenu
     win.list:setOnMouseDoubleClick(win, function(target)
         winGoto(target)
     end)
@@ -2160,22 +2336,24 @@ local function createSearchWindow(pn)
     win.tripList.backgroundColor = { r = 0, g = 0, b = 0, a = 0.25 }
     win.tripList.doDrawItem = tripDrawItem
     win:addChild(win.tripList)
+    win.tripList.onRightMouseUp = rowMenu
     win.tripList:setOnMouseDoubleClick(win, function(target)
         tripShowOnMap(target)
     end)
     -- 搜尋頁：主要＝加到行程最後／在地圖顯示；次要＝插在指定站之前／先去這裡／
-    -- 取代整趟（取代會立刻出發，放次要且一律先確認）
+    -- 取代整趟（取代會立刻出發，放次要且一律先確認）／收藏（原生選單依選中項切換）
     win.searchBtns = {
         { key = "UI_MinidoracatMiniMap_TripAdd", action = winAddStop, field = "addBtn" },
         { key = "UI_MinidoracatMiniMap_SearchGoto", action = winGoto, field = "gotoBtn" },
-        { key = "UI_MinidoracatMiniMap_TripMoreShow", altKey = "UI_MinidoracatMiniMap_TripMoreHide",
-            action = toggleMore, field = "searchMoreBtn" },
+        { key = "UI_MinidoracatMiniMap_TripMoreShow", action = openActions, field = "searchMoreBtn" },
         { key = "UI_MinidoracatMiniMap_TripInsert", action = winInsertStop,
-            field = "insertBtn", group = "more", newRow = true },
+            field = "insertBtn", group = "more" },
         { key = "UI_MinidoracatMiniMap_TripPriority", action = winPriorityStop,
             field = "priorityBtn", group = "more" },
         { key = "UI_MinidoracatMiniMap_SearchSetTarget", action = winSetTarget,
             field = "replaceBtn", group = "more" },
+        { key = "UI_MinidoracatMiniMap_PlaceMenu", action = winPlaceMenu,
+            field = "placeBtn", group = "more" },
     }
     makeButtons(win, win.searchBtns)
     -- 行程頁頂部：接續模式兩顆明確選擇鈕（不是 toggle）。切換只改這份行程的設定，
@@ -2187,21 +2365,21 @@ local function createSearchWindow(pn)
             action = function(target) setContinuation(target, false) end },
     }
     makeButtons(win, win.modeBtns)
-    -- 行程頁：主要＝開始/繼續、停止；次要＝手動前往、檢視與清單編輯
+    -- 行程頁：主要＝開始/繼續、停止、回家（永遠可按）；次要＝手動前往、檢視與清單編輯
     win.tripBtns = {
         { key = "UI_MinidoracatMiniMap_TripStart", altKey = "UI_MinidoracatMiniMap_TripContinue",
             action = tripStart, field = "startBtn" },
         { key = "UI_MinidoracatMiniMap_TripPause", action = tripPause, field = "pauseBtn" },
+        { key = "UI_MinidoracatMiniMap_GoHome", action = tripGoHome, field = "homeBtn" },
+        { key = "UI_MinidoracatMiniMap_TripMoreShow", action = openActions, field = "tripMoreBtn" },
         { key = "UI_MinidoracatMiniMap_TripManual", altKey = "UI_MinidoracatMiniMap_TripRoads",
             action = tripManual, field = "manualBtn", group = "more" },
-        { key = "UI_MinidoracatMiniMap_TripMoreShow", altKey = "UI_MinidoracatMiniMap_TripMoreHide",
-            action = toggleMore, field = "tripMoreBtn" },
         { key = "UI_MinidoracatMiniMap_TripShowOnMap", action = tripShowOnMap,
-            field = "mapBtn", group = "more", newRow = true },
+            field = "mapBtn", group = "more" },
         { key = "UI_MinidoracatMiniMap_TripPreviewOn", altKey = "UI_MinidoracatMiniMap_TripPreviewOff",
             action = tripPreview, field = "previewBtn", group = "more" },
         { key = "UI_MinidoracatMiniMap_TripMoveUp", action = tripMoveUp,
-            field = "upBtn", group = "more", newRow = true },
+            field = "upBtn", group = "more" },
         { key = "UI_MinidoracatMiniMap_TripMoveDown", action = tripMoveDown,
             field = "downBtn", group = "more" },
         { key = "UI_MinidoracatMiniMap_TripSkip", action = tripSkip,
@@ -2211,7 +2389,7 @@ local function createSearchWindow(pn)
         { key = "UI_MinidoracatMiniMap_TripRemove", action = tripRemove,
             field = "removeBtn", group = "more" },
         { key = "UI_MinidoracatMiniMap_TripUndo", action = tripUndo,
-            field = "undoBtn", group = "more", newRow = true },
+            field = "undoBtn", group = "more" },
         { key = "UI_MinidoracatMiniMap_TripClear", action = tripClear,
             field = "clearBtn", group = "more" },
     }
@@ -2257,9 +2435,10 @@ local function createSearchWindow(pn)
                     self._tRev, self._lastText = nil, nil
                 end
             else
+                local c = self.msgGood and GOOD_COLOR or WARN_COLOR
                 for i = 1, #self.msgLines do
                     self:drawText(self.msgLines[i], 10, g.msgY + (i - 1) * lineH,
-                        WARN_COLOR.r, WARN_COLOR.g, WARN_COLOR.b, 1, UIFont.Small)
+                        c.r, c.g, c.b, 1, UIFont.Small)
                 end
             end
         end

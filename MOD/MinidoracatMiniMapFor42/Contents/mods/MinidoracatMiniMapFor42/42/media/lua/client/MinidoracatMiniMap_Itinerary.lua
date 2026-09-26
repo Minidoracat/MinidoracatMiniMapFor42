@@ -664,7 +664,7 @@ API.getNavTarget = getTarget
 API.setNavContinuation = function(pn, expectedRevision, enabled)
     return edit(pn, expectedRevision, "mode", enabled)
 end
-API.navApiVersion = 7
+API.navApiVersion = 8 -- v8：getNavHome／goNavHome（定義在 _Places.lua）
 
 Events.OnCreatePlayer.Add(function(pn) loadPlayer(pn) end)
 Events.OnGameStart.Add(function()
