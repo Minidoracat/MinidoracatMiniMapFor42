@@ -24,6 +24,7 @@ The map background is pre-rendered: player construction, demolition and tree cut
 [list]
 [*] [b]Multi-target navigation[/b]: up to 16 targets; append, insert or prioritize, reorder, remove/undo, skip and preview. New trips auto-continue; marked stopovers or step mode wait for you (existing trips stay step-by-step). Vehicles stop first. Road routes replan on deviation; faction sharing covers the current target only
 [*] [b]Search / trip window[/b]: open with the magnifier or ; (rebindable), with collapse support. Search coordinates, [u]original/translated street names[/u] and 20 facility categories; show a result on the map or add it to the trip. "MOD map: name" identifies a confirmed source
+[*] [b]Home & favorites[/b]: right-click the map to set home or add favorites (unlimited); one-click Go home. Right-click results/stops for actions
 [*] [b]Mini-map hotkey + floating icon[/b]: default / (rebindable), works even when the sandbox disables the mini-map; the always-on icon toggles the map (left-click) and ghost mode (right-click), drag to reposition
 [*] [b]Free sizing[/b]: four presets + edge-drag resizing with memory; the button bar stays put — no hover-expanding
 [*] [b]Live zombie dots[/b] (off by default): real-time zombie positions with adjustable color / size / opacity / cap; vanilla heatmap toggle included
