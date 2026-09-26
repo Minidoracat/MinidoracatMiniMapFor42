@@ -2397,6 +2397,13 @@ if ISWorldMap and ISWorldMap.prerender then
         pcall(drawMapBounds, self)
         Core.drawZonePass(self, "drawZoneLines", "_minidoracatWMZoneLineErrLogged") -- 與 MapBounds 同層
         Core.drawZonePass(self, "drawZoneIcons", "_minidoracatWMZoneIconErrLogged") -- POI 圖標，同層
+        -- addon marker（_Markers.lua）：壓在 zone 圖標與本 wrap 開頭的載具／動物／殭屍點之上，
+        -- 座標列／導航在外層 _WorldMapNav wrap（之後才畫、蓋在 marker 上）
+        local mkOk, mkErr = pcall(Core.drawMarkers, self, "world")
+        if not mkOk and not self._minidoracatWMMarkerErrLogged then
+            self._minidoracatWMMarkerErrLogged = true
+            log("world map markers draw failed: " .. tostring(mkErr))
+        end
     end
 end
 
@@ -2569,8 +2576,6 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         pcall(drawMapBounds, self)
         Core.drawZonePass(self, "drawZoneLines", "_minidoracatZoneLineErrLogged") -- 與 MapBounds 同層
         Core.drawZonePass(self, "drawZoneIcons", "_minidoracatZoneIconErrLogged") -- POI 圖標，同層
-        pcall(Core.drawPlayerCoords, self) -- 在導航目標之前畫（距離標籤蓋膠囊，見函式註解）
-        pcall(Core.drawNavTargets, self)
         -- 動物圖標（畫在殭屍點位之下：殭屍小點蓋大圖標可辨）。持久錯誤首次記 log
         -- 免全靜默（API 漂移/第三方動物資料異常可診斷；既有三個 pcall 沿舊慣例不動）
         local adOk, adErr = pcall(Core.drawAnimalDots, self, "AnimalWild", "AnimalLivestock", "VehicleDots")
@@ -2603,6 +2608,15 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         if Core.drawZombieDotsOn then -- 繪製本體在 _Dots.lua（世界地圖用 WMZombieDots）
             Core.drawZombieDotsOn(self, "ZombieDots")
         end
+        -- addon marker（_Markers.lua）壓在自有載具／動物／殭屍點之上（綁定車須蓋過同位置
+        -- 方向盤點），座標列／導航之下（同世界地圖：點雲在主檔 wrap、座標／導航在外層 _WorldMapNav）
+        local mkOk, mkErr = pcall(Core.drawMarkers, self, "mini")
+        if not mkOk and not self._minidoracatMarkerErrLogged then
+            self._minidoracatMarkerErrLogged = true
+            log("markers draw failed: " .. tostring(mkErr))
+        end
+        pcall(Core.drawPlayerCoords, self) -- 在導航目標之前畫（距離標籤蓋膠囊，見函式註解）
+        pcall(Core.drawNavTargets, self)
         -- 管理員檢視標記畫在全部加繪之上（最後呼叫）：它是「你正在看旁路資料」
         -- 的提示，不得被點雲/圖標蓋掉；失敗 log-once 且下一幀重試
         local adminOk, adminErr = pcall(Core.drawAdminViewMarker, self)
