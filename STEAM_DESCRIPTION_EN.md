@@ -42,7 +42,7 @@ The map background is pre-rendered: player construction, demolition and tree cut
 [b]⚠️ -debug users[/b]: HOME is a hidden engine render-debug key (halves FPS). This mod defaults to / and auto-migrates old bindings; a conflict shows an orange warning bar.
 
 [h2]🧩 Map mod support[/h2]
-The optional [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps pack[/url] automatically shows imagery and boundaries for supported, enabled maps. Requires main mod 42.20.4-0.27.0+ and pack 42.20.4-0.9.0+; restart after updating. Overlaps follow map priority; streets may be excluded from search/navigation. [url=https://steamcommunity.com/workshop/filedetails/discussion/3763913359/569297034317714443/]Street data guide[/url].
+The optional [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps pack[/url] automatically shows imagery and boundaries for supported, enabled maps. Requires main mod 42.20.4-0.27.0+ and pack 42.20.4-0.9.0+; restart after updating. Overlaps follow map priority; streets may be excluded from search/navigation. [url=https://steamcommunity.com/workshop/filedetails/discussion/3763913359/586187095760051259/]Street data guide[/url].
 Map mod authors can ship their own support: render a [b]minidoracat_minimap.pyramid.zip[/b] into [b]media/minimap/[/b] — [u]no Lua needed[/u].
 
 [h2]🗺️ Built-in POIs + zone layer API[/h2]

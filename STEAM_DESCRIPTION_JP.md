@@ -42,7 +42,7 @@
 [b]⚠️ -debug 利用者へ[/b]：HOME はエンジンの隠しレンダリングデバッグキー（FPS 半減）。本 MOD は既定 / で旧バインドを自動移行、競合検出時はオレンジ警告バーを表示。
 
 [h2]🧩 マップ MOD サポート[/h2]
-[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps パック[/url]：有効な対応マップの画像＋枠線を自動表示。本体42.20.4-0.27.0+、パック42.20.4-0.9.0+が必要、更新後は再起動。重複区域は優先順に従い、道路が検索・ナビから除外される場合があります。[url=https://steamcommunity.com/workshop/filedetails/discussion/3763913359/569297034317714443/]道路データ要件[/url]。
+[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps パック[/url]：有効な対応マップの画像＋枠線を自動表示。本体42.20.4-0.27.0+、パック42.20.4-0.9.0+が必要、更新後は再起動。重複区域は優先順に従い、道路が検索・ナビから除外される場合があります。[url=https://steamcommunity.com/workshop/filedetails/discussion/3763913359/586187095760051259/]道路データ要件[/url]。
 マップ作者は事前描画した [b]minidoracat_minimap.pyramid.zip[/b] を [b]media/minimap/[/b] に配置（[u]Lua 不要[/u]）。
 
 [h2]🗺️ 内蔵 POI ＋ ゾーンレイヤー API[/h2]
