@@ -80,6 +80,7 @@ function MinidoracatMiniMapAPI.registerMaps(ownerModId, entries)
             and (e.nameKey == nil or type(e.nameKey) == "string")
             and (e.streetNames == nil or type(e.streetNames) == "table")
             and (e.streetRepairs == nil or type(e.streetRepairs) == "table")
+            and (e.streetSupplement == nil or type(e.streetSupplement) == "table")
         if ok and e.bounds ~= nil then
             ok = type(e.bounds) == "table" and #e.bounds == 4
             if ok then

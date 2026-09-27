@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### 新增
+
+- 地圖包可以補上原作者沒有提供的道路資料：補上的路會在地圖上顯示路名、可以用搜尋找到，導航與自動駕駛也能走。這些路名都帶「(MiniMap)」／「（小地圖補）」字樣，一看就知道不是作者取的名字。
+- 原作者之後自己補上或改動道路資料時，補上的路會自動停用，改用作者的版本，不會和作者的路重疊。
+
+> 技術要點：`registerMaps` 條目新增 `streetSupplement`（`schemaVersion`、`mapMod`、`mapDir`、`file`、`upstreamStreetCount`、`roadCount`、`names`）。補充檔以與作者 `streets.xml` 相同的顯示窗口 `addStreetData` 掛進地圖，導航抽取以該 `mapDir` 為來源、不套該目錄的 `streetRepairs`；作者街道數 ≠ `upstreamStreetCount`、檔案條數 ≠ `roadCount`、`file` 位於 `media/maps/` 任一成立即整份不掛。補充檔不受引擎依地圖優先序裁切，外框 300 格被其他地圖勝出的路只隱藏顯示副本。契約見 `docs/addon-api.md`。
+
 ## [42.20.4-0.29.0] - 2026-09-26
 
 ### 新增

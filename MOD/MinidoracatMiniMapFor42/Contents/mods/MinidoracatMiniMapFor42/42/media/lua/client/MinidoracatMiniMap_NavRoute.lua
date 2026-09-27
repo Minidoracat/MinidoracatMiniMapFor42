@@ -1756,6 +1756,21 @@ local function beginExtract(mapAPI)
                 seenData[data] = true
             end
         end
+        -- addon 補充道路（作者沒放進 streets.xml 的路）：歸屬該地圖目錄，吃同一套 cell winner；
+        -- 不套該目錄的 streetRepairs（修正索引對的是作者 XML，不是補充檔）。
+        local supplement = Core and Core.streetSupplement and Core.streetSupplement(dir)
+        if supplement then
+            local supKey = supplement.file:lower()
+            if not seenRel[supKey] then
+                seenRel[supKey] = true
+                local data = streetsAPI:getStreetDataByRelativeFileName(supplement.file)
+                if data then
+                    if #list >= MAX_STREET_CONTAINERS then error("street container limit exceeded") end
+                    list[#list + 1] = { data = data, src = dir, repeated = seenData[data], supplement = true }
+                    seenData[data] = true
+                end
+            end
+        end
     end
     local knownN = #list
     for i = 0, total - 1 do
@@ -1806,7 +1821,8 @@ local function stepExtract(ex)
         if not streets then
             streets = getStreets(entry.data)
             entry.streets, entry.n, entry.outStart = streets, streets:size(), ex.outN
-            entry.cert = ex.patch and ex.officialDir and not entry.repeated and entry.src ~= ex.officialDir
+            entry.cert = ex.patch and ex.officialDir and not entry.repeated and not entry.supplement
+                and entry.src ~= ex.officialDir
             entry.hits, entry.hitSet = 0, entry.cert and {} or nil
         end
         if ex.si >= entry.n then
@@ -1834,7 +1850,7 @@ local function stepExtract(ex)
             else
                 local originalName = st:getTranslatedText() or ""
                 local name = Core.streetDisplayName and Core.streetDisplayName(originalName, entry.src) or originalName
-                local repair = Core.streetRepair and Core.streetRepair(st, entry.src, ex.si - 1)
+                local repair = not entry.supplement and Core.streetRepair and Core.streetRepair(st, entry.src, ex.si - 1)
                 local replacement = repair and repair.replacementPoints
                 local pointCount = replacement and #replacement / 2 or n
                 local rawX0, rawY0 = st:getPointX(0), st:getPointY(0)

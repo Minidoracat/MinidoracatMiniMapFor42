@@ -1,4 +1,4 @@
--- 地圖街道載入協調：街名翻譯與語系無關的道路修正各自提供資料。
+-- 地圖街道載入協調：街名翻譯、語系無關的道路修正、addon 補充道路各自提供資料。
 -- WorldMap.java:193-218 同步 combine。只在副本建立窗口暫改 raw 名稱／點列，
 -- 結束後恢復；不碰來源 XML、不 dirty 玩家地圖、不使用 editor setter。
 local Core = MinidoracatMiniMapCore
@@ -10,7 +10,8 @@ local function buildStreetSourceIndex(packs, logFn)
     for _, pack in ipairs(packs or {}) do
         if type(pack) == "table" and type(pack.owner) == "string" and type(pack.entries) == "table" then
             for _, entry in ipairs(pack.entries) do
-                if type(entry) == "table" and (entry.streetNames ~= nil or entry.streetRepairs ~= nil) then
+                if type(entry) == "table" and (entry.streetNames ~= nil or entry.streetRepairs ~= nil
+                    or entry.streetSupplement ~= nil) then
                     local valid = type(entry.mapDir) == "string" and entry.mapDir ~= ""
                         and (entry.mapMod == nil or type(entry.mapMod) == "string")
                     local names = entry.streetNames
@@ -37,6 +38,7 @@ local function buildStreetSourceIndex(packs, logFn)
                         candidates[#candidates + 1] = {
                             owner = pack.owner, mapMod = entry.mapMod,
                             names = names, repairs = entry.streetRepairs,
+                            supplement = entry.streetSupplement,
                         }
                     elseif logFn then logFn("invalid street source from " .. pack.owner) end
                 end
@@ -51,7 +53,8 @@ local function resolveStreetSource(candidates, activeSet)
     for _, candidate in ipairs(candidates or {}) do
         if candidate.mapMod == nil or (activeSet and activeSet[candidate.mapMod]) then
             if chosen and (chosen.owner ~= candidate.owner or not rawequal(chosen.names, candidate.names)
-                or not rawequal(chosen.repairs, candidate.repairs)) then
+                or not rawequal(chosen.repairs, candidate.repairs)
+                or not rawequal(chosen.supplement, candidate.supplement)) then
                 return nil
             end
             chosen = candidate
@@ -76,6 +79,28 @@ local function translateStreetName(original, key, translate)
     end
     if type(value) ~= "string" or value:match("^%s*$") or value == key or rejectedText[value] then return original end
     return value
+end
+
+-- addon 補充道路（作者沒放進 streets.xml 的路）只驗結構；作者資料比對另做。
+-- file 不得位於 media/maps/：那是地圖目錄自己的 streets.xml 命名空間，不能冒充。
+local function validSupplement(sup, mapMod, dir)
+    if type(sup) ~= "table" or sup.schemaVersion ~= 1 or sup.mapMod ~= mapMod
+        or type(sup.mapDir) ~= "string" or type(dir) ~= "string" or sup.mapDir:lower() ~= dir:lower()
+        or type(sup.file) ~= "string" or not sup.file:match("^media/[^%c]+%.xml$")
+        or sup.file:lower():find("^media/maps/")
+        or type(sup.upstreamStreetCount) ~= "number" or sup.upstreamStreetCount < 0
+        or sup.upstreamStreetCount % 1 ~= 0
+        or type(sup.roadCount) ~= "number" or sup.roadCount < 1 or sup.roadCount % 1 ~= 0
+        or type(sup.names) ~= "table" then
+        return false
+    end
+    for original, key in pairs(sup.names) do
+        if type(original) ~= "string" or original == ""
+            or type(key) ~= "string" or not key:match("^UI_[%w_.%-]+$") then
+            return false
+        end
+    end
+    return true
 end
 -- test:street-i18n:end
 
@@ -117,10 +142,61 @@ Core.streetSource = function(dir)
     return source or nil
 end
 
+-- 作者自己的街道數：沒有 streets.xml＝0；有檔時用一次性 scratch 讀原生 raw 快取計數
+-- （同下方顯示窗口的 scratch 用法，只讀不改）。讀不到回 nil＝狀態未知，補充道路不套。
+local function upstreamStreetCount(dir)
+    local rel = "media/maps/" .. dir .. "/streets.xml"
+    if not fileExists(rel) then return 0 end
+    local api
+    local ok, count = pcall(function()
+        api = UIWorldMap.new({}):getAPIv3():getStreetsAPI()
+        api:addStreetData(rel)
+        local data = api:getStreetDataByRelativeFileName(rel)
+        return data and getStreets(data):size() or nil
+    end)
+    if api then pcall(function() api:clearStreetData() end) end
+    return ok and count or nil
+end
+
+-- 已啟用、結構合法、且作者街道數仍等於 addon 綁定值的補充道路；否則 nil。
+-- 作者一改 streets.xml（街道數不同）整份停用，改回作者資料。每目錄只判一次。
+local supplementState = {}
+Core.streetSupplement = function(dir)
+    if type(dir) ~= "string" then return nil end
+    local key = dir:lower()
+    local state = supplementState[key]
+    if state ~= nil then return state or nil end
+    state = false
+    local source = Core.streetSource(dir)
+    local sup = source and source.supplement
+    if sup ~= nil then
+        if not validSupplement(sup, source.mapMod, dir) then
+            logOnce("supplement-invalid:" .. key, "street supplement invalid for " .. dir .. "; ignored")
+        else
+            local count = upstreamStreetCount(dir)
+            if count ~= sup.upstreamStreetCount then
+                logOnce("supplement-pin:" .. key, "street supplement disabled for " .. dir
+                    .. ": author street data changed (expected " .. sup.upstreamStreetCount
+                    .. " streets, found " .. tostring(count) .. ")")
+            elseif not fileExists(sup.file) then
+                logOnce("supplement-file:" .. key, "street supplement file missing: " .. sup.file)
+            else
+                state = sup
+            end
+        end
+    end
+    supplementState[key] = state
+    return state or nil
+end
+
 -- 顯示譯名不影響 raw 原名與道路型別辨識。
 Core.streetDisplayName = function(original, dir)
     local source = Core.streetSource(dir)
     local key = source and source.names and source.names[original]
+    if not key then
+        local sup = Core.streetSupplement(dir)
+        key = sup and sup.names[original] or nil
+    end
     if not key and type(dir) == "string" and dir:lower() == "muldraugh, ky" then
         return translateStreetName(original, "UI_WorldMapStreet_" .. original, getTextOrNull)
     end
@@ -183,6 +259,97 @@ local function suspendWindow(parent, suspended)
             suspended[#suspended + 1] = change
             applyChange(change)
         end
+    end
+end
+
+local function streetPoints(street)
+    local pts = {}
+    for i = 0, street:getNumPoints() - 1 do
+        pts[#pts + 1] = street:getPointX(i)
+        pts[#pts + 1] = street:getPointY(i)
+    end
+    return pts
+end
+
+-- 補充道路的檔案不在 media/maps/<dir>/ 之下，引擎不會依地圖優先序裁切它
+-- （WorldMapStreets.initObscuredCells 以檔案絕對路徑判定所屬地圖目錄）。外框涉及的
+-- 300 格只要有一格被別的地圖勝出，就把路名退化成不產生副本的點（同 hideLabel 手法）；
+-- 導航另由路網建置的 cell winner 以 src 裁切，不受這裡影響。
+local function supplementVisible(street, dir, winner)
+    if not winner then return true end
+    local x0, y0 = street:getPointX(0), street:getPointY(0)
+    local x1, y1 = x0, y0
+    for i = 1, street:getNumPoints() - 1 do
+        local x, y = street:getPointX(i), street:getPointY(i)
+        if x < x0 then x0 = x elseif x > x1 then x1 = x end
+        if y < y0 then y0 = y elseif y > y1 then y1 = y end
+    end
+    local low = dir:lower()
+    for cy = math.floor(y0 / 300), math.floor(y1 / 300) do
+        for cx = math.floor(x0 / 300), math.floor(x1 / 300) do
+            local owner = winner(cx, cy)
+            if owner and owner:lower() ~= low then return false end
+        end
+    end
+    return true
+end
+
+-- addon 補充道路掛進玩家地圖：與作者 streets.xml 同一套顯示窗口（scratch 暫改 raw 譯名
+-- → 目標地圖 addStreetData 建副本 → 還原），hover、搜尋、導航都讀同一個容器。
+-- 檔案條數與 roadCount 不符＝生成物不一致，整份不掛（fail-closed）。
+local function loadStreetSupplement(mapUI, directory, lang)
+    local dir = type(directory) == "string" and directory:match("^media/maps/(.+)$") or nil
+    local sup = dir and Core.streetSupplement(dir)
+    if not sup then return end
+    local targetAPI = mapUI.javaObject:getAPIv3():getStreetsAPI()
+    if targetAPI:getStreetDataByRelativeFileName(sup.file) then return end
+    local winner = mapUI._minidoracatStreetReferenceWinner
+    if not winner and Core.makeStreetWinner then
+        winner = Core.makeStreetWinner()
+        mapUI._minidoracatStreetReferenceWinner = winner
+    end
+    local translate = lang == "CH" or lang == "CN" or lang == "JP"
+    local changes, scratchAPI, hidden = {}, nil, 0
+    local ok, err = pcall(function()
+        scratchAPI = UIWorldMap.new({}):getAPIv3():getStreetsAPI()
+        scratchAPI:addStreetData(sup.file)
+        local data = scratchAPI:getStreetDataByRelativeFileName(sup.file)
+        if not data then error("native street data unavailable") end
+        local streets = getStreets(data)
+        if streets:size() ~= sup.roadCount then
+            error("expected " .. sup.roadCount .. " roads, file has " .. streets:size())
+        end
+        for i = 0, streets:size() - 1 do
+            local street = streets:get(i)
+            local original = street:getTranslatedText() or ""
+            local translated = translate
+                and translateStreetName(original, sup.names[original], getTextOrNull) or original
+            local replacement, originalPoints
+            if not supplementVisible(street, dir, winner) then
+                originalPoints = streetPoints(street)
+                replacement = { originalPoints[1], originalPoints[2], originalPoints[1], originalPoints[2] }
+                hidden = hidden + 1
+            end
+            if translated ~= original or replacement then
+                local change = {
+                    street = street, original = original, translated = translated,
+                    replacement = replacement, originalPoints = originalPoints,
+                    width = replacement and street:getWidth(),
+                }
+                changes[#changes + 1] = change
+                applyChange(change)
+            end
+        end
+        targetAPI:addStreetData(sup.file)
+    end)
+    restoreChanges(changes)
+    if scratchAPI then pcall(function() scratchAPI:clearStreetData() end) end
+    if ok then
+        logOnce("supplement:" .. dir .. ":" .. lang, "street supplement loaded: " .. dir .. " ("
+            .. sup.roadCount .. " roads, " .. lang
+            .. (hidden > 0 and (", " .. hidden .. " labels under other maps") or "") .. ")")
+    else
+        logOnce("supplement-load:" .. dir, "street supplement skipped for " .. dir .. ": " .. tostring(err))
     end
 end
 
@@ -258,6 +425,10 @@ function MapUtils.initDirectoryStreetData(mapUI, directory)
     end
     if window then inFlight[window] = parent end
     if not loaded then error(result) end
+    local okSupplement, supplementErr = pcall(loadStreetSupplement, mapUI, directory, lang)
+    if not okSupplement then
+        logOnce("supplement-error", "street supplement failed: " .. tostring(supplementErr))
+    end
     return result
 end
-print("[MinidoracatMiniMap] StreetData armed (names and independent repairs)")
+print("[MinidoracatMiniMap] StreetData armed (names, independent repairs and supplements)")

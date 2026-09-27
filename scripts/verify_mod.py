@@ -452,6 +452,7 @@ _lua_tests = [
     ("test_street_backfill.lua", "街道資料補載 gate", False),
     ("test_street_names.lua", "純名稱翻譯與原始道路不變", False),
     ("test_street_repairs.lua", "獨立修路／顯示抑制與語系一致性", False),
+    ("test_street_supplements.lua", "addon 補充道路掛載／搜尋／導航／作者更新退場", False),
     ("test_search_logic.lua", "原名／譯名搜尋共用道路錨點", False),
     ("test_nav_kick.lua", "導航冷啟動與退化街道隔離", False),
     ("test_road_sources.lua", "官方副本來源認證與實體地圖覆蓋", False),
