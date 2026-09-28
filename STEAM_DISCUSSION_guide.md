@@ -8,6 +8,7 @@
 [list]
 [*] 需要遊戲 Build 42.20.1 以上，並一併訂閱必要前置 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url]。多人遊戲需要伺服器啟用本 MOD。
 [*] 系列 MOD 請都更新到最新版，更新後完整重新啟動遊戲。
+[*] 介面語言：繁中、簡中、English、日本語。
 [/list]
 [olist]
 [*] 按 [b]/[/b] 開關小地圖（選項 → 按鍵綁定 → [MinidoracatMiniMap] 可改鍵）。畫面上的浮動地圖圖標：左鍵開關小地圖、右鍵切換穿透模式，可拖曳擺放。

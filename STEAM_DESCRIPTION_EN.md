@@ -14,7 +14,7 @@ Keep every Minidoracat MiniMap series mod up to date and restart the game after 
 
 [h2]🚀 Quick start[/h2]
 [olist]
-[*] Press [b]/[/b] to toggle the mini-map (rebind under Options → Key Bindings → [MinidoracatMiniMap]). The floating map icon on screen toggles the mini-map with left-click and ghost mode with right-click; drag it to reposition
+[*] Press [b]/[/b] or click the floating map icon on screen to toggle the mini-map
 [*] Press [b]M[/b] for the world map
 [*] Press [b];[/b] to open the search / trip window: look up coordinates, streets or facilities and set them as navigation targets
 [*] Click the gear button on the mini-map to open the settings
@@ -22,14 +22,14 @@ Keep every Minidoracat MiniMap series mod up to date and restart the game after 
 
 [h2]✨ Main features[/h2]
 [list]
-[*] [b]Image-based maps[/b]: full-color top-down images on both the world map and the mini-map, with 20 built-in vanilla POI categories; switch back to vanilla anytime
+[*] [b]Image-based maps[/b]: full-color top-down images on both the world map and the mini-map, with POIs marked
 [*] [b]Search[/b]: coordinates, street names (original/translated) and facility categories; show results on the map or add them to your trip
 [*] [b]Multi-target navigation & trips[/b]: up to 16 targets, road-following routes that replan when you go off course
 [*] [b]Home & favorites[/b]: right-click the map to set home or add favorites; one-click Go home
-[*] [b]Zombie / animal / vehicle icons[/b] (off by default): on both the mini-map and the world map, plus street names and safehouses
+[*] [b]Zombie / animal / vehicle icons[/b]: on both the mini-map and the world map, plus street names and safehouses
 [*] [b]Ghost mode & free resizing[/b]: enlarge the map into a permanent overlay that never blocks play
 [*] [b]Server sandbox controls[/b]: disable icons and cap display distances; changes apply live
-[*] [b]Singleplayer & multiplayer[/b]: only shows data the client already receives; Traditional/Simplified Chinese, English, Japanese
+[*] [b]Singleplayer & multiplayer[/b]: only shows data the client already receives
 [/list]
 📖 [b]Full details, settings and FAQ for every feature:[/b] [url=https://steamcommunity.com/workshop/filedetails/discussion/3763913359/586187095760051259/]MiniMap Guide: Features, Navigation & Road Data[/url]
 
@@ -41,6 +41,7 @@ Keep every Minidoracat MiniMap series mod up to date and restart the game after 
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones[/url] — custom server zones
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]MOD Compatibility[/url] — icons for third-party animals such as dogs and horses
 [/list]
+More mods: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3809297109]Minidoracat Mods for B42 collection[/url]
 
 [h2]💬 Feedback & community[/h2]
 [list]

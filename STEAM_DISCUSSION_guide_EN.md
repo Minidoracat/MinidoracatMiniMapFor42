@@ -5,7 +5,7 @@
 [b]繁體中文版：[/b][url=https://steamcommunity.com/workshop/filedetails/discussion/3763913359/569297034317714443/]小地圖完整說明：功能、導航與道路資料[/url]
 
 [h2]🚀 Quick start[/h2]
-Requires Build 42.20.1+ and [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url]; in multiplayer the server must enable this mod. Keep all series mods updated; restart after updating.
+Requires Build 42.20.1+ and [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url]; in multiplayer the server must enable this mod. Keep all series mods updated; restart after updating. UI languages: Traditional/Simplified Chinese, English, Japanese.
 [olist]
 [*] Press [b]/[/b] to toggle the mini-map (rebind: Options → Key Bindings → [MinidoracatMiniMap]). The floating map icon: left-click toggles the mini-map, right-click toggles ghost mode, drag to move.
 [*] Press [b]M[/b] for the world map.
