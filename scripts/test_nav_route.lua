@@ -725,6 +725,9 @@ do
         "railroad：譯名下幾何簽名命中（vanilla 首點）")
     assert(not mod.isRailroadStreet("Railway St", 500, 500), "railroad：Railway St 不誤殺")
     assert(not mod.isRailroadStreet("鐵路街", 500, 500), "railroad：中文真街道不誤殺")
+    -- 42.21 原版 RAILROAD_STRINGS 含 "Branch Line"；E2E branchline-sp 實地為 industry_railroad 鐵軌
+    assert(mod.isRailroadStreet("Old Muldraugh Station Branch Line", 0, 0), "railroad：Branch Line 英文 token 命中")
+    assert(mod.isRailroadStreet("旧马尔德劳车站支线", 11899, 10640), "railroad：Branch Line 譯名下首點簽名命中")
 end
 
 --------------------------------------------------------------------------------
@@ -1206,13 +1209,25 @@ do
     dofile(patchPath)
     local patch = MinidoracatMiniMapRoadPatches
     assert(patch and patch.auditSha256
-        == "b0d1a9de6f8e2fc3084d20d94e33817c478f3a3d668eabb39425d8d348042650",
-        "正式 RoadPatch：綁定 42.21 streets.xml 的 dirt-edge v2 audit")
+        == "e4b15b3521299e506fa6e7dc2627b9b01a7ef08c66556397e8d18c03d40466e6",
+        "正式 RoadPatch：綁定 42.21 streets.xml、Branch Line 歸鐵路後的 dirt-edge v2 audit")
     -- 42.21 官方只改 Oak St 東端與 Flaherty Road 中段；任一條仍是 42.20 幾何，
     -- 遊戲內 fingerprint 就不符、整包 fail closed 退回 raw 路網（0928 E2E 實測）。
-    assert(patch.geometrySet["11:21922:13270:21922:13468:21928:13482:21938:13494:21954:13502:23219:13502:23238:13510:23262:13535:23285:13546:24220:13546:24220:13792|w:16"]
-        and patch.geometrySet["4:16200:20988:16200:22236:16208:22279:16208:22394|w:16"],
+    local oakSt = "11:21922:13270:21922:13468:21928:13482:21938:13494:21954:13502:23219:13502:23238:13510:23262:13535:23285:13546:24220:13546:24220:13792|w:16"
+    local flaherty = "4:16200:20988:16200:22236:16208:22279:16208:22394|w:16"
+    assert(patch.geometrySet[oakSt] and patch.geometrySet[flaherty],
         "正式 RoadPatch：geometrySet 必含 42.21 Oak St／Flaherty Road 幾何")
+    -- Old Muldraugh Station Branch Line 是鐵軌（E2E branchline-sp），不得進道路集合。
+    assert(patch.geometryCount == 1088 and not patch.geometrySet["19:23798:21280:23749:21231:23749:20961:23631:20843:22781:20843:22045:20107:22045:19496:22071:19470:22071:19174:22108:19137:22196:19137:22205:19128:22205:18514:22205:18246:22294:18157:23094:18157:23150:18101:24124:18101:24210:18015|w:6"],
+        "正式 RoadPatch：Branch Line 已歸鐵路、不在 geometrySet")
+    -- 統一漢化 v3.35 仍帶 42.20.4 版這兩條；legacy 要把舊指紋換回上面兩條現行街道。
+    local legacyTargets = {}
+    for old, entry in pairs(patch.legacy) do
+        assert(not patch.geometrySet[old], "正式 RoadPatch：legacy 舊指紋不可同時是現行街道")
+        legacyTargets[mod.fingerprintKey(entry)] = true
+    end
+    assert(patch.legacyCount == 2 and legacyTargets[oakSt] and legacyTargets[flaherty],
+        "正式 RoadPatch：legacy 42.20.4 Oak St／Flaherty Road 換算為現行幾何")
     local streets = {}
 
     for member in pairs(patch.geometrySet) do

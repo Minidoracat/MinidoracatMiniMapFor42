@@ -69,7 +69,7 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [*] [b]Animal icons[/b] (off by default): wild/livestock toggles and species filters; MOD Compatibility adds dogs, horses and more.
 [*] [b]Vehicle icons[/b] (off by default): standard / heavy / performance / emergency filters. Two icon styles, colorblind-friendly palette.
 [*] [b]World map (M)[/b]: the same zombie/animal/vehicle icons, four toggles.
-[*] [b]Street names & safehouses[/b]: street names on the mini-map; safehouse outline/icon/name toggles (own green, faction cyan, others red); custom names add the owner.
+[*] [b]Street names & safehouses[/b]: street names on the mini-map (hidden when zoomed far out); safehouse outline/icon/name toggles (own green, faction cyan, others red); custom names add the owner.
 [*] [b]Chunk grid[/b] (off by default): marks each 8x8-tile chunk and your chunk's number and range.
 [*] [b]Map Display Settings[/b] (gear): searchable categories; saves instantly; per-feature performance notes.
 [/list]
@@ -102,9 +102,6 @@ MiniMap doesn't auto-correct road coordinates; it only fixes a few vanilla roads
 [h2]❓ FAQ[/h2]
 [b]Q: The mod won't load / a dependency is missing?[/b]
 A: Subscribe to and enable Minidoracat UI Library for B42, then restart.
-
-[b]Q: With -debug, HOME halves my FPS?[/b]
-A: HOME is a hidden engine render-debug key. This mod defaults to / and migrates old HOME bindings; a conflict shows an orange warning bar.
 
 [b]Q: No street names or navigation in a mod map area?[/b]
 A: Usually no author road data, or a higher-priority map covers the area. See "Mod maps & road data".

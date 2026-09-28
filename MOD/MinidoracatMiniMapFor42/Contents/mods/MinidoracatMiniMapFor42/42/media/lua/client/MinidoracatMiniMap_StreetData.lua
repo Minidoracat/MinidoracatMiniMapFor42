@@ -275,6 +275,62 @@ local function streetPoints(street)
     return pts
 end
 
+-- 已知翻譯載體（主檔 Core.carrierStreets：統一漢化 B42Trans_CN 的 Riverside, KY/streets.xml）整包
+-- 帶上一版官方街道。導航由 patch.legacy 在整包認證後升級；顯示端在副本建立窗口把完整指紋等於
+-- 上一版官方的街暫換成現行幾何（加入玩家地圖時同步 combine 成顯示副本，隨後還原 raw，導航照舊
+-- 讀 raw 自行升級），小地圖與世界地圖、目錄 loader 與兜底載入都走這裡。只認已知載體＋其 MOD
+-- 啟用中：真正的地圖 MOD 自帶的舊版副本不動（它的路可能本來就該照舊線）。
+local function activeCarrierFile(file)
+    local list = Core.carrierStreets
+    if type(list) ~= "table" or type(file) ~= "string" then return false end
+    local low = file:lower()
+    for _, carrier in ipairs(list) do
+        if type(carrier.file) == "string" and carrier.file:lower() == low then
+            local mods = getActivatedMods()
+            for i = 0, mods:size() - 1 do
+                if mods:get(i) == carrier.mod then return true end
+            end
+            return false
+        end
+    end
+    return false
+end
+
+local legacyCounts
+local function legacyGeometryChanges(data, changes)
+    local patch, nav = MinidoracatMiniMapRoadPatches, Core.NavRouteCore
+    local legacy = type(patch) == "table" and type(patch.legacy) == "table"
+        and type(patch.geometrySet) == "table" and patch.legacy
+    if not (legacy and nav) then return 0 end
+    if not legacyCounts then
+        legacyCounts = {}
+        for key in pairs(legacy) do
+            local count = type(key) == "string" and tonumber(key:match("^(%d+):"))
+            if count then legacyCounts[count] = true end
+        end
+    end
+    local streets, upgraded = getStreets(data), 0
+    for i = 0, streets:size() - 1 do
+        local street = streets:get(i)
+        if legacyCounts[street:getNumPoints()] then -- 點數先篩，其餘街只花一次跨界呼叫
+            local points, width = streetPoints(street), street:getWidth()
+            local entry = legacy[nav.fingerprintKey({ pts = points, width = width }) or ""]
+            if type(entry) == "table" and entry.width == width
+                and patch.geometrySet[nav.fingerprintKey(entry) or ""] then
+                local original = street:getUntranslatedText() or ""
+                local change = {
+                    street = street, original = original, translated = original,
+                    replacement = entry.pts, originalPoints = points, width = width,
+                }
+                changes[#changes + 1] = change
+                applyChange(change)
+                upgraded = upgraded + 1
+            end
+        end
+    end
+    return upgraded
+end
+
 -- 補充道路的檔案不在 media/maps/<dir>/ 之下，引擎不會依地圖優先序裁切它
 -- （WorldMapStreets.initObscuredCells 以檔案絕對路徑判定所屬地圖目錄）。外框涉及的
 -- 300 格只要有一格被別的地圖勝出，就把路名退化成不產生副本的點（同 hideLabel 手法）；
@@ -364,8 +420,9 @@ function MapUtils.initDirectoryStreetData(mapUI, directory)
     local prepared, prepareErr = pcall(function()
         local dir = type(directory) == "string" and directory:match("^media/maps/(.+)$") or nil
         local source = sourceForDirectory(dir)
-        if not source or (not source.repairs and not (translate and source.names)) then return end
-        local names = source.names
+        local carrier = dir and not source and activeCarrierFile(directory .. "/streets.xml")
+        if not carrier and (not source or (not source.repairs and not (translate and source.names))) then return end
+        local names = source and source.names
         local relative = directory .. "/streets.xml"
         if not fileExists(relative) then return end
         local targetAPI = mapUI.javaObject:getAPIv3():getStreetsAPI()
@@ -386,6 +443,12 @@ function MapUtils.initDirectoryStreetData(mapUI, directory)
             suspendWindow(parent, suspended)
         end
         local streets = getStreets(data)
+        if carrier then
+            local upgraded = legacyGeometryChanges(data, changes)
+            logOnce("carrier-display:" .. dir, "street carrier display: " .. dir .. " upgraded "
+                .. upgraded .. " previous-official street geometries")
+            return
+        end
         for i = 0, streets:size() - 1 do
             local street = streets:get(i)
             local original = street:getUntranslatedText() or ""
@@ -435,4 +498,31 @@ function MapUtils.initDirectoryStreetData(mapUI, directory)
     end
     return result
 end
-print("[MinidoracatMiniMap] StreetData armed (names, independent repairs and supplements)")
+
+-- 已知載體的兜底載入（主檔 ensureStreetData：地圖清單沒有載體目錄時直接 addStreetData）：
+-- 同一個顯示窗口，副本建好後還原 raw。另一個窗口正改同一份 raw 時不疊加，照原樣載入。
+Core.addCarrierStreetData = function(mapUI, file)
+    local targetAPI = mapUI.mapAPI:getStreetsAPI()
+    local changes, scratchAPI, upgraded = {}, nil, 0
+    local prepared, prepareErr = pcall(function()
+        scratchAPI = UIWorldMap.new({}):getAPIv3():getStreetsAPI()
+        scratchAPI:addStreetData(file)
+        local data = scratchAPI:getStreetDataByRelativeFileName(file)
+        if not data then error("native street data unavailable") end
+        if inFlight[data] then return end
+        upgraded = legacyGeometryChanges(data, changes)
+    end)
+    if not prepared then
+        restoreChanges(changes)
+        logOnce("carrier-prepare", "street carrier display unavailable: " .. tostring(prepareErr))
+    end
+    local loaded, err = pcall(function() targetAPI:addStreetData(file) end)
+    if prepared then restoreChanges(changes) end
+    if scratchAPI then pcall(function() scratchAPI:clearStreetData() end) end
+    if upgraded > 0 then
+        logOnce("carrier-display:" .. file, "street carrier display: " .. file .. " upgraded "
+            .. upgraded .. " previous-official street geometries")
+    end
+    if not loaded then error(err) end
+end
+print("[MinidoracatMiniMap] StreetData armed (names, independent repairs, supplements and carrier geometry)")

@@ -903,9 +903,7 @@ local function applyToggleOptions(mapAPI)
     -- 以完整尺寸顯示（WorldMapBaseSymbol.java:190/201），近 zoom 下可能偏大。
     -- 本函式只套用在角落小地圖的 mapAPI，不影響世界地圖。
     mapAPI:setBoolean("MiniMapSymbols", not getBoolOption("TextAnnotations", false))
-    -- 街名顯示（資料已於 InitPlayer wrapper 補載；此值只控畫不畫，
-    -- StreetRenderData.java:45 為唯一閘門，故存檔即生效）
-    mapAPI:setBoolean("ShowStreetNames", getBoolOption("StreetNames", true))
+    -- 街名（ShowStreetNames）不在這裡設：ISMiniMapInner:prerender 的縮放閘門每幀依選項決定
 end
 -- test:map-toggles:end
 
@@ -1358,7 +1356,14 @@ local function ensureStreetData(mapUI)
             if active[c.mod] then
                 local file = (okLang and c.langs[lang]) and c.file or VANILLA_STREETS
                 if fileExists(file) then
-                    pcall(function() mapUI.mapAPI:getStreetsAPI():addStreetData(file) end)
+                    -- 載體自己的檔走 _StreetData 的顯示窗口（舊版官方街先換成現行幾何再建顯示副本）
+                    local loadCarrier = file == c.file and MinidoracatMiniMapCore
+                        and MinidoracatMiniMapCore.addCarrierStreetData
+                    if loadCarrier then
+                        pcall(loadCarrier, mapUI, file)
+                    else
+                        pcall(function() mapUI.mapAPI:getStreetsAPI():addStreetData(file) end)
+                    end
                     carrier = c.mod .. "/" .. (file == c.file and "own" or "vanilla")
                 end
             end
@@ -2575,10 +2580,18 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         -- 的世界地圖不得關掉自己小地圖的加繪（ISWorldMap.ShowWorldMap:1510 設
         -- playerNum）。已知盲點：第三方 MOD 若把世界地圖改成非全螢幕視窗，其縫隙
         -- 中小地圖暫缺 mod 疊加層（原版底圖照畫）——可接受
-        if ISWorldMap_instance and ISWorldMap_instance:isVisible()
-            and ISWorldMap_instance.playerNum == (self.playerNum or 0) then
-            return
+        local covered = ISWorldMap_instance and ISWorldMap_instance:isVisible()
+            and ISWorldMap_instance.playerNum == (self.playerNum or 0)
+        -- 街名（ShowStreetNames 唯一寫入點；資料已於 InitPlayer wrapper 補載）：42.21 起每幀重排、
+        -- 每字元兩次 Translator.getText（StreetRenderData.java:45-73、WorldMapStreet.java:729-730）。
+        -- E2E 389x380：zoom 16-20 每幀 0.2-2.2 ms 且可讀；15 以下 1.6-4.3 ms、標籤擠成一團被圖標蓋住；
+        -- 被世界地圖蓋住時照樣排版。這兩種不畫，其餘依選項；值改變才 set，下一幀生效
+        -- （本 prerender 在地圖本體之後跑，UIWorldMap.java:189/327）。
+        local streetNames = not covered and self.mapAPI:getZoomF() >= 16 and getBoolOption("StreetNames", true)
+        if self.mapAPI:getBoolean("ShowStreetNames") ~= streetNames then
+            self.mapAPI:setBoolean("ShowStreetNames", streetNames)
         end
+        if covered then return end
         -- Zone 填色＝mod 加繪最底層（base map 之上，安全屋/框線之下）
         Core.drawZonePass(self, "drawZoneFill", "_minidoracatZoneFillErrLogged")
         -- chunk 格線（_ChunkGrid.lua，預設關）：zone 填色之上、安全屋與其餘加繪之下；錯誤 log-once
@@ -2654,28 +2667,14 @@ end
 -- 2026-09-03）。RESIZE_MIN 改為 Core.RESIZE_MIN（可變，兩處依字級抬高）；debugWarn
 -- 留本檔（_FloatIcon 載入期取別名）；本檔對縮放的三個入口皆呼叫時查 Core.*。
 --------------------------------------------------------------------------------
--- ─── -debug 渲染除錯警告（正常遊玩零成本：非 debug 首行即返回） ───
--- Home（keycode 199）在 Core.debug 下是引擎隱藏熱鍵：IsoCell.render（IsoCell.java:3314）
--- 切換 PerformanceSettings.fboRenderChunk＝世界渲染在新 chunk-FBO 管線與舊版
--- 逐 tile 路徑間切換（FPS 砍半、積雪外觀改變）。兩種警告，前者優先：
--- 1) 已切至舊管線（fboRenderChunk=false）＝問題進行式，提示再按 HOME 復原
--- 2) 開關綁定仍是 HOME＝每次開關小地圖都同時切渲染管線，建議改鍵
--- fboRenderChunk 是 exposed class 的 public static 欄位（同 Keyboard.KEY_* 讀法），
--- pcall 防未來版本移除欄位
+-- ─── -debug 渲染管線狀態（正常遊玩零成本：非 debug 首行即返回） ───
+-- PerformanceSettings.fboRenderChunk＝世界渲染走新 chunk-FBO 管線或舊版逐 tile 路徑。
+-- 42.21 起只由可綁定的 ToggleOldRenderer 鍵（預設未綁）在 -debug 下切換
+-- （IsoCell.checkToggleOldRendererKey）；42.20 的 HOME 寫死熱鍵與本 MOD 的 HOME 衝突
+-- 警告條已隨之移除。fboRenderChunk 是 exposed class 的 public static 欄位，pcall 防移除。
 -- 整組收單一 local table：主 chunk 貼 Kahlua 200 locvar 上限（實測炸過），省宣告
 local debugWarn = {}
 function debugWarn.readFbo() return PerformanceSettings.fboRenderChunk end
-function debugWarn.text()
-    if not getDebug() then return nil end
-    local okFbo, fbo = pcall(debugWarn.readFbo)
-    if okFbo and fbo == false then
-        return getText("UI_MinidoracatMiniMap_WarnLegacyRender")
-    end
-    if getCore():getKey("MinidoracatMiniMap_Toggle") == Keyboard.KEY_HOME then
-        return getText("UI_MinidoracatMiniMap_WarnHomeBind")
-    end
-    return nil
-end
 
 -- 目前渲染管線狀態（-debug 才回傳，非 debug nil）：浮動圖標 tooltip 顯示用
 function debugWarn.renderMode()
@@ -2687,22 +2686,9 @@ function debugWarn.renderMode()
             or "UI_MinidoracatMiniMap_RenderMode_Legacy"))
 end
 
-function debugWarn.draw(outer)
-    local msg = debugWarn.text()
-    if not msg then return end
-    local fh = getTextManager():getFontHeight(UIFont.Small)
-    -- 條位置：標題列（若顯示）之下、地圖內容頂部；深底＋橘字（警示色）
-    local y = 0
-    if outer.titleBar and outer.titleBar:isVisible() then
-        y = outer.titleBar:getY() + outer.titleBar:getHeight()
-    end
-    outer:drawRect(0, y, outer.width, fh + 4, 0.75, 0, 0, 0)
-    outer:drawTextCentre(msg, outer.width / 2, y + 2, 1, 0.62, 0.2, 1, UIFont.Small)
-end
-
 
 -- 浮動開關圖標整節已拆至 MinidoracatMiniMap_FloatIcon.lua；
--- 一次性遷移（快捷鍵 HOME→/、大小 combobox→滑條）已拆至 MinidoracatMiniMap_Migrate.lua
+-- 一次性選項遷移（大小 combobox→滑條等）已拆至 MinidoracatMiniMap_Migrate.lua
 -- （皆為 Kahlua locvar 上限對策；經檔尾匯出的命名空間取用主檔成員）。
 
 -- 原版 bug 防呆：存檔缺 mods.txt（如測試時強關遊戲的頭幾秒）時
@@ -2798,6 +2784,7 @@ Core.drawClippedEdge = drawClippedEdge -- _Zones.lua／_Safehouse.lua：框線�
 Core.getLoadedMapDirs = getLoadedMapDirs -- _NavRoute.lua：cell 勝出閘門的地圖優先序來源
 Core.visibleWorldAABB = visibleWorldAABB -- _NavRoute.lua：路線繪製的世界視窗剔除（共用單一實作）
 Core.copyCoordsText = copyCoordsText -- _WorldMapNav.lua：右鍵複製座標（共用剪貼簿＋琥珀回饋）
+Core.carrierStreets = CARRIER_STREETS -- _StreetData.lua：已知翻譯載體的顯示窗口（兜底與目錄 loader 共用）
 Core.ready = true -- 模組檔載入閘門：最後設定＝主檔完整走完才放行
 
 -- MapAllKnown 只代表 known，不代表 visited；保留原版 HideUnvisited，讓原生 shader

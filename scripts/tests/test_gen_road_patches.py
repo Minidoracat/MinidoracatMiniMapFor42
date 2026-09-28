@@ -416,3 +416,89 @@ def test_input_byte_string_and_candidate_point_caps(tmp_path):
     item["polylineQ2"].append([0, 0])
     with pytest.raises(GEN.GenerationError, match="8192 points"):
         GEN.candidate_evidence_hash(item, "2" * 64, "1" * 64)
+
+
+def legacy_audit_fixture(samples=None, point_count=7):
+    """Previous official build: street 2 was drawn at y=101 instead of y=100."""
+    audit = audit_fixture()
+    audit["source"]["xmlSha256"] = "3" * 64
+    audit["source"]["surfaceSource"]["pzBuild"] = "42.old"
+    audit["streetSamples"] = samples or [
+        sample(0, 0, 0, 0, 10, 0, 6, counts(paved=10)),
+        sample(0, 1, 10, 0, 20, 0, 6, counts(paved=10)),
+        sample(1, 0, 0, 50, 20, 50, 5, counts(paved=20), railroad=True),
+        sample(2, 0, 0, 101, 20, 101, 4, counts(paved=20)),
+    ]
+    audit["baseline"]["pointCount"] = point_count
+    audit["candidates"] = []
+    audit["candidateAnalysis"] = {"status": "ok", "acceptedCount": 0}
+    return audit
+
+
+def write_legacy(tmp_path, legacy, *, pin=True):
+    _, approval, audit_path, approval_path, out_path = write_fixture(tmp_path)
+    raw = (json.dumps(legacy, ensure_ascii=False, sort_keys=True) + "\n").encode()
+    legacy_path = tmp_path / "legacy.json"
+    legacy_path.write_bytes(raw)
+    if pin:
+        approval["legacyAudits"] = [{
+            "sourceBuild": "42.old",
+            "auditSha256": hashlib.sha256(raw).hexdigest(),
+            "auditXmlSha256": legacy["source"]["xmlSha256"],
+        }]
+        approval_path.write_text(json.dumps(approval, ensure_ascii=False), encoding="utf-8")
+    return audit_path, approval_path, out_path, legacy_path
+
+
+def test_legacy_audit_maps_redrawn_street_to_current_geometry(tmp_path):
+    audit_path, approval_path, out_path, legacy_path = write_legacy(tmp_path, legacy_audit_fixture())
+    payload = GEN.generate(audit_path, approval_path, out_path, (legacy_path,))
+    old_key = GEN.fingerprint_key([0, 101, 20, 101], 4)
+    assert payload["legacy"] == {old_key: {"width": 4, "points": [0, 100, 20, 100]}}
+    assert GEN.fingerprint_key([0, 100, 20, 100], 4) in payload["geometrySet"]
+    assert payload["legacySources"] == [{"sourceBuild": "42.old", "xmlSha256": "3" * 64}]
+    text = out_path.read_text(encoding="utf-8")
+    assert "legacyCount = 1," in text
+    assert f"[{GEN._lua_string(old_key)}] = {{ width = 4, pts = {{ 0, 100, 20, 100 }} }}," in text
+
+
+def test_legacy_audit_must_be_pinned_provided_and_distinct(tmp_path):
+    audit_path, approval_path, out_path, legacy_path = write_legacy(
+        tmp_path, legacy_audit_fixture(), pin=False)
+    with pytest.raises(GEN.GenerationError, match="not pinned"):
+        GEN.generate(audit_path, approval_path, out_path, (legacy_path,))
+    audit_path, approval_path, out_path, legacy_path = write_legacy(tmp_path, legacy_audit_fixture())
+    with pytest.raises(GEN.GenerationError, match="not provided"):
+        GEN.generate(audit_path, approval_path, out_path)
+    with pytest.raises(GEN.GenerationError, match="path alias"):
+        GEN.generate(audit_path, approval_path, out_path, (legacy_path, legacy_path))
+    same_xml = legacy_audit_fixture()
+    same_xml["source"]["xmlSha256"] = "1" * 64
+    audit_path, approval_path, out_path, legacy_path = write_legacy(tmp_path, same_xml)
+    with pytest.raises(GEN.GenerationError, match="current streets.xml"):
+        GEN.generate(audit_path, approval_path, out_path, (legacy_path,))
+
+
+def test_legacy_audit_rejects_ambiguous_alignment(tmp_path):
+    fewer = legacy_audit_fixture()
+    fewer["baseline"]["streetCount"] = 4
+    audit_path, approval_path, out_path, legacy_path = write_legacy(tmp_path, fewer)
+    with pytest.raises(GEN.GenerationError, match="street count differs"):
+        GEN.generate(audit_path, approval_path, out_path, (legacy_path,))
+    # 現行的一般道路在舊版是鐵路：沒有舊幾何可對。
+    was_rail = legacy_audit_fixture()
+    was_rail["baseline"]["railroadCount"] = 2
+    for item in was_rail["streetSamples"]:
+        item["railroad"] = item["streetIndex"] in (1, 2)
+    audit_path, approval_path, out_path, legacy_path = write_legacy(tmp_path, was_rail)
+    with pytest.raises(GEN.GenerationError, match="railroad in the legacy audit"):
+        GEN.generate(audit_path, approval_path, out_path, (legacy_path,))
+    # 舊版 street 0 畫成現行 street 2 的樣子：載體裡那條會同時是兩條街，fail closed。
+    collide = legacy_audit_fixture([
+        sample(0, 0, 0, 100, 20, 100, 4, counts(paved=20)),
+        sample(1, 0, 0, 50, 20, 50, 5, counts(paved=20), railroad=True),
+        sample(2, 0, 0, 101, 20, 101, 4, counts(paved=20)),
+    ], point_count=6)
+    audit_path, approval_path, out_path, legacy_path = write_legacy(tmp_path, collide)
+    with pytest.raises(GEN.GenerationError, match="equals a current street"):
+        GEN.generate(audit_path, approval_path, out_path, (legacy_path,))

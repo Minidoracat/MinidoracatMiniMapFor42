@@ -39,7 +39,8 @@ local function event()
     return { Add = function(fn) handlers[#handlers + 1] = fn end,
         fire = function() for _, fn in ipairs(handlers) do fn() end end }
 end
-local function world(sources, dirs, physical)
+local function world(sources, dirs, physical, opts)
+    opts = opts or {}
     local containers, byRel, loadedDirs, prints = {}, {}, {}, {}
     local reads = 0
     for i, entry in ipairs(sources) do
@@ -66,12 +67,12 @@ local function world(sources, dirs, physical)
         getStreetDataByRelativeFileName = function(_, rel) return byRel[rel:lower()] end,
     }
     local tick = event()
-    local player = { getX = function() return 5 end, getY = function() return 150 end,
+    local player = { getX = function() return opts.px or 5 end, getY = function() return opts.py or 150 end,
         getVehicle = function() return {} end }
     local env = setmetatable({
         print = function(line) prints[#prints + 1] = line end,
         Events = { OnTick = event(), OnTickEvenPaused = tick, OnGameStart = event() },
-        MinidoracatMiniMapAPI = {}, MinidoracatMiniMapRoadPatches = patch,
+        MinidoracatMiniMapAPI = {}, MinidoracatMiniMapRoadPatches = opts.patch or patch,
         MinidoracatMiniMapCore = { ready = true, getBoolOption = function(_, fallback) return fallback end,
             getLoadedMapDirs = function() return loadedDirs end },
         getLotDirectories = function() return list(dirs) end,
@@ -103,9 +104,10 @@ local function world(sources, dirs, physical)
     end
     assert(state == "ready", "usable source roads must build: " .. tostring(state) .. " " .. table.concat(prints, " | "))
     assert(maxReads <= 48, "source certification must stay in the extraction budget")
-    local route, routeState = env.MinidoracatMiniMapAPI.requestRoute(0, 55, 150)
+    local api = env.MinidoracatMiniMapAPI
+    local route, routeState = api.requestRoute(0, opts.qx or 55, opts.qy or 150)
     assert(route and routeState == "ok", "source graph must remain queryable")
-    return route, patchState, graph
+    return route, patchState, graph, api, prints
 end
 local physical = { [canonical:lower()] = true }
 local function direct(route, label)
@@ -163,4 +165,94 @@ local covered, coveredPatch = world({ { dir = "Override", rows = replacement }, 
     })
 assert(coveredPatch == "applied", "unrelated map overrides do not invalidate source geometry certification")
 assert(covered.snapDist >= 49, "the winning physical map must mask both carrier roads and generated links")
-print("test_road_sources: PASS (vanilla, named/unknown carriers, complete copies, partial union, drift, physical maps, coverage)")
+
+-- 舊版官方幾何（翻譯載體帶上一版 streets.xml）：patch.legacy 把舊指紋換算回現行街道。
+-- Long Way 現行走 y=500；上一版多一個點、沿 y≈480-490 走（點數不同，去重簽名也不同，
+-- 同 42.21 Oak St 的真實情形）。認證整包通過才換成現行點列，否則原樣保留。
+local LEGACY_PTS = { 0, 150, 0, 480, 30, 490, 60, 480, 60, 150 }
+local legacyWay = { name = "Long Way", width = 8, pts = LEGACY_PTS }
+patch.legacyCount, patch.legacy = 1, { [nav.fingerprintKey(legacyWay)] = { width = 8, pts = official[3].pts } }
+local function legacyRows(prefix)
+    local rows = copyRows(official, prefix)
+    local pts = {}
+    for i, value in ipairs(LEGACY_PTS) do pts[i] = value end
+    rows[3] = { name = (prefix or "") .. "Long Way", width = 8, pts = pts }
+    return rows
+end
+-- (30,481) 離舊線約 8.5、離現行 y=500 約 19：終點落在 500 才代表舊線已不在路網裡。
+local function endsOnCurrentLongWay(api, label)
+    local r = assert(api.requestRoute(0, 30, 481), label .. ": route to the Long Way")
+    assert(math.abs(r.ey - 500) < 0.01, label .. ": only the current y=500 Long Way remains, got ey=" .. tostring(r.ey))
+end
+local stale = legacyRows("Translated ")
+local legacyNamed, legacyNamedPatch, _, legacyNamedApi, legacyPrints = world({ { dir = carrier, rows = stale } },
+    { carrier, canonical }, physical)
+assert(legacyNamedPatch == "applied", "a previous-build carrier must certify through legacy geometry")
+direct(legacyNamed, "legacy named carrier")
+endsOnCurrentLongWay(legacyNamedApi, "legacy named carrier")
+assert(table.concat(legacyPrints, "\n"):find("upgrading 1 previous%-official"), "legacy upgrade is logged")
+local legacyUnknown, legacyUnknownPatch, _, legacyUnknownApi = world({ { dir = carrier, rows = stale } }, { canonical }, physical)
+assert(legacyUnknownPatch == "applied", "a by-index previous-build carrier must certify")
+direct(legacyUnknown, "legacy by-index carrier"); endsOnCurrentLongWay(legacyUnknownApi, "legacy by-index carrier")
+-- 官方與舊版載體同時載入（任一順序）：換算後重複的那條丟棄，不得讓 patch 見到同指紋兩次。
+for _, order in ipairs({
+    { { dir = carrier, rows = stale }, { dir = canonical, rows = official } },
+    { { dir = canonical, rows = official }, { dir = carrier, rows = stale } },
+}) do
+    local both, bothPatch, _, bothApi = world(order, { order[1].dir, order[2].dir }, physical)
+    assert(bothPatch == "applied", "official + previous-build carrier (" .. order[1].dir .. " first) must stay applied")
+    direct(both, "official + legacy carrier"); endsOnCurrentLongWay(bothApi, "official + legacy carrier")
+end
+-- 容器沒整包通過就保留原始資料：舊版街先被記下待升級，之後才遇到不符的街，也不得換（fail closed）。
+local staleSuperset = legacyRows("Translated ")
+staleSuperset[#staleSuperset + 1] = { name = "Custom Road", width = 8, pts = { 1000, 1000, 1100, 1000 } }
+local _, staleSupersetPatch, _, staleSupersetApi = world({ { dir = carrier, rows = staleSuperset } },
+    { carrier, canonical }, physical)
+assert(staleSupersetPatch == "raw", "a previous-build carrier with extra roads must stay raw")
+assert(math.abs(staleSupersetApi.requestRoute(0, 30, 481).ey - 500) > 1, "uncertified carrier keeps its raw legacy geometry")
+local _, stalePhysicalPatch = world({ { dir = "Physical Map", rows = stale } },
+    { "Physical Map", canonical }, { [canonical:lower()] = true, ["physical map"] = true })
+assert(stalePhysicalPatch == "raw", "legacy aliases do not turn a real map into a carrier")
+local goodLegacy = patch.legacy
+patch.legacy = { [nav.fingerprintKey(legacyWay)] = { width = 8, pts = { 0, 150, 0, 490, 60, 490, 60, 150 } } }
+local _, corruptPatch = world({ { dir = carrier, rows = stale } }, { carrier, canonical }, physical)
+assert(corruptPatch == "raw", "a legacy entry that does not land on a current street fails closed")
+patch.legacy = goodLegacy
+
+-- 真資料：正式 RoadPatch 的 geometrySet 反建 42.21 官方街道，再把 legacy 兩條換回 42.20.4
+-- 幾何＝統一漢化 v3.35 的載體內容，走完整正式抽取→認證→patch→建圖。
+do
+    dofile("MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/shared/MinidoracatMiniMapRoadPatches.lua")
+    local real = MinidoracatMiniMapRoadPatches
+    local function decode(member)
+        local geometry, widthQ = member:match("^(.-)|w:(%-?%d+)$")
+        local pts, field = {}, 0
+        for token in geometry:gmatch("[^:]+") do
+            field = field + 1
+            if field > 1 then pts[#pts + 1] = assert(tonumber(token)) / 2 end
+        end
+        return pts, tonumber(widthQ) / 2
+    end
+    local legacyOf = {}
+    for old, entry in pairs(real.legacy) do legacyOf[nav.fingerprintKey(entry)] = old end
+    local rows, swapped = {}, 0
+    for member in pairs(real.geometrySet) do
+        local pts, width = decode(legacyOf[member] or member)
+        if legacyOf[member] then swapped = swapped + 1 end
+        rows[#rows + 1] = { name = "中文街名 " .. #rows, width = width, pts = pts }
+    end
+    -- Branch Line（42.21 起歸鐵路、不在 geometrySet）：載體裡是中文名，只能靠首點簽名剔除，
+    -- 漏剔就多一條未知街道、整包認證失敗。
+    rows[#rows + 1] = { name = "旧马尔德劳车站支线", width = 3, pts = { 11899, 10640, 11874.5, 10615.5, 11874.5, 10480.5,
+        11815.5, 10421.5, 11390.5, 10421.5, 11022.5, 10053.5, 11022.5, 9748, 11035.5, 9735, 11035.5, 9587, 11054, 9568.5,
+        11098, 9568.5, 11102.5, 9564, 11102.5, 9257, 11102.5, 9123, 11147, 9078.5, 11547, 9078.5, 11575, 9050.5,
+        12062, 9050.5, 12105, 9007.5 } }
+    assert(swapped == real.legacyCount and swapped == 2, "real carrier carries both 42.20.4 legacy streets")
+    -- 玩家站在 42.21 Flaherty Road 新線（x=8104）；舊線在 x=8106。
+    local route, realPatch = world({ { dir = "Riverside, KY", rows = rows } }, { "Riverside, KY", canonical }, physical,
+        { patch = real, px = 8104, py = 11170, qx = 8104, qy = 11190 })
+    assert(realPatch == "applied", "統一漢化 v3.35 內容的載體必須套上正式 RoadPatch")
+    assert(route.snapDist < 0.01 and math.abs(route.sx - 8104) < 0.01,
+        "Flaherty Road uses the 42.21 alignment after the legacy upgrade, snap=" .. tostring(route.snapDist))
+end
+print("test_road_sources: PASS (vanilla, named/unknown carriers, complete copies, partial union, drift, physical maps, coverage, legacy carriers, real 42.20.4 carrier)")

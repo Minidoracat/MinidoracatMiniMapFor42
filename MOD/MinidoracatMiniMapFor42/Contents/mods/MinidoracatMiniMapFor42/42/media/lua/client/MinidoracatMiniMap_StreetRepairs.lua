@@ -117,6 +117,17 @@ local function referenceVisible(points, dir, winner, preserveOwner)
 end
 
 local referenceDirs = { "Riverside, KY", "Muldraugh, KY" }
+-- 地圖包 pin 的 reference 是當時的官方點列。TIS 之後重畫該街（42.21 的 Flaherty Road）時，
+-- RoadPatch 的 patch.legacy（gen_road_patches --legacy-audit 產生、現行幾何經 geometrySet 把關）
+-- 有同一舊指紋，就改用現行點列與路寬比對官方街；沒有對應條目照舊 fail closed。
+local function currentReference(ref)
+    local patch, nav = MinidoracatMiniMapRoadPatches, Core.NavRouteCore
+    if type(patch) ~= "table" or type(patch.legacy) ~= "table" or type(patch.geometrySet) ~= "table"
+        or not (nav and nav.fingerprintKey) then return nil end
+    local entry = patch.legacy[nav.fingerprintKey({ pts = ref.points, width = ref.width }) or ""]
+    if type(entry) ~= "table" or not patch.geometrySet[nav.fingerprintKey(entry) or ""] then return nil end
+    return entry
+end
 Core.canHideStreetLabel = function(op, mapUI, sourceDir, displayName)
     local ref = op.reference
     if not ref or op.replacementPoints or op.expectedWidth ~= ref.width
@@ -131,6 +142,7 @@ Core.canHideStreetLabel = function(op, mapUI, sourceDir, displayName)
     end
     if not winner then return false end
     local api = mapUI.javaObject:getAPIv3():getStreetsAPI()
+    local current -- 第一個參照容器對不上時才查 legacy；false＝已查過沒有
     for _, dir in ipairs(referenceDirs) do
         if dir ~= sourceDir then
             local data = api:getStreetDataByRelativeFileName("media/maps/" .. dir .. "/streets.xml")
@@ -139,9 +151,13 @@ Core.canHideStreetLabel = function(op, mapUI, sourceDir, displayName)
                 if ref.index < streets:size() then
                     local street = streets:get(ref.index)
                     local referenceName = street:getUntranslatedText()
-                    if matchesStreet(street, ref.width, ref.points)
-                        and referenceName:find("%S")
-                        and referenceVisible(ref.points, dir, winner,
+                    local points = matchesStreet(street, ref.width, ref.points) and ref.points
+                    if not points then
+                        if current == nil then current = currentReference(ref) or false end
+                        points = current and matchesStreet(street, current.width, current.pts) and current.pts
+                    end
+                    if points and referenceName:find("%S")
+                        and referenceVisible(points, dir, winner,
                             referenceName ~= displayName and sourceDir or nil) then return true end
                 end
             end

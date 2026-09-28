@@ -62,7 +62,7 @@
 --   · z＝樓層（可為負，地下室）
 --   · name＝username，**無損** JSON 轉義（`\` `"` 照 JSON 規則，控制字元寫成
 --     \u00xx）。踢人用它。引擎允許的 username 字元集比直覺寬：primary 只擋
---     `" \ / . ' ? ; @ $ ,` 與 NUL、長度 2-20（ServerWorldDatabase.java:763-785），
+--     `" \ / . ' ? ; @ $ ,` 與 NUL、長度 2-32（42.21 起；ServerWorldDatabase.isValidUserName），
 --     **控制字元是允許的**；coop 分屏的 secondary username 更寬，只擋空字串與
 --     全服重名（ConnectCoopPacket.java:73-80）——所以轉義必須無損，不能消毒。
 --   · idx＝分割畫面 slot（playerIndex 0-3，IsoPlayer.java:966-974；伺服器端由

@@ -7,7 +7,7 @@
 -- 建好 MinidoracatMiniMapCore；本檔載入期只讀取其「一次性賦值」的穩定引用。
 -- 例外：RESIZE_MIN 是**可變**值（主檔 raiseResizeMinForButtons／installMinidoracatButtons
 -- 依字級抬高），故不取別名、每次讀 Core.RESIZE_MIN 取即時值。debugWarn 留在主檔
--- （_FloatIcon.lua 載入期取 Core.debugWarn 別名，而 _FloatIcon 先於本檔載入）。
+-- （_FloatIcon.lua 載入期取 Core.debugWarn 別名，而 _FloatIcon 先於本檔載入；本檔不用）。
 -- 主檔用本檔的三個入口（InitPlayer 對 bottomPanel 實例補掛 installResizeHooks、
 -- installMinidoracatButtons 實例 prerender 的 chromeTintBorder、_Ghost 的 cancelResize）
 -- 一律呼叫時查 Core.*＋nil 防呆；_FloatIcon 的 onClick 於 ensureFloatIcon（事件時）取
@@ -21,7 +21,6 @@ if not (Core and Core.ready) then return end
 local modOptions = Core.modOptions -- 無 PZAPI 時為 nil：縮放不啟用（無處持久化）
 local getBoolOption = Core.getBoolOption
 local resizeMax = Core.resizeMax
-local debugWarn = Core.debugWarn
 local function log(msg) print("[MinidoracatMiniMap] " .. tostring(msg)) end
 
 local RESIZE_EDGE = 8         -- 邊緣熱區厚度（px）
@@ -325,7 +324,6 @@ if ISMiniMapOuter and ISMiniMapOuter.prerender and ISMiniMapOuter.render then
     local originalOuterRender = ISMiniMapOuter.render
     function ISMiniMapOuter:render()
         originalOuterRender(self)
-        debugWarn.draw(self) -- -debug 專屬警告條（非 debug 一個布林即返回）
         if not modOptions then return end -- 縮放未啟用就不畫把手
         local st = (resizeState ~= nil and resizeState.outer == self) and resizeState or nil
         local hoverEdges = nil
@@ -373,8 +371,8 @@ end
 -- （含裸數字掃描）、引擎 Java 層無硬編碼、本機 213 個 Workshop MOD 與 keysB42.ini
 -- 全綁定掃描空閒；顯示名稱走 glfwGetKeyName＝「/」無歧義；文字輸入期間引擎不派送
 -- 綁定（GameKeyboard 以 isDoingTextEntry 抑制）；scancode 按實體位置、跨佈局穩定。
--- 否決紀錄：HOME＝debug 引擎隱藏熱鍵（IsoCell.render 切換
--- PerformanceSettings.fboRenderChunk，FPS 砍半＋積雪外觀變，見 debugWarn.draw）；
+-- 否決紀錄：HOME＝42.20 以前 debug 引擎寫死熱鍵（IsoCell.render 切換 fboRenderChunk；
+-- 42.21 改為預設未綁的 ToggleOldRenderer，HOME 已無衝突，預設仍維持 /）；
 -- K＝原版「Display FPS」（keyBinding.lua:199 以裸數字 37 註冊，掃 KEY_* 常數抓不到）；
 -- 0＝顯示字元在 UI 字型下似字母 o（實測回饋）；F7/F8/F9＝debug 裸鍵編輯器
 -- （載具/世界地圖/接縫，IngameState.java:1398/1424/1431）；F12 撞 Steam 截圖；

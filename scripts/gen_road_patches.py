@@ -9,6 +9,11 @@ or rejected; omission is an error.
 
 Usage:
     python scripts/gen_road_patches.py [--audit PATH] [--approvals PATH] [--out PATH]
+        [--legacy-audit PATH ...]
+
+``--legacy-audit`` takes the audit of a previous official streets.xml pinned in
+``approvals.legacyAudits``. Streets TIS redrew since then are emitted as ``legacy``
+aliases so translation carriers still bundling that build can certify.
 """
 from __future__ import annotations
 
@@ -22,7 +27,7 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_AUDIT = Path("D:/github/MinidoracatMapRendering/target/tmp/road-audit-full-total-work-pass.json")
+DEFAULT_AUDIT = REPO_ROOT / "target/road-audit-v2.json"
 DEFAULT_APPROVALS = REPO_ROOT / "scripts/road_patch_approvals.json"
 DEFAULT_OUT = (
     REPO_ROOT
@@ -49,6 +54,7 @@ MAX_CANDIDATE_POLYLINE_POINTS = 8192
 MAX_AUDIT_BYTES = 64 * 1024 * 1024
 MAX_APPROVAL_BYTES = 1024 * 1024
 MAX_IDENTITY_STRING = 1024
+MAX_LEGACY_AUDITS = 4
 MAX_REASON_STRING = 4096
 MIN_WORLD_COORD = -32768
 MAX_WORLD_COORD = 32767.5
@@ -383,6 +389,87 @@ def _reconstruct_streets(
     return streets, surface_by_segment
 
 
+def _legacy_geometry(
+    approvals: dict[str, Any],
+    legacy_inputs: list[tuple[dict[str, Any], bytes]],
+    streets: list[dict[str, Any]],
+    street_count: int,
+    map_id: str,
+    target_src: str,
+    current_xml_sha: str,
+) -> tuple[list[dict[str, str]], dict[str, dict[str, Any]]]:
+    """Map every previous-official geometry TIS redrew to its current street.
+
+    Translation carriers bundle a copy of an older streets.xml. Alignment is by street
+    index, so a pinned previous audit must keep the same street count and railroad
+    positions; anything else is ambiguous and fails closed.
+    """
+    pins = _array(approvals.get("legacyAudits", []), "approvals.legacyAudits")
+    if len(pins) > MAX_LEGACY_AUDITS:
+        _fail(f"approvals.legacyAudits exceeds {MAX_LEGACY_AUDITS}")
+    by_digest = {hashlib.sha256(raw).hexdigest(): audit for audit, raw in legacy_inputs}
+    if len(by_digest) != len(legacy_inputs):
+        _fail("duplicate --legacy-audit input")
+    current = {street["fingerprint"] for street in streets}
+    by_index = {street["streetIndex"]: street for street in streets}
+    sources: list[dict[str, str]] = []
+    legacy: dict[str, dict[str, Any]] = {}
+    used: set[str] = set()
+    for pos, raw_pin in enumerate(pins):
+        where = f"approvals.legacyAudits[{pos}]"
+        pin = _object(raw_pin, where)
+        _exact_keys(pin, {"sourceBuild", "auditSha256", "auditXmlSha256"}, where)
+        build = _bounded_string(pin["sourceBuild"], f"{where}.sourceBuild", MAX_IDENTITY_STRING)
+        digest = _sha(pin["auditSha256"], f"{where}.auditSha256")
+        if digest in used:
+            _fail(f"{where} pins the same legacy audit twice")
+        audit = by_digest.get(digest)
+        if audit is None:
+            _fail(f"{where} audit not provided (pass it with --legacy-audit)")
+        used.add(digest)
+        if audit.get("schemaVersion") != 1:
+            _fail(f"{where} audit.schemaVersion must be road-audit-v1 (1)")
+        source = _object(audit.get("source"), f"{where} audit.source")
+        xml_sha = _sha(source.get("xmlSha256"), f"{where} audit.source.xmlSha256")
+        if _sha(pin["auditXmlSha256"], f"{where}.auditXmlSha256") != xml_sha:
+            _fail(f"{where}.auditXmlSha256 does not match the legacy audit source")
+        if xml_sha == current_xml_sha:
+            _fail(f"{where} audits the current streets.xml, not a previous build")
+        surface_source = _object(source.get("surfaceSource"), f"{where} audit.source.surfaceSource")
+        inputs = _array(surface_source.get("inputs"), f"{where} audit.source.surfaceSource.inputs")
+        if len(inputs) != 1 or _bounded_string(
+            _object(inputs[0], f"{where} audit source input").get("layer"),
+            f"{where} audit source layer", MAX_IDENTITY_STRING,
+        ) != map_id:
+            _fail(f"{where} audit is not the official {map_id} container")
+        baseline = _object(audit.get("baseline"), f"{where} audit.baseline")
+        if _integer(baseline.get("streetCount"), f"{where} audit.baseline.streetCount", 1) != street_count:
+            _fail(f"{where} street count differs from the current audit; index alignment is ambiguous")
+        old_streets, _ = _reconstruct_streets(audit, target_src)
+        old_by_index = {street["streetIndex"]: street for street in old_streets}
+        # 現行鐵路清單可以比舊版多（規則收緊，例如 42.21 起 Branch Line）；那些街道不參與認證，
+        # 舊版照樣記為一般道路無妨。反過來舊版的鐵路在現行變成道路就沒有舊幾何可對，fail closed。
+        if not set(by_index) <= set(old_by_index):
+            _fail(f"{where} a current usable street is a railroad in the legacy audit")
+        for index, now in by_index.items():
+            old = old_by_index[index]
+            if old["fingerprint"] == now["fingerprint"]:
+                continue
+            if old["fingerprint"] in current:
+                _fail(f"{where} street {old['streetIndex']}: old geometry equals a current street")
+            prior = legacy.get(old["fingerprint"])
+            if prior is not None and prior["fingerprint"] != now["fingerprint"]:
+                _fail(f"{where} street {old['streetIndex']}: old geometry maps to two current streets")
+            legacy[old["fingerprint"]] = now
+        sources.append({"sourceBuild": build, "xmlSha256": xml_sha})
+    if len(used) != len(by_digest):
+        _fail("--legacy-audit input is not pinned in approvals.legacyAudits")
+    return sources, {
+        fingerprint: {"width": legacy[fingerprint]["width"], "points": legacy[fingerprint]["points"]}
+        for fingerprint in sorted(legacy)
+    }
+
+
 def candidate_evidence_hash(
     candidate: dict[str, Any], surface_fingerprint: str, xml_sha256: str
 ) -> str:
@@ -703,10 +790,10 @@ def _manual_operations(
     return adds, bridges
 
 
-
 def build_payload(
     audit: dict[str, Any], approvals: dict[str, Any], audit_raw: bytes,
     approvals_raw: bytes, generator_raw: bytes,
+    legacy_inputs: list[tuple[dict[str, Any], bytes]] | None = None,
 ) -> dict[str, Any]:
     if audit.get("schemaVersion") != 1:
         _fail("audit.schemaVersion must be road-audit-v1 (1)")
@@ -715,6 +802,8 @@ def build_payload(
         "auditXmlSha256", "auditSurfaceFingerprint", "approvedCandidates",
         "rejectedCandidates", "remove", "width", "surface", "manualRoads",
     }
+    if "legacyAudits" in approvals:
+        approval_keys.add("legacyAudits")
     _exact_keys(approvals, approval_keys, "approvals")
     if approvals["schemaVersion"] != 1:
         _fail("approvals.schemaVersion must be 1")
@@ -757,6 +846,12 @@ def build_payload(
         _fail("approval targetSrc must identify the audited official container")
 
     streets, surface_by_segment = _reconstruct_streets(audit, target_src)
+    legacy_sources, legacy = _legacy_geometry(
+        approvals, legacy_inputs or [], streets,
+        _integer(_object(audit.get("baseline"), "audit.baseline").get("streetCount"),
+                 "audit.baseline.streetCount", 1),
+        map_id, target_src, xml_sha,
+    )
     approved_candidates = _array(
         approvals["approvedCandidates"], "approvals.approvedCandidates"
     )
@@ -836,6 +931,8 @@ def build_payload(
             street["fingerprint"]: street["compact"]
             for street in sorted(streets, key=lambda item: item["fingerprint"])
         },
+        "legacySources": legacy_sources,
+        "legacy": legacy,
         "remove": removes,
         "add": adds,
         "bridge": bridges,
@@ -880,7 +977,8 @@ def render_lua(payload: dict[str, Any]) -> str:
     lines = [
         "-- MinidoracatMiniMapRoadPatches.lua",
         "-- 由 scripts/gen_road_patches.py 從 road-audit-v1 與人工批准清單產生；請勿手改。",
-        "-- 重生：python scripts/gen_road_patches.py --audit <road-audit-full-total-work-pass.json>",
+        "-- 重生：python scripts/gen_road_patches.py --audit target/road-audit-v2.json"
+        " --legacy-audit target/road-audit-v2-42.20.4.json",
         "-- runtime 驗官方來源或已認證載體的 full-q2-geometry+width set；不讀 XML、不計算 SHA。",
         "",
         "MinidoracatMiniMapRoadPatches = {",
@@ -902,6 +1000,20 @@ def render_lua(payload: dict[str, Any]) -> str:
     for geometry, compact in payload["geometrySet"].items():
         lines.append(
             f"        [{_lua_string(geometry)}] = {_lua_string(compact)},"
+        )
+    lines.append("    },")
+    lines.append("    legacySources = {")
+    for source in payload["legacySources"]:
+        lines.append(
+            f"        {{ sourceBuild = {_lua_string(source['sourceBuild'])}, "
+            f"xmlSha256 = {_lua_string(source['xmlSha256'])} }},"
+        )
+    lines.extend(["    },", f"    legacyCount = {len(payload['legacy'])},", "    legacy = {"])
+    for geometry, item in payload["legacy"].items():
+        points = ", ".join(_lua_number(value) for value in item["points"])
+        lines.append(
+            f"        [{_lua_string(geometry)}] = {{ width = {_lua_number(item['width'])}, "
+            f"pts = {{ {points} }} }},"
         )
     lines.extend(["    },", f"    removeCount = {len(payload['remove'])},", "    remove = {"])
     for identity in payload["remove"]:
@@ -935,15 +1047,15 @@ def _same_file_or_path(left: Path, right: Path) -> bool:
     return left.resolve(strict=False) == right.resolve(strict=False)
 
 
-def reject_path_aliases(audit_path: Path, approvals_path: Path, out_path: Path) -> None:
-    pairs = (
-        ("audit", audit_path, "approvals", approvals_path),
-        ("audit", audit_path, "output", out_path),
-        ("approvals", approvals_path, "output", out_path),
-    )
-    for left_name, left, right_name, right in pairs:
-        if _same_file_or_path(left, right):
-            _fail(f"path alias rejected: {left_name} and {right_name} refer to the same file")
+def reject_path_aliases(
+    audit_path: Path, approvals_path: Path, out_path: Path, legacy_paths: tuple[Path, ...] = ()
+) -> None:
+    named = [("audit", audit_path), ("approvals", approvals_path), ("output", out_path)]
+    named.extend((f"legacy audit {pos}", path) for pos, path in enumerate(legacy_paths))
+    for left_pos, (left_name, left) in enumerate(named):
+        for right_name, right in named[left_pos + 1:]:
+            if _same_file_or_path(left, right):
+                _fail(f"path alias rejected: {left_name} and {right_name} refer to the same file")
 
 
 def atomic_write(path: Path, text: str) -> None:
@@ -963,14 +1075,20 @@ def atomic_write(path: Path, text: str) -> None:
             pass
         raise
 
-def generate(audit_path: Path, approvals_path: Path, out_path: Path) -> dict[str, Any]:
-    reject_path_aliases(audit_path, approvals_path, out_path)
+def generate(
+    audit_path: Path, approvals_path: Path, out_path: Path, legacy_paths: tuple[Path, ...] = ()
+) -> dict[str, Any]:
+    reject_path_aliases(audit_path, approvals_path, out_path, legacy_paths)
     audit, audit_raw = _load_json(audit_path, "audit", MAX_AUDIT_BYTES)
     approvals, approvals_raw = _load_json(
         approvals_path, "approvals", MAX_APPROVAL_BYTES
     )
+    legacy_inputs = [
+        _load_json(path, f"legacy audit {pos}", MAX_AUDIT_BYTES)
+        for pos, path in enumerate(legacy_paths)
+    ]
     payload = build_payload(
-        audit, approvals, audit_raw, approvals_raw, Path(__file__).read_bytes()
+        audit, approvals, audit_raw, approvals_raw, Path(__file__).read_bytes(), legacy_inputs
     )
     atomic_write(out_path, render_lua(payload))
     return payload
@@ -981,14 +1099,18 @@ def main() -> None:
     parser.add_argument("--audit", type=Path, default=DEFAULT_AUDIT)
     parser.add_argument("--approvals", type=Path, default=DEFAULT_APPROVALS)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    parser.add_argument("--legacy-audit", type=Path, action="append", default=[],
+                        help="previous official audit pinned in approvals.legacyAudits")
     args = parser.parse_args()
     try:
-        payload = generate(args.audit, args.approvals, args.out)
+        payload = generate(args.audit, args.approvals, args.out, tuple(args.legacy_audit))
     except GenerationError as exc:
         parser.error(str(exc))
     print(f"source build: {payload['sourceBuild']}")
     print(f"target source: {payload['targetSrc']}")
     print(f"usable geometries: {len(payload['geometrySet'])}")
+    print(f"legacy geometries: {len(payload['legacy'])} from "
+          f"{[source['sourceBuild'] for source in payload['legacySources']]}")
     print(f"surface overrides: {len(payload['surface'])}")
     print(f"candidate rejections: {payload['rejectedCandidateCount']}")
     print(

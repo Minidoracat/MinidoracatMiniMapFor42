@@ -998,6 +998,8 @@ local PERF_ITEMS = {
     { name = "UI_MinidoracatMiniMap_PerfItemZombie", lvl = 2, desc = "UI_MinidoracatMiniMap_PerfDescZombie" },
     { name = "UI_MinidoracatMiniMap_PerfItemAnimal", lvl = 1, desc = "UI_MinidoracatMiniMap_PerfDescAnimal" },
     { name = "UI_MinidoracatMiniMap_PerfItemMisc", lvl = 1, desc = "UI_MinidoracatMiniMap_PerfDescMisc" },
+    -- 42.21 起街名每幀逐字 Translator 重排（E2E：預設 zoom 19 約 0.2-0.5ms/幀，拉遠由主檔縮放閘門停畫）
+    { name = "UI_MinidoracatMiniMap_PerfItemStreet", lvl = 1, desc = "UI_MinidoracatMiniMap_PerfDescStreet" },
     { name = "UI_MinidoracatMiniMap_PerfItemChunk", lvl = 1, desc = "UI_MinidoracatMiniMap_PerfDescChunk" },
 }
 local function unifiedAddDivider(ctx)

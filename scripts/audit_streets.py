@@ -51,8 +51,10 @@ EDGE_CANDIDATE_IDS = frozenset({CLASS_ID["dirt-edge"]})
 CANDIDATE_IDS = PRIMARY_CANDIDATE_IDS | EDGE_CANDIDATE_IDS
 MISSING = object()
 
-# 與 NavCore.isRailroadStreet 同源：英文子串 ∪ vanilla 9 條鐵路首點幾何簽名
-# （MinidoracatMiniMap_NavRoute.lua:909-926）。candidate 連通判定排除鐵路。
+# 與 NavCore.isRailroadStreet 同源：英文子串 Railroad／Branch Line（42.21 原版
+# WorldMapStreet.RAILROAD_STRINGS）∪ vanilla 10 條鐵路首點幾何簽名
+# （MinidoracatMiniMap_NavRoute.lua RAILROAD_SIGS）。candidate 連通判定排除鐵路。
+RAILROAD_NAMES = ("Railroad", "Branch Line")
 RAILROAD_SIGS = {
     "25396:5323",
     "25329:8953",
@@ -63,6 +65,7 @@ RAILROAD_SIGS = {
     "5223:28161",
     "4061:13391",
     "4476:13391",
+    "23798:21280",  # Old Muldraugh Station Branch Line（E2E 實地為 industry_railroad 鐵軌）
 }
 
 GATE_LENGTH = 32.0
@@ -215,7 +218,7 @@ def proper_intersect(a, b, c, d):
 
 
 def is_railroad(name, x0, y0):
-    if isinstance(name, str) and "Railroad" in name:
+    if isinstance(name, str) and any(token in name for token in RAILROAD_NAMES):
         return True
     sig = "%d:%d" % (q2(x0), q2(y0))
     return sig in RAILROAD_SIGS

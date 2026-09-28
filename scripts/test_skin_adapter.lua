@@ -420,7 +420,7 @@ do
         -- 間接旗標：_FloatIcon 載入期會把 Core.getBoolOption 快取成 local，
         -- 事後換函式無效——換旗標值才動得了它
         getBoolOption = function(_, default) return _G.__floatIconOptionOn end,
-        debugWarn = { renderMode = function() return nil end, text = function() return nil end },
+        debugWarn = { renderMode = function() return nil end },
         togglePlayerMiniMap = function() toggles = toggles + 1 end,
         toggleGhost = function() ghosts = ghosts + 1 end,
         isGhost = function() return false end,

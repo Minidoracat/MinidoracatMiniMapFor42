@@ -3,9 +3,16 @@
   "targetSrc": "Muldraugh, KY",
   "mapId": "Muldraugh, KY",
   "sourceBuild": "42.20.4",
-  "auditSha256": "b0d1a9de6f8e2fc3084d20d94e33817c478f3a3d668eabb39425d8d348042650",
+  "auditSha256": "e4b15b3521299e506fa6e7dc2627b9b01a7ef08c66556397e8d18c03d40466e6",
   "auditXmlSha256": "af02b646f166cdbd3e47d37589701d845463b777668ac1088cb40f87e2140310",
   "auditSurfaceFingerprint": "9b3b740f73f47ea82924148ca0f346fbbdbaa4b57d2f9e7f0cf9cfc15c0d1a38",
+  "legacyAudits": [
+    {
+      "sourceBuild": "42.20.4",
+      "auditSha256": "ef3e998ad3ac78d5535ff38d9eb7be28f970a7bc2790bd11b01a48c045ee137d",
+      "auditXmlSha256": "86172be118d99243ecbb6027ef4b82f2aa31590afcc7bbd776cffe9869482771"
+    }
+  ],
   "approvedCandidates": [
     {
       "id": "c:ae7e88cce2453de5f6d63e5da08fc3cb83b798c3b4ccab1fc4e0b6d537343068",
@@ -63,6 +70,11 @@
     }
   ],
   "rejectedCandidates": [
+    {
+      "id": "c:16818e419375677ac69ac9a0e66f7601cef573654155d8dfffd45a2bdeeeb2d8",
+      "evidenceHash": "16818e419375677ac69ac9a0e66f7601cef573654155d8dfffd45a2bdeeeb2d8",
+      "reason": "Old Muldraugh Station Branch Line 的鐵軌道床（dirt-edge＝軌道兩側碎石），不是道路：42.21 起 Branch Line 歸鐵路後才浮現為候選；2026-09-29 E2E branchline-sp 沿線五處 125/125 取樣皆為 industry_railroad 鐵軌 tile。"
+    },
     {
       "id": "c:6a9390aaf0f8484fcbbed5ea626d5d286e8e7aeb083c9ba912b078fdc789323b",
       "evidenceHash": "6a9390aaf0f8484fcbbed5ea626d5d286e8e7aeb083c9ba912b078fdc789323b",

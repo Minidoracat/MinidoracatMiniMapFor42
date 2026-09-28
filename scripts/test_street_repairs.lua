@@ -123,6 +123,13 @@ local function setup(op, lang, options)
     for _, file in ipairs({ "MinidoracatMiniMap_NavRoute.lua", "MinidoracatMiniMap_StreetData.lua", "MinidoracatMiniMap_StreetRepairs.lua" }) do
         assert(loadfile(root .. file, "t", env))()
     end
+    if options.legacy then -- RoadPatch 的 patch.legacy：以真 NavCore 指紋建表（pin＝LINE 的上一版官方幾何）
+        local nav, entry = core.NavRouteCore, options.legacy
+        env.MinidoracatMiniMapRoadPatches = {
+            legacy = { [nav.fingerprintKey({ pts = LINE, width = 8 })] = { width = entry.width, pts = entry.pts } },
+            geometrySet = entry.unlisted and {} or { [nav.fingerprintKey(entry)] = true },
+        }
+    end
     local ui, shown, api = makeMap(false)
     if options.reference then api:addStreetData(referenceRel) end
     local ok, err = pcall(env.MapUtils.initDirectoryStreetData, ui, "media/maps/Fixture")
@@ -177,6 +184,23 @@ assert(#clipped.shown == 2 and clipped.shown[2].name ~= "", "canonical raw exist
 local movedRef = copy(LINE); movedRef[1] = 101
 local referenceDrift = setup(hiddenOp, "CH", { points = LINE, reference = movedRef })
 assert(#referenceDrift.shown == 2, "changed canonical geometry invalidates label suppression")
+-- 官方重畫參照街（42.21 Flaherty Road）：pin 仍是上一版官方點列。patch.legacy 有同一舊指紋、現行幾何
+-- 經 geometrySet 把關時，改比對現行點列與路寬；缺條目、未列入 geometrySet、路寬或點列不同都照舊不隱藏。
+local REDRAWN = { 100, 105, 150, 106, 200, 106 }
+local legacyHide = setup(hiddenOp, "CH", { points = LINE, reference = REDRAWN, legacy = { width = 8, pts = REDRAWN } })
+assert(legacyHide.ok, legacyHide.err)
+assert(#legacyHide.shown == 1 and same(legacyHide.shown[1].points, REDRAWN),
+    "previous-official pin must still hide its copy against the redrawn canonical street")
+assert(same(legacyHide.street.points, LINE) and legacyHide.street.name == "Main", "hidden copy stays intact in raw source")
+assert(#setup(hiddenOp, "CH", { points = LINE, reference = REDRAWN }).shown == 2,
+    "without a legacy entry the redrawn canonical street does not match the pin")
+assert(#setup(hiddenOp, "CH", { points = LINE, reference = REDRAWN,
+    legacy = { width = 8, pts = REDRAWN, unlisted = true } }).shown == 2,
+    "legacy target outside the current official geometry set must not unlock hiding")
+assert(#setup(hiddenOp, "CH", { points = LINE, reference = REDRAWN, legacy = { width = 9, pts = REDRAWN } }).shown == 2,
+    "legacy target must match the canonical width, not the pinned width")
+assert(#setup(hiddenOp, "CH", { points = LINE, reference = REDRAWN, legacy = { width = 8, pts = movedRef } }).shown == 2,
+    "legacy target must match the canonical points exactly")
 
 local duplicate = setup(op, "CH", { existingLine = true })
 duplicate.core.navKickEngine(duplicate.ui)

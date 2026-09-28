@@ -156,10 +156,8 @@ local function tooltipText()
     end
     local mode = debugWarn.renderMode() -- -debug 限定：目前渲染管線狀態
     if mode then desc = desc .. " \n" .. mode end
-    local warn = debugWarn.text()
-    if warn then desc = desc .. " \n" .. warn end
     -- 多行不自動換行（同 ISButton.lua:326-330 的 maxLineWidth 切換）
-    return desc, (mode or warn) and 1000 or 300
+    return desc, mode and 1000 or 300
 end
 
 -- ===== 內容繪製（框架畫完皮膚後回呼）=====

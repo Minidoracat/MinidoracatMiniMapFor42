@@ -60,7 +60,7 @@
 --   共用＋世界視窗 bbox 段剔除＋ppu 抽樣（~3px 一點）＋主檔零配置 clipSegment。
 --
 -- ## 連接規則（vanilla 資料實測定案：61 端點 join / 39 T 字 / 153 中段 X 交叉）
--- - Railroad 街整條剔除：英文子串 ∪ vanilla 9 條鐵路首點幾何簽名（街名翻譯
+-- - 鐵路整條剔除：英文子串 Railroad／Branch Line ∪ vanilla 10 條鐵路首點幾何簽名（街名翻譯
 --   MOD 下譯名無 "Railroad"、而中文另有「鐵路街」類真街道不可比詞——幾何
 --   簽名兩者皆解）。不做鐵路導航，同時消滅鐵路×道路的立體交叉錯連。
 -- - 端點量化 join（0.5 格）＋端點吸附（T 字 1.5 格/端點合流 1 格，單向往小
@@ -1560,13 +1560,16 @@ function NavCore.distToRoute(route, x, y, fromIdx)
     return sqrt(bestD2), bestI, bestX, bestY
 end
 
--- Railroad 剔除謂詞：英文子串（vanilla 命名「... Railroad (A - B)」與 Railway
--- St 等真街名可區分）∪ vanilla 9 條鐵路的首點幾何簽名——舊式 XML 漢化把
+-- Railroad 剔除謂詞：英文子串「Railroad」／「Branch Line」（42.21 原版
+-- WorldMapStreet.RAILROAD_STRINGS 同一組；vanilla 命名「... Railroad (A - B)」與 Railway
+-- St 等真街名可區分）∪ vanilla 10 條鐵路的首點幾何簽名——舊式 XML 漢化把
 -- streets.xml 原名直接換成譯名時（raw untranslated 本身就是中文，無英文原名可取；codex/grok
 -- review）幾何簽名仍命中；且不可改比中文詞：中文資料另有「鐵路街」類真街道
 -- 會被誤殺（codex review）。簽名生成自 42.20.3 vanilla streets.xml（round(x*2)
 -- ":"round(y*2) 首點量化；再生方法見 scripts/test_nav_route.lua 對應測試）。
--- 已知限制：地圖 MOD 自帶鐵路且非英文 Railroad 命名者漏剔（原設計即如此）
+-- Old Muldraugh Station Branch Line：2026-09-29 E2E branchline-sp 沿線五處 125/125 取樣皆為
+-- industry_railroad 鐵軌 tile（同南方鐵路對照組），42.21 起納入。
+-- 已知限制：地圖 MOD 自帶鐵路且非英文 Railroad／Branch Line 命名者漏剔（原設計即如此）
 local RAILROAD_SIGS = {
     ["25396:5323"] = true,   -- Louisville Railroad (Doe Valley - Louisville)
     ["25329:8953"] = true,   -- Northern Railroad (Muldraugh - Doe Valley)
@@ -1577,9 +1580,12 @@ local RAILROAD_SIGS = {
     ["5223:28161"] = true,   -- Western Railroad (Irvington - Ekron)
     ["4061:13391"] = true,   -- Indiana Railroad (Brandenburg - Indiana)
     ["4476:13391"] = true,   -- Northwestern Railroad (Muldraugh - Brandenburg)
+    ["23798:21280"] = true,  -- Old Muldraugh Station Branch Line
 }
 function NavCore.isRailroadStreet(name, x0, y0)
-    if type(name) == "string" and name:find("Railroad", 1, true) then return true end
+    if type(name) == "string" and (name:find("Railroad", 1, true) or name:find("Branch Line", 1, true)) then
+        return true
+    end
     if type(x0) == "number" and type(y0) == "number" then
         local sig = floor(x0 * 2 + 0.5) .. ":" .. floor(y0 * 2 + 0.5)
         if RAILROAD_SIGS[sig] then return true end
@@ -1789,7 +1795,7 @@ local function beginExtract(mapAPI)
         list = list, li = 1, si = 0, seenSig = {}, out = {}, outN = 0,
         processedStreetCount = 0, totalSegments = 0, searchNameChars = 0,
         omittedSearchNames = 0,
-        patch = patch, officialDir = officialDir, tsBuf = {}, pointReads = 0,
+        patch = patch, officialDir = officialDir, tsBuf = {}, pointReads = 0, dropped = 0,
     }
 end
 -- test:nav-extract:end
@@ -1813,11 +1819,68 @@ local function sourceOwnsRoadCells(ex, source, pts)
     return false
 end
 
+-- 翻譯載體常整包帶著「上一版」官方 streets.xml（統一漢化 v3.35＝42.20.4）：TIS 重畫過的街
+-- 指紋對不上現行 geometrySet，整包認證失敗、RoadPatch 全數不套。generator 以釘選的舊版官方
+-- audit 產生 patch.legacy（舊指紋 → 現行點列＋路寬）。換算結果是否真是現行官方街道由呼叫端
+-- 的 geometrySet 檢查把關；壞條目換算不出現行指紋，該街照舊判不符（fail closed）。
+local function legacyUpgrade(ex, fingerprint)
+    local legacy = type(ex.patch.legacy) == "table" and ex.patch.legacy[fingerprint]
+    if type(legacy) ~= "table" then return nil end
+    return fingerprintOf(legacy.pts, legacy.width), legacy
+end
+
+-- 與 stepExtract 的 rawSig／sig 同算法（點數用 #pts / 2 直接串接）：Kahlua 把整數值 double
+-- 印成 "4"（KahluaUtil.numberToString），標準 Lua 5.4 印成 "4.0"；兩邊各自一致即可比對。
+local function sigOf(pts)
+    local n = #pts
+    return n / 2 .. ":" .. floor(pts[1] * 2 + 0.5) .. ":" .. floor(pts[2] * 2 + 0.5)
+        .. ":" .. floor(pts[n - 1] * 2 + 0.5) .. ":" .. floor(pts[n] * 2 + 0.5)
+end
+
+-- 容器整包認證通過後才把舊版點列換成現行官方幾何（未通過＝保留原始資料）。換算後若同一條
+-- 現行街道已由別的容器抽出（官方與載體同時載入），丟棄這份，免得 applyRoadPatches 見到
+-- 同指紋兩次而整包判不符；丟棄的列在抽取結束時壓縮。
+local function applyLegacyUpgrades(ex, entry)
+    local ups = entry.ups
+    for k = 1, entry.upN, 2 do
+        local street, legacy = ex.out[ups[k]], ups[k + 1]
+        local sig = sigOf(legacy.pts)
+        if sig ~= sigOf(street.pts) and ex.seenSig[sig] then
+            street.dropped = true
+            ex.dropped = ex.dropped + 1
+        else
+            local pts = {}
+            for i = 1, #legacy.pts do pts[i] = legacy.pts[i] end
+            street.pts, street.width = pts, legacy.width
+            ex.seenSig[sig] = true
+        end
+    end
+    logf("legacy", string.format(
+        "street carrier %s certified after upgrading %d previous-official street geometries",
+        tostring(entry.src or "(by index)"), floor(entry.upN / 2)))
+end
+
+local function compactDropped(ex)
+    local w = 0
+    for i = 1, ex.outN do
+        local street = ex.out[i]
+        if not street.dropped then
+            w = w + 1
+            ex.out[w] = street
+        end
+    end
+    for i = w + 1, ex.outN do ex.out[i] = nil end
+    ex.outN, ex.dropped = w, 0
+end
+
 local function stepExtract(ex)
     local done = 0
     while done < EXTRACT_STREETS_PER_TICK do
         local entry = ex.list[ex.li]
-        if not entry then return true end
+        if not entry then
+            if ex.dropped > 0 then compactDropped(ex) end
+            return true
+        end
         local streets = entry.streets
         if not streets then
             streets = getStreets(entry.data)
@@ -1828,9 +1891,10 @@ local function stepExtract(ex)
         end
         if ex.si >= entry.n then
             if entry.cert and entry.hits == ex.patch.geometryCount then
+                if entry.upN then applyLegacyUpgrades(ex, entry) end
                 for i = entry.outStart + 1, ex.outN do ex.out[i].canonicalSrc = ex.officialDir end
             end
-            entry.streets, entry.data, entry.hitSet = nil, nil, nil
+            entry.streets, entry.data, entry.hitSet, entry.ups = nil, nil, nil, nil
             ex.li, ex.si = ex.li + 1, 0
         else
             local st = streets:get(ex.si)
@@ -1875,9 +1939,13 @@ local function stepExtract(ex)
                         pts[pi * 2 + 2] = replacement and replacement[pi * 2 + 2] or st:getPointY(pi)
                     end
                     local width = st:getWidth()
-                    local fingerprint
+                    local fingerprint, upgrade
                     if entry.cert then
                         fingerprint = fingerprintOf(pts, width)
+                        if fingerprint and not ex.patch.geometrySet[fingerprint] then
+                            local current, legacy = legacyUpgrade(ex, fingerprint)
+                            if current then fingerprint, upgrade = current, legacy end
+                        end
                         if not fingerprint or not ex.patch.geometrySet[fingerprint]
                             or (entry.src and sourceOwnsRoadCells(ex, entry.src, pts)) then
                             entry.cert, entry.hitSet = false, nil
@@ -1912,6 +1980,11 @@ local function stepExtract(ex)
                             name = name, src = entry.src, width = width, pts = pts,
                             originalName = originalName, searchable = searchable,
                         }
+                        if upgrade and entry.cert then
+                            local ups, upN = entry.ups or {}, entry.upN or 0
+                            ups[upN + 1], ups[upN + 2] = ex.outN, upgrade
+                            entry.ups, entry.upN = ups, upN + 2
+                        end
                     end
                 end
             end

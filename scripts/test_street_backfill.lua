@@ -169,6 +169,23 @@ Translator = savedTranslator
 ok(#added == 1 and added[1] == "media/maps/Muldraugh, KY/streets.xml", "語言取不到應載官方英文")
 uiLang = "CN"
 
+-- 9e. 載體自己的檔改走 _StreetData 的顯示窗口（舊版官方街換成現行幾何再建副本）；
+--     官方英文檔不經過窗口。hook 由 _StreetData 匯出，缺席（載入失敗）時照舊直接載。
+local hooked = {}
+MinidoracatMiniMapCore = { addCarrierStreetData = function(ui, file)
+    hooked[#hooked + 1] = file
+    ui.mapAPI:getStreetsAPI():addStreetData(file)
+end }
+for _, case in ipairs({ { "CN", "media/maps/Riverside, KY/streets.xml", 1 }, { "EN", "media/maps/Muldraugh, KY/streets.xml", 0 } }) do
+    m = newModule()
+    uiLang, hooked = case[1], {}
+    existingFiles = { ["media/maps/Riverside, KY/streets.xml"] = true, ["media/maps/Muldraugh, KY/streets.xml"] = true }
+    m.ensureStreetData(install({ 0, 0 }))
+    ok(#added == 1 and added[1] == case[2] and #hooked == case[3],
+        case[1] .. " 兜底：載體自己的檔才經顯示窗口 hook，實得 hooked=" .. #hooked)
+end
+MinidoracatMiniMapCore, uiLang = nil, "CN"
+
 -- 10. 未啟用該 MOD ⇒ 完全不進兜底（沒裝的人零行為差異）
 m = newModule()
 activeMods = {}

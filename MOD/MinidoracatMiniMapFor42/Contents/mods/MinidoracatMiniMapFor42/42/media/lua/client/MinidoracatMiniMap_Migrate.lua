@@ -1,6 +1,8 @@
 -- MinidoracatMiniMap_Migrate.lua
--- 本檔範圍：兩個一次性遷移（自主檔 MinidoracatMiniMap.lua 拆出，內容原樣搬遷）——
--- 快捷鍵舊預設 HOME→/（marker 檔冪等）＋大小 combobox→滑條（0.9.0，.selected 訊號冪等）。
+-- 本檔範圍：一次性選項遷移（自主檔 MinidoracatMiniMap.lua 拆出，內容原樣搬遷）——
+-- 大小 combobox→滑條（0.9.0，.selected 訊號冪等）、圖片化強制開啟、整棟範圍預設翻轉。
+-- 快捷鍵舊預設 HOME→/ 的遷移已於 42.21 移除：HOME 不再是 debug 引擎熱鍵（改為預設未綁的
+-- ToggleOldRenderer），仍綁 HOME 的舊安裝照常可用，不再替玩家改鍵。
 -- 載入順序假設：PZ 依字母序載入同目錄 lua，'.'(0x2E) < '_'(0x5F) → 主檔必先載入並
 -- 建好 MinidoracatMiniMapCore 命名空間；本檔載入期只讀取其「一次性賦值」的穩定引用
 -- 並定義函式/掛事件，跨檔「函式呼叫」一律發生在事件/呼叫時。
@@ -22,69 +24,6 @@ local function getComboIndex(id, default) return Core.getComboIndex(id, default)
 local ZDOTS_SIZES = { 2, 3, 4 }         -- 殭屍點 小/中（預設）/大（px）
 local ADOTS_SIZES_SYM = { 12, 16, 20 }  -- 動物符號風格 小/中（預設）/大（px）
 local ADOTS_SIZES_ITEM = { 16, 20, 26 } -- 動物物品彩圖風格 小/中（預設）/大（px）
-
--- ═══ 一次性快捷鍵遷移：舊預設 HOME → / ═══
--- 改預設救不了既有安裝：MainOptions.loadKeys 先註冊 Lua 預設、再以 keysB42.ini
--- 既存值覆寫（MainOptions.lua:3601），ini 永遠贏。首次進遊戲時若綁定仍是
--- 「無修飾鍵的 HOME」（＝沿用舊預設，非玩家刻意設定）則遷移為 /，並寫 marker 檔
--- 記錄已處理——玩家事後刻意改回 HOME 不再干預。
--- 寫回缺一不可（saveKeys 以 MainOptions.keyText 為真相來源整檔重寫並回填 Core，
--- 只改 Core 會在玩家下次按選項套用時被 keyText 沖回）：keyText 條目 → saveKeys。
--- test:key-migration:start
-local function migrateToggleKeyOnce()
-    -- marker 檔名放函式內：主 chunk 貼 Kahlua 200 locvar 上限，省頂層宣告
-    local MIGRATE_MARKER = "MinidoracatMiniMap_keyMigratedV1.txt"
-    local reader = getFileReader(MIGRATE_MARKER, false)
-    if reader then
-        reader:close()
-        return -- 已處理過
-    end
-    -- resolved＝狀態已判定（非 HOME／找到條目並處理完）。Core 是 HOME 但 keyText
-    -- 未就緒或條目缺失＝未解析：不寫 marker、下次進遊戲重試——否則遷移被永久跳過
-    local resolved = false
-    local ok, err = pcall(function()
-        if getCore():getKey("MinidoracatMiniMap_Toggle") ~= Keyboard.KEY_HOME then
-            resolved = true -- 已是 K 或玩家自改鍵，無事可做
-            return
-        end
-        if not (MainOptions and type(MainOptions.keyText) == "table" and MainOptions.saveKeys) then
-            return
-        end
-        for _, v in ipairs(MainOptions.keyText) do
-            -- 跳過分區標籤列（v.value = "[...]"，同原版 keyPressHandler 慣例）
-            if not v.value and v.txt and v.txt:getName() == "MinidoracatMiniMap_Toggle" then
-                if v.keyCode == Keyboard.KEY_HOME and not (v.shift or v.ctrl or v.alt) then
-                    v.keyCode = Keyboard.KEY_SLASH
-                    -- 同步選項畫面按鈕標題（同原版 keyPressHandler 寫法）
-                    if v.btn and MainOptions.getKeyPrefix then
-                        v.btn:setTitle(MainOptions.getKeyPrefix(v) .. getKeyName(Keyboard.KEY_SLASH))
-                    end
-                    -- saveKeys 內部 reinitKeyMaps 後逐條 writeKey→addKeyBinding
-                    -- 回填 Core（MainOptions.lua:3733-3771），無需另呼叫 addKeyBinding
-                    MainOptions.saveKeys()
-                    log("hotkey auto-migrated HOME -> / (old default clashes with an engine render-debug key under -debug)")
-                end
-                resolved = true -- 找到條目並完成判定（已遷移，或帶修飾鍵＝刻意設定不動）
-                break
-            end
-        end
-    end)
-    if not ok then
-        log("hotkey migration failed (will retry next game start): " .. tostring(err))
-        return -- 不寫 marker，保留重試機會
-    end
-    if not resolved then
-        log("hotkey migration unresolved (options screen not ready or entry missing), will retry next game start")
-        return
-    end
-    local writer = getFileWriter(MIGRATE_MARKER, true, false)
-    if writer then
-        writer:write("v1")
-        writer:close()
-    end
-end
--- test:key-migration:end
-Events.OnGameStart.Add(migrateToggleKeyOnce)
 
 -- ═══ 一次性選項遷移：大小 combobox → 滑條（0.9.0） ═══
 -- PZAPI.ModOptions:load()（主選單建立時，MainOptions.lua:2823）讀到舊 combobox 行
@@ -137,8 +76,8 @@ Events.OnMainMenuEnter.Add(migrateSliderOptions) -- load() 之後最早的穩定
 -- ═══ 一次性強制開啟：圖片化地圖總開關（0.10.1） ═══
 -- 0.10.0 的 getLoadedMapDirs 用了 PZ Kahlua 不存在的 next()（BaseLib 未註冊），
 -- 掛載鏈全炸、圖片地圖退回原版樣式。故障期間部分玩家排查時把 MapImagery 關掉——
--- 修復後他們仍看原版、且不知道要開回來。比照快捷鍵遷移：一次性強制開回預設 true
--- ＋寫 marker；之後玩家再關掉即是刻意選擇，不再干預。
+-- 修復後他們仍看原版、且不知道要開回來。一次性強制開回預設 true＋寫 marker（冪等）；
+-- 之後玩家再關掉即是刻意選擇，不再干預。
 -- test:imagery-force:start
 local function forceImageryOnOnce()
     if not modOptions then return end -- 無 PZAPI＝無此選項，無事可做（不寫 marker，重試便宜）
