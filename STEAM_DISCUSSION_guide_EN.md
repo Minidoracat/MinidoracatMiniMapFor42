@@ -20,7 +20,7 @@ Requires Build 42.20.1+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [*] Buildings, vegetation and ground textures become full-color top-down images on both maps, with multi-level zoom.
 [*] The "Image-based map" toggle restores the vanilla vector map; everything else keeps working.
 [*] The optional MOD Maps pack adds rendered imagery and outlines for supported mod maps, even ones without their own terrain images.
-[*] Images are pre-rendered, so building, demolition and tree cutting don't show; icons use data the client already has.
+[*] Images are pre-rendered: building, demolition and tree cutting don't show.
 [/list]
 
 [h3]📍 Built-in POIs[/h3]
@@ -69,8 +69,9 @@ Requires Build 42.20.1+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [*] [b]Animal icons[/b] (off by default): wild/livestock toggles and species filters; MOD Compatibility adds dogs, horses and more.
 [*] [b]Vehicle icons[/b] (off by default): standard / heavy / performance / emergency filters. Two icon styles, colorblind-friendly palette.
 [*] [b]World map (M)[/b]: the same zombie/animal/vehicle icons, four toggles.
-[*] [b]Street names & safehouses[/b]: street names on the mini-map (vanilla has none); safehouse outline/icon/name toggles — yours green, faction cyan, others red.
-[*] [b]Map Display Settings[/b] (gear): categories with search; single pane in split-screen or large fonts; changes save instantly; per-feature performance notes.
+[*] [b]Street names & safehouses[/b]: street names on the mini-map; safehouse outline/icon/name toggles (own green, faction cyan, others red); custom names add the owner.
+[*] [b]Chunk grid[/b] (off by default): marks each 8x8-tile chunk and your chunk's number and range.
+[*] [b]Map Display Settings[/b] (gear): searchable categories; saves instantly; per-feature performance notes.
 [/list]
 
 [h3]🛡️ Server settings (sandbox)[/h3]
