@@ -47,7 +47,9 @@ local function world(sources, dirs, physical)
         for si, row in ipairs(entry.rows) do
             records[si] = {
                 getNumPoints = function() reads = reads + 1; return #row.pts / 2 end,
-                getTranslatedText = function() return row.name end,
+                getUntranslatedText = function() return row.name end,
+                -- 42.21 Translator.getText(raw)；模擬 debug translationPrefix（缺鍵加 "!"）
+                getTranslatedText = function() return "!" .. row.name end,
                 getWidth = function() return row.width end,
                 getPointX = function(_, pi) return row.pts[pi * 2 + 1] end,
                 getPointY = function(_, pi) return row.pts[pi * 2 + 2] end,

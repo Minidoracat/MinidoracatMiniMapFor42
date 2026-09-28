@@ -16,21 +16,31 @@ local SUP_NAME = "Fixture Rd 01 (MiniMap)"
 local SUP_LINE = { 100, 105, 200, 105 }
 local SUP_FILE = "media/minimap/streets/fixture.xml"
 local OWN_FILE = "media/maps/Fixture/streets.xml"
+-- 42.21 WorldMapStreet：raw＝untranslated；getTranslatedText＝Translator.getText(raw)：UI_ 鍵查得到
+-- 回譯文、否則原樣，debug translationPrefix 時加 "*"／"!"（Translator.java:480-503）。
+-- clipToObscuredCells 以 getTranslatedText() 固化 split（WorldMapStreet.java:577-634）。
+local translationPrefix, lookupText = false, function() return nil end
+local function translatorText(text)
+    local value = text:find("^UI_") and lookupText(text)
+    if value then return (translationPrefix and "*" or "") .. value end
+    return (translationPrefix and "!" or "") .. text
+end
 local function rawStreet(points, name, width)
     local st = { points = copy(points), name = name, width = width or 6 }
     function st:getNumPoints() return #self.points / 2 end
     function st:getPointX(i) return self.points[i * 2 + 1] end
     function st:getPointY(i) return self.points[i * 2 + 2] end
     function st:getWidth() return self.width end
-    function st:getTranslatedText() return self.name end
-    function st:setTranslatedText(name) self.name = name end
+    function st:getUntranslatedText() return self.name end
+    function st:setUntranslatedText(name) self.name = name:match("^%s*$") and "" or name end
+    function st:getTranslatedText() return translatorText(self.name) end
     function st:removePoint(i) table.remove(self.points, i * 2 + 2); table.remove(self.points, i * 2 + 1) end
     function st:setPoint(i, x, y) self.points[i * 2 + 1], self.points[i * 2 + 2] = x, y end
     function st:addPoint(x, y) self.points[#self.points + 1] = x; self.points[#self.points + 1] = y end
     function st:clipToObscuredCells()
         if #self.points == 4 and self.points[1] == self.points[3] and self.points[2] == self.points[4] then
             self.split = nil
-        else self.split = { name = self.name, points = copy(self.points) } end
+        else self.split = { name = self:getTranslatedText(), points = copy(self.points) } end
     end
     st:clipToObscuredCells()
     return st
@@ -42,6 +52,7 @@ end
 
 local function setup(lang, options)
     options = options or {}
+    translationPrefix = options.translationPrefix == true
     local supStreet = rawStreet(SUP_LINE, SUP_NAME)
     local data = { [SUP_FILE] = { supStreet } }
     if options.extraSupplementStreet then data[SUP_FILE][2] = rawStreet({ 100, 300, 200, 300 }, "Fixture Rd 02 (MiniMap)") end
@@ -115,6 +126,7 @@ local function setup(lang, options)
         print = function(msg) logs[#logs + 1] = tostring(msg) end,
     }, { __index = _G })
     env.UIWorldMap = { new = function() return makeMap(true).javaObject end }
+    lookupText = env.getTextOrNull
     env.MapUtils = { initDirectoryStreetData = function(ui, dir)
         ui.mapAPI:getStreetsAPI():addStreetData(dir .. "/streets.xml")
     end }
@@ -200,5 +212,13 @@ assert(occluded.ok, occluded.err)
 assert(#shownFrom(occluded, SUP_FILE) == 0, "label under a higher-priority map must not be displayed")
 assert(same(occluded.supStreet.points, SUP_LINE), "occlusion hiding restores raw points")
 assert(occluded.logged("1 labels under other maps"), "occlusion must be counted in the load log")
+
+-- debug translationPrefix：顯示副本帶前綴，但補充道路原名、還原與原名搜尋仍讀 untranslated。
+local prefixed = setup("CH", { translationPrefix = true })
+assert(prefixed.ok and shownFrom(prefixed, SUP_FILE)[1].name == "!Localized CH", "debug prefix keeps supplement translation")
+assert(prefixed.supStreet.name == SUP_NAME, "debug prefix restores raw supplement name")
+prefixed.route()
+local prefixedEntry = indexFor(prefixed, SUP_NAME:lower())
+assert(prefixedEntry and prefixedEntry.originalLow == SUP_NAME:lower(), "debug prefix keeps original-name search alias")
 
 print("test_street_supplements: PASS (four languages, search, navigation, author retirement, repair isolation, fail-closed, occlusion)")

@@ -13,14 +13,24 @@ local function same(a, b)
 end
 local RECT = { 100, 100, 200, 100, 200, 110, 100, 110 }
 local LINE = { 100, 105, 200, 105 }
+-- 42.21 WorldMapStreet：raw＝untranslated；getTranslatedText＝Translator.getText(raw)：UI_ 鍵查得到
+-- 回譯文、否則原樣，debug translationPrefix 時加 "*"／"!"（Translator.java:480-503）。
+-- clipToObscuredCells 以 getTranslatedText() 固化 split（WorldMapStreet.java:577-634）。
+local translationPrefix, lookupText = false, function() return nil end
+local function translatorText(text)
+    local value = text:find("^UI_") and lookupText(text)
+    if value then return (translationPrefix and "*" or "") .. value end
+    return (translationPrefix and "!" or "") .. text
+end
 local function rawStreet(points, name, width)
     local st = { points = copy(points), name = name or "Main", width = width or 8 }
     function st:getNumPoints() return #self.points / 2 end
     function st:getPointX(i) return self.points[i * 2 + 1] end
     function st:getPointY(i) return self.points[i * 2 + 2] end
     function st:getWidth() return self.width end
-    function st:getTranslatedText() return self.name end
-    function st:setTranslatedText(name) self.name = name end
+    function st:getUntranslatedText() return self.name end
+    function st:setUntranslatedText(name) self.name = name:match("^%s*$") and "" or name end
+    function st:getTranslatedText() return translatorText(self.name) end
     function st:removePoint(i) table.remove(self.points, i * 2 + 2); table.remove(self.points, i * 2 + 1) end
     function st:setPoint(i, x, y) self.points[i * 2 + 1], self.points[i * 2 + 2] = x, y end
     function st:addPoint(x, y) self.points[#self.points + 1] = x; self.points[#self.points + 1] = y end
@@ -28,7 +38,7 @@ local function rawStreet(points, name, width)
         -- 真 PZClipper probe 已驗證：兩重合點沒有 split，不會建立 hover 副本。
         if #self.points == 4 and self.points[1] == self.points[3] and self.points[2] == self.points[4] then
             self.split = nil
-        else self.split = { name = self.name, points = copy(self.points) } end
+        else self.split = { name = self:getTranslatedText(), points = copy(self.points) } end
     end
     st:clipToObscuredCells()
     return st
@@ -39,6 +49,7 @@ local function event()
 end
 local function setup(op, lang, options)
     options = options or {}
+    translationPrefix = options.translationPrefix == true
     local street = rawStreet(options.points or RECT)
     local rel = "media/maps/Fixture/streets.xml"
     local referenceRel = options.carrier and "media/maps/Riverside, KY/streets.xml" or "media/maps/Muldraugh, KY/streets.xml"
@@ -97,6 +108,7 @@ local function setup(op, lang, options)
         getSpecificPlayer = function() return { getX = function() return 100 end, getY = function() return 105 end, getVehicle = function() return nil end } end,
     }, { __index = _G })
     env.UIWorldMap = { new = function() return makeMap(true).javaObject end }
+    lookupText = env.getTextOrNull
     local nestedShown
     env.MapUtils = { initDirectoryStreetData = function(ui, dir)
         ui.mapAPI:getStreetsAPI():addStreetData(dir .. "/streets.xml")
@@ -185,6 +197,9 @@ local owner = setup(hiddenOp, "CH", { points = LINE, reference = LINE, carrier =
 assert(#owner.shown == 2, "visible carrier must not replace a different local road name on the owning map")
 local sameName = setup(hiddenOp, "EN", { points = LINE, reference = LINE, carrier = true, ownerCell = true })
 assert(#sameName.shown == 1, "identical visible labels may still be deduplicated")
+local debugName = setup(hiddenOp, "EN", { points = LINE, reference = LINE, carrier = true, ownerCell = true,
+    translationPrefix = true })
+assert(#debugName.shown == 1, "debug translation prefix must not make an identical reference name look different")
 local degenerate = setup({ expectedWidth = 8, expectedPoints = RECT, replacementPoints = {100,100,100,100} }, "EN")
 assert(same(degenerate.shown[1].points, RECT), "navigation repair cannot delete a road through degenerate geometry")
 local badTranslation = setup(op, "CH", { translationError = true })

@@ -8,12 +8,22 @@ local loaderEffect
 local function list(items)
     return { size = function() return #items end, get = function(_, i) return items[i + 1] end }
 end
+-- 42.21 WorldMapStreet：raw＝untranslated，setter 以 Java 空白正規化成 ""；getTranslatedText＝
+-- Translator.getText(raw)：UI_ 鍵查得到回譯文、否則原樣，debug translationPrefix 時加 "*"／"!"
+-- （Translator.java:480-503）。clipToObscuredCells 以 getTranslatedText() 固化 split（:577-634）。
+local translationPrefix = false
+local function translatorText(text)
+    local value = text:find("^UI_") and translations[lang] and translations[lang][text]
+    if value then return (translationPrefix and "*" or "") .. value end
+    return (translationPrefix and "!" or "") .. text
+end
 local function street(name, x)
     return {
         name = name, splitName = name, x = x, y = 8000, width = 8, count = 3,
-        getTranslatedText = function(self) return self.name end,
-        setTranslatedText = function(self, value) self.name = value:match("^%s*$") and "" or value end,
-        clipToObscuredCells = function(self) self.splitName = self.name end,
+        getUntranslatedText = function(self) return self.name end,
+        setUntranslatedText = function(self, value) self.name = value:match("^%s*$") and "" or value end,
+        getTranslatedText = function(self) return translatorText(self.name) end,
+        clipToObscuredCells = function(self) self.splitName = self:getTranslatedText() end,
     }
 end
 local function map(scratch)
@@ -139,7 +149,7 @@ translations.CH = { [keyA] = "Translated" }
 local brokenClip = street("Main", 120)
 brokenClip.clipToObscuredCells = function(self)
     if self.name == "Translated" then error("clip failed") end
-    self.splitName = self.name
+    self.splitName = self:getTranslatedText()
 end
 data["media/maps/A/streets.xml"] = { brokenClip }
 local _, fallback = open("A")
@@ -165,6 +175,16 @@ local blank = street("Main", 120)
 data["media/maps/A/streets.xml"] = { blank }
 local _, blankShown = open("A")
 assert(blank.name == "Main" and blankShown[1] == "Main", "whitespace translation cannot erase source or label")
+
+-- debug translationPrefix：getTranslatedText 帶前綴，原名判斷與還原仍以 untranslated 為準。
+setup({ pack("A", "MapA", { Main = keyA }) })
+translations.CH = { [keyA] = "Translated" }
+translationPrefix = true
+local prefixed = street("Main", 120)
+data["media/maps/A/streets.xml"] = { prefixed }
+local _, prefixedShown = open("A")
+translationPrefix = false
+assert(prefixedShown[1] == "!Translated" and prefixed.name == "Main", "debug prefix must not hide the raw original name")
 
 -- Vanilla text dictionaries affect search labels without taking over source geometry.
 setup({})

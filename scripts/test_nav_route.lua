@@ -1206,8 +1206,13 @@ do
     dofile(patchPath)
     local patch = MinidoracatMiniMapRoadPatches
     assert(patch and patch.auditSha256
-        == "ef3e998ad3ac78d5535ff38d9eb7be28f970a7bc2790bd11b01a48c045ee137d",
-        "正式 RoadPatch：綁定 dirt-edge v2 audit")
+        == "b0d1a9de6f8e2fc3084d20d94e33817c478f3a3d668eabb39425d8d348042650",
+        "正式 RoadPatch：綁定 42.21 streets.xml 的 dirt-edge v2 audit")
+    -- 42.21 官方只改 Oak St 東端與 Flaherty Road 中段；任一條仍是 42.20 幾何，
+    -- 遊戲內 fingerprint 就不符、整包 fail closed 退回 raw 路網（0928 E2E 實測）。
+    assert(patch.geometrySet["11:21922:13270:21922:13468:21928:13482:21938:13494:21954:13502:23219:13502:23238:13510:23262:13535:23285:13546:24220:13546:24220:13792|w:16"]
+        and patch.geometrySet["4:16200:20988:16200:22236:16208:22279:16208:22394|w:16"],
+        "正式 RoadPatch：geometrySet 必含 42.21 Oak St／Flaherty Road 幾何")
     local streets = {}
 
     for member in pairs(patch.geometrySet) do

@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### 修正
+
+- 配合遊戲 42.21 修正小地圖街名：更新到 42.21 後，使用中文或日文介面時地圖包街道的路名會變回英文、地圖包補上的道路從地圖消失（搜尋與導航也找不到）；任何語言下道路修正的顯示也不再生效。本版修正後恢復原本的譯名、中英文搜尋、補充道路與道路修正。本版起需要遊戲 42.21.0 以上。
+- 配合遊戲 42.21 恢復導航道路修正：42.21 官方微調了 Oak St 東端轉角與 Flaherty Road 中段的路線，連帶讓本 MOD 先前人工修好的路段（Bank Road、Hog Wallow Road 接 KY-60、Old Loop／Barn Way 路口、S 1st St／Dixie 跨 KY-1394 接線等）全部失效，導航退回未修正的原版路網。本版以 42.21 地圖資料重新產生道路修正，上述修正全數恢復；官方改過的兩條路直接採用 42.21 的新路線。
+
+> 技術要點：42.21 的 `WorldMapStreet` 移除 `setTranslatedText`，原名改存 `untranslatedText`，`getTranslatedText()` 改為經 `Translator.getText` 轉換（debug 開啟翻譯前綴時會加 `!`／`*`）。本 MOD 讀原名、寫入顯示窗口與還原比對一律改用 `getUntranslatedText`／`setUntranslatedText`；顯示副本仍以已驗證的譯名固化，原始街道資料在載入結束後還原為英文原名。`versionMin` 提為 42.21.0。
+>
+> 道路修正（RoadPatch）要求官方 `streets.xml` 每條非鐵路街道的完整幾何＋路寬指紋都在 `geometrySet` 內，任一不符即整包 fail closed（log `patch skipped; using raw streets: fingerprint mismatch`）。42.21 全 1098 條中只有 Oak St（東端三點轉角簡化為直角，少 2 點）與 Flaherty Road（中段 x8106→8104）改動，兩者都不在任何人工修補範圍內。以 42.21 `streets.xml` 重跑 `audit_streets.py`（地表點陣沿用 42.20.4：42.21 未改任何 lotheader／lotpack）後重生；approvals 只換 audit／XML 雜湊與 14 筆候選的 evidence hash（候選內容逐欄相同，雜湊含 XML sha 才變），remove 12／add 10／bridge 6 不變。
+
 ## [42.20.4-0.31.0] - 2026-09-28
 
 ### 新增

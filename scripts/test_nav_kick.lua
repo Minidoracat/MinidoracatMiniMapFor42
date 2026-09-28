@@ -175,7 +175,10 @@ local function record(hits, points, pts, width, name)
     end
     return {
         getNumPoints = function() hits.n = hits.n + 1; return points end,
-        getTranslatedText = function() return name or "Stub St" end,
+        getUntranslatedText = function() return name or "Stub St" end,
+        -- 42.21 getTranslatedText＝Translator.getText(raw)；本檔街名都不是 UI_ 鍵，模擬 debug
+        -- translationPrefix（缺鍵加 "!"，Translator.java:498-503）：讀原名誤用它會讓原名搜尋別名失準
+        getTranslatedText = function() return "!" .. (name or "Stub St") end,
         getWidth = function() return width end,
         getPointX = pts and function(_, i) return pts[i * 2 + 1] end or noCoords,
         getPointY = pts and function(_, i) return pts[i * 2 + 2] end or noCoords,

@@ -1,6 +1,10 @@
 -- 地圖街道載入協調：街名翻譯、語系無關的道路修正、addon 補充道路各自提供資料。
 -- WorldMap.java:193-218 同步 combine。只在副本建立窗口暫改 raw 名稱／點列，
 -- 結束後恢復；不碰來源 XML、不 dirty 玩家地圖、不使用 editor setter。
+-- 42.21 起 raw 名稱是 untranslated（WorldMapStreet.java:178-188）：原名一律讀
+-- getUntranslatedText()；getTranslatedText() = Translator.getText(raw)，debug 會加前綴。
+-- clipToObscuredCells（:577-634）以 getTranslatedText() 固化 split；窗口寫入的是已驗證的
+-- 譯文字串（非 UI_ 鍵，Translator 原樣回傳），保留 Java 空白正規化的 rejectedText 守衛。
 local Core = MinidoracatMiniMapCore
 if not (Core and Core.ready) then return end
 
@@ -215,12 +219,12 @@ local function applyChange(change)
         Core.replaceStreetPoints(street, change.replacement)
         change.pointsApplied = true
     end
-    street:setTranslatedText(change.translated)
-    if street:getTranslatedText() == "" and change.translated ~= "" then
+    street:setUntranslatedText(change.translated)
+    if street:getUntranslatedText() == "" and change.translated ~= "" then
         rejectedText[change.translated] = true
-        street:setTranslatedText(change.original)
+        street:setUntranslatedText(change.original)
     end
-    change.translated = street:getTranslatedText()
+    change.translated = street:getUntranslatedText()
     street:clipToObscuredCells()
 end
 
@@ -233,8 +237,8 @@ local function restoreChanges(changes)
                 or Core.matchesStreetRepair(change.street, change.width, change.replacement)) then
                 Core.replaceStreetPoints(change.street, change.originalPoints)
             end
-            if change.street:getTranslatedText() == change.translated then
-                change.street:setTranslatedText(change.original)
+            if change.street:getUntranslatedText() == change.translated then
+                change.street:setUntranslatedText(change.original)
             end
             change.street:clipToObscuredCells()
         end)
@@ -245,7 +249,7 @@ end
 local function suspendWindow(parent, suspended)
     for i = #parent, 1, -1 do
         local old = parent[i]
-        local current = old.street:getTranslatedText()
+        local current = old.street:getUntranslatedText()
         local ownsPoints = old.replacement and old.pointsApplied
             and Core.matchesStreetRepair(old.street, old.width, old.replacement)
         local name = current == old.translated and old.original or current
@@ -321,7 +325,7 @@ local function loadStreetSupplement(mapUI, directory, lang)
         end
         for i = 0, streets:size() - 1 do
             local street = streets:get(i)
-            local original = street:getTranslatedText() or ""
+            local original = street:getUntranslatedText() or ""
             local translated = translate
                 and translateStreetName(original, sup.names[original], getTextOrNull) or original
             local replacement, originalPoints
@@ -384,7 +388,7 @@ function MapUtils.initDirectoryStreetData(mapUI, directory)
         local streets = getStreets(data)
         for i = 0, streets:size() - 1 do
             local street = streets:get(i)
-            local original = street:getTranslatedText() or ""
+            local original = street:getUntranslatedText() or ""
             local repair = Core.streetRepair and Core.streetRepair(street, dir, i)
             local replacement = repair and repair.replacementPoints
             local translated = translate and translateStreetName(original, names and names[original], getTextOrNull) or original

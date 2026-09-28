@@ -138,7 +138,7 @@ Core.canHideStreetLabel = function(op, mapUI, sourceDir, displayName)
                 local streets = getStreets(data)
                 if ref.index < streets:size() then
                     local street = streets:get(ref.index)
-                    local referenceName = street:getTranslatedText()
+                    local referenceName = street:getUntranslatedText()
                     if matchesStreet(street, ref.width, ref.points)
                         and referenceName:find("%S")
                         and referenceVisible(ref.points, dir, winner,

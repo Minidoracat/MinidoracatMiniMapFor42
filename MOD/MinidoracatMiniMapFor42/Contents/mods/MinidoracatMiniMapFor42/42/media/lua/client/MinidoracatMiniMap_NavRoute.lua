@@ -31,7 +31,8 @@
 -- - global getStreets(data) → List<WorldMapStreet>：LuaManager.java:12542-12548
 --   （42.20.0 新增；42.19 無此 API，versionMin=42.20.1 已守住下限）
 -- - WorldMapStreet 曝露：LuaManager.java:2426（42.20.0 新增）；本檔只用其自身
---   宣告方法 getNumPoints/getPointX/getPointY/getTranslatedText（WorldMapStreet.java）
+--   宣告方法 getNumPoints/getPointX/getPointY/getUntranslatedText（WorldMapStreet.java；
+--   42.21 起 getTranslatedText 會經 Translator，debug 加前綴，不能當原名）
 --   ——不碰 getPoints()：StreetPoints 繼承的 TFloatArrayList 未曝露，繼承方法
 --   在 Lua 不保證可用（claude review）
 -- - getStreets 回每檔未裁切的原始街道；引擎另以 initObscuredCells →
@@ -1560,8 +1561,8 @@ function NavCore.distToRoute(route, x, y, fromIdx)
 end
 
 -- Railroad 剔除謂詞：英文子串（vanilla 命名「... Railroad (A - B)」與 Railway
--- St 等真街名可區分）∪ vanilla 9 條鐵路的首點幾何簽名——街名翻譯 MOD 把
--- getTranslatedText 換成譯名時（它是官方唯一名稱欄，無原始名可取；codex/grok
+-- St 等真街名可區分）∪ vanilla 9 條鐵路的首點幾何簽名——舊式 XML 漢化把
+-- streets.xml 原名直接換成譯名時（raw untranslated 本身就是中文，無英文原名可取；codex/grok
 -- review）幾何簽名仍命中；且不可改比中文詞：中文資料另有「鐵路街」類真街道
 -- 會被誤殺（codex review）。簽名生成自 42.20.3 vanilla streets.xml（round(x*2)
 -- ":"round(y*2) 首點量化；再生方法見 scripts/test_nav_route.lua 對應測試）。
@@ -1793,7 +1794,7 @@ local function beginExtract(mapAPI)
 end
 -- test:nav-extract:end
 
--- 抽取分幀：每 tick 有限跨界呼叫（getTranslatedText/getNumPoints/getPointX/Y
+-- 抽取分幀：每 tick 有限跨界呼叫（getUntranslatedText/getNumPoints/getPointX/Y
 -- 全是 Java bridge；同步全抽 ~15k 次 ≈ 數十 ms > 16.7ms 幀預算，會在設目標
 -- 當幀掉幀——codex review）。回 true＝抽取完成
 local EXTRACT_STREETS_PER_TICK = 48
@@ -1848,7 +1849,7 @@ local function stepExtract(ex)
                         entry.src or "unknown", ex.si - 1, n))
                 end
             else
-                local originalName = st:getTranslatedText() or ""
+                local originalName = st:getUntranslatedText() or ""
                 local name = Core.streetDisplayName and Core.streetDisplayName(originalName, entry.src) or originalName
                 local repair = not entry.supplement and Core.streetRepair and Core.streetRepair(st, entry.src, ex.si - 1)
                 local replacement = repair and repair.replacementPoints
