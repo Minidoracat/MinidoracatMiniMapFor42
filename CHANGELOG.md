@@ -1,5 +1,34 @@
 # Changelog
 
+## [42.21.0-0.32.0] - 2026-09-29
+
+### 修正
+
+- 使用「[B42]统一·中文汉化」的玩家，導航與自動駕駛的道路修正恢復生效，小地圖與世界地圖的街道也改依 42.21 路線顯示：這個漢化內附的地圖道路還是 42.20.4 版，42.21 官方改了其中兩條（Oak St 東端轉角、Flaherty Road 中段）後，本 MOD 無法確認它與官方道路一致，只好整包不套道路修正（Bank Road 等人工修好的路段都退回原版），這兩條的街名與滑鼠高亮也停在舊路線（Oak St 轉角附近最多差約 7 格）。現在會自動認出這兩條的舊版路線並換成 42.21 版，導航、街名與高亮都照新路線；不論模組排序把漢化放在前面或最後都有效，中文街名照舊。
+- 導航與自動駕駛不再把「Old Muldraugh Station Branch Line」當成道路：它其實是一段鐵軌（實際進遊戲沿線檢查過），之前可能規劃出沿鐵軌走的路線。現在和其他鐵路一樣排除。
+- 地圖包的重複街名隱藏跟上 42.21 官方改線：Muldraugh 1993 內附的 Flaherty Road 副本仍按 42.20.4 路線比對，官方改線後在「官方地圖先載入」的設定下不再被隱藏，會和官方街名重疊；現在會換算成 42.21 路線再比對。一般模組順序（地圖 MOD 排在官方地圖前面）下，這類重複街名本來就會保留，這次不改變。
+- 用 `-debug` 啟動時，小地圖頂端不再誤報「HOME 與除錯鍵衝突」，也不再提示「按 HOME 恢復」：遊戲 42.21 已拿掉 HOME 這個隱藏的渲染除錯鍵（改為預設未綁定的「Toggle Old Renderer」鍵位），相關警告條一併移除。浮動圖標提示仍會在 `-debug` 下顯示目前的渲染管線。
+
+### 變更
+
+- 小地圖快捷鍵仍設為舊預設 HOME 的玩家，不會再被自動改成 `/`：42.21 起 HOME 已不會和遊戲按鍵衝突，照常可用。
+
+### 效能
+
+- 小地圖拉得很遠（視野超過預設約 8 倍寬）時不再畫街名：遊戲 42.21 起街名每一幀都要重新排版，小地圖拉遠時畫面內的街道一多，每幀要多花約 1.6～4.3 毫秒，但這時字小又擠、被地點圖標蓋住，幾乎看不出內容。實測拉遠時這筆成本整個省下；從預設大小拉遠到 8 倍寬以內，街名照常顯示（街名開關仍照你的設定）。打開全螢幕世界地圖時，被蓋住的小地圖也不再排版街名。
+
+> 技術要點：統一漢化 B42Trans_CN v3.35 的 Riverside `streets.xml` 是 42.20.4 官方幾何（Workshop 頁已顯示遭移除、不會再更新），以 `fingerprint_key` 比對 `geometrySet` 缺 idx0／540 兩條，載體認證失敗、`applyRoadPatches` 回 `no certified vanilla source`。`gen_road_patches.py` 新增 `--legacy-audit`（`approvals.legacyAudits` 釘選上一版 audit／XML 雜湊），依街道索引對齊上一版官方 audit，把重畫街的舊指紋輸出成 `patch.legacy`（舊指紋→現行點列＋路寬）；runtime 只在容器整包認證通過後把點列換成現行幾何，與官方容器重複者丟棄，未通過則原始資料不動。判定只看幾何，不看 MOD id，因此與載入順序無關（E2E：修正前 raw、兩種排序修正後皆 applied，路網與不裝漢化時相同的 5430 節點／6076 段）。
+>
+> 顯示：引擎在 `addStreetData` 同步建顯示副本（`combinedStreets`）後就不再讀 raw，因此沿用 `_StreetData` 既有的顯示窗口——已知載體（`CARRIER_STREETS`，且其 MOD 啟用中）加入地圖的當下，把指紋與路寬都吻合 `patch.legacy` 的街暫換成現行點列，副本建好立即還原 raw（導航照舊自行升級）。目錄 loader 與兜底載入（`Core.addCarrierStreetData`）兩條路都套用；其他街、真正地圖 MOD 的副本、MOD 未啟用時不動。E2E 以 `pickStreet` 讀小地圖與世界地圖的顯示副本：修正前兩處皆舊線（Flaherty x=8106、Oak St 經 12104,6777），兩種排序修正後皆為 42.21 線。
+>
+> 重複街名：`Core.canHideStreetLabel` 先照舊逐點比對 `reference`；與官方街不符時，才查 `MinidoracatMiniMapRoadPatches.legacy` 的同一舊指紋（現行幾何須在 `geometrySet`），改以現行點列與路寬比對。ModMaps 的 pin 不動。E2E `legacyref-sp`（ModMaps＋Muldraugh 1993，`Map=Muldraugh, KY` 在前）：修正前 op 509 判定 false、913 筆中 912 筆可隱藏、世界地圖在 x=8106 撿到舊副本；修正後判定 true、913/913、載入窗口顯示變更 968→969、撿到官方線。1993 在前的一般順序下，載入窗口只有 68 筆變更，重複副本照常顯示（原版以 MOD 地圖優先載入街道，`ISMapDefinitions.lua:45-49`）。
+>
+> Branch Line：42.21 原版 `WorldMapStreet.RAILROAD_STRINGS` 含 "Branch Line"；E2E 沿官方折線五處取樣 125/125 皆為 `industry_railroad` 鐵軌 tile（南方鐵路正對照相同、S Main St 負對照為 0）。`NavCore.isRailroadStreet` 與 `audit_streets.is_railroad` 同步加入名稱 token 與首點簽名 `23798:21280`（中文載體靠簽名），重跑 42.21 audit：`geometryCount` 1089→1088、surface 3341→3323，新浮現的鐵軌道床 dirt-edge 候選駁回，其餘 14 筆裁決不變。
+>
+> `IsoCell.render` 的舊渲染器切換改讀 `KeybindId.TOGGLE_OLD_RENDERER`（`keyBinding.lua` 預設 `KEY_NONE`），`WarnHomeBind`／`WarnLegacyRender` 兩個鍵與 `debugWarn.text/draw` 刪除，`debugWarn.renderMode` 保留；HOME→/ 一次性遷移（`migrateToggleKeyOnce`）與其測試區段刪除，既有 marker 檔留在玩家磁碟無害。
+>
+> 街名閘門：42.21 `WorldMapStreet.getTranslatedText()` 改為 `Translator.getText(untranslated)`（每次跑 `String.formatted`），`layoutTextAlongLine` 每字元呼叫兩次；`StreetRenderData.init` 在主執行緒每幀、每個 UIWorldMap 重排畫面內街道＋交叉街閉包（WorldMapRenderer.java:825、WorldMapStreets.java:321-349）。原版小地圖不載街道，這筆成本全因本 MOD 補載。`ShowStreetNames` 改由 `ISMiniMapInner:prerender` 每幀決定（`zoomF>=16`、選項開、未被同 playerNum 的世界地圖蓋住；值改變才 set，下一幀生效），`applyToggleOptions` 不再寫它。E2E `streetnames-perf-sp`（389×380 小地圖、測試區揭露、SP Debug、非獨佔）A/B 每幀街名成本：Louisville z20–17 0.16–1.3 ms、z16 1.5–2.2 ms、z15–13 3.2–4.2 ms；Muldraugh z15–13 1.6–4.3 ms。`--define gate=1` 驗 z≥16 每幀都畫、z≤15 每幀都不畫（Louisville z15 3978µs≈原本「關」4533–4615µs，原本「開」7813–8242µs），世界地圖開啟時小地圖旗標為 false、關閉後恢復；截圖 z16 仍可讀，z15 以下字擠成一團被 POI 圖標蓋住。
+
 ## [42.21.0-0.31.1] - 2026-09-29
 
 ### 修正
