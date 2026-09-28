@@ -466,6 +466,7 @@ _lua_tests = [
     ("test_itinerary_routes.lua", "剩餘行程預覽與活動路線分層", False),
     ("test_fog_of_war.lua", "深霧／薄霧與多人已知區域修復", False),
     ("test_markers.lua", "addon marker provider 依 slot 名單繪製", False),
+    ("test_chunk_grid.lua", "chunk 格線對齊／編號範圍／縮放封頂／stencil 配對", False),
 ]
 for _script, _label, _may_skip in _lua_tests:
     _gate = f"Lua 單元測試（{_script}：{_label}）"

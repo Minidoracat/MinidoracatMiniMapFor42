@@ -282,7 +282,7 @@ local safehouseBody = assert(safehouseSource:match(
     "找不到 drawSafehouses 測試區段")
 local safehousePrelude = [=[
 local distance, ndistance, playerPresent, px, py = nil, nil, true, 0, 10
-local houses, drawCount, iconCount, nameCount = {}, 0, 0, 0
+local houses, drawCount, iconCount, nameCount, drawnNames = {}, 0, 0, 0, {}
 -- 快取時鐘：draw() 預設先前進 1000ms（跨過快取窗，既有斷言維持「每次都重讀」語意）；
 -- drawSame() 不前進，用來驗快取命中；allowedCalls 數 playerAllowed 跨界呼叫
 local clock, allowedCalls, username = 0, 0, "A"
@@ -343,7 +343,7 @@ local mapAPI = {
 }
 local inner = { playerNum = 0, mapAPI = mapAPI, width = 100, height = 100,
     drawRect = function() end,
-    drawText = function() nameCount = nameCount + 1 end }
+    drawText = function(_, text) nameCount = nameCount + 1; drawnNames[nameCount] = text end }
 local function safehouse(x1, y1, x2, y2, mine, owner, title)
     return {
         getX = function() return x1 end,
@@ -360,15 +360,16 @@ local safehouseSuffix = [=[
 return {
     draw = function()
         clock = clock + 1000
-        drawCount, iconCount, nameCount = 0, 0, 0
+        drawCount, iconCount, nameCount, drawnNames = 0, 0, 0, {}
         drawSafehouses(inner)
         return drawCount, iconCount, nameCount
     end,
     drawSame = function()
-        drawCount, iconCount, nameCount = 0, 0, 0
+        drawCount, iconCount, nameCount, drawnNames = 0, 0, 0, {}
         drawSafehouses(inner)
         return drawCount, iconCount, nameCount
     end,
+    names = function() return drawnNames end,
     advance = function(ms) clock = clock + ms end,
     allowedCalls = function() return allowedCalls end,
     resetAllowedCalls = function() allowedCalls = 0 end,
@@ -885,6 +886,29 @@ do
     H.resetAllowedCalls()
     assert(H.draw() == 8, "無距離限制應畫全部")
     assert(H.allowedCalls() == 2, "無距離限制時每間各查一次成員")
+end
+
+-- 名稱標籤：標題＝屋主帳號（原版右鍵認領的預設標題）照原樣；自訂標題後綴「(屋主)」；
+-- 空標題不畫；改名在快取重建後連同屋主一起反映
+do
+    local H = safehouseHarness
+    H.setMode(3); H.setNameMode(3)
+    H.setDistance(nil); H.setNameDistance(nil); H.setView(nil)
+    H.setOption("Safehouses", false); H.setOption("SafehouseIcons", false)
+    H.setOption("SafehouseNames", true)
+    local title = "Alice"
+    local claimed = H.safehouse(10, 10, 20, 20, false, "Alice")
+    claimed.getTitle = function() return title end
+    H.setHouses({ claimed, H.safehouse(30, 10, 40, 20, false, "Bob", "Bob's Farm"),
+        H.safehouse(50, 10, 60, 20, false, "Carol", "") })
+    H.draw()
+    local got = H.names()
+    assert(#got == 2 and got[1] == "Alice" and got[2] == "Bob's Farm (Bob)",
+        "預設標題照原樣、自訂名稱後綴屋主帳號、空標題不畫：" .. table.concat(got, " | "))
+    title = "Fort"
+    H.draw()
+    assert(H.names()[1] == "Fort (Alice)", "改名後快取重建應顯示新名稱與屋主帳號")
+    H.setOption("SafehouseNames", false); H.setOption("Safehouses", true)
 end
 
 assert(not navHarness.cacheEmpty(), "導航測試初始快取缺失")

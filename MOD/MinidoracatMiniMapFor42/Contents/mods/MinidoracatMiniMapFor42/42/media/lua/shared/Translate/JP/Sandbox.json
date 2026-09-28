@@ -21,7 +21,7 @@
     "Sandbox_MinidoracatMiniMapSafehouseDisplayDistance": "セーフハウス範囲表示距離（マス）",
     "Sandbox_MinidoracatMiniMapSafehouseDisplayDistance_tooltip": "0＝距離制限なし。\nN＞0＝セーフハウス範囲の最寄り点が\nプレイヤーから N マス以内の場合のみ枠を表示します。\n1 マスは約 1 メートル。距離は2次元で、階層は考慮しません。\n管理者が「適用」を押すと即時反映されます。\nこれは範囲枠の表示だけを制御します。\n家畜の所属やプライバシー判定には影響しません。",
     "Sandbox_MinidoracatMiniMapSafehouseNameDisplay": "セーフハウス名表示",
-    "Sandbox_MinidoracatMiniMapSafehouseNameDisplay_tooltip": "プレイヤーのミニマップに表示するセーフハウス名（セーフハウスのタイトル）を制御：オフ／自分のもののみ／すべて／自分と同じ陣営のもの。範囲表示とは独立して設定でき、範囲だけ表示して名前を隠すこともできます。",
+    "Sandbox_MinidoracatMiniMapSafehouseNameDisplay_tooltip": "プレイヤーのミニマップに表示するセーフハウス名（セーフハウスのタイトル）を制御：オフ／自分のもののみ／すべて／自分と同じ陣営のもの。名前が所有者のユーザー名と異なる場合（独自の名前など）は、括弧で所有者のユーザー名を付けて表示します。範囲表示とは独立して設定でき、範囲だけ表示して名前を隠すこともできます。",
     "Sandbox_MinidoracatMiniMapSafehouseNameDisplay_option1": "オフ",
     "Sandbox_MinidoracatMiniMapSafehouseNameDisplay_option2": "自分のもののみ",
     "Sandbox_MinidoracatMiniMapSafehouseNameDisplay_option3": "すべて",

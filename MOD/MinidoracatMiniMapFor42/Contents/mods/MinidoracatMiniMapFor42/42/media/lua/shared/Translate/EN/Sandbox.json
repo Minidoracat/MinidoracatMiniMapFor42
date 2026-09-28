@@ -21,7 +21,7 @@
     "Sandbox_MinidoracatMiniMapSafehouseDisplayDistance": "Safehouse outline display distance (tiles)",
     "Sandbox_MinidoracatMiniMapSafehouseDisplayDistance_tooltip": "0 = no distance limit.\nN > 0 = show an outline only when its nearest point\nis within N tiles of the player.\nOne tile is about one metre; distance is 2D and ignores floors.\nAdmin changes take effect immediately after Apply.\nThis only controls outline visibility.\nIt does not affect livestock ownership or privacy checks.",
     "Sandbox_MinidoracatMiniMapSafehouseNameDisplay": "Safehouse name display",
-    "Sandbox_MinidoracatMiniMapSafehouseNameDisplay_tooltip": "Controls safehouse names (the safehouse title) on players' mini-maps: off / own only / all / own and faction members'. Independent from the area display, so areas can be shown without names.",
+    "Sandbox_MinidoracatMiniMapSafehouseNameDisplay_tooltip": "Controls safehouse names (the safehouse title) on players' mini-maps: off / own only / all / own and faction members'. When a name differs from the owner's username (e.g. a custom name), the owner's username is appended in parentheses. Independent from the area display, so areas can be shown without names.",
     "Sandbox_MinidoracatMiniMapSafehouseNameDisplay_option1": "Off",
     "Sandbox_MinidoracatMiniMapSafehouseNameDisplay_option2": "Own only",
     "Sandbox_MinidoracatMiniMapSafehouseNameDisplay_option3": "All",

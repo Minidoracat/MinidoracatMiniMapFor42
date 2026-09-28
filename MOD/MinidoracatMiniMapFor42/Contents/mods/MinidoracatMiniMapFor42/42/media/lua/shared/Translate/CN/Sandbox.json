@@ -21,7 +21,7 @@
     "Sandbox_MinidoracatMiniMapSafehouseDisplayDistance": "安全屋范围显示距离（格）",
     "Sandbox_MinidoracatMiniMapSafehouseDisplayDistance_tooltip": "0＝无距离限制。\nN＞0＝安全屋范围的最近点距玩家 N 格内才显示框线。\n1 格约 1 米；采用二维直线距离，不计楼层。\n管理员点击“应用”后立即生效。\n仅控制范围框线；不影响牲畜归属或隐私判定。",
     "Sandbox_MinidoracatMiniMapSafehouseNameDisplay": "安全屋名称显示",
-    "Sandbox_MinidoracatMiniMapSafehouseNameDisplay_tooltip": "控制玩家小地图上安全屋名称（安全屋标题）的显示：关闭／仅自己所属的／全部／自己与同阵营成员的。与范围显示独立设置，可只显示范围不显示名称。",
+    "Sandbox_MinidoracatMiniMapSafehouseNameDisplay_tooltip": "控制玩家小地图上安全屋名称（安全屋标题）的显示：关闭／仅自己所属的／全部／自己与同阵营成员的。名称与屋主账号不同时（例如自定义名称），后面会用括号附上屋主账号。与范围显示独立设置，可只显示范围不显示名称。",
     "Sandbox_MinidoracatMiniMapSafehouseNameDisplay_option1": "关闭",
     "Sandbox_MinidoracatMiniMapSafehouseNameDisplay_option2": "仅自己的",
     "Sandbox_MinidoracatMiniMapSafehouseNameDisplay_option3": "全部",

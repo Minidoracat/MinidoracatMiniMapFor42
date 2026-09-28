@@ -1068,6 +1068,12 @@ if PZAPI and PZAPI.ModOptions then
     -- 索引與 graph 同一條建置流水線（一次性背景成本，非每幀）
     modOptions:addTickBox("NavRoute", "UI_MinidoracatMiniMap_NavRoute", true,
         "UI_MinidoracatMiniMap_NavRoute_tooltip")
+    -- chunk 格線（預設關）：8×8 格 chunk 的棋盤格底色／格線／所在 chunk 編號與範圍，
+    -- 小地圖與世界地圖共用（_ChunkGrid.lua）；繪製端每幀讀值即時生效
+    modOptions:addTickBox("ChunkGrid", "UI_MinidoracatMiniMap_ChunkGrid", false,
+        "UI_MinidoracatMiniMap_ChunkGrid_tooltip")
+    modOptions:addTickBox("ChunkGridLabels", "UI_MinidoracatMiniMap_ChunkGridLabels", true,
+        "UI_MinidoracatMiniMap_ChunkGridLabels_tooltip")
     -- 實驗性：小地圖完整符號模式。原版小地圖固定 MiniMapSymbols=true
     -- （ISMiniMap.lua:733），該模式下文字符號一律不畫（WorldMapTextSymbol.java:168）
     -- ——「顯示地名」在角落小地圖因此看不到字，只有世界地圖（M）有效。
@@ -2083,6 +2089,7 @@ end
 -- UIWorldMapV1:218-223/298-309 取 getModelViewProjectionMatrix() 同一份快取矩陣
 -- （非 WorldMapRenderer 自身 calcMatrices 現算的 overload），故等軸測開關的
 -- 175ms slerp 轉場期間互逆性照樣成立，無轉場閃爍問題。
+-- test:visible-aabb:start
 local function visibleWorldAABB(inner)
     local mapAPI = inner.mapAPI
     local w, h = inner.width, inner.height
@@ -2093,6 +2100,7 @@ local function visibleWorldAABB(inner)
     return math.min(wx1, wx2, wx3, wx4) - 2, math.max(wx1, wx2, wx3, wx4) + 2,
         math.min(wy1, wy2, wy3, wy4) - 2, math.max(wy1, wy2, wy3, wy4) + 2
 end
+-- test:visible-aabb:end
 
 -- 仿射投影快取：worldToUI 已由反編譯證明是純仿射（見 visibleWorldAABB 的版本
 -- 假設——calcMatrices 為正交＋旋轉、無透視項），每 pass 只在視野中心採樣三點
@@ -2375,6 +2383,12 @@ if ISWorldMap and ISWorldMap.prerender then
         -- Zone 填色置於 wrap 最前端＝最底層：Java 地圖本體早在 Lua prerender 前畫完
         -- （UIWorldMap.java:152→317），置頂即壓在 base map 之上、動物圖標與框線之下
         Core.drawZonePass(self, "drawZoneFill", "_minidoracatWMZoneFillErrLogged")
+        -- chunk 格線（_ChunkGrid.lua，預設關）：zone 填色之上、其餘加繪之下；錯誤 log-once
+        local cgOk, cgErr = pcall(Core.drawChunkGrid, self)
+        if not cgOk and not self._minidoracatWMChunkGridErrLogged then
+            self._minidoracatWMChunkGridErrLogged = true
+            log("world map chunk grid draw failed: " .. tostring(cgErr))
+        end
         -- 世界地圖圖標：獨立 WM* 開關（統一視窗「世界地圖圖標」區），
         -- 風格/顏色/篩選與小地圖共用。客戶端只知道已載入區域的個體，
         -- 拉遠不會鋪滿全圖——圖標天然只出現在玩家周邊。
@@ -2567,6 +2581,12 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         end
         -- Zone 填色＝mod 加繪最底層（base map 之上，安全屋/框線之下）
         Core.drawZonePass(self, "drawZoneFill", "_minidoracatZoneFillErrLogged")
+        -- chunk 格線（_ChunkGrid.lua，預設關）：zone 填色之上、安全屋與其餘加繪之下；錯誤 log-once
+        local cgOk, cgErr = pcall(Core.drawChunkGrid, self)
+        if not cgOk and not self._minidoracatChunkGridErrLogged then
+            self._minidoracatChunkGridErrLogged = true
+            log("chunk grid draw failed: " .. tostring(cgErr))
+        end
         -- 安全屋圖層（_Safehouse.lua）：pcall 防清單併發增刪（同殭屍取樣的防禦策略）；
         -- 模組缺席 pcall(nil) 回 false，同走 log-once 可診斷
         local shOk, shErr = pcall(Core.drawSafehouses, self)

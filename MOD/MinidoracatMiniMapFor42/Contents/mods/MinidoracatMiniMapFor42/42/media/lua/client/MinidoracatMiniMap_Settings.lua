@@ -58,6 +58,8 @@ local UNIFIED_LAYER_TICKS = {
     { id = "PlaceNames", label = "UI_MinidoracatMiniMap_PlaceNames", default = true },
     { id = "StreetNames", label = "UI_MinidoracatMiniMap_StreetNames", default = true },
     { id = "NavRoute", label = "UI_MinidoracatMiniMap_NavRoute", default = true },
+    { id = "ChunkGrid", label = "UI_MinidoracatMiniMap_ChunkGrid", default = false },
+    { id = "ChunkGridLabels", label = "UI_MinidoracatMiniMap_ChunkGridLabels", default = true },
     -- Safehouses 移入獨立「安全屋」區塊（safehouse）；PoiIcons/PoiBlocks 移入獨立
     -- 「資源點」區塊（poicat），與 ZoneLayer 解耦
     { id = "Isometric", label = "IGUI_MapOption_Isometric", engine = true },
@@ -996,6 +998,7 @@ local PERF_ITEMS = {
     { name = "UI_MinidoracatMiniMap_PerfItemZombie", lvl = 2, desc = "UI_MinidoracatMiniMap_PerfDescZombie" },
     { name = "UI_MinidoracatMiniMap_PerfItemAnimal", lvl = 1, desc = "UI_MinidoracatMiniMap_PerfDescAnimal" },
     { name = "UI_MinidoracatMiniMap_PerfItemMisc", lvl = 1, desc = "UI_MinidoracatMiniMap_PerfDescMisc" },
+    { name = "UI_MinidoracatMiniMap_PerfItemChunk", lvl = 1, desc = "UI_MinidoracatMiniMap_PerfDescChunk" },
 }
 local function unifiedAddDivider(ctx)
     local line = ISPanel:new(ctx.curX + 4, ctx.curY + 2, ctx.laneW - 8, 1)

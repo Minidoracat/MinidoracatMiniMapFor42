@@ -26,7 +26,8 @@ local Policy = Core.policy
 -- 資料源：SafeHouse.getSafehouseList()（用例 ISSafehousesList.lua:61-62）、
 -- 範圍 getX/getY/getX2/getY2（SafeHouse.java:596-632）、成員判定
 -- playerAllowed(String)（SafeHouse.java:288-290，只查 owner＋players）、
--- 名稱 getTitle()（SafeHouse.java:727，預設 "Safehouse"）、屋主 getOwner()（:656）。
+-- 名稱 getTitle()（SafeHouse.java:727，預設 "Safehouse"）、屋主 getOwner()（:656）；
+-- 名稱與屋主帳號不同時附上「(屋主)」（safehouseLabel）。
 -- 陣營判定：Faction.getPlayerFaction(username)（Faction.java:123，原版用例
 -- ISFactionUI.lua:408 為 IsoPlayer 版）→ faction:isOwner/isMember(owner)（:150/:154）。
 -- 每幀成本：幾何與成員身分走 1 秒快取（refreshSafehouseRows），距離閘與視野裁切先於成員判定——
@@ -47,10 +48,21 @@ end
 -- test:safehouse-distance:start
 local SH_ICON = "media/ui/LootableMaps/map_house.png" -- 原版地圖符號（框架缺席時的退回）
 local SH_ICON_SIZE = 16 -- ponytail: 固定 16px；要可調再比照 PoiIconSize 加滑條
--- 名稱字寬 memo（title 逐幀 MeasureStringX 是跨界呼叫；title 少且 session 內罕變，
+-- 名稱字寬 memo（標籤逐幀 MeasureStringX 是跨界呼叫；標籤少且 session 內罕變，
 -- 改名後舊鍵殘留無害）；字高隨 UI 字型倍率變動，首繪量一次
 local shNameW = {}
 local shFontH
+
+-- 名稱標籤：原版右鍵認領以認領者帳號當標題（ISWorldObjectContextMenu.lua:517-519
+-- sendSafehouseClaim(..., playerObj:getUsername())），標題＝屋主即未自訂、照原樣顯示；
+-- 標題≠屋主（玩家改名、管理員建立或轉移屋主後留下的舊名）在後面括號附屋主帳號。
+-- 空標題維持不畫（改名封包拒收空字串，SafehouseChangeTitlePacket.java:53）
+local function safehouseLabel(title, owner)
+    if title and title ~= "" and owner and owner ~= "" and title ~= owner then
+        return title .. " (" .. owner .. ")"
+    end
+    return title or ""
+end
 
 -- 模式判定純函式（三處共用：範圍／圖標走 SafehouseDisplay，名稱走 SafehouseNameDisplay）
 local function safehouseModeAllows(mode, mine, ally)
@@ -62,9 +74,10 @@ end
 
 -- 幾何／成員快取：清單內容罕變（認領、邀請、解除），每幀重讀全服安全屋的 Java getter 是純浪費。
 -- 重建條件：逾 SH_CACHE_MS、清單筆數變、玩家帳號變、陣營物件變（含時鐘倒退）。
--- 容忍：同筆數的增刪、範圍或成員異動最多延遲 1 秒反映；列（row）持有的 SafeHouse
+-- 容忍：同筆數的增刪、範圍、成員或名稱異動最多延遲 1 秒反映；列（row）持有的 SafeHouse
 -- 參照在延遲窗內可能已被移除，仍是有效 Java 物件，最多多畫 1 秒。
--- 成員身分 lazy：只有通過距離閘的列才呼叫 playerAllowed／陣營判定，結果存到下次重建。
+-- 成員身分與名稱標籤 lazy：只有通過距離閘的列才呼叫 playerAllowed／陣營判定、才組標籤，
+-- 結果存到下次重建。
 local SH_CACHE_MS = 1000
 local shCache = { at = nil, size = -1, user = nil, faction = nil, rows = {} }
 
@@ -202,8 +215,13 @@ local function drawSafehouses(inner)
                         end
                     end
                     if showName then
-                        local name = sh:getTitle()
-                        if name and name ~= "" then
+                        -- 標籤隨列快取（1 秒重建）：省每幀 getTitle／getOwner 跨界與字串串接
+                        local name = row.label
+                        if name == nil then
+                            name = safehouseLabel(sh:getTitle(), sh:getOwner())
+                            row.label = name
+                        end
+                        if name ~= "" then
                             local tw = shNameW[name]
                             if not tw then
                                 local tm = getTextManager()
