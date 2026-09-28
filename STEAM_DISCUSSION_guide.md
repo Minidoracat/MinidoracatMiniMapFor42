@@ -6,7 +6,7 @@
 
 [h2]🚀 快速上手[/h2]
 [list]
-[*] 需要遊戲 Build 42.20.1 以上，並一併訂閱必要前置 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url]。多人遊戲需要伺服器啟用本 MOD。
+[*] 需要遊戲 Build 42.21.0 以上，並一併訂閱必要前置 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url]。多人遊戲需要伺服器啟用本 MOD。
 [*] 系列 MOD 請都更新到最新版，更新後完整重新啟動遊戲。
 [*] 介面語言：繁中、簡中、English、日本語。
 [/list]
