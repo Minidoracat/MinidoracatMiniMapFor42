@@ -1,13 +1,14 @@
 # Changelog
 
-## [Unreleased]
+## [42.21.0-0.33.1] - 2026-09-30
 
 ### 修正
 
 - 修正 Muldraugh 北邊車站路（Station Road，約 10963,9040 到 11044,9152）的導航線切進田裡：官方道路資料把這段斜向彎道畫成偏離路面的折線和一個直角，自動駕駛會照著開進農地樹叢卡住。現在依實際礫石路面重畫整段彎道，南北兩個方向都沿路走。
 - 修正 KY-841 雙線公路與 Terminal Dr／South Park Road 路口（約 15600,3330）導航繞遠路：官方資料在中央分隔帶沒有接上，從 South Park Road 要到對面 Terminal Dr 那一側，導航會先沿公路往西開約 290 格再掉頭回來（全程約 640 格）。現在補上路口直通，同一趟約 76 格。
+- 另外四個同類路口也一併接通（分隔帶中間有路、官方道路資料卻沒接上）：Nelson St 與 Lower River Road（穿過 KY-1394，約 12282,3450）、Old Market St 與 Corn Road（穿過 KY-841，約 13652,3450）、Birdsong Road 與 Smuggler's Road（穿過 KY-841，約 14535,3455）、Hay St 與 Valley St（穿過 KY-79，約 2952,14510）。前三處從路口一邊到對面原本要繞一大圈（最遠約 1,450 格），現在直接穿過；Hay St 那一處南側的 Valley St 與 Donkey Road 原本導航完全到不了，現在可以從 KY-79 直接進出。
 
-> 技術要點：兩處都只改 RoadPatch 資料（`scripts/road_patch_approvals.json` 重生 `MinidoracatMiniMapRoadPatches.lua`），不改 NavCore、導航 API 版本不變。Station Road 移除官方兩條同名街的 13＋1 段，以沿礫石路帶中線的八點折線取代，南端兩段保留，街道搜尋仍找得到；KY-841 補一條 16 格、寬 8 的南北接線，做法同 0.27.2 的 S 1st／KY-1394。單機實車驗過車站路南北雙向與 KY-841 穿越都到站、零接觸。
+> 技術要點：六處都只改 RoadPatch 資料（`scripts/road_patch_approvals.json` 重生 `MinidoracatMiniMapRoadPatches.lua`），不改 NavCore、導航 API 版本不變。Station Road 移除官方兩條同名街的 13＋1 段，以沿礫石路帶中線的八點折線取代，南端兩段保留，街道搜尋仍找得到。分隔帶接線共五條（Terminal 16 格寬 8、Nelson 16 格寬 6、Old Market 16 格寬 7、Birdsong 26 格寬 4 記礫石、Hay 24 格寬 6），做法同 0.27.2 的 S 1st／KY-1394；五處分隔帶在實際地面與 worldmap.xml 都有道路，只有 streets.xml 斷開。全圖以「兩條支路端點同軸對望 ≤30 格、連線穿過 ≥2 條他街、分隔帶實地為鋪面／礫石」掃描，符合的 6 處（含 0.27.2 已修的 S 1st）至此全部接通。被穿越的東西向道路直行長度不變。單機實車（E2E）驗過車站路南北雙向，以及五處分隔帶接線各自南北雙向穿越，都到站、穿越段零接觸。
 
 ## [42.21.0-0.33.0] - 2026-09-30
 
