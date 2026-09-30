@@ -114,6 +114,9 @@ A：請訂閱並啟用 [url=https://steamcommunity.com/sharedfiles/filedetails/?
 [b]Q：MOD 地圖的區域搜不到路名、無法導航？[/b]
 A：多半是該地圖作者沒有附道路資料，或那塊區域被優先序較高的地圖蓋過。請看上方「地圖 MOD 與道路資料」與 MOD Maps 支援地圖清單。
 
+[b]Q：會不會讓遊戲變卡、掉 FPS？[/b]
+A：影響很小。2026 年 9 月在 B42.21.0 用遊戲內建的 GameProfiler 做 A/B 實測（各 3 輪）：小地圖開著、資源點與殭屍／動物／載具圖標全開時，每幀平均只比「沒裝 MOD、沒開小地圖」多約 0.4ms（約 60fps 一幀時間的 2%），FPS 與沒裝 MOD 同一水準（測試機 Ryzen 9 9950X3D；預設設定開的圖標較少，成本更低）。覺得卡時，「地圖顯示設定 → 效能說明」會列出可以關掉哪些圖層。
+
 [h2]📝 回報方式[/h2]
 [list]
 [*] [b]一般問題[/b]：[url=https://github.com/Minidoracat/MinidoracatMiniMapFor42/issues]GitHub Issues[/url]。請附遊戲／MOD 版本、單人或多人、重現步驟與相關 log 片段；分享前請移除帳密與私人伺服器資訊。

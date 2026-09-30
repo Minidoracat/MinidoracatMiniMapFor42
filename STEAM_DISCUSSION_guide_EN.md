@@ -106,6 +106,9 @@ A: Subscribe to and enable Minidoracat UI Library for B42, then restart.
 [b]Q: No street names or navigation in a mod map area?[/b]
 A: Usually no author road data, or a higher-priority map covers the area. See "Mod maps & road data".
 
+[b]Q: Will it lower my FPS?[/b]
+A: Barely: ~0.4 ms/frame with all icons on vs no mod, FPS on par (GameProfiler A/B, Sep 2026, B42.21.0, Ryzen 9 9950X3D).
+
 [h2]📝 Reporting issues[/h2]
 [list]
 [*] [b]General[/b]: [url=https://github.com/Minidoracat/MinidoracatMiniMapFor42/issues]GitHub Issues[/url] — include versions, SP/MP, steps and log excerpts (remove credentials and private server details).
