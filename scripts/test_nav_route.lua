@@ -1458,6 +1458,64 @@ do
             "Station Road：251 只移除段0，段1／2 保留")
         assert(mod.streetSearchable(south), "Station Road：保留段讓街道仍可搜尋")
     end
+    -- Deer Trail Road 兩個彎（2026-09-30 伺服器玩家回報「這兩個彎自動駕駛會飛出去」，AutoDrive E2E
+    -- 同路段重現兩段 isDoingOffroad）：官方 4 點線的東北角 (6394.5,10494.5) 在礫石路帶外 7.4 格、
+    -- 西南角 (6295.5,10594) 也在路帶外；實際路從 x≈6420 就轉向西南、到 y≈10611 才接回 x6295.5。
+    -- 橫截面取自 pinned floor raster；雙向都要穿過路帶、不經過兩個舊角點。段0 保留供街道搜尋，
+    -- 其北端殘段要被吸到新線上：兩個舊角附近不得留下度數 1 的懸空節點。
+    do
+        local g = officialBuilder.graph
+        local function crossAt(r, axis, at)
+            local hit, n = nil, 0
+            for i = 1, #r.pts - 2, 2 do
+                local x0, y0, x1, y1 = r.pts[i], r.pts[i + 1], r.pts[i + 2], r.pts[i + 3]
+                local a0, a1, b0, b1 = y0, y1, x0, x1
+                if axis == "x" then a0, a1, b0, b1 = x0, x1, y0, y1 end
+                if (a0 < at and a1 >= at) or (a1 < at and a0 >= at) then
+                    hit, n = b0 + (b1 - b0) * (at - a0) / (a1 - a0), n + 1
+                end
+            end
+            return hit, n
+        end
+        for _, ends in ipairs({ { 6700, 10494.5, 6295.5, 10900 }, { 6295.5, 10900, 6700, 10494.5 } }) do
+            local r = mod.findRoute(g, ends[1], ends[2], ends[3], ends[4], nil, nil, nil, 12)
+            assertRouteMetadata(r, "Deer Trail Road 彎道")
+            for _, band in ipairs({
+                { "x", 6400.5, 10499, 10507 },
+                { "y", 10503.5, 6392, 6407 },
+                { "y", 10539.5, 6346, 6355 },
+                { "y", 10593.5, 6300, 6308 },
+            }) do
+                local v, n = crossAt(r, band[1], band[2])
+                assert(n == 1, "Deer Trail Road：穿過橫截面 " .. band[1] .. "=" .. band[2] .. " 一次，實得 " .. n)
+                assert(v >= band[3] and v < band[4],
+                    "Deer Trail Road：導航線需留在礫石路帶，" .. band[1] .. "=" .. band[2] .. " 交點 " .. v)
+            end
+            for i = 1, #r.pts, 2 do
+                local x, y = r.pts[i], r.pts[i + 1]
+                assert(not ((math.abs(x - 6394.5) < 0.5 and math.abs(y - 10494.5) < 0.5)
+                    or (math.abs(x - 6295.5) < 0.5 and math.abs(y - 10594) < 0.5)),
+                    "Deer Trail Road：路線不再經過兩個舊角點")
+            end
+        end
+        for node = 1, g.nodeCount do
+            local x, y = g.nx[node], g.ny[node]
+            if x > 6280 and x < 6440 and y > 10480 and y < 10630 then
+                local deg, e = 0, g.adjHead[node]
+                while e ~= 0 do deg, e = deg + 1, g.adjNext[e] end
+                assert(deg ~= 1, ("Deer Trail Road：彎道附近不得有懸空殘段端點 (%.1f,%.1f)"):format(x, y))
+            end
+        end
+        local deer
+        for i = 1, patch.geometryCount do
+            local pts = streets[i].pts
+            if #pts == 8 and pts[1] == 6295.5 and pts[2] == 11197 then deer = streets[i] end
+        end
+        assert(deer, "Deer Trail Road：找到官方 543")
+        assert(not deer.segRemoved[1] and deer.segRemoved[2] and deer.segRemoved[3],
+            "Deer Trail Road：只保留段0（南北段），段1／2 由人工折線取代")
+        assert(mod.streetSearchable(deer), "Deer Trail Road：保留段讓街道仍可搜尋")
+    end
     -- River Walk Road 河岸彎：官方與 worldmap 都畫直弦，但實際 gravel 在西南側。
     -- 三個橫截面取自 pinned floor raster；驗導航實線在路帶，不釘修補頂點的數量。
     do

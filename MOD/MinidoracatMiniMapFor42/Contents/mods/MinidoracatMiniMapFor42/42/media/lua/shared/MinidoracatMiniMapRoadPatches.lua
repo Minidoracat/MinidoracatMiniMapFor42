@@ -1,4 +1,4 @@
--- generated-body-sha256: 248a30cb4f0bf31f21e04f5ae0dfd79c44cbc48eaef6253b128c3464837005b7
+-- generated-body-sha256: 7f59bb34179d2aca989c90d29f0a73f9e74cb1ec1a0bec8dc63bc94cb1a85779
 -- MinidoracatMiniMapRoadPatches.lua
 -- 由 scripts/gen_road_patches.py 從 road-audit-v1 與人工批准清單產生；請勿手改。
 -- 重生：python scripts/gen_road_patches.py --audit target/road-audit-v2.json --legacy-audit target/road-audit-v2-42.20.4.json
@@ -13,10 +13,10 @@ MinidoracatMiniMapRoadPatches = {
     surfaceFingerprint = "9b3b740f73f47ea82924148ca0f346fbbdbaa4b57d2f9e7f0cf9cfc15c0d1a38",
     auditSha256 = "e4b15b3521299e506fa6e7dc2627b9b01a7ef08c66556397e8d18c03d40466e6",
     rejectedCandidateCount = 9,
-    approvalsSha256 = "d3331d37e31aea51c066b0725d6c2c0f39f0ffa7b8826fbc8cf78fefbcdedcdc",
+    approvalsSha256 = "331a900a32bd6f183afd704b369eda8daccb58e94e9f71f19144080ec0cb938b",
     generatorSha256 = "a7a94c6d26dd7df8e32135c10d4e1e321cff83388e2c7d6ab95bd3a93b7a58e2",
     rejectedEvidenceHash = "5f0fc0d4d04650243a476e50f775234eb13acc2404b9a6c3a48a9afbf2924839",
-    tag = "60f67f8f565fe2d66b08c9674e661a6fa363364ec1302f4a97f627623f0e5e78",
+    tag = "59266a4932d03ad4b1cb393a182999f16e9e739b607c195cec3cfb4b9483c636",
     geometryCount = 1088,
     geometrySet = {
         ["10:12630:10566:13634:10566:13656:10576:13667:10587:13672:10597:13672:10878:13686:10906:13702:10922:13732:10938:13750:10938|w:20"] = "958371c8dd485b7fd054bdeac5e0b677d0a7bf8454095329c599f5ccca199f28",
@@ -1116,7 +1116,7 @@ MinidoracatMiniMapRoadPatches = {
         ["13:21922:13270:21922:13468:21928:13482:21938:13494:21954:13502:23219:13502:23238:13510:23262:13535:23285:13546:24190:13546:24208:13554:24220:13572:24220:13792|w:16"] = { width = 8, pts = { 10961, 6635, 10961, 6734, 10964, 6741, 10969, 6747, 10977, 6751, 11609.5, 6751, 11619, 6755, 11631, 6767.5, 11642.5, 6773, 12110, 6773, 12110, 6896 } },
         ["4:16200:20988:16200:22236:16212:22249:16212:22394|w:16"] = { width = 8, pts = { 8100, 10494, 8100, 11118, 8104, 11139.5, 8104, 11197 } },
     },
-    removeCount = 26,
+    removeCount = 28,
     remove = {
         "10a544accfa08aab0aa31b64e54029fb0419305fb3eecce41499b49240797457:0",
         "10a544accfa08aab0aa31b64e54029fb0419305fb3eecce41499b49240797457:1",
@@ -1141,16 +1141,19 @@ MinidoracatMiniMapRoadPatches = {
         "aebb75485b96db37f6d1e315407f0be3481740949ba2869db03c48b9848ee717:2",
         "b0ae2e3fb25ff48c5c56a7f3e28fd39440afc858569fb8623589cec3066d358c:1",
         "bc0640979db3a6459ad4f650a4d27d4d1da2201203ce3dd22ba9a3fb17cadde4:9",
+        "c1a7e1c63be9ce93c8c94e15b8df52b9fcbbefc31572b30009c41f0cfb2b3733:1",
+        "c1a7e1c63be9ce93c8c94e15b8df52b9fcbbefc31572b30009c41f0cfb2b3733:2",
         "c78f7d201c0452ae73a31bc03d4141a72553876dca5ab134415cb1e035f7af3f:2",
         "c78f7d201c0452ae73a31bc03d4141a72553876dca5ab134415cb1e035f7af3f:3",
         "dfbe7a348a9f13c3f442639fb4689d0319a15478f70a31cb953040992aa35021:0",
     },
-    addCount = 16,
+    addCount = 17,
     add = {
         { id = "m:muldraugh-bank-road-north", src = "Muldraugh, KY", width = 5, surface = "paved", searchable = false, reason = "Bank Road 北段幾何修正（2026-09-02）：官方 streets.xml 把 y 9686→9698 的斜向過渡畫成 L 角（(10662.5,9695.5)→(10666.5,9695.5)→(10668.5,9697.5)），頂點落在真路面西緣外 2.3 格（worldmap.xml highway 多邊形西緣 (10660,9686)→(10666,9698)；稽核亦判該東向短段 surface=unknown）——導航線斜穿院子角，自駕三個短臂角全部退化爬行。移除官方段 0-2、以三點折線（北段中心 x=10662.5、斜段 (10662.5,9686)→(10668.5,9697.5)）取代，尾點與保留的官方段 3 起點重合併節點；段 3 保留使 Bank Road 仍可搜尋。", pts = { 10662.5, 9631, 10662.5, 9686, 10668.5, 9697.5 } },
         { id = "m:muldraugh-barn-way-junction", src = "Muldraugh, KY", width = 4, surface = "paved", searchable = false, reason = "Barn Way 路口與 Old Loop 同步接線（2026-09-08）：原尾點停在草地島邊，移除尾段 1、保留段 0 的街道搜尋。新線沿鋪面接至 Old Loop 新中線共用點，24 個中線取樣全為 paved，避免修正彎道後岔路懸空或再經舊草地頂點。", pts = { 10853.5, 10303, 10862, 10303, 10865, 10304, 10868, 10306, 10871, 10310 } },
         { id = "m:muldraugh-birdsong-smugglers-ky841-link", src = "Muldraugh, KY", width = 4, surface = "gravel", searchable = false, reason = "KY-841 × Birdsong Road／Smuggler's Road 路口缺分隔帶接線（2026-09-30，Terminal Dr 同類掃描）：官方 Birdsong Road 南端止於 (14535,3442)、Smuggler's Road 北端止於 (14535,3468)，中間隔著 KY-841 兩線與 One Horse Road，兩條支路之間要繞 1220.4 格。分隔帶 y3448–3451 在 x14530–14539 是礫石缺口，南線與 One Horse Road 之間 y3458–3463 另有 x14533–14536 的 4 格礫石路；26 格中線 53 個取樣 24 個 paved（KY-841 兩線）、29 個 gravel。worldmap.xml 的 tertiary 多邊形 (14533,3448)–(14537,3452) 與 (14533,3458)–(14537,3600) 也畫出這段。寬度沿用兩端官方 4 格，路面記 gravel；接線與 One Horse Road 交叉處照常成為路口。不移除原路、不增加街名、不放大全圖吸附容差。", pts = { 14535, 3442, 14535, 3468 } },
         { id = "m:muldraugh-crooked-eye-road-1", src = "Muldraugh, KY", width = 5, surface = "gravel", searchable = false, reason = "Crooked Eye Road 官方 polyline 幾何錯（自動交叉驗證，線索來源：第三方手修清單座標，判定與幾何全部以本 repo 證據重驗）：streetIndex 542 的頂點 (7397.5,10442.5) 距最近 highway=tertiary 多邊形邊緣 -3.536 格、raster class=dirt-candidate、±1 格窗=dirt-candidate——落在真路面外。移除官方段 2,3、保留段 0,1（街道仍可搜尋），以 6 點折線取代；折線每個頂點經 highway 多邊形＋raster 雙證據驗在路面上（new 頂點 class：(7408.5,10442.5)=gravel, (7404,10445)=gravel, (7400.5,10448.5)=gravel, (7397.5,10454)=gravel, (7397.5,10846.5)=gravel），端點與保留段端點同座標靠 ATTACH_END 併節點。surface=gravel 取中線取樣 class 眾數實證。", pts = { 7528.5, 10442.5, 7408.5, 10442.5, 7404, 10445, 7400.5, 10448.5, 7397.5, 10454, 7397.5, 10846.5 } },
+        { id = "m:muldraugh-deer-trail-road-bend", src = "Muldraugh, KY", width = 5, surface = "gravel", searchable = false, reason = "Deer Trail Road 兩個彎的官方線跑到路外（2026-09-30，伺服器玩家回報「這兩個彎自動駕駛會飛出去」，截圖車位 (6408,10494)、(6298,10591)；AutoDrive E2E replay 同路段重現，CarNormal 在兩個角點各有一段 isDoingOffroad、另因路外障礙繞行）：官方 streetIndex 543 只有 4 點 (6295.5,11197)→(6295.5,10594)→(6394.5,10494.5)→(7395,10494.5)，東北角點 (6394.5,10494.5) 在 tertiary 多邊形外 7.4 格、raster dirt-candidate，實際礫石路從 x≈6420 就轉向西南；西南角點 (6295.5,10594) 的 raster 也是 dirt-candidate，實際路帶要到 y≈10611 才接回 x6295.5。段1、段2 以 0.5 格取樣 2283 個有 100 個 dirt-candidate。2026-09-06 交叉驗證已判 confirmed，但三段都碰到壞頂點而列待人工。修法：移除段1、段2，保留段0（x6295.5 南北段，街道仍可搜尋）；以 6 點折線取代：起點用原東端 (7395,10494.5)（照舊接 Crooked Eye Road），沿 y10494.5（東西段路帶 y10492–10496 的中線）到 (6417.5,10494.5)，彎道頂點取 pinned raster 逐列礫石路帶中點再以 0.5 格 DP 簡化（第三方清單只當線索，差距 ≤1 格），止於段0 上的 (6295.5,10611.5)＝T 字接回（南北段路帶 x6293–6297 中線）。段0 北端殘段 (6295.5,10594) 距新折線末段 7.83 格，小於吸附容差 9.5，建圖時被併到新線上、不留懸空岔路。新折線 2305 個取樣全為 gravel、到路帶邊 ≥2.08 格；寬度 5 同官方。不增加街名、不放大全圖吸附容差。", pts = { 7395, 10494.5, 6417.5, 10494.5, 6379.5, 10513.5, 6370.5, 10519.5, 6312.5, 10577.5, 6295.5, 10611.5 } },
         { id = "m:muldraugh-hay-valley-ky79-link", src = "Muldraugh, KY", width = 6, surface = "paved", searchable = false, reason = "KY-79 × Hay St／Valley St 路口缺分隔帶接線（2026-09-30，Terminal Dr 同類掃描）：官方 Hay St 南端止於 KY-79 北側 (2952,14497)；Valley St 兩端接在 KY-79 南側平行的 Donkey Road (y14518)，而 Donkey Road 與 Valley St 在路網上只連彼此，整區導航到不了（findRoute 回 nil）。分隔帶 y14505–14514 在 x2950–2955 是 6 格寬鋪面缺口，worldmap.xml 的 tertiary 多邊形 (2950,14505)–(2956,14515) 也畫出這段穿越。接線從 Hay St 的 x2952 斜向到 KY-79 中線上的 (2953,14501)，再沿缺口中線 x2953 直穿到 Valley St 端點（中間點放在 KY-79 中線上，建圖時不會被拖動而多出小折線），50 個取樣全為 paved、兩側到路帶邊 2.75–3 格；寬度 6 同缺口與 Valley St。不移除原路、不增加街名、不放大全圖吸附容差。", pts = { 2952, 14497, 2953, 14501, 2953, 14521 } },
         { id = "m:muldraugh-hog-wallow-ky60-link", src = "Muldraugh, KY", width = 8, surface = "paved", searchable = false, reason = "Hog Wallow Road 北端缺段（2026-09-03，玩家 RubyDiamond 回報「小段沒鏈接」x4490 y10650）：官方 polyline 北端止於 (4483,10744)，但 road-surfaces-full-v2 逐格實證鋪面路帶（class paved、寬 8：x 4479-4486）續向北至 y≈10650，於 45° 切角轉東（y 10642-10649）直抵 KY-60，缺 182.6 格。折線起點與官方北端節點重合、尾點落 KY-60 兩段共用頂點 (4571.5,10646) 併節點；中線 185 個取樣格全數 paved。稽核 row-span 於該區零 detailed candidate（缺段與官方路帶連成同一鋪面分量、無獨立訊號），屬稽核盲點。", pts = { 4483, 10744, 4483, 10653, 4490.5, 10645.5, 4571.5, 10646 } },
         { id = "m:muldraugh-lakehouse-trail", src = "Muldraugh, KY", width = 4, surface = "dirt", searchable = false, reason = "使用者人工描線（2026-09-01）：湖畔小屋（約 10050,8250）聯外土徑，東端接河畔路縱段（x=10781）。表面 class 與周圍曠野同為 dirt，row-span 稽核無訊號；34 折點自基底 pyramid 影像描取，經路帶疊圖逐段驗證貼合（含湖角東繞與北上弧）。西端止於小屋私人駛道（非官方街道），懸空端屬預期。", pts = { 10098, 8218, 10115, 8235, 10132, 8250, 10170, 8282, 10183, 8296, 10195, 8310, 10210, 8324, 10222, 8332, 10240, 8336, 10258, 8330, 10268, 8315, 10274, 8295, 10277, 8272, 10276, 8250, 10271, 8228, 10263, 8210, 10269, 8196, 10281, 8189, 10292, 8185, 10316, 8172, 10340, 8174, 10364, 8186, 10388, 8190, 10411, 8199, 10460, 8253, 10484, 8262, 10532, 8260, 10580, 8263, 10628, 8262, 10700, 8263, 10748, 8265, 10781, 8255 } },
