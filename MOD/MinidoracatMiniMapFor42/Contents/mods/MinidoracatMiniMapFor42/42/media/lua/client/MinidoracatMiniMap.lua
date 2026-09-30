@@ -174,6 +174,7 @@ end
 -- codex review 裁決）；要不要母開關由 addon 端「傳或不傳」靜態決定。
 -- 選配第四參 internal：true＝本體內部 provider（如內建 POI），不受 ZoneLayer 總閘連坐、
 -- 由自家開關（PoiIcons/PoiBlocks/類別）控制；外部 addon 一律省略（受 ZoneLayer 總閘）。
+-- internal 必須整表替換、不原地改表：_Zones.lua 的候選快取與衍生清單只在回傳表換了才重建。
 -- ⚠ 傳 internal 者受 POI 顯示距離閘（沙盒 PoiDisplayDistance/AllInfoDistance＋
 -- 玩家自訂距離）連坐；外部 provider 另受自訂區域顯示距離閘（沙盒
 -- ZoneDisplayDistance/AllInfoDistance＋玩家 ClientZoneDisplayDistance，預設 0＝

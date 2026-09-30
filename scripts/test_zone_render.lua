@@ -116,10 +116,11 @@ local drawClippedEdgeCount = 0
 local function drawClippedEdge() drawClippedEdgeCount = drawClippedEdgeCount + 1 end
 -- drawZoneIcons 的兩個標記區段外相依（抽段後是全域）：滑條與可視外接框 stub
 local iconSize = 18
+local iconAlpha = 100 -- PoiIconAlpha 滑條（%）
 local textScale = 100 -- 地圖文字大小（%）
 local function getSliderValue(id)
     if id == "MapTextScale" then return textScale end
-    return id == "PoiIconAlpha" and 100 or iconSize
+    return id == "PoiIconAlpha" and iconAlpha or iconSize
 end
 -- 圖標名稱提示的指標（區段外相依 iconPointer）：nil＝滑鼠不在地圖上
 local pointer = nil
@@ -162,6 +163,7 @@ return {
     safe = safeDrawZone,
     setAABB = function(a, b, c, d) zoneAABB = { a, b, c, d } end,
     setIconSize = function(s) iconSize = s end,
+    setIconAlpha = function(a) iconAlpha = a end,
     setTextScale = function(v) textScale = v end,
     setPointer = function(x, y) pointer = x and { x, y } or nil end,
     basementBadge = drawBasementBadge,
@@ -1923,6 +1925,167 @@ do
     assert(zone.logCount() == 0, "A14-12 不得產生 provider 錯誤 log")
     zone.clearProviders()
     print("zone candidate cache (ZC) A14 cases passed")
+end
+
+--------------------------------------------------------------------------------
+-- A15 內部 provider 快速路徑（2026-09-30 fps-sp：小地圖拉到最遠時 1319-1669 候選每幀三 pass 全掃）：
+-- 內部 provider 的 fill（scale<HIDE）與 lines（scale<DETAIL）只掃無 lodRect 的候選，icons 用重建時
+-- 預算的錨點中心。同一份 zone 表交給內部 provider（快速路徑）與外部 provider（逐 zone 通用路徑）
+-- 畫，三 pass 的繪製呼叫序列必須逐筆相同。外部關 ZoneNamesFar，名稱規則才與內部一致；指標設 nil
+-- （提示文字依 provider 類別本就不同，H 區另測）
+--------------------------------------------------------------------------------
+do
+    zone.clearProviders()
+    zone.setAABB(0, 400, 0, 400)
+    zone.setPointer(nil)
+    zone.setBoolOverride("ZoneNamesFar", false)
+    local seed = 20260930
+    local function rnd(n)
+        seed = (seed * 1103515245 + 12345) % 2147483648
+        return seed % n
+    end
+    local zones = {}
+    for i = 1, 400 do
+        -- 大多擠在視窗內（去重疊同格碰撞夠多，地標也會撞格）、少數跨出窗緣或遠在候選框外
+        local x, y = rnd(360) - 30, rnd(360) - 30
+        if i % 10 == 0 then x = x + 900 end
+        local w, h = 2 + rnd(12), 2 + rnd(12)
+        local rects = { { x1 = x, y1 = y, x2 = x + w, y2 = y + h } }
+        if rnd(3) == 0 then rects[2] = { x1 = x + w, y1 = y, x2 = x + w + 4, y2 = y + 3 } end
+        local z = { rects = rects, iconOnce = true, category = "c" .. (i % 5), name = "N" .. (i % 7),
+            fill = { r = 0.5, g = 0.5, b = 0.5 }, fillAlpha = 0.3, haloAlpha = 0.4,
+            icon = { tex = "t" .. (i % 5), r = 1, g = 0.5, b = 0.25 } }
+        if rnd(10) > 0 then z.lodRect = { x1 = x, y1 = y, x2 = x + w + 4, y2 = y + h } end -- 約 1 成地標
+        if rnd(4) == 0 then z.iconRect = { x1 = x + 1, y1 = y + 1, x2 = x + 3, y2 = y + 3 } end
+        if rnd(9) == 0 then z.iconRect = { x1 = x } end -- 殘缺 iconRect：兩路徑都要回退 rects[1]
+        if rnd(6) == 0 then z.basement = true end
+        zones[i] = z
+    end
+    zones.hasFill, zones.hasLine, zones.hasIcon = true, true, true
+    local function g(v) return v == nil and "nil" or string.format("%.17g", v) end
+    -- 繪製呼叫的全部參數都記（座標、尺寸、顏色、alpha、線寬、字型、倍率），逐筆字串比對
+    local function recorder(scale)
+        local log = {}
+        local inner = { width = 400, height = 400, mapAPI = {
+            worldToUIX = function(_, x) return x end,
+            worldToUIY = function(_, _, y) return y end,
+            getWorldScale = function() return scale end,
+        } }
+        inner.setStencilRect = function(_, x, y, w, h)
+            log[#log + 1] = table.concat({ "stencil", g(x), g(y), g(w), g(h) }, " ")
+        end
+        inner.clearStencilRect = function() log[#log + 1] = "clear" end
+        inner.drawPolygon = function(_, _, x1, y1, x2, y2, x3, y3, x4, y4, r, gg, b, a)
+            log[#log + 1] = table.concat({ "poly", g(x1), g(y1), g(x2), g(y2), g(x3), g(y3), g(x4), g(y4),
+                g(r), g(gg), g(b), g(a) }, " ")
+        end
+        inner.drawTextureScaled = function(_, tex, x, y, w, h, a, r, gg, b)
+            log[#log + 1] = table.concat({ "tex", tex, g(x), g(y), g(w), g(h), g(a), g(r), g(gg), g(b) }, " ")
+        end
+        inner.drawRect = function(_, x, y, w, h, a, r, gg, b)
+            log[#log + 1] = table.concat({ "rect", g(x), g(y), g(w), g(h), g(a), g(r), g(gg), g(b) }, " ")
+        end
+        inner.drawLine = function(_, _, x1, y1, x2, y2, width, a, r, gg, b)
+            log[#log + 1] = table.concat({ "line", g(x1), g(y1), g(x2), g(y2), g(width), g(a), g(r), g(gg), g(b) }, " ")
+        end
+        inner.drawText = function(_, s, x, y, r, gg, b, a, font)
+            log[#log + 1] = table.concat({ "text", s, g(x), g(y), g(r), g(gg), g(b), g(a), tostring(font) }, " ")
+        end
+        inner.drawTextZoomed = function(_, s, x, y, zoom, r, gg, b, a, font)
+            log[#log + 1] = table.concat({ "textz", s, g(x), g(y), g(zoom), g(r), g(gg), g(b), g(a), tostring(font) }, " ")
+        end
+        return inner, log
+    end
+    local function paint(inner, log)
+        zone.resetEdgeCount()
+        zone.fill(inner); zone.lines(inner); zone.icons(inner)
+        log[#log + 1] = "edges " .. zone.edgeCount()
+        return log
+    end
+    local function draw(internal, scale, tbl)
+        zone.clearProviders()
+        zone.addProvider(internal and "a15int" or "a15ext", function() return tbl or zones end, internal)
+        return paint(recorder(scale))
+    end
+    local function same(fast, slow, label)
+        assert(#fast == #slow, "A15 快速路徑繪製呼叫數不同（" .. label .. "：內部 " .. #fast .. "／外部 " .. #slow .. "）")
+        for i = 1, #slow do
+            assert(fast[i] == slow[i], "A15 第 " .. i .. " 筆繪製不同（" .. label .. "）\n  內部："
+                .. fast[i] .. "\n  外部：" .. slow[i])
+        end
+    end
+    for _, sc in ipairs({ 10, 3, 1 }) do        -- 細節／中距（去重疊＋聯集框）／遠距（區塊隱藏）
+        for _, size in ipairs({ 18, 8 }) do
+            zone.setIconSize(size)
+            local fast, slow = draw(true, sc), draw(false, sc)
+            local count = { tex = 0, poly = 0, text = 0, line = 0 }
+            for _, e in ipairs(slow) do
+                local kind = e:match("^(%a+)")
+                if kind == "textz" then kind = "text" end
+                if count[kind] then count[kind] = count[kind] + 1 end
+            end
+            -- 比對不得空轉：每檔都有圖標、填色與地下角標（line）；名稱只在細節檔（中／遠距內部名稱本就不畫）
+            assert(count.tex >= 20 and count.poly >= 1 and count.line >= 3 and (sc < 6 or count.text >= 5),
+                string.format("A15 fixture 太空，比對無意義（scale=%d size=%d tex=%d poly=%d line=%d text=%d）",
+                    sc, size, count.tex, count.poly, count.line, count.text))
+            same(fast, slow, "scale=" .. sc .. " size=" .. size)
+        end
+    end
+    zone.setIconSize(18)
+    -- 同一個 inner 先畫大表、再原子換成短表：重建時舊的衍生清單不得留下尾巴
+    local small = { hasFill = true, hasLine = true, hasIcon = true }
+    for i = 1, 60 do small[i] = zones[i] end
+    for _, sc in ipairs({ 10, 3, 1 }) do
+        local cur = zones
+        zone.clearProviders()
+        zone.addProvider("a15reuse", function() return cur end, true)
+        local inner, log = recorder(sc)
+        paint(inner, log)
+        cur = small
+        for i = #log, 1, -1 do log[i] = nil end
+        paint(inner, log)
+        same(log, draw(false, sc, small), "換短表 scale=" .. sc)
+    end
+    -- noLod 重用：同一個 inner 先畫 3 個地標，再原子換成「第一個改為 lodRect zone」的新表，遠距檔 noLod 由 3 格
+    -- 縮成 2 格。重建若沒清掉舊清單的尾巴，第三個地標會被畫兩次
+    local function landmark(x)
+        return { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, rects = { { x1 = x, y1 = 10, x2 = x + 5, y2 = 15 } } }
+    end
+    local t1 = { hasFill = true, landmark(10), landmark(30), landmark(50) }
+    local t2 = { hasFill = true, landmark(10), landmark(30), landmark(50) }
+    t2[1].lodRect = { x1 = 10, y1 = 10, x2 = 15, y2 = 15 }
+    local curT = t1
+    zone.clearProviders()
+    zone.addProvider("a15stale", function() return curT end, true)
+    local si, slog = recorder(1)
+    zone.fill(si)
+    curT = t2
+    for i = #slog, 1, -1 do slog[i] = nil end
+    zone.fill(si)
+    local polys = 0
+    for _, e in ipairs(slog) do if e:sub(1, 5) == "poly " then polys = polys + 1 end end
+    assert(polys == 2, "A15 換表後 noLod 不得殘留舊尾巴（地標應畫 2 個，得 " .. polys .. "）")
+    -- 共用的單顆圖標繪製（兩條路徑都呼叫，上面的比對抓不到它本身壞掉）：地下設施＝圖標＋右下角標，
+    -- 恆等投影下錨點中心 (102,102)、18px → 圖標左上 (93,93)；角標 floor(18×0.45)=8px 貼右下角；
+    -- 透明度滑條 50％ → 圖標與角標線 0.5、角標底 0.8×0.5
+    zone.clearProviders()
+    zone.addProvider("a15badge", function()
+        return { hasIcon = true, { iconOnce = true, basement = true, lodRect = { x1 = 100, y1 = 100, x2 = 104, y2 = 104 },
+            icon = { tex = "T", r = 0.2, g = 0.4, b = 0.6 }, rects = { { x1 = 100, y1 = 100, x2 = 104, y2 = 104 } } } }
+    end, true)
+    zone.setIconAlpha(50)
+    local bi, blog = recorder(1)
+    zone.icons(bi)
+    zone.setIconAlpha(100)
+    local want = { "tex T 93 93 18 18 0.5 0.20000000000000001 0.40000000000000002 0.59999999999999998",
+        "rect 103 103 8 8 0.40000000000000002 0 0 0", "line 107 105 107 109 1 0.5 1 1 1",
+        "line 105 106 107 109 1 0.5 1 1 1", "line 107 109 109 106 1 0.5 1 1 1" }
+    same(blog, want, "地下設施圖標與角標")
+    zone.setIconSize(18)
+    zone.setBoolOverride("ZoneNamesFar", nil)
+    zone.setAABB(0, 100, 0, 100)
+    zone.clearProviders()
+    print("internal fast path A15 equivalence cases passed")
 end
 
 -- H. 圖標名稱提示（滑鼠停在圖標上／手把準星）：指標下最上層圖標的名稱畫在圖標上方；

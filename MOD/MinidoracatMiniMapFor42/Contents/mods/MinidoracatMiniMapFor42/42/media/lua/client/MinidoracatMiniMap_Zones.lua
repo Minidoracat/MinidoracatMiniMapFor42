@@ -297,9 +297,9 @@ local function zcCandidates(inner, provider, zones, disCats, scale,
         and now >= e.builtMs and (provider.internal or now - e.builtMs < ZC_TTL_MS)
         and vMinX >= e.qMinX and vMaxX <= e.qMaxX
         and vMinY >= e.qMinY and vMaxY <= e.qMaxY then
-        if not gate2 then return e.list end
+        if not gate2 then return e.list, e end
         local dx, dy = ppx - e.ppx, ppy - e.ppy
-        if dx * dx + dy * dy <= ZC_MOVE2 then return e.list end
+        if dx * dx + dy * dy <= ZC_MOVE2 then return e.list, e end
     end
     if not e then
         e = {}
@@ -337,6 +337,27 @@ local function zcCandidates(inner, provider, zones, disCats, scale,
     end
     -- bbox 每次現算：重建本就全清語意（TTL 兜 in-place mutate），跨呼叫 memo
     -- 是死路——留表只會每次重建配置 ~1670 個垃圾小表（claude review）
+    -- 內部 provider（內建 POI：原子換表、不原地改，identity 鍵即足以失效）另建衍生清單，
+    -- 讓遠距縮放不必每幀掃過畫不出東西的候選（2026-09-30 E2E fps-sp，非 debug、389×380 小地圖、
+    -- zoom 12 整張地圖入鏡 1319-1669 候選：fill 1.1-1.3ms、lines 1.0-1.1ms 幾乎全空掃，icons 3.4-4.0ms）：
+    --   noLod：無 lodRect 的候選（地標）。lodRect zone 在 fill（scale<HIDE）與 lines（scale<DETAIL；
+    --     內部無 nameFar）的逐 zone 條件恆不成立，只掃 noLod＝同樣的繪製、同樣的順序；
+    --   圖標平行陣列：iconOnce zone 的錨點中心與 lod 旗標。icons pass 逐候選的表查找、iconRect 判斷
+    --     與中心計算改在這裡做一次，繪製公式不變＝逐位元相同。有非 iconOnce 的圖標 zone 就不走（icFast）。
+    -- 外部 addon 允許原地改表（TTL 兜底），各 pass 仍逐幀照讀，不用衍生清單
+    local internal = provider.internal
+    local noLod, nl, icZ, icX, icY, icLod, ni, fast
+    if internal then
+        noLod = e.noLod
+        if noLod then
+            for i = #noLod, 1, -1 do noLod[i] = nil end
+        else
+            noLod = {}; e.noLod = noLod
+        end
+        icZ, icX, icY, icLod = e.icZ or {}, e.icX or {}, e.icY or {}, e.icLod or {}
+        e.icZ, e.icX, e.icY, e.icLod = icZ, icX, icY, icLod
+        nl, ni, fast = 0, 0, true
+    end
     local n = 0
     for zi = 1, #zones do
         -- z 可為 nil：`zones[i]=nil` 挖洞屬違約輸入（契約 C2 要求連續陣列）。
@@ -351,10 +372,35 @@ local function zcCandidates(inner, provider, zones, disCats, scale,
                     and y2 >= bMinY and y1 <= bMaxY)) then
                 n = n + 1
                 list[n] = zi
+                if internal then
+                    local lod = z.lodRect
+                    if lod == nil then
+                        nl = nl + 1
+                        noLod[nl] = zi
+                    end
+                    local icon, rects = z.icon, z.rects
+                    if icon and icon.tex and rects then
+                        if z.iconOnce then
+                            -- 錨點同 icons pass：iconRect 四欄齊備才採用，否則 rects[1]
+                            local rc = rects[1]
+                            local ir = z.iconRect
+                            if ir and ir.x1 and ir.y1 and ir.x2 and ir.y2 then rc = ir end
+                            if rc then
+                                ni = ni + 1
+                                icZ[ni] = zi
+                                icX[ni], icY[ni] = (rc.x1 + rc.x2) / 2, (rc.y1 + rc.y2) / 2
+                                icLod[ni] = lod ~= nil
+                            end
+                        else
+                            fast = false
+                        end
+                    end
+                end
             end
         end
     end
-    return list
+    if internal then e.icN, e.icFast = ni, fast end
+    return list, e
 end
 
 local function drawZoneFillBody(inner)
@@ -396,8 +442,10 @@ local function drawZoneFillBody(inner)
         elseif type(zones) == "table" and zones.hasFill ~= false then
             -- 外部 zone 類別篩選（內部 POI 走自家 Cat_，不受此清單影響）
             local disCats = not provider.internal and zoneDisabledCats() or nil
-            local cand = zcCandidates(inner, provider, zones, disCats, scale,
+            local cand, ce = zcCandidates(inner, provider, zones, disCats, scale,
                 vMinX, vMaxX, vMinY, vMaxY, ppx, ppy, gd2)
+            -- 拉遠檔 lodRect zone 整區不畫（下方條件），內部 provider 只掃地標（見 zcCandidates）
+            if provider.internal and scale < ZONE_LOD_HIDE then cand = ce.noLod end
             for ci = 1, #cand do
                 local z = rawget(zones, cand[ci]) or ZC_EMPTY -- rawget: stale slot 不得觸發第三方 __index（codex review）
                 local fill, rects = z.fill, z.rects
@@ -548,8 +596,10 @@ local function drawZoneLines(inner)
             -- 不再量測／繪製任何外部名稱，框線與圖標維持原狀。
             local nameFar = namesOn and not provider.internal
                 and getBoolOption("ZoneNamesFar", true)
-            local cand = zcCandidates(inner, provider, zones, disCats, scale,
+            local cand, ce = zcCandidates(inner, provider, zones, disCats, scale,
                 vMinX, vMaxX, vMinY, vMaxY, ppx, ppy, gd2)
+            -- 中／遠距 lodRect zone 不畫框線、內部又無 nameFar（下方 midFar 條件恆擋），只掃地標
+            if provider.internal and scale < ZONE_LOD_DETAIL then cand = ce.noLod end
             for ci = 1, #cand do
                 local z = rawget(zones, cand[ci]) or ZC_EMPTY -- rawget: stale slot 不得觸發第三方 __index（codex review）
                 local border, rects = z.border, z.rects
@@ -718,6 +768,25 @@ local function drawIconTip(inner, text, ix, iy, s)
     drawMapText(inner, text, tx, ty, 1, 1, 1, 1, UIFont.Small, tz)
 end
 
+-- 畫一顆 zone 圖標（兩條迭代路徑共用）；指標壓在這顆上時回提示文字
+local function drawZoneIcon(inner, z, icon, ix, iy, s, ia, hx, hy, internal)
+    inner:drawTextureScaled(icon.tex, ix, iy, s, s, ia, icon.r, icon.g, icon.b)
+    if z.basement then
+        -- 地下條目（POI v3 basement 欄）＝「設施在地下層」，地上可能是
+        -- 別的建築。尺寸夾限（review：s=8 時固定 7px 塊蓋掉 77%
+        -- 圖標面積、剪影不可辨）：0.45s 夾 [5,9]——
+        -- s=8→5px（39%）、s=18→8px、s=48 封頂 9px
+        local bs = math.floor(s * 0.45)
+        if bs < 5 then bs = 5 end
+        if bs > 9 then bs = 9 end
+        drawBasementBadge(inner, ix + s - bs, iy + s - bs, bs, ia)
+    end
+    if hx and hx >= ix and hx < ix + s and hy >= iy and hy < iy + s then
+        return iconTipText(z, internal)
+    end
+    return nil
+end
+
 -- 圖標 pass（與 linePass 同層）：zone 帶 icon={tex,r,g,b} 時，每 rect 中心投影，
 -- 中心點落在視窗內才畫 18px 染色圖標（DrawTextureScaled 引數序 tex,x,y,w,h,a,r,g,b——
 -- 同 adotsDrawGlyph 的白剪影染色手法；tex 由 provider 於建快取時 getTexture 解好，
@@ -771,8 +840,39 @@ local function drawZoneIcons(inner)
             zoneProviderErrorOnce(inner, provider.owner, zones)
         elseif type(zones) == "table" and zones.hasIcon ~= false then -- ZR-1（同 fill pass）
             local disCats = not provider.internal and zoneDisabledCats() or nil
-            local cand = zcCandidates(inner, provider, zones, disCats, scale,
+            local cand, ce = zcCandidates(inner, provider, zones, disCats, scale,
                 vMinX, vMaxX, vMinY, vMaxY, ppx, ppy, gd2)
+            if provider.internal and not gd2 and ce.icFast then
+                -- 內部 provider 快速路徑：錨點中心與 lod 旗標在 zcCandidates 重建時已算好（公式同下方
+                -- 通用路徑）。省略世界預裁——被裁者中心必在窗外、螢幕裁切本就擋下，繪製與去重疊結果不變
+                local icZ, icX, icY, icLod = ce.icZ, ce.icX, ce.icY, ce.icLod
+                for k = 1, ce.icN do
+                    local cxw, cyw = icX[k], icY[k]
+                    local cx = p0x + (cxw - acx) * sxx + (cyw - acy) * syx
+                    local cy = p0y + (cxw - acx) * sxy + (cyw - acy) * syy
+                    local ix, iy = cx - half, cy - half
+                    if ix >= 1 and iy >= 1 and ix + s <= w - 1 and iy + s <= h - 1 then
+                        local ok = true
+                        if declutter and icLod[k] then
+                            local gkey = ((cx - cx % s) / s) * 100000 + (cy - cy % s) / s
+                            if iconGrid[gkey] == iconGridGen then
+                                ok = false
+                            else
+                                iconGrid[gkey] = iconGridGen
+                            end
+                        end
+                        if ok then
+                            local z = rawget(zones, icZ[k]) or ZC_EMPTY
+                            local icon = z.icon
+                            if icon then
+                                local text = drawZoneIcon(inner, z, icon, ix, iy, s, ia, hx, hy, true)
+                                if text then hitText, hitX, hitY = text, ix, iy end
+                            end
+                        end
+                    end
+                end
+                cand = ZC_EMPTY -- 通用路徑整段略過
+            end
             for ci = 1, #cand do
                 local z = rawget(zones, cand[ci]) or ZC_EMPTY -- rawget: stale slot 不得觸發第三方 __index（codex review）
                 local icon, rects = z.icon, z.rects
@@ -818,22 +918,8 @@ local function drawZoneIcons(inner)
                                     end
                                 end
                                 if ok then
-                                    inner:drawTextureScaled(icon.tex, ix, iy, s, s,
-                                        ia, icon.r, icon.g, icon.b)
-                                    if z.basement then
-                                        -- 地下條目（POI v3 basement 欄）＝「設施在地下層」，地上可能是
-                                        -- 別的建築。尺寸夾限（review：s=8 時固定 7px 塊蓋掉 77%
-                                        -- 圖標面積、剪影不可辨）：0.45s 夾 [5,9]——
-                                        -- s=8→5px（39%）、s=18→8px、s=48 封頂 9px
-                                        local bs = math.floor(s * 0.45)
-                                        if bs < 5 then bs = 5 end
-                                        if bs > 9 then bs = 9 end
-                                        drawBasementBadge(inner, ix + s - bs, iy + s - bs, bs, ia)
-                                    end
-                                    if hx and hx >= ix and hx < ix + s and hy >= iy and hy < iy + s then
-                                        local text = iconTipText(z, provider.internal)
-                                        if text then hitText, hitX, hitY = text, ix, iy end
-                                    end
+                                    local text = drawZoneIcon(inner, z, icon, ix, iy, s, ia, hx, hy, provider.internal)
+                                    if text then hitText, hitX, hitY = text, ix, iy end
                                 end
                             end
                         end
