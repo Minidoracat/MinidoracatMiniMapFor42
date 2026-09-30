@@ -1369,6 +1369,46 @@ do
             end
         end
     end
+    -- 同類分隔帶缺接線四處（2026-09-30 全圖掃描：兩條支路端點同軸對望 ≤30 格、連線穿過 ≥2 條他街、
+    -- 分隔帶實地是鋪面／礫石、worldmap 也畫了道路多邊形）。修前 100m 的南北查詢：Nelson 214.5、
+    -- Old Market 1530.7、Birdsong 1294.4；Hay St→Valley St 不連通（Donkey Road＋Valley St 是孤島）。
+    -- 被穿越的每條東西道路：長度不變、不經過本案接線在其他道路上的穿越點（不借接線換線）。
+    -- KY-1394 兩線在 x12220 附近被既有的頂點吸附拉斜（0924a，修補前後同長），Nelson 的東西窗從 x12252 起。
+    do
+        local g = officialBuilder.graph
+        for _, c in ipairs({
+            { "Nelson St–Lower River Road", 12282, 3400, 12282, 3500, 100, { 3445, 3455 }, 12252, 12362 },
+            { "Old Market St–Corn Road", 13652, 3400, 13652.5, 3500, 100, { 3445, 3455 }, 13572, 13732 },
+            { "Birdsong Road–Smuggler's Road", 14535, 3400, 14535, 3500, 100, { 3445, 3455, 3466 }, 14455, 14615 },
+            { "Hay St–Valley St", 2952, 14450, 2953, 14600, 150.2, { 14501, 14518 }, 2872, 3032 },
+        }) do
+            local name, cx = c[1], (c[2] + c[4]) / 2
+            for _, rev in ipairs({ false, true }) do
+                local sx, sy, tx, ty = c[2], c[3], c[4], c[5]
+                if rev then sx, sy, tx, ty = tx, ty, sx, sy end
+                local r = mod.findRoute(g, sx, sy, tx, ty, nil, nil, nil, 12)
+                assertRouteMetadata(r, name)
+                assert(r.len < c[6] + 1, name .. "：直穿分隔帶，不沿公路繞行；實得 " .. r.len)
+                for i = 1, #r.pts, 2 do
+                    assert(math.abs(r.pts[i] - cx) < 1.5, name .. "：行駛線留在南北道路")
+                    if i > 1 then
+                        assert((r.pts[i + 1] - r.pts[i - 1]) * (ty - sy) >= 0, name .. "：不沿路線倒退")
+                    end
+                end
+            end
+            for _, y in ipairs(c[7]) do
+                for _, xs in ipairs({ { c[8], c[9] }, { c[9], c[8] } }) do
+                    local r = mod.findRoute(g, xs[1], y, xs[2], y, nil, nil, nil, 12)
+                    assertRouteMetadata(r, name .. " 東西直行")
+                    assert(math.abs(r.len - (c[9] - c[8])) < 3, name .. "：東西直行長度不變；實得 " .. r.len)
+                    for i = 1, #r.pts, 2 do
+                        assert(math.abs(r.pts[i] - cx) >= 1 or math.abs(r.pts[i + 1] - y) < 1,
+                            name .. "：東西直行不借新接線換到其他道路")
+                    end
+                end
+            end
+        end
+    end
     -- Station Road 礫石路彎道（2026-09-30 玩家回報；AutoDrive E2E 同案三批在 (11044,9142–9155)
     -- 開進田地 StopStuck）：官方線過了 y≈9043 仍直行、彎道偏西 2–8 格，再以 L 角
     -- (11001,9094)→(11044.5,9094)→(11044.5,9152) 穿過田地。三個橫截面取自 pinned floor raster
