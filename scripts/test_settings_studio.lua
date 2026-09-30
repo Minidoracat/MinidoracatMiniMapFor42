@@ -408,7 +408,129 @@ check(source:find("_scrollBySection%[win._renderedScrollKey%]", 1) ~= nil,
 check(source:find("pcall(studioRebuildDirty, self, structuralDirty)", 1, true) ~= nil
     and source:find("or self._studioRebuildRetry", 1, true) ~= nil,
     "failed live rebuild is logged and retried instead of consuming the dirty signature")
-local EXPECTED_ASSERTIONS = 101
+
+-- 說明文字斷行 wrapCut：中日文比拉丁字寬的量測模型（ASCII 7px、其他 14px）＋四語實際說明文案，
+-- 多種行寬全掃。ASCII 等寬模型與假文案抓不到中日文斷行問題（家族 pitfalls「自己寫換行時」）。
+local function decode(s) -- UTF-8 → 碼位陣列；格式壞掉回 nil
+    local out, i = {}, 1
+    while i <= #s do
+        local c = s:byte(i)
+        local len = (c < 0x80 and 1) or (c >= 0xF0 and 4) or (c >= 0xE0 and 3) or (c >= 0xC0 and 2) or nil
+        if not len or i + len - 1 > #s then return nil end
+        local cp = len == 1 and c or (c % (2 ^ (7 - len)))
+        for k = 1, len - 1 do
+            local cc = s:byte(i + k)
+            if cc < 0x80 or cc >= 0xC0 then return nil end
+            cp = cp * 64 + (cc - 0x80)
+        end
+        out[#out + 1] = math.floor(cp)
+        i = i + len
+    end
+    return out
+end
+local function textWidth(s)
+    local w = 0
+    for _, cp in ipairs(decode(s) or {}) do w = w + (cp < 0x80 and 7 or 14) end
+    return w
+end
+local wrapChunk, wrapErr = compile([[
+local width = ...
+local function getTextManager()
+    return { MeasureStringX = function(_, _, s) return width(s) end }
+end
+]] .. extract("settings%-wrap") .. "\n" .. [[
+return wrapCut
+]])
+assert(wrapChunk, wrapErr)
+local wrapCut = wrapChunk(textWidth)
+local function wrapAll(text, maxW)
+    local lines, rest = {}, text
+    while rest ~= "" and #lines < 200 do
+        local line
+        line, rest = wrapCut(rest, maxW, "Small")
+        lines[#lines + 1] = line
+    end
+    return lines
+end
+local function jsonValue(src, key)
+    local _, e = src:find('"' .. key .. '"%s*:%s*"')
+    if not e then return nil end
+    local out, i = {}, e + 1
+    while i <= #src do
+        local c = src:sub(i, i)
+        if c == "\\" then
+            local nx = src:sub(i + 1, i + 1)
+            out[#out + 1] = nx == "n" and "\n" or nx
+            i = i + 2
+        elseif c == '"' then
+            return table.concat(out)
+        else
+            out[#out + 1] = c
+            i = i + 1
+        end
+    end
+end
+local NOTE_KEYS = { "PerfIntro", "PerfZoom", "PerfDescMap", "PerfDescPoi", "PerfDescZone", "PerfDescZombie",
+    "PerfDescAnimal", "PerfDescMisc", "PerfDescStreet", "PerfDescChunk", "PerfNoteWorldmap", "PerfGame",
+    "PerfDebug", "PerfAdvice", "ZoneNoCats", "AdminNote", "StudioNoResults" }
+-- 行首看得出來不對的字：收尾標點、％、～、日文小寫假名與長音；行尾：起始括號與 ～
+local BAD_START, BAD_END = {}, {}
+for _, c in ipairs({ 0x3001, 0x3002, 0xFF0C, 0xFF1A, 0xFF1B, 0xFF01, 0xFF1F, 0xFF09, 0x300D, 0x300F, 0x3011,
+    0x201D, 0xFF05, 0xFF5E, 0x30FC, 0x30C3, 0x3063, 0x30E3, 0x30E5, 0x30E7, 0x3083, 0x3085, 0x3087,
+    0x29, 0x2C, 0x2E, 0x3A, 0x3B }) do BAD_START[c] = true end
+for _, c in ipairs({ 0xFF08, 0x300C, 0x300E, 0x3010, 0x201C, 0xFF5E, 0x28 }) do BAD_END[c] = true end
+local translateDir = sourcePath:gsub("lua/client/[^/]+$", "lua/shared/Translate/")
+local missing, overWide, badStart, badEnd, lost, broken, samples = {}, {}, {}, {}, {}, {}, 0
+for _, lang in ipairs({ "CH", "CN", "EN", "JP" }) do
+    local f = assert(io.open(translateDir .. lang .. "/UI.json", "rb"))
+    local json = f:read("*a")
+    f:close()
+    for _, key in ipairs(NOTE_KEYS) do
+        local text = jsonValue(json, "UI_MinidoracatMiniMap_" .. key)
+        if not text then
+            missing[#missing + 1] = lang .. "/" .. key
+        else
+            for maxW = 140, 620, 10 do
+                local lines = wrapAll(text, maxW)
+                samples = samples + 1
+                local tag = lang .. "/" .. key .. "@" .. maxW
+                for li, line in ipairs(lines) do
+                    local codes = decode(line)
+                    if not codes or #codes == 0 then
+                        broken[#broken + 1] = tag
+                    else
+                        if #codes > 1 and textWidth(line) > maxW then overWide[#overWide + 1] = tag .. " " .. line end
+                        if li > 1 and BAD_START[codes[1]] then badStart[#badStart + 1] = tag .. " " .. line end
+                        if li < #lines and BAD_END[codes[#codes]] then badEnd[#badEnd + 1] = tag .. " " .. line end
+                    end
+                end
+                if table.concat(lines):gsub(" ", "") ~= text:gsub(" ", "") then lost[#lost + 1] = tag end
+            end
+        end
+    end
+end
+local function first(list) return #list .. (list[1] and (" e.g. " .. list[1]) or "") end
+check(#missing == 0, "every wrapped note text exists in all four languages: " .. first(missing))
+check(#broken == 0, "wrapping never splits a character (" .. samples .. " samples): " .. first(broken))
+check(#overWide == 0, "wrapped lines fit the lane width: " .. first(overWide))
+check(#badStart == 0, "no wrapped line starts with closing punctuation, ％, ～, small kana or ー: " .. first(badStart))
+check(#badEnd == 0, "no wrapped line ends with an opening bracket or ～: " .. first(badEnd))
+check(#lost == 0, "wrapping keeps every character exactly once: " .. first(lost))
+-- 中日文夾英文：放得下的中文字要留在這一行，不能退回前面的空白（舊版在「MOD」後面斷）
+local mixed = "所有 Lua MOD 都會變慢，小地圖約多花"
+local mixedW = textWidth("所有 Lua MOD 都會變慢，小地") + 3
+checkEq(wrapAll(mixed, mixedW)[1], "所有 Lua MOD 都會變慢，小地",
+    "mixed Chinese/Latin line keeps filling with Chinese instead of cutting back to the last space")
+-- 數字範圍與後面的 ％ 不拆開
+local rangeLines = wrapAll("多花 15～30％ 的時間", textWidth("多花 15～") + 3)
+checkEq(rangeLines[2], "15～30％", "number range and percent stay on one line")
+-- 比行寬長的英文單字：硬切，但一定前進
+local hardLine, hardRest = wrapCut("abcdefghijklmnop", 30, "Small")
+check(hardLine ~= "" and hardRest ~= "" and hardLine .. hardRest == "abcdefghijklmnop",
+    "an overlong Latin word is hard-cut and still makes progress")
+local tinyLine, tinyRest = wrapCut("中文", 5, "Small")
+check(tinyLine == "中" and tinyRest == "文", "a width narrower than one character still places one character")
+local EXPECTED_ASSERTIONS = 111
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
         .. ", actual " .. assertions)

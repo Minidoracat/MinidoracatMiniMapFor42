@@ -937,48 +937,120 @@ local function unifiedBuildAppearance(ctx)
     unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.appearance) -- 標記大小／地圖文字大小／穿透模式地圖不透明度
 end
 
--- 長提示句斷行（ISLabel 無自動換行，長句會溢出 lane——實測「無類別提示」
--- 四語皆超寬）：貪婪斷行，CJK 逐字可斷、拉丁以最後空白優先；UTF-8 逐碼點
--- 步進，絕不切壞多位元組字元。僅設定視窗重建時執行，量測成本無妨
+-- 說明文字斷行（ISLabel 不會自動換行）。wrapCut(text, maxWidth, font) → line, rest：
+-- 二分找放得下的最長前綴，截點能斷就在截點斷，不能斷才往回找最近的斷點；整段沒有斷點
+-- （比行寬長的拉丁單字）才在截點硬切，連一個字都放不下也照樣放一個字（呼叫端迴圈一定前進）。
+-- 能斷＝截點任一側是空白，或任一側是中日韓字（含全形標點、補充平面字），而且右側不是行首
+-- 禁則字、左側不是行尾禁則字。規則與 MinidoracatUIFor42 的 TextWrap.cut 相同（那份是框架內部
+-- 模組、不是公開 API，所以這裡另存一份），本份另把全形 ％、波浪號 ～〜（數字範圍 15～30
+-- 不拆）與日文小寫假名、長音 ー 列入行首禁則；改規則時兩份一起看。
+-- Kahlua 字串是 UTF-16 code unit（string.byte 對中文回 >255）、離線測試的標準 Lua 是 UTF-8
+-- 位元組：兩種都不切開一個字。本段只能寫 ASCII 字面值（Kahlua 把非 ASCII 字串字面值截成
+-- 單 byte），字一律寫碼位。只在設定視窗重建時執行。
+-- test:settings-wrap:start
+local wrapCut = (function()
+    local charOK, char256 = pcall(string.char, 256)
+    local UTF16 = charOK and string.byte(char256) == 256
+    local SPACE, ASTRAL = 32, 0x10000
+    local function set(codes)
+        local t = {}
+        for i = 1, #codes do t[codes[i]] = true end
+        return t
+    end
+    local NO_START = set({
+        0x21, 0x29, 0x2C, 0x2E, 0x3A, 0x3B, 0x3F, 0x5D, 0x7D, -- ! ) , . : ; ? ] }
+        0x2019, 0x201D, 0x2026, -- ’ ” …
+        0x3001, 0x3002, 0x3005, 0x3009, 0x300B, 0x300D, 0x300F, 0x3011, 0x3015, 0x3017, 0x3019, 0x301B, 0x301C,
+        0x309B, 0x309C, 0x309D, 0x309E, 0x30A0, 0x30FB, 0x30FD, 0x30FE,
+        0xFF01, 0xFF05, 0xFF09, 0xFF0C, 0xFF0E, 0xFF1A, 0xFF1B, 0xFF1F, 0xFF3D, 0xFF5D, 0xFF5E, 0xFF61, 0xFF63, 0xFF64,
+        0x3041, 0x3043, 0x3045, 0x3047, 0x3049, 0x3063, 0x3083, 0x3085, 0x3087, 0x308E, 0x3095, 0x3096, -- ぁぃぅぇぉっゃゅょゎゕゖ
+        0x30A1, 0x30A3, 0x30A5, 0x30A7, 0x30A9, 0x30C3, 0x30E3, 0x30E5, 0x30E7, 0x30EE, 0x30F5, 0x30F6, 0x30FC, -- ァィゥェォッャュョヮヵヶー
+    })
+    local NO_END = set({
+        0x28, 0x5B, 0x7B, -- ( [ {
+        0x2018, 0x201C, -- ‘ “
+        0x3008, 0x300A, 0x300C, 0x300E, 0x3010, 0x3014, 0x3016, 0x3018, 0x301A, 0x301C, 0x301D,
+        0xFF08, 0xFF3B, 0xFF5B, 0xFF5E, 0xFF62,
+    })
+    local function ideographic(c)
+        return (c >= 0x2E80 and c <= 0x9FFF) or (c >= 0xAC00 and c <= 0xD7AF) or (c >= 0xF900 and c <= 0xFAFF)
+            or (c >= 0xFE30 and c <= 0xFE4F) or (c >= 0xFF00 and c <= 0xFFEF) or c >= ASTRAL
+    end
+    -- n 退到字元邊界：前 n 個 unit 不切開一個字
+    local function boundary(s, n)
+        if UTF16 then
+            local unit = n > 0 and string.byte(s, n) or 0
+            if unit >= 0xD800 and unit <= 0xDBFF then n = n - 1 end -- 前綴結尾是 high surrogate
+            return n
+        end
+        while n > 0 do
+            local unit = string.byte(s, n + 1)
+            if not unit or unit < 128 or unit >= 192 then break end
+            n = n - 1 -- 下一個位元組是 continuation：退到字元開頭
+        end
+        return n
+    end
+    -- 從第 i 個 unit 開始的那個字的碼位（2 位元組 UTF-8 回首位元組：只需知道它不是空白、表意字或禁則字）
+    local function codeAt(s, i)
+        local unit = string.byte(s, i)
+        if UTF16 then
+            if unit >= 0xD800 and unit <= 0xDFFF then return ASTRAL end
+            return unit
+        end
+        if unit < 0xE0 then return unit end
+        if unit >= 0xF0 then return ASTRAL end
+        local b2, b3 = string.byte(s, i + 1, i + 2)
+        return (unit - 0xE0) * 4096 + (b2 - 0x80) * 64 + (b3 - 0x80)
+    end
+    -- 能不能在第 n 個 unit 之後斷行（n 是字元邊界，後面還有字）
+    local function breakable(s, n)
+        local left = codeAt(s, boundary(s, n - 1) + 1)
+        local right = codeAt(s, n + 1)
+        if left == SPACE or right == SPACE then return true end
+        return (ideographic(left) or ideographic(right)) and not NO_START[right] and not NO_END[left]
+    end
+    return function(text, maxWidth, font)
+        local manager = getTextManager()
+        if manager:MeasureStringX(font, text) <= maxWidth then return text, "" end
+        local low, high, best = 1, string.len(text), 0
+        while low <= high do
+            local mid = math.floor((low + high) / 2)
+            local n = boundary(text, mid)
+            if n >= 1 and manager:MeasureStringX(font, string.sub(text, 1, n)) <= maxWidth then
+                best = n
+                low = mid + 1
+            else
+                high = mid - 1
+            end
+        end
+        local n = best
+        if best == 0 then
+            repeat n = n + 1 until boundary(text, n) == n -- 連一個字都放不下：照樣放一個字
+        else
+            while n > 0 and not breakable(text, n) do n = boundary(text, n - 1) end
+            if n == 0 then n = best end -- 沒有斷點：硬切
+        end
+        local line = string.gsub(string.sub(text, 1, n), "%s+$", "")
+        local rest = string.gsub(string.sub(text, n + 1), "^%s+", "")
+        return line, rest
+    end
+end)()
+-- test:settings-wrap:end
+
 -- indent（選配）＝整段左縮排 px（懸掛版式的描述行用）；r/g/b（選配）＝文字色
--- （預設 0.75 灰；效能區收尾建議用亮色突出）。既有呼叫端不帶新參、行為不變
+-- （預設 0.75 灰；效能區收尾建議用亮色突出）
 local function unifiedAddWrappedNote(ctx, text, indent, r, g, b)
     indent = indent or 0
     r, g, b = r or 0.75, g or 0.75, b or 0.75
-    local tm = getTextManager()
     local maxW = ctx.laneW - 10 - indent
-    local s = tostring(text or "")
-    local n = #s
-    local lineStart = 1
-    local lastSpaceEnd = nil -- 行內最後一個空白之後的 byte 位置（拉丁斷點）
-    local function emit(seg)
+    local rest = tostring(text or "")
+    while rest ~= "" do
+        local line
+        line, rest = wrapCut(rest, maxW, UIFont.Small)
         unifiedAdd(ctx, ISLabel:new(ctx.curX + 4 + indent, ctx.curY + 3, ctx.fontH,
-            seg, r, g, b, 1, UIFont.Small, true))
+            line, r, g, b, 1, UIFont.Small, true))
         ctx.curY = ctx.curY + ctx.rowH
     end
-    local i = 1
-    while i <= n do
-        local b = string.byte(s, i)
-        local cl = (b >= 240 and 4) or (b >= 224 and 3) or (b >= 192 and 2) or 1
-        local j = i + cl - 1
-        if tm:MeasureStringX(UIFont.Small, string.sub(s, lineStart, j)) > maxW
-            and lineStart < i then
-            local brk = lastSpaceEnd
-            if brk and brk > lineStart then
-                emit(string.sub(s, lineStart, brk - 1))
-                lineStart = brk
-            else
-                emit(string.sub(s, lineStart, i - 1))
-                lineStart = i
-            end
-            lastSpaceEnd = nil
-            -- 不前進 i：同一字元以新行基準重新量測
-        else
-            if b == 32 then lastSpaceEnd = j + 1 end
-            i = j + 1
-        end
-    end
-    if lineStart <= n then emit(string.sub(s, lineStart, n)) end
 end
 
 -- 顯示距離區：說明列＋距離滑條（0＝不限；滑條上限＝伺服器允許範圍）＋效能標語。
