@@ -22,12 +22,12 @@ Keep every Minidoracat MiniMap series mod up to date and restart the game after 
 
 [h2]✨ Main features[/h2]
 [list]
-[*] [b]Image-based maps[/b]: full-color top-down images on both the world map and the mini-map, with POIs marked
+[*] [b]Image-based maps[/b]: full-color top-down images on both maps; POIs with a legend and hover names
 [*] [b]Search[/b]: coordinates, street names (original/translated) and facility categories; show results on the map or add them to your trip
 [*] [b]Multi-target navigation & trips[/b]: up to 16 targets, road-following routes that replan when you go off course
 [*] [b]Home & favorites[/b]: right-click the map to set home or add favorites; one-click Go home
 [*] [b]Zombie / animal / vehicle icons[/b]: on both the mini-map and the world map, plus street names and safehouses
-[*] [b]Ghost mode & free resizing[/b]: enlarge the map into a permanent overlay that never blocks play
+[*] [b]Ghost mode & free resizing[/b]: a permanent overlay that never blocks play; icon and text sizes adjustable
 [*] [b]Server sandbox controls[/b]: disable icons and cap display distances; changes apply live
 [*] [b]Singleplayer & multiplayer[/b]: only shows data the client already receives
 [/list]

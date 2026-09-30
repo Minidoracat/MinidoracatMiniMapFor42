@@ -17,17 +17,18 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 
 [h3]🗺️ Map imagery[/h3]
 [list]
-[*] Buildings, vegetation and ground textures become full-color top-down images on both maps, with multi-level zoom.
+[*] Buildings, vegetation and ground textures become full-color top-down images on both maps.
 [*] The "Image-based map" toggle restores the vanilla vector map; everything else keeps working.
-[*] The optional MOD Maps pack adds rendered imagery and outlines for supported mod maps, even ones without their own terrain images.
-[*] Images are pre-rendered: building, demolition and tree cutting don't show.
+[*] The optional MOD Maps pack adds rendered imagery and outlines for supported mod maps.
+[*] Images are pre-rendered; building and tree cutting don't show.
 [/list]
 
 [h3]📍 Built-in POIs[/h3]
 [list]
 [*] 1669 vanilla POIs in 20 color-coded categories, as tinted silhouettes, full-color icons or translucent blocks, with per-category toggles.
 [*] Categories come from room loot types, not the map's zoning colors — actual supplies decide.
-[*] Basement facilities show "↓" on the icon and "(basement)" in search; their use may differ from the building above.
+[*] Basement facilities show "↓" on the icon and "(basement)" in search and hover names; their use may differ from the building above.
+[*] [b]Legend & hover names[/b]: a POI legend sits under the vanilla world-map legend (S hides both); hover an icon (gamepad: world-map crosshair) to see its name.
 [/list]
 
 [h3]🔍 Search & trip window[/h3]
@@ -42,7 +43,7 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [list]
 [*] Up to 16 targets: add to the end, insert before a stop or "Go here first"; reorder, remove/undo, skip and preview the remaining route.
 [*] New trips continue automatically; step mode or stopover targets wait for you. Existing trips stay step-by-step. In a vehicle, stop first.
-[*] Routes follow roads and replan when you go off course, slightly preferring paved roads when a reasonable alternative exists.
+[*] Routes follow roads, preferring paved ones, and replan when you go off course.
 [*] In multiplayer you can share your current stop with your faction; servers can disable this.
 [*] Hands-free driving: [url=https://steamcommunity.com/workshop/filedetails/discussion/3792675881/586187095760051144/]AutoDrive Guide[/url].
 [/list]
@@ -57,10 +58,10 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [h3]🖱️ Mini-map controls[/h3]
 [list]
 [*] / works even when the sandbox disables the mini-map; the floating icon remembers its position and can be turned off.
-[*] [b]Size[/b]: four presets, or drag an edge/corner to resize freely (remembered).
+[*] [b]Size[/b]: four presets, or drag an edge/corner to resize freely.
 [*] [b]Ghost mode[/b] (hotkey [b]'[/b]): clicks and wheel pass through to the game; the map turns semi-transparent with an amber border.
 [*] [b]Free look[/b]: drag to inspect; click once to snap back to the player.
-[*] [b]Coordinates[/b]: x, y, z under both maps; the toolbar copy icon copies yours, right-click "Copy coordinates" copies any spot — ready for /teleportto.
+[*] [b]Coordinates[/b]: x, y, z under both maps; the toolbar copy icon copies yours, right-click "Copy coordinates" copies any spot.
 [/list]
 
 [h3]👁️ Icons & display[/h3]
@@ -69,22 +70,23 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [*] [b]Animal icons[/b] (off by default): wild/livestock toggles and species filters; MOD Compatibility adds dogs, horses and more.
 [*] [b]Vehicle icons[/b] (off by default): standard / heavy / performance / emergency filters. Two icon styles, colorblind-friendly palette.
 [*] [b]World map (M)[/b]: the same zombie/animal/vehicle icons, four toggles.
-[*] [b]Street names & safehouses[/b]: street names on the mini-map (hidden when zoomed far out); safehouse outline/icon/name toggles (own green, faction cyan, others red); custom names add the owner.
+[*] [b]Street names & safehouses[/b]: street names on the mini-map (hidden when zoomed far out); safehouse outline/icon/name toggles; custom names add the owner.
 [*] [b]Chunk grid[/b] (off by default): marks each 8x8-tile chunk and your chunk's number and range.
+[*] [b]Sizes[/b]: icon size sliders per type, plus "Marker size" (home, nav, pings, other mods' markers) and "Map text size" (50–300%). Game-drawn street/place names don't scale.
 [*] [b]Map Display Settings[/b] (gear): searchable categories; saves instantly; per-feature performance notes.
 [/list]
 
 [h3]🛡️ Server settings (sandbox)[/h3]
 [list]
 [*] Disable zombie dots, heatmap, animal and vehicle icons; cap display distances; four livestock-visibility levels; safehouse display scope; faction sharing toggle. Changes apply live.
-[*] Players can only tighten distances. Only data the client already receives is drawn — no extra intel.
+[*] Players can only tighten distances. Only data the client already receives is drawn.
 [*] Custom server zones: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones[/url] (zones.json), with its own display distance.
 [/list]
 
 [h2]🧩 Mod maps & road data[/h2]
-[b]Street names, street search and navigation need a native streets.xml from the map author. Without it the image still shows, but that area has no street names, search or navigation (not a missing translation). Imagery is no navigation or AutoDrive guarantee.[/b]
+[b]Street names, street search and navigation need a native streets.xml from the map author. Without it the image still shows, but that area has no street names, search or navigation (not a missing translation).[/b]
 [list]
-[*] Roads must match the real surface; gaps or offsets cause no route, detours or off-road lines.
+[*] Roads must match the real surface, or routes fail, detour or go off-road.
 [*] Overlapping maps follow map priority (in multiplayer, the server Map= order); lower-priority streets can drop out, so neither original nor translated names are found.
 [*] Which maps have road data: [url=https://steamcommunity.com/workshop/filedetails/discussion/3763914102/586187095760050601/]MOD Maps supported map list & requests[/url].
 [/list]
@@ -111,7 +113,7 @@ A: Barely: ~0.4 ms/frame with all icons on vs no mod, FPS on par (GameProfiler A
 
 [h2]📝 Reporting issues[/h2]
 [list]
-[*] [b]General[/b]: [url=https://github.com/Minidoracat/MinidoracatMiniMapFor42/issues]GitHub Issues[/url] — include versions, SP/MP, steps and log excerpts (remove credentials and private server details).
-[*] [b]Road / route problems[/b] (off-road lines, missing roads, detours): [url=https://github.com/Minidoracat/MinidoracatAutoDriveFor42/issues/new?template=road-data.yml]road / route data report form[/url]. Attach [b]a screenshot with the route and coordinates + the coordinates as text[/b] and say what's wrong; endpoints, direction and map mod/version help. [b]No Telemetry needed.[/b] Right-click the spot → "Copy coordinates".
+[*] [b]General[/b]: [url=https://github.com/Minidoracat/MinidoracatMiniMapFor42/issues]GitHub Issues[/url] — include versions, SP/MP, steps and log excerpts (no credentials).
+[*] [b]Road / route problems[/b] (off-road lines, missing roads, detours): [url=https://github.com/Minidoracat/MinidoracatAutoDriveFor42/issues/new?template=road-data.yml]road / route data report form[/url]. Attach [b]a screenshot with the route and coordinates + the coordinates as text[/b] and say what's wrong. [b]No Telemetry needed.[/b] Right-click the spot → "Copy coordinates".
 [*] [b]Discord[/b]: https://discord.gg/Gur2V67
 [/list]
