@@ -1,4 +1,4 @@
--- generated-body-sha256: 91893c63b0b55edb152238124e94a695963edd5f1a9531395a4f2a5c64a7ca2e
+-- generated-body-sha256: dee95648278b02e547be6bec7d8a420a9e0ba63420a6f66648f7b616f98da3b6
 -- MinidoracatMiniMapRoadPatches.lua
 -- 由 scripts/gen_road_patches.py 從 road-audit-v1 與人工批准清單產生；請勿手改。
 -- 重生：python scripts/gen_road_patches.py --audit target/road-audit-v2.json --legacy-audit target/road-audit-v2-42.20.4.json
@@ -13,10 +13,10 @@ MinidoracatMiniMapRoadPatches = {
     surfaceFingerprint = "9b3b740f73f47ea82924148ca0f346fbbdbaa4b57d2f9e7f0cf9cfc15c0d1a38",
     auditSha256 = "e4b15b3521299e506fa6e7dc2627b9b01a7ef08c66556397e8d18c03d40466e6",
     rejectedCandidateCount = 9,
-    approvalsSha256 = "8b37d5747b04b478d3cf897ec75297eb6d365f56944ac4ee6e297caa72d76c9e",
+    approvalsSha256 = "d919a7827be9a4c1282320fe70597928201fb9d7ffd6c424c85abbc2f15cfa1f",
     generatorSha256 = "a7a94c6d26dd7df8e32135c10d4e1e321cff83388e2c7d6ab95bd3a93b7a58e2",
     rejectedEvidenceHash = "5f0fc0d4d04650243a476e50f775234eb13acc2404b9a6c3a48a9afbf2924839",
-    tag = "d2826c0286db2fa8330a60f54fe2477f82659faba6064ece0916a732c0ffb662",
+    tag = "76fb942b4638f2b9f20a86bc1a7f34bbd8ea7593eaca0e76b23dc9ba68305e70",
     geometryCount = 1088,
     geometrySet = {
         ["10:12630:10566:13634:10566:13656:10576:13667:10587:13672:10597:13672:10878:13686:10906:13702:10922:13732:10938:13750:10938|w:20"] = "958371c8dd485b7fd054bdeac5e0b677d0a7bf8454095329c599f5ccca199f28",
@@ -1116,8 +1116,21 @@ MinidoracatMiniMapRoadPatches = {
         ["13:21922:13270:21922:13468:21928:13482:21938:13494:21954:13502:23219:13502:23238:13510:23262:13535:23285:13546:24190:13546:24208:13554:24220:13572:24220:13792|w:16"] = { width = 8, pts = { 10961, 6635, 10961, 6734, 10964, 6741, 10969, 6747, 10977, 6751, 11609.5, 6751, 11619, 6755, 11631, 6767.5, 11642.5, 6773, 12110, 6773, 12110, 6896 } },
         ["4:16200:20988:16200:22236:16212:22249:16212:22394|w:16"] = { width = 8, pts = { 8100, 10494, 8100, 11118, 8104, 11139.5, 8104, 11197 } },
     },
-    removeCount = 12,
+    removeCount = 26,
     remove = {
+        "10a544accfa08aab0aa31b64e54029fb0419305fb3eecce41499b49240797457:0",
+        "10a544accfa08aab0aa31b64e54029fb0419305fb3eecce41499b49240797457:1",
+        "10a544accfa08aab0aa31b64e54029fb0419305fb3eecce41499b49240797457:10",
+        "10a544accfa08aab0aa31b64e54029fb0419305fb3eecce41499b49240797457:11",
+        "10a544accfa08aab0aa31b64e54029fb0419305fb3eecce41499b49240797457:12",
+        "10a544accfa08aab0aa31b64e54029fb0419305fb3eecce41499b49240797457:2",
+        "10a544accfa08aab0aa31b64e54029fb0419305fb3eecce41499b49240797457:3",
+        "10a544accfa08aab0aa31b64e54029fb0419305fb3eecce41499b49240797457:4",
+        "10a544accfa08aab0aa31b64e54029fb0419305fb3eecce41499b49240797457:5",
+        "10a544accfa08aab0aa31b64e54029fb0419305fb3eecce41499b49240797457:6",
+        "10a544accfa08aab0aa31b64e54029fb0419305fb3eecce41499b49240797457:7",
+        "10a544accfa08aab0aa31b64e54029fb0419305fb3eecce41499b49240797457:8",
+        "10a544accfa08aab0aa31b64e54029fb0419305fb3eecce41499b49240797457:9",
         "48d89c8d5f1b1e9e55ac18822b38bcc1c129dde8f8e77a8474f124200e908053:0",
         "48d89c8d5f1b1e9e55ac18822b38bcc1c129dde8f8e77a8474f124200e908053:1",
         "48d89c8d5f1b1e9e55ac18822b38bcc1c129dde8f8e77a8474f124200e908053:2",
@@ -1130,8 +1143,9 @@ MinidoracatMiniMapRoadPatches = {
         "bc0640979db3a6459ad4f650a4d27d4d1da2201203ce3dd22ba9a3fb17cadde4:9",
         "c78f7d201c0452ae73a31bc03d4141a72553876dca5ab134415cb1e035f7af3f:2",
         "c78f7d201c0452ae73a31bc03d4141a72553876dca5ab134415cb1e035f7af3f:3",
+        "dfbe7a348a9f13c3f442639fb4689d0319a15478f70a31cb953040992aa35021:0",
     },
-    addCount = 10,
+    addCount = 12,
     add = {
         { id = "m:muldraugh-bank-road-north", src = "Muldraugh, KY", width = 5, surface = "paved", searchable = false, reason = "Bank Road 北段幾何修正（2026-09-02）：官方 streets.xml 把 y 9686→9698 的斜向過渡畫成 L 角（(10662.5,9695.5)→(10666.5,9695.5)→(10668.5,9697.5)），頂點落在真路面西緣外 2.3 格（worldmap.xml highway 多邊形西緣 (10660,9686)→(10666,9698)；稽核亦判該東向短段 surface=unknown）——導航線斜穿院子角，自駕三個短臂角全部退化爬行。移除官方段 0-2、以三點折線（北段中心 x=10662.5、斜段 (10662.5,9686)→(10668.5,9697.5)）取代，尾點與保留的官方段 3 起點重合併節點；段 3 保留使 Bank Road 仍可搜尋。", pts = { 10662.5, 9631, 10662.5, 9686, 10668.5, 9697.5 } },
         { id = "m:muldraugh-barn-way-junction", src = "Muldraugh, KY", width = 4, surface = "paved", searchable = false, reason = "Barn Way 路口與 Old Loop 同步接線（2026-09-08）：原尾點停在草地島邊，移除尾段 1、保留段 0 的街道搜尋。新線沿鋪面接至 Old Loop 新中線共用點，24 個中線取樣全為 paved，避免修正彎道後岔路懸空或再經舊草地頂點。", pts = { 10853.5, 10303, 10862, 10303, 10865, 10304, 10868, 10306, 10871, 10310 } },
@@ -1142,6 +1156,8 @@ MinidoracatMiniMapRoadPatches = {
         { id = "m:muldraugh-old-mill-garnettsville-link", src = "Muldraugh, KY", width = 8, surface = "paved", searchable = false, reason = "Old Mill Road 東端與 W Garnettsville Road 西端之間缺少 78 格路網（2026-09-08 使用者實測可行駛）。pinned road-surfaces-full-v2 的中線 79 個取樣格全為 paved，路寬沿用兩端官方 8 格。起訖分別接官方端點，不移除既有道路；同時恢復通往 Dixie Highway 的連接。", pts = { 10521, 9737, 10599, 9737 } },
         { id = "m:muldraugh-river-walk-south-bend", src = "Muldraugh, KY", width = 6, surface = "gravel", searchable = false, reason = "River Walk Road 河岸彎修正（2026-09-11，AutoDrive issue #5）：原段9的 (7521,7056)→(7580,7115) 雖與 worldmap tertiary 多邊形中線相同，pinned floor raster 的84個約1m中線取樣卻有60個為dirt-candidate，實際gravel在西南側。只移除段9，以礫石路帶中線的四點折線取代；89個中線取樣全為gravel，兩端接回保留的段8／10。三點捷徑雖中線亦在gravel，卻明顯偏向路帶一側，故保留兩個中間轉折。寬度沿用原路6格，不增街名；北側段6／7／8與其餘道路不變。來源是實際地面raster及玩家導航截圖，不以兩份同源的官方線／多邊形互相背書。", pts = { 7521, 7056, 7533, 7080, 7558, 7103, 7580, 7115 } },
         { id = "m:muldraugh-s1st-dixie-ky1394-link", src = "Muldraugh, KY", width = 14, surface = "paved", searchable = false, reason = "S 1st St／Dixie Highway 跨 KY-1394 路口缺段（2026-09-11）：官方南北中線止於 (12513,3442) 與 (12513,3458)，建圖只接各自近側的雙線公路，直行被導成向側方折返。worldmap.xml cell(41,11) 的 primary 多邊形與 objects.lua 的 Nav 矩形皆以 x=12506、width=14 貫穿路口；pinned road-surfaces-full-v2 中線17格全為paved，14格寬實際路帶 x=12506..12519 亦全鋪面。只補這16格連接，寬度沿用兩端官方14格；不移除原路、不增加街名、不放大全圖吸附容差。", pts = { 12513, 3442, 12513, 3458 } },
+        { id = "m:muldraugh-station-road-gravel-bend", src = "Muldraugh, KY", width = 5, surface = "gravel", searchable = false, reason = "Station Road 礫石路彎道修正（2026-09-30，玩家回報導航線在 10963,9040→11044,9152 不沿路；AutoDrive E2E 隨機路線同一案例三批都在 (11044,9142–9155) 開進田地樹叢 StopStuck）：官方 streets.xml 過了 y≈9043 仍沿 x=10963 直行到 (10963,9057)，彎道段1–11 偏在實際礫石路帶西側 2–8 格，再以 L 角 (11001,9094)→(11044.5,9094)→(11044.5,9152) 穿過田地；worldmap.xml 的 secondary／tertiary／trail 多邊形畫同一個 L，屬同源資料，不互相背書。pinned road-surfaces-full-v2 的礫石路帶自 (10963.5,9043) 起向東南斜行，經 (11003.5,9094)、(11044,9152) 接回 x=11044.5；E2E 現場 tile：路面 blends_street 在 y9145–9148 從 x11043 轉進，舊線 x=11044.5 在 y9144–9146 壓的是 blends_natural，旁邊 f_bushes 叢生。舊線 1227 個 0.5 格取樣有 265 個 dirt-candidate，新八點折線 1152 個取樣全為 gravel／paved、到路帶邊至少 1.5 格。移除 252 全部 13 段與 251 段0，以一條寬5（路帶 5–7 格）的折線自北端 (10963,8771)（照舊 T 接 Dixie Highway）接到 251 段1起點 (11044.5,9316)；252 的直段只差最後 14 格就該轉彎，保留它會留下一條停在田裡的短岔，故一併以同座標重畫。251 段1／2 保留，Station Road 仍可搜尋，錨點改在南端。", pts = { 10963, 8771, 10963, 9042, 10974, 9064, 10979, 9070, 10988.5, 9079, 11026.5, 9117, 11044.5, 9153, 11044.5, 9316 } },
+        { id = "m:muldraugh-terminal-south-park-ky841-link", src = "Muldraugh, KY", width = 8, surface = "paved", searchable = false, reason = "KY-841 × Terminal Dr／South Park Road 路口缺分隔帶接線（2026-09-30，玩家回報「繞路」：從 South Park Road 北上到 Terminal Dr 側的停靠點 (15601,3324)，導航改沿南側車道西行約 287 格、到西端換線再折回，全長 640 格）：官方 Terminal Dr 南端止於 (15600,3322)、South Park Road 北端止於 (15600,3338)，建圖只各接近側車道（KY-841 兩線中心距 10 格，對側 13 格超過吸附容差）。pinned road-surfaces-full-v2 分隔帶 y3328–3331 在 x15595–15604 是 10 格寬鋪面缺口，中線 33 個取樣全為 paved，8 格寬的兩側邊線亦全鋪面；worldmap.xml 的 secondary 多邊形 x15600–15604 連續貫穿 y3300–3600，與 streets.xml 在分隔帶斷開不同。只補這 16 格連接，寬度沿用兩端官方 8 格；不移除原路、不增加街名、不放大全圖吸附容差。", pts = { 15600, 3322, 15600, 3338 } },
         { id = "m:muldraugh-west-maple-st-1", src = "Muldraugh, KY", width = 4, surface = "paved", searchable = false, reason = "West Maple St 官方 polyline 幾何錯（自動交叉驗證，線索來源：第三方手修清單座標，判定與幾何全部以本 repo 證據重驗）：streetIndex 601 的頂點 (6014,6638) 距最近 highway=tertiary 多邊形邊緣 -4.950 格、raster class=dirt-candidate、±1 格窗=dirt-candidate——落在真路面外。移除官方段 0,1,2、保留段 3（街道仍可搜尋），以 9 點折線取代；折線每個頂點經 highway 多邊形＋raster 雙證據驗在路面上（new 頂點 class：(6002,6638)=paved, (6007,6640.5)=paved, (6011.5,6645)=paved, (6014,6650.5)=paved, (6014,6691)=paved, (6017,6696.5)=paved, (6021.5,6698)=paved），端點與保留段端點同座標靠 ATTACH_END 併節點。surface=paved 取中線取樣 class 眾數實證。", pts = { 5818, 6638, 6002, 6638, 6007, 6640.5, 6011.5, 6645, 6014, 6650.5, 6014, 6691, 6017, 6696.5, 6021.5, 6698, 6256.5, 6698.5 } },
     },
     bridgeCount = 6,

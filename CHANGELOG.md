@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### 修正
+
+- 修正 Muldraugh 北邊車站路（Station Road，約 10963,9040 到 11044,9152）的導航線切進田裡：官方道路資料把這段斜向彎道畫成偏離路面的折線和一個直角，自動駕駛會照著開進農地樹叢卡住。現在依實際礫石路面重畫整段彎道，南北兩個方向都沿路走。
+- 修正 KY-841 雙線公路與 Terminal Dr／South Park Road 路口（約 15600,3330）導航繞遠路：官方資料在中央分隔帶沒有接上，從 South Park Road 要到對面 Terminal Dr 那一側，導航會先沿公路往西開約 290 格再掉頭回來（全程約 640 格）。現在補上路口直通，同一趟約 76 格。
+
+> 技術要點：兩處都只改 RoadPatch 資料（`scripts/road_patch_approvals.json` 重生 `MinidoracatMiniMapRoadPatches.lua`），不改 NavCore、導航 API 版本不變。Station Road 移除官方兩條同名街的 13＋1 段，以沿礫石路帶中線的八點折線取代，南端兩段保留，街道搜尋仍找得到；KY-841 補一條 16 格、寬 8 的南北接線，做法同 0.27.2 的 S 1st／KY-1394。單機實車驗過車站路南北雙向與 KY-841 穿越都到站、零接觸。
+
 ## [42.21.0-0.33.0] - 2026-09-30
 
 ### 新增

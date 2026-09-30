@@ -1340,6 +1340,84 @@ do
             end
         end
     end
+    -- KY-841 × Terminal Dr／South Park Road 缺分隔帶接線（2026-09-30 玩家回報「繞路」）：
+    -- 兩端只各接近側車道（對側 13 格超過吸附容差），South Park→Terminal 側停靠點原本沿
+    -- 南側車道西行約 287 格換線再折回（640m）。必須在 x=15600 直穿，且東西直行不受影響。
+    do
+        local g = officialBuilder.graph
+        for _, ends in ipairs({ { 15600, 3400, 15601, 3324 }, { 15601, 3324, 15600, 3400 } }) do
+            local r = mod.findRoute(g, ends[1], ends[2], ends[3], ends[4], nil, nil, nil, 12)
+            assertRouteMetadata(r, "KY-841×Terminal Dr 分隔帶")
+            assert(r.len < 80, "KY-841路口：直穿分隔帶，不西行換線折回；實得 " .. r.len)
+            for i = 1, #r.pts, 2 do
+                assert(math.abs(r.pts[i] - 15600) < 2,
+                    "KY-841路口：行駛線留在 x=15600 南北道路，不沿 KY-841 繞行")
+            end
+        end
+        -- 南側車道在 x15313／15898 的頂點被吸到北線（0924a 記錄的雙線 Z 字，修補前就有），
+        -- 東西線不是水平，這裡只驗長度不變、也不在新接線的兩個穿越點換到對側。
+        for _, y in ipairs({ 3325, 3335 }) do
+            local other = y == 3325 and 3335 or 3325
+            for _, xs in ipairs({ { 15590, 15750 }, { 15750, 15590 } }) do
+                local r = mod.findRoute(g, xs[1], y, xs[2], y, nil, nil, nil, 12)
+                assertRouteMetadata(r, "KY-841東西直行")
+                assert(math.abs(r.len - 160) < 2, "KY-841東西直行仍約160m；實得 " .. r.len)
+                for i = 1, #r.pts, 2 do
+                    assert(not (math.abs(r.pts[i] - 15600) < 0.5 and math.abs(r.pts[i + 1] - other) < 0.5),
+                        "KY-841東西直行不借新接線換到對側車道")
+                end
+            end
+        end
+    end
+    -- Station Road 礫石路彎道（2026-09-30 玩家回報；AutoDrive E2E 同案三批在 (11044,9142–9155)
+    -- 開進田地 StopStuck）：官方線過了 y≈9043 仍直行、彎道偏西 2–8 格，再以 L 角
+    -- (11001,9094)→(11044.5,9094)→(11044.5,9152) 穿過田地。三個橫截面取自 pinned floor raster
+    -- 的礫石路帶；雙向都要穿過路帶、不再經過 L 角舊頂點，南段 251 段1／2 保留供街道搜尋。
+    do
+        local g = officialBuilder.graph
+        for _, ends in ipairs({ { 10963, 8900, 11044.5, 9250 }, { 11044.5, 9250, 10963, 8900 } }) do
+            local r = mod.findRoute(g, ends[1], ends[2], ends[3], ends[4], nil, nil, nil, 12)
+            assertRouteMetadata(r, "Station Road 彎道")
+            assert(r.len < 390, "Station Road：沿彎道約 378m，不走 L 角（413m）；實得 " .. r.len)
+            for _, band in ipairs({
+                { 9057.5, 10968, 10973 },
+                { 9094.5, 11000, 11007 },
+                { 9130.5, 11030, 11036 },
+            }) do
+                local crossed = false
+                for i = 1, #r.pts - 2, 2 do
+                    local x0, y0, x1, y1 = r.pts[i], r.pts[i + 1], r.pts[i + 2], r.pts[i + 3]
+                    if (y0 < band[1] and y1 >= band[1]) or (y1 < band[1] and y0 >= band[1]) then
+                        local x = x0 + (x1 - x0) * (band[1] - y0) / (y1 - y0)
+                        assert(x >= band[2] and x < band[3],
+                            "Station Road：導航線需留在礫石路帶，y=" .. band[1] .. " x=" .. x)
+                        assert(not crossed, "Station Road：不以折返取代彎道")
+                        crossed = true
+                    end
+                end
+                assert(crossed, "Station Road：雙向都穿過彎道橫截面 y=" .. band[1])
+            end
+            for i = 1, #r.pts, 2 do
+                local x, y = r.pts[i], r.pts[i + 1]
+                assert(not (math.abs(y - 9094) < 0.5
+                    and (math.abs(x - 11044.5) < 0.5 or math.abs(x - 11001) < 0.5)),
+                    "Station Road：路線不再經過 L 角舊頂點")
+            end
+        end
+        local north, south
+        for i = 1, patch.geometryCount do
+            local pts = streets[i].pts
+            if #pts == 28 and pts[1] == 10963 and pts[2] == 8771 then north = streets[i] end
+            if #pts == 8 and pts[1] == 11044.5 and pts[2] == 9096 then south = streets[i] end
+        end
+        assert(north and south, "Station Road：找到官方 252／251 兩段")
+        for si = 1, 13 do
+            assert(north.segRemoved[si], "Station Road：252 全部 13 段由人工折線取代")
+        end
+        assert(south.segRemoved[1] and not south.segRemoved[2] and not south.segRemoved[3],
+            "Station Road：251 只移除段0，段1／2 保留")
+        assert(mod.streetSearchable(south), "Station Road：保留段讓街道仍可搜尋")
+    end
     -- River Walk Road 河岸彎：官方與 worldmap 都畫直弦，但實際 gravel 在西南側。
     -- 三個橫截面取自 pinned floor raster；驗導航實線在路帶，不釘修補頂點的數量。
     do
