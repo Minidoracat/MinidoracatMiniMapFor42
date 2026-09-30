@@ -26,6 +26,8 @@ local unifiedCsvSet = Core.unifiedCsvSet
 local visibleWorldAABB = Core.visibleWorldAABB
 local deriveAffine = Core.deriveAffine
 local adotsTexture = Core.adotsTexture
+local mapTextZoom = Core.mapTextZoom
+local drawMapText = Core.drawMapText
 local ADOTS_ART = Core.ADOTS_ART
 local ADOTS_SPECIES_UI = Core.ADOTS_SPECIES_UI
 local ADOTS_VEHCAT_UI = Core.ADOTS_VEHCAT_UI
@@ -621,7 +623,8 @@ local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
     if nd > 0 and not nameP then wantNames = false end -- 距離啟用缺玩家＝不標名（fail closed）
     local nameDist2 = nameP and nd * nd
     local npx, npy = nameP and nameP:getX(), nameP and nameP:getY()
-    local nameTh = wantNames and getTextManager():getFontHeight(UIFont.Small)
+    local tz = wantNames and mapTextZoom()
+    local nameTh = wantNames and getTextManager():getFontHeight(UIFont.Small) * tz
     local styleItem = getComboIndex("AnimalIconStyle", 1) == 2
     -- 大小/透明度滑條每幀讀值（0.9.0 起動物/載具各自獨立；風格不再影響大小）
     local aSize = getSliderValue("AnimalIconSize", 16, 8, 48)
@@ -665,7 +668,9 @@ local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
                     if asItem then -- 彩圖原色、不墊底（物品圖本身透明背景；2026-09-03 使用者裁決）
                         inner:drawTextureScaled(tex, ux, uy, size, size, aAlpha, 1, 1, 1)
                         if d.wild then -- 角標＝野生（彩圖不可染色，用角標區分；色跟野生下拉）
-                            inner:drawRect(ux + size - 3, uy - 1, 4, 4, aAlpha,
+                            -- 邊長隨圖標大小（16px→4，同原固定值）；右上角外凸 1px
+                            local bs = size >= 16 and (size - size % 4) / 4 or 4
+                            inner:drawRect(ux + size - bs + 1, uy - 1, bs, bs, aAlpha,
                                 wildC[1], wildC[2], wildC[3])
                         end
                     else
@@ -682,12 +687,12 @@ local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
                     within = ndx * ndx + ndy * ndy <= nameDist2
                 end
                 if within then
-                    local tw = getTextManager():MeasureStringX(UIFont.Small, d.name)
+                    local tw = getTextManager():MeasureStringX(UIFont.Small, d.name) * tz
                     local tx = ux + half - tw / 2
                     local ty = uy + size + 1
                     if tx >= 2 and ty + nameTh <= inner.height - 2 and tx + tw <= inner.width - 2 then
                         inner:drawRect(tx - 3, ty - 1, tw + 6, nameTh + 2, 0.6 * aAlpha, 0, 0, 0)
-                        inner:drawText(d.name, tx, ty, 1, 1, 1, 0.95 * aAlpha, UIFont.Small)
+                        drawMapText(inner, d.name, tx, ty, 1, 1, 1, 0.95 * aAlpha, UIFont.Small, tz)
                     end
                 end
             end

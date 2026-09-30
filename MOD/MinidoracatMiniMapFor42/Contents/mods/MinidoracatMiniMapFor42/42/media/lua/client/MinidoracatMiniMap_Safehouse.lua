@@ -16,6 +16,9 @@ local displayDist = Core.displayDist
 local sandboxGate = Core.sandboxGate
 local drawClippedEdge = Core.drawClippedEdge
 local adotsTexture = Core.adotsTexture
+local getSliderValue = Core.getSliderValue
+local mapTextZoom = Core.mapTextZoom
+local drawMapText = Core.drawMapText
 -- 政策 facade（主檔載入期快照）。nil＝舊版共用檔／載入失敗：退 SandboxVars 直讀
 local Policy = Core.policy
 
@@ -47,7 +50,6 @@ end
 
 -- test:safehouse-distance:start
 local SH_ICON = "media/ui/LootableMaps/map_house.png" -- 原版地圖符號（框架缺席時的退回）
-local SH_ICON_SIZE = 16 -- ponytail: 固定 16px；要可調再比照 PoiIconSize 加滑條
 -- 名稱字寬 memo（標籤逐幀 MeasureStringX 是跨界呼叫；標籤少且 session 內罕變，
 -- 改名後舊鍵殘留無害）；字高隨 UI 字型倍率變動，首繪量一次
 local shNameW = {}
@@ -142,6 +144,9 @@ local function drawSafehouses(inner)
     end
     local mapAPI = inner.mapAPI
     local W, H = inner.width, inner.height
+    -- 圖標大小（px，滑條 SafehouseIconSize）與地圖文字倍率：每幀讀值，拖動即時生效
+    local iconSize = getSliderValue("SafehouseIconSize", 16, 8, 48)
+    local tz = mapTextZoom()
     for idx = 1, #rows do
         local row = rows[idx]
         local x1, y1, x2, y2 = row.x1, row.y1, row.x2, row.y2
@@ -207,10 +212,10 @@ local function drawSafehouses(inner)
                         local tex = Skin and Skin.iconTexture and Skin.iconTexture("house")
                             or (adotsTexture and adotsTexture(SH_ICON))
                         local drawGlyph = Core.adotsDrawGlyph
-                        local ix, iy = cx - SH_ICON_SIZE / 2, cy - SH_ICON_SIZE / 2
+                        local ix, iy = cx - iconSize / 2, cy - iconSize / 2
                         if tex and drawGlyph and ix >= 0 and iy >= 0
-                            and ix + SH_ICON_SIZE <= W and iy + SH_ICON_SIZE <= H then
-                            drawGlyph(inner, tex, ix, iy, SH_ICON_SIZE, r, g, b)
+                            and ix + iconSize <= W and iy + iconSize <= H then
+                            drawGlyph(inner, tex, ix, iy, iconSize, r, g, b)
                             iconDrawn = true
                         end
                     end
@@ -229,13 +234,14 @@ local function drawSafehouses(inner)
                                 shNameW[name] = tw
                                 if not shFontH then shFontH = tm:getFontHeight(UIFont.Small) end
                             end
-                            local th = shFontH
+                            tw = tw * tz
+                            local th = shFontH * tz
                             local tx = cx - tw / 2
                             -- 有圖標時名稱掛圖標正下方，否則置中（同 MapBounds 名稱底墊畫法）
-                            local ty = iconDrawn and (cy + SH_ICON_SIZE / 2 + 1) or (cy - th / 2)
+                            local ty = iconDrawn and (cy + iconSize / 2 + 1) or (cy - th / 2)
                             if tx >= 2 and ty >= 2 and tx + tw <= W - 2 and ty + th <= H - 2 then
                                 inner:drawRect(tx - 3, ty - 1, tw + 6, th + 2, 0.6, 0, 0, 0)
-                                inner:drawText(name, tx, ty, r, g, b, 0.95, UIFont.Small)
+                                drawMapText(inner, name, tx, ty, r, g, b, 0.95, UIFont.Small, tz)
                             end
                         end
                     end

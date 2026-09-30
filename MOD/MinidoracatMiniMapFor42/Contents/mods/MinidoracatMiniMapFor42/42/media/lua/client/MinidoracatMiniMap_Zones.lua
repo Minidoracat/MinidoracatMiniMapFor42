@@ -26,7 +26,28 @@ local registeredZoneProviders = Core.registeredZoneProviders
 local hasExternalZoneProvider = Core.hasExternalZoneProvider
 local visibleWorldAABB = Core.visibleWorldAABB
 local drawClippedEdge = Core.drawClippedEdge
+local mapTextZoom = Core.mapTextZoom
+local drawMapText = Core.drawMapText
 local function log(msg) print("[MinidoracatMiniMap] " .. tostring(msg)) end
+
+-- 圖標名稱提示的指標位置（元件座標），沒有就回 nil。世界地圖照原版街名 hover 的規則
+-- （ISWorldMap.lua:668-674 pickMouseOverStreet）：手把玩家用畫面中央準星、滑鼠壓在子元件
+-- （按鈕列、符號面板、圖例）上不算；isMouseOver 對頂層元件已排除蓋在上面的其他視窗
+-- （UIElement.java:2107-2121）。小地圖只看滑鼠，穿透模式不提示（滑鼠是拿來玩遊戲的）
+local function iconPointer(inner)
+    if inner == ISWorldMap_instance then
+        local pn = inner.playerNum
+        if pn and (pn ~= 0 or (JoypadState.players[pn + 1] ~= nil
+                and not wasMouseActiveMoreRecentlyThanJoypad())) then
+            return inner.width / 2, inner.height / 2
+        end
+        if not inner:isMouseOver() or inner:isMouseOverChild() then return nil end
+        return inner:getMouseX(), inner:getMouseY()
+    end
+    if not inner:isMouseOver() then return nil end
+    if Core.isGhost and Core.isGhost() then return nil end
+    return inner:getMouseX(), inner:getMouseY()
+end
 
 --------------------------------------------------------------------------------
 -- Zone 圖層（資料由 registerZoneProvider 的 addon 提供；本 MOD 只渲染）：
@@ -493,7 +514,8 @@ local function drawZoneLines(inner)
     local mapAPI = inner.mapAPI
     local w, h = inner.width, inner.height
     local tm = getTextManager()
-    local th = tm:getFontHeight(UIFont.Small)
+    local tz = mapTextZoom()
+    local th = tm:getFontHeight(UIFont.Small) * tz
     local scale = mapAPI:getWorldScale()
     -- 視野預裁（同 drawZoneFillBody）：世界座標不相交者跳過投影
     local vMinX, vMaxX, vMinY, vMaxY = visibleWorldAABB(inner)
@@ -616,12 +638,13 @@ local function drawZoneLines(inner)
                             tw = tm:MeasureStringX(UIFont.Small, name)
                             zoneNameWidth[name] = tw
                         end
+                        tw = tw * tz
                         local cxw, cyw = (rc.x1 + rc.x2) / 2, (rc.y1 + rc.y2) / 2
                         local cx = p0x + (cxw - acx) * sxx + (cyw - acy) * syx - tw / 2
                         local cy = p0y + (cxw - acx) * sxy + (cyw - acy) * syy - th / 2
                         if cx >= 2 and cy >= 2 and cx + tw <= inner.width - 2 and cy + th <= inner.height - 2 then
                             inner:drawRect(cx - 3, cy - 1, tw + 6, th + 2, 0.6, 0, 0, 0)
-                            inner:drawText(name, cx, cy, 1, 1, 1, 0.95, UIFont.Small)
+                            drawMapText(inner, name, cx, cy, 1, 1, 1, 0.95, UIFont.Small, tz)
                         end
                     end
                 end
@@ -638,6 +661,61 @@ local function safeDrawZone(inner, fn, flagKey)
         inner[flagKey] = true
         log("Zone layer draw failed: " .. tostring(err))
     end
+end
+
+-- 地下設施「↓」角標：右下黑底小方塊＋白色下箭頭（幾何自縮放不吃字型）。
+-- 尺寸由呼叫端給；地圖圖標 pass 與世界地圖圖例（_Legend.lua）共用同一畫法
+local function drawBasementBadge(el, bx0, by0, bs, a)
+    el:drawRect(bx0, by0, bs, bs, 0.8 * a, 0, 0, 0)
+    local mx = bx0 + bs / 2
+    local byb = by0 + bs - 2
+    el:drawLine(nil, mx, by0 + 2, mx, byb, 1, a, 1, 1, 1)
+    el:drawLine(nil, bx0 + 2, byb - 3, mx, byb, 1, a, 1, 1, 1)
+    el:drawLine(nil, mx, byb, bx0 + bs - 2, byb - 3, 1, a, 1, 1, 1)
+end
+
+-- 圖標名稱提示文字：內建資源點＝類別名（地下設施加「（地下室）」，與搜尋結果同字），
+-- 外部 zone＝它的 name；都沒有就不提示。類別名依類別快取（語系 session 內不變）
+local iconTipByCat = {}
+local function iconTipText(z, internal)
+    if not internal then
+        local n = z.name
+        if type(n) == "string" and n ~= "" then return n end
+        return nil
+    end
+    local cat = z.category
+    if type(cat) ~= "string" then return nil end
+    local key = z.basement and (cat .. "|b") or cat
+    local text = iconTipByCat[key]
+    if text == nil then
+        local cats = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.CATEGORIES
+        local def = cats and cats[cat]
+        text = def and getText(def.nameKey) or false
+        if text and z.basement then text = text .. getText("UI_MinidoracatMiniMap_SearchBasement") end
+        iconTipByCat[key] = text
+    end
+    return text or nil
+end
+
+-- 名稱提示：深底白字畫在圖標正上方，貼頂改畫在下方，左右夾進地圖；字級跟「地圖文字大小」
+local function drawIconTip(inner, text, ix, iy, s)
+    local tm = getTextManager()
+    local tz = mapTextZoom()
+    local tw = zoneNameWidth[text] -- 與區塊名稱共用量測快取（同字型、同字串鍵）
+    if not tw then
+        tw = tm:MeasureStringX(UIFont.Small, text)
+        zoneNameWidth[text] = tw
+    end
+    tw = tw * tz
+    local th = tm:getFontHeight(UIFont.Small) * tz
+    local tx = ix + s / 2 - tw / 2
+    local ty = iy - th - 6
+    if ty < 2 then ty = iy + s + 4 end
+    if tx > inner.width - tw - 4 then tx = inner.width - tw - 4 end
+    if tx < 4 then tx = 4 end
+    tx, ty = tx - tx % 1, ty - ty % 1 -- 點陣字落在整數像素才不糊（兩者此處皆為正）
+    inner:drawRect(tx - 4, ty - 2, tw + 8, th + 4, 0.8, 0, 0, 0)
+    drawMapText(inner, text, tx, ty, 1, 1, 1, 1, UIFont.Small, tz)
 end
 
 -- 圖標 pass（與 linePass 同層）：zone 帶 icon={tex,r,g,b} 時，每 rect 中心投影，
@@ -672,6 +750,9 @@ local function drawZoneIcons(inner)
     local acy = math.floor((vMinY + vMaxY) / 2)
     local p0x, p0y, sxx, sxy, syx, syy = deriveAffine(mapAPI, acx, acy)
     local ppx, ppy, pdist2, zdist2, poiBlocked, zoneBlocked = distGateParams(inner)
+    -- 名稱提示：指標（滑鼠／手把準星）下最上層、也就是最後畫的那顆圖標
+    local hx, hy = iconPointer(inner)
+    local hitText, hitX, hitY
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
         -- 閘門（同 drawZoneFill）：外部受 ZoneLayer 總閘＋per-provider 母開關＋自訂
@@ -740,22 +821,18 @@ local function drawZoneIcons(inner)
                                     inner:drawTextureScaled(icon.tex, ix, iy, s, s,
                                         ia, icon.r, icon.g, icon.b)
                                     if z.basement then
-                                        -- 地下條目「↓」角標（POI v3 basement 欄；幾何自
-                                        -- 縮放不吃字型）：右下黑底小方塊＋白色下箭頭
-                                        -- ＝「設施在地下層」，地上可能是別的建築
-                                        -- 尺寸夾限（review：s=8 時固定 7px 塊蓋掉 77%
+                                        -- 地下條目（POI v3 basement 欄）＝「設施在地下層」，地上可能是
+                                        -- 別的建築。尺寸夾限（review：s=8 時固定 7px 塊蓋掉 77%
                                         -- 圖標面積、剪影不可辨）：0.45s 夾 [5,9]——
                                         -- s=8→5px（39%）、s=18→8px、s=48 封頂 9px
                                         local bs = math.floor(s * 0.45)
                                         if bs < 5 then bs = 5 end
                                         if bs > 9 then bs = 9 end
-                                        local bx0, by0 = ix + s - bs, iy + s - bs
-                                        inner:drawRect(bx0, by0, bs, bs, 0.8 * ia, 0, 0, 0)
-                                        local mx = bx0 + bs / 2
-                                        local byb = by0 + bs - 2
-                                        inner:drawLine(nil, mx, by0 + 2, mx, byb, 1, ia, 1, 1, 1)
-                                        inner:drawLine(nil, bx0 + 2, byb - 3, mx, byb, 1, ia, 1, 1, 1)
-                                        inner:drawLine(nil, mx, byb, bx0 + bs - 2, byb - 3, 1, ia, 1, 1, 1)
+                                        drawBasementBadge(inner, ix + s - bs, iy + s - bs, bs, ia)
+                                    end
+                                    if hx and hx >= ix and hx < ix + s and hy >= iy and hy < iy + s then
+                                        local text = iconTipText(z, provider.internal)
+                                        if text then hitText, hitX, hitY = text, ix, iy end
                                     end
                                 end
                             end
@@ -765,6 +842,7 @@ local function drawZoneIcons(inner)
             end
         end
     end
+    if hitText then drawIconTip(inner, hitText, hitX, hitY, s) end
 end
 -- test:zone-render:end
 
@@ -773,3 +851,4 @@ Core.safeDrawZone = safeDrawZone
 Core.drawZoneFill = drawZoneFill
 Core.drawZoneLines = drawZoneLines
 Core.drawZoneIcons = drawZoneIcons
+Core.drawBasementBadge = drawBasementBadge -- _Legend.lua：圖例的地下設施列

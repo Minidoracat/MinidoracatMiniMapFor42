@@ -336,6 +336,7 @@ local Core = {
     ready = true,
     navEngineState = function() return "ready" end,
     navStreetIndex = function() return {} end,
+    markerIconSize = function() return 16 end, -- 搜尋 ping 幾何倍率（主檔滑條；本測試只驗畫不畫）
 }
 MinidoracatMiniMapCore = Core
 MinidoracatMiniMapAPI = {}

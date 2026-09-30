@@ -41,7 +41,11 @@ local function drawProvider(inner, provider, pn, surface)
     if type(markers) ~= "table" then return end
     local mapAPI = inner.mapAPI
     local w, h = inner.width, inner.height
-    local base = SIZE[surface]
+    -- 基準邊長乘玩家「標記大小」（px／16，預設 1＝原 12／16px）；標籤跟「地圖文字大小」
+    local k = Core.markerIconSize() / 16
+    local base = SIZE[surface] * k
+    local tz = Core.mapTextZoom()
+    local pad6, pad10 = 6 * k, 10 * k -- badge／ring 外擴量同比例
     local fh -- 字高首次有 label 才查（隨 UI 字型倍率變動，不可硬編碼）
     -- ponytail: 每個 marker 各投影一次（2 次 Java 呼叫）；個人車隊量級足夠，上百點再改 deriveAffine
     for i = 1, #markers do
@@ -50,13 +54,15 @@ local function drawProvider(inner, provider, pn, surface)
             local s = base
             local scale = m.scale
             if type(scale) == "number" and scale > 1 then
-                s = math.floor(base * math.min(scale, 2.5) + 0.5)
+                s = base * math.min(scale, 2.5)
             end
+            s = s + 0.5
+            s = s - s % 1 -- floor(基準 × scale + 0.5)；純 Lua（值恆正）
             local badge = m.badge
             if type(badge) ~= "table" or not badge.texture then badge = nil end
             local ring = badge and m.ring
             if type(ring) ~= "table" then ring = nil end
-            local outer = ring and s + 10 or badge and s + 6 or s
+            local outer = ring and s + pad10 or badge and s + pad6 or s
             local cx = mapAPI:worldToUIX(m.x, m.y)
             local cy = mapAPI:worldToUIY(m.x, m.y)
             local ox, oy = cx - outer / 2, cy - outer / 2
@@ -67,17 +73,17 @@ local function drawProvider(inner, provider, pn, surface)
                         ring.r or 1, ring.g or 1, ring.b or 1)
                 end
                 if badge then
-                    local bs = s + 6
+                    local bs = s + pad6
                     inner:drawTextureScaled(badge.texture, cx - bs / 2, cy - bs / 2, bs, bs, (badge.a or 1) * a,
                         badge.r or 1, badge.g or 1, badge.b or 1)
                 end
                 inner:drawTextureScaled(m.texture, cx - s / 2, cy - s / 2, s, s, a, m.r or 1, m.g or 1, m.b or 1)
                 if m.label then
-                    fh = fh or getTextManager():getFontHeight(UIFont.Small)
+                    fh = fh or getTextManager():getFontHeight(UIFont.Small) * tz
                     local lc = type(m.labelColor) == "table" and m.labelColor or WHITE
                     local lx, ly = ox + outer + 2, cy - fh / 2
-                    inner:drawText(m.label, lx + 1, ly + 1, 0, 0, 0, a, UIFont.Small)
-                    inner:drawText(m.label, lx, ly, lc.r or 1, lc.g or 1, lc.b or 1, a, UIFont.Small)
+                    Core.drawMapText(inner, m.label, lx + 1, ly + 1, 0, 0, 0, a, UIFont.Small, tz)
+                    Core.drawMapText(inner, m.label, lx, ly, lc.r or 1, lc.g or 1, lc.b or 1, a, UIFont.Small, tz)
                 end
             end
         end

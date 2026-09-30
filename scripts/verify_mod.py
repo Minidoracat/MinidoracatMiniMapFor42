@@ -469,6 +469,8 @@ _lua_tests = [
     ("test_markers.lua", "addon marker provider 依 slot 名單繪製", False),
     ("test_chunk_grid.lua", "chunk 格線對齊／編號範圍／縮放封頂／stencil 配對", False),
     ("test_recreate_zorder.lua", "小地圖重建維持 UI 疊放順序", False),
+    ("test_zone_render.lua", "zone／資源點繪製、圖標名稱提示、地圖文字縮放與圖例資料", False),
+    ("test_map_legend.lua", "世界地圖資源點圖例版面與顯示", False),
 ]
 for _script, _label, _may_skip in _lua_tests:
     _gate = f"Lua 單元測試（{_script}：{_label}）"

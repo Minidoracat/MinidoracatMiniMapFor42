@@ -319,7 +319,6 @@ local function menuAddPlace(pn, x, y) Core.placesPromptAdd(pn, x, y, nil) end
 -- 地圖標記：家＝house、其他收藏＝pin（框架 art/line 圖示，缺框架退原版地圖符號），
 -- 名稱畫在圖示下方。形狀＋文字區分，不靠顏色。雙地圖經 Core.drawNavTargets 共用
 --------------------------------------------------------------------------------
-local ICON_SIZE = 16
 local HOUSE_SYM = "media/ui/LootableMaps/map_house.png"
 local PIN_SYM = "media/ui/LootableMaps/map_star.png"
 local labelCache = {}
@@ -349,7 +348,11 @@ local function drawPlaces(inner)
     end
     local mapAPI = inner.mapAPI
     local w, h = inner.width, inner.height
-    local half = ICON_SIZE / 2
+    -- 圖示邊長＝「標記大小」滑條（預設 16），名稱跟「地圖文字大小」；兩者每幀讀值
+    local iconSize = Core.markerIconSize()
+    local half = iconSize / 2
+    local tz = Core.mapTextZoom()
+    local lblH = fontH * tz
     for i = 1, state.count do
         local p = state.places[i]
         local ux, uy = mapAPI:worldToUIX(p.x, p.y), mapAPI:worldToUIY(p.x, p.y)
@@ -358,17 +361,18 @@ local function drawPlaces(inner)
             local tex = home and iconTexture("house", HOUSE_SYM) or iconTexture("pin", PIN_SYM)
             if tex then
                 if home then
-                    drawGlyph(inner, tex, ux - half, uy - half, ICON_SIZE, 1, 1, 1)
+                    drawGlyph(inner, tex, ux - half, uy - half, iconSize, 1, 1, 1)
                 else
-                    drawGlyph(inner, tex, ux - half, uy - half, ICON_SIZE, 1, 0.9, 0.55)
+                    drawGlyph(inner, tex, ux - half, uy - half, iconSize, 1, 0.9, 0.55)
                 end
             end
             local lbl = cache[i]
-            local lx, ly = ux - lbl.w / 2, uy + half + 2
-            if lx < 2 then lx = 2 elseif lx > w - lbl.w - 2 then lx = w - lbl.w - 2 end
-            if ly > h - fontH - 2 then ly = uy - half - fontH - 2 end
-            inner:drawRect(lx - 3, ly, lbl.w + 6, fontH, 0.55, 0, 0, 0)
-            inner:drawText(lbl.text, lx, ly, 1, 1, 1, 0.95, UIFont.Small)
+            local lw = lbl.w * tz
+            local lx, ly = ux - lw / 2, uy + half + 2
+            if lx < 2 then lx = 2 elseif lx > w - lw - 2 then lx = w - lw - 2 end
+            if ly > h - lblH - 2 then ly = uy - half - lblH - 2 end
+            inner:drawRect(lx - 3, ly, lw + 6, lblH, 0.55, 0, 0, 0)
+            Core.drawMapText(inner, lbl.text, lx, ly, 1, 1, 1, 0.95, UIFont.Small, tz)
         end
     end
 end

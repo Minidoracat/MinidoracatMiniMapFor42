@@ -121,6 +121,12 @@ local UNIFIED_SLIDERS = {
             default = 100, min = 10, max = 100, step = 5, fmt = "%d%%" },
     },
     appearance = {
+        -- 標記大小（家／收藏、導航旗與行程站、搜尋落點、addon marker）與地圖文字大小（本 MOD
+        -- 畫在地圖上的所有文字）；繪製端每幀讀 Core.markerIconSize／Core.mapTextZoom
+        { id = "MarkerIconSize", label = "UI_MinidoracatMiniMap_MarkerIconSize",
+            default = 16, min = 8, max = 48, step = 1, fmt = "%dpx" },
+        { id = "MapTextScale", label = "UI_MinidoracatMiniMap_MapTextScale",
+            default = 100, min = 50, max = 300, step = 10, fmt = "%d%%" },
         { id = "GhostAlpha", label = "UI_MinidoracatMiniMap_GhostAlpha",
             default = 40, min = 10, max = 90, step = 5, fmt = "%d%%" },
     },
@@ -143,8 +149,10 @@ local UNIFIED_SLIDERS = {
             default = 0, min = 0, max = 2000, step = 1, fmt = "%d",
             zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited", capBy = "PoiDisplayDistance" },
     },
-    -- 安全屋：範圍框／圖標共用 SafehouseDisplayDistance，名稱獨立 SafehouseNameDistance
+    -- 安全屋：圖標大小；範圍框／圖標共用 SafehouseDisplayDistance，名稱獨立 SafehouseNameDistance
     safehouse = {
+        { id = "SafehouseIconSize", label = "UI_MinidoracatMiniMap_SafehouseIconSize",
+            default = 16, min = 8, max = 48, step = 1, fmt = "%dpx" },
         { id = "ClientSafehouseDisplayDistance", label = "UI_MinidoracatMiniMap_DistSafehouse",
             default = 0, min = 0, max = 2000, step = 1, fmt = "%d",
             zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited", capBy = "SafehouseDisplayDistance" },
@@ -454,8 +462,10 @@ end
 local function unifiedOnModTick(target, index, selected, e)
     settingsApply(e, selected)
     -- PlaceNames 開啟會連動強制 Symbols=true（applyToggleOptions 的耦合）：
-    -- PlaceNames 會連動 Symbols；動物兩母項則共同投影成左欄 group pill。
-    if e.id == "PlaceNames" or e.id == "AnimalWild" or e.id == "AnimalLivestock" then
+    -- PlaceNames 會連動 Symbols；動物兩母項則共同投影成左欄 group pill；
+    -- 彩色資源點圖標＝類別格小圖換貼圖（同 AnimalIconStyle 的重建先例）
+    if e.id == "PlaceNames" or e.id == "AnimalWild" or e.id == "AnimalLivestock"
+            or e.id == "PoiColorIcons" then
         unifiedRebuild(target)
     end
 end
@@ -768,19 +778,22 @@ local function unifiedBuildPoicat(ctx)
     local pcats = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.CATEGORIES
     if type(order) == "table" and type(pcats) == "table" then
         local n = #order
+        -- 列首類別小圖＝面板即圖例：與地圖同一套貼圖選擇（POI 模組 iconTexture——彩色模式
+        -- 全彩不染色，單色或彩色缺檔時染類別色）；缺圖時 tex=nil，render 跳過、版面不塌
+        local poiTex = Core.poiIconTexture
+        local colorMode = getBoolOption("PoiColorIcons", false)
         for i = 1, n do
             local key = order[i]
             local def = pcats[key]
             if def then
                 local cx = ctx.curX + 4 + ((i - 1) % ctx.poiCols) * ctx.colWpoi
                 local cy = ctx.curY + math.floor((i - 1) / ctx.poiCols) * ctx.rowH
-                -- 列首類別小圖（捲動面板 render 畫，染該類別 color）＝面板即圖例，
-                -- 與地圖上該類 POI 同色；缺圖時 tex=nil，render 跳過、版面不塌（沿動物物種格）
                 local col = def.color or { r = 0.92, g = 0.92, b = 0.92 }
+                local tex, isColor
+                if poiTex then tex, isColor = poiTex(key, colorMode) end
                 local icons = ctx.win._icons
                 icons[#icons + 1] = {
-                    panel = ctx.panel,
-                    tex = adotsTexture and adotsTexture("media/ui/poi_icons/poi_" .. key .. ".png"),
+                    panel = ctx.panel, tex = tex, item = isColor or nil,
                     x = cx, y = cy, size = ctx.fontH + 2, r = col.r, g = col.g, b = col.b }
                 unifiedAddTick(ctx, cx + ctx.fontH + 5, cy, ctx.colWpoi - ctx.fontH - 6, getText(def.nameKey),
                     getBoolOption("Cat_" .. key, true),
@@ -802,7 +815,7 @@ local function unifiedBuildPoicat(ctx)
 end
 
 -- 安全屋：三顆開關（雙欄）＋沙盒模式「關閉」時停用對應開關並提示（同牲畜模式 4 提示）
--- ＋兩條距離滑條。模式由 _Safehouse.lua 匯出（呼叫時查 Core.*；模組缺席視為全部）
+-- ＋圖標大小與兩條距離滑條。模式由 _Safehouse.lua 匯出（呼叫時查 Core.*；模組缺席視為全部）
 local function unifiedBuildSafehouse(ctx)
     local rectMode = Core.safehouseDisplayMode and Core.safehouseDisplayMode(ctx.pn) or 3
     local nameMode = Core.safehouseNameMode and Core.safehouseNameMode(ctx.pn) or 3
@@ -921,7 +934,7 @@ local function unifiedBuildAppearance(ctx)
         unifiedAddTick(ctx, x, y, w, getText(t.label), getBoolOption(t.id, t.default),
             unifiedOnModTick, t)
     end)
-    unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.appearance) -- 穿透模式地圖不透明度
+    unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.appearance) -- 標記大小／地圖文字大小／穿透模式地圖不透明度
 end
 
 -- 長提示句斷行（ISLabel 無自動換行，長句會溢出 lane——實測「無類別提示」
@@ -1293,7 +1306,7 @@ local function unifiedMeasureLayout()
         UNIFIED_VEHICLE_COMBOS, UNIFIED_APPEAR_COMBOS,
         UNIFIED_SLIDERS.zombie, UNIFIED_SLIDERS.animals,
         UNIFIED_SLIDERS.vehicles, UNIFIED_SLIDERS.poi,
-        UNIFIED_SLIDERS.appearance,
+        UNIFIED_SLIDERS.appearance, UNIFIED_SLIDERS.safehouse,
         UNIFIED_SLIDERS.distance } -- 漏列＝CJK 標籤被滑條軌道壓住（欄寬量測）
     for g = 1, #comboGroups do
         for i = 1, #comboGroups[g] do
@@ -2060,8 +2073,11 @@ local function studioLiveSettingsDirty(win)
         end
     end
     for i = 1, #UNIFIED_SLIDERS.safehouse do
-        local cap = sandboxDist and sandboxDist(UNIFIED_SLIDERS.safehouse[i].capBy, pn) or nil
-        if caps[100 + i] ~= cap then caps[100 + i] = cap; dirty = true end
+        local capBy = UNIFIED_SLIDERS.safehouse[i].capBy
+        if capBy then -- 圖標大小滑條沒有伺服器上限
+            local cap = sandboxDist and sandboxDist(capBy, pn) or nil
+            if caps[100 + i] ~= cap then caps[100 + i] = cap; dirty = true end
+        end
     end
     -- policy revision＝沙盒值或本機旗標的變動計數；role eligibility 另需逐幀
     -- 輪詢——管理員被升／降權不經任何寫入路徑，revision 不會動，只能直接比資格

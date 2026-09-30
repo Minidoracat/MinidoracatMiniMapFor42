@@ -851,6 +851,27 @@ local function getSliderValue(id, default, min, max)
     return v
 end
 
+-- 地圖加繪的文字大小與標記大小（玩家滑條，每幀讀值＝拖動即時生效）。
+-- 文字：本 MOD 畫在小地圖／世界地圖上的所有文字（名稱、座標列、距離、提示、圖例）共用
+-- 一個倍率；街名／地名／玩家名是引擎自己畫的，Lua 改不了大小。倍率 1 維持原本 drawText
+-- （像素不變），其餘走 drawTextZoomed（ISUIElement.lua:1260 → UIElement.java:178，以左上角縮放）
+-- test:map-text:start
+Core.mapTextZoom = function()
+    return getSliderValue("MapTextScale", 100, 50, 300) / 100
+end
+Core.drawMapText = function(el, text, x, y, r, g, b, a, font, zoom)
+    if zoom == 1 then
+        el:drawText(text, x, y, r, g, b, a, font)
+    else
+        el:drawTextZoomed(text, x, y, zoom, r, g, b, a, font)
+    end
+end
+-- 標記大小（px，預設 16＝原尺寸）：家／收藏、導航旗與行程站、搜尋落點、addon marker 共用
+Core.markerIconSize = function()
+    return getSliderValue("MarkerIconSize", 16, 8, 48)
+end
+-- test:map-text:end
+
 -- 顯示距離合成（取樣/繪製端一律經此取距離）：伺服器個別值（sandboxDist 內已
 -- 併全域上限 AllInfoDistance，並套管理員戰術旁路）與玩家自訂值（Client<沙盒
 -- 選項名>，ESC 頁與統一視窗「顯示距離」區同一滑條）取較小正值——玩家只能
@@ -1048,6 +1069,8 @@ if PZAPI and PZAPI.ModOptions then
         "UI_MinidoracatMiniMap_SafehouseIcons_tooltip")
     modOptions:addTickBox("SafehouseNames", "UI_MinidoracatMiniMap_SafehouseNames", true,
         "UI_MinidoracatMiniMap_SafehouseNames_tooltip")
+    -- 安全屋圖標大小（px；原固定 16，_Safehouse.lua 每幀讀值）
+    modOptions:addSlider("SafehouseIconSize", "UI_MinidoracatMiniMap_SafehouseIconSize", 8, 48, 1, 16)
     -- 地圖包（MapPackLayers/MapBounds/MapBoundsColor）選項為 addon-conditional，
     -- 於下方 OnGameBoot 區塊「有地圖包註冊」時才追加——沒裝地圖包不出現
     modOptions:addTickBox("ZombieIntensity", "UI_MinidoracatMiniMap_ZombieIntensity", false,
@@ -1229,6 +1252,9 @@ if PZAPI and PZAPI.ModOptions then
         "UI_MinidoracatMiniMap_GhostMode_tooltip")
     -- 穿透模式地圖不透明度（%）：_Ghost.lua dimMapBody 依值壓暗；改動經 apply 即時重壓
     modOptions:addSlider("GhostAlpha", "UI_MinidoracatMiniMap_GhostAlpha", 10, 90, 5, 40)
+    -- 標記大小（px）與地圖文字大小（%）：繪製端每幀讀值（Core.markerIconSize／Core.mapTextZoom）
+    modOptions:addSlider("MarkerIconSize", "UI_MinidoracatMiniMap_MarkerIconSize", 8, 48, 1, 16)
+    modOptions:addSlider("MapTextScale", "UI_MinidoracatMiniMap_MapTextScale", 50, 300, 10, 100)
     -- 浮動開關圖標（預設開）：常駐畫面小圖標，點擊開關小地圖、拖曳移動（見檔尾一節）
     modOptions:addTickBox("FloatIcon", "UI_MinidoracatMiniMap_FloatIcon", true,
         "UI_MinidoracatMiniMap_FloatIcon_tooltip")
@@ -2342,6 +2368,7 @@ local function drawMapBounds(inner)
     local c = MAPB_COLORS[getComboIndex("MapBoundsColor", 1)] or MAPB_COLORS[1]
     local af = MAPB_ALPHAS[getComboIndex("MapBoundsAlpha", 1)] or 1.0
     local mapAPI = inner.mapAPI
+    local tz = Core.mapTextZoom()
     for i = 1, #mapOverlays do
         local ov = mapOverlays[i]
         local x1, y1, x2, y2 = ov.bounds[1], ov.bounds[2], ov.bounds[3], ov.bounds[4]
@@ -2372,13 +2399,13 @@ local function drawMapBounds(inner)
             end
         end
         if name then
-            local tw = ov._tw
-            local th = ov._th
+            local tw = ov._tw * tz
+            local th = ov._th * tz
             local cx = (ux1 + ux3) / 2 - tw / 2 -- 菱形中心＝對角中點
             local cy = (uy1 + uy3) / 2 - th / 2
             if cx >= 2 and cy >= 2 and cx + tw <= inner.width - 2 and cy + th <= inner.height - 2 then
                 inner:drawRect(cx - 3, cy - 1, tw + 6, th + 2, 0.6 * af, 0, 0, 0)
-                inner:drawText(name, cx, cy, 1, 1, 1, 0.95 * af, UIFont.Small)
+                Core.drawMapText(inner, name, cx, cy, 1, 1, 1, 0.95 * af, UIFont.Small, tz)
             end
         end
     end
@@ -2646,12 +2673,14 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         if flOn then
             local hint = getText("UI_MinidoracatMiniMap_FreelookHint")
             local tm = getTextManager()
-            local hw = tm:MeasureStringX(UIFont.Small, hint)
-            local fh = tm:getFontHeight(UIFont.Small)
+            local tz = Core.mapTextZoom()
+            local hw = tm:MeasureStringX(UIFont.Small, hint) * tz
+            local fh = tm:getFontHeight(UIFont.Small) * tz
             local hx = math.floor((self.width - hw) / 2)
             local hy = self.height - fh - 10
+            hy = hy - hy % 1 -- 純 Lua floor（值恆正）：縮放後字高可為小數，點陣字落在整數列才不糊
             self:drawRect(hx - 8, hy - 3, hw + 16, fh + 6, 0.72, 0, 0, 0)
-            self:drawText(hint, hx, hy, 1, 0.85, 0.4, 1, UIFont.Small)
+            Core.drawMapText(self, hint, hx, hy, 1, 0.85, 0.4, 1, UIFont.Small, tz)
         end
         local cBtn = self.parent and self.parent._minidoracatCenterBtn
         if cBtn then -- 定位 icon 琥珀高亮＝次要提示；還原值同皮膚化基準（skinBtn

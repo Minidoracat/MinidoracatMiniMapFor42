@@ -6,6 +6,7 @@
 --   * 同 owner 重註冊＝取代（不重複畫）；壞參數拒收
 --   * v2：scale 夾 1..2.5；ring→badge→icon 由外而內、各差 4／6px；裁切以最外層為準；
 --     非 live 0.55 乘到所有層；缺 badge.texture 時 ring 靜默略過；label 先黑影後色字、置於最外層右側垂直置中
+--   * 玩家「標記大小」滑條等比放大基準邊長與 badge／ring 外擴；「地圖文字大小」放大標籤
 -- 用法：lua scripts/test_markers.lua [MinidoracatMiniMap_Markers.lua]
 local path = arg[1] or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Markers.lua"
 local file = assert(io.open(path, "rb"))
@@ -20,6 +21,21 @@ getTextManager = function() return { getFontHeight = function() return 10 end } 
 print = function(msg) printed[#printed + 1] = msg end
 assert((loadstring or load)(source))()
 local API, Core = MinidoracatMiniMapAPI, MinidoracatMiniMapCore
+-- 主檔滑條 helper（Core.markerIconSize／mapTextZoom／drawMapText）抽 test:map-text 真實作，
+-- 滑條值由本測試控制（未設＝預設值）
+local sliders = {}
+do
+    local mainPath = "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua"
+    local mf = assert(io.open(mainPath, "rb"))
+    local body = assert(mf:read("*a"):gsub("\r\n", "\n"):match("%-%- test:map%-text:start\n(.-)\n%-%- test:map%-text:end"))
+    mf:close()
+    local env = setmetatable({ Core = Core, getSliderValue = function(id, default)
+        local v = sliders[id]
+        if v == nil then return default end
+        return v
+    end }, { __index = _G })
+    assert(load(body, "map-text", "t", env))()
+end
 
 local fails = 0
 local function check(cond, name)
@@ -35,6 +51,9 @@ local function inner(pn)
             d.tex[#d.tex + 1] = { tex = tex, x = x, y = y, w = w, h = h, a = a, r = r, g = g, b = b }
         end,
         drawText = function(_, s, x, y, r, g, b, a) d.text[#d.text + 1] = { s = s, x = x, y = y, r = r, g = g, b = b, a = a } end,
+        drawTextZoomed = function(_, s, x, y, z, r, g, b, a)
+            d.text[#d.text + 1] = { s = s, x = x, y = y, zoom = z, r = r, g = g, b = b, a = a }
+        end,
     }
     return d
 end
@@ -130,5 +149,17 @@ local nob = draw2("mini", { { id = "n", x = 100, y = 100, texture = "car", state
 check(#nob.tex == 1 and nob.tex[1].tex == "car" and nob.tex[1].w == 12 and #printed == nPrinted2,
     "ring without badge.texture is skipped silently; icon still draws")
 
+-- 標記大小 32px（×2）：小地圖基準 12→24、世界 16→32，badge／ring 外擴 6／10→12／20；
+-- 地圖文字 200%：標籤走縮放繪製、字高 10→20 的一半讓位
+sliders.MarkerIconSize, sliders.MapTextScale = 32, 200
+local big = draw2("mini", { { id = "b", x = 100, y = 100, texture = "car", state = "live",
+    badge = { texture = "disc" }, ring = {}, label = "Big" } })
+check(big.tex[3].w == 24 and big.tex[3].x == 88, "marker size 32 doubles the minimap icon (12 -> 24, centred)")
+check(big.tex[2].w == 36 and big.tex[1].w == 44, "badge and ring padding scale with the marker size")
+check(big.text[2].zoom == 2 and big.text[2].x == 78 + 44 + 2 and big.text[2].y == 100 - 10,
+    "label is drawn at 2x and still sits right of the ring, vertically centred")
+local bigw = draw2("world", { { id = "w2", x = 100, y = 100, texture = "car", state = "live", scale = 1.3 } })
+check(bigw.tex[1].w == 42, "world base doubles too and scale still applies (32 * 1.3 = 41.6 -> 42)")
+sliders.MarkerIconSize, sliders.MapTextScale = nil, nil
 io.stdout:write(fails == 0 and "PASS test_markers\n" or ("FAIL test_markers (" .. fails .. ")\n"))
 os.exit(fails == 0 and 0 or 1)

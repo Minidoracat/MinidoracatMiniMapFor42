@@ -18,6 +18,7 @@ if not (Core and Core.ready) then return end
 local getBoolOption = Core.getBoolOption
 local visibleWorldAABB = Core.visibleWorldAABB
 local deriveAffine = Core.deriveAffine
+local mapTextZoom = Core.mapTextZoom
 
 local CHUNK = 8               -- B42 chunk 邊長（格）
 local BLOCK = 8               -- 棋盤格貼圖一張涵蓋 BLOCK×BLOCK 個 chunk
@@ -32,7 +33,7 @@ local LINE_R, LINE_G, LINE_B, LINE_A = 0.62, 0.68, 0.76, 0.55 -- 石板灰：深
 local FILL_A = 0.14                                           -- 暗格：黑
 local CUR_R, CUR_G, CUR_B = 1.0, 0.8, 0.25                    -- 所在 chunk：琥珀（本 MOD 高亮慣例）
 
-local labelText, labelCount = {}, 0
+local labelText, labelW, labelCount = {}, {}, 0 -- labelW：編號字寬（倍率 1），只在文字放大時量
 -- 逐格編號底墊的代表寬（最長編號 "0000,0000"）與字高：首繪量測一次（同安全屋名稱字高）
 local labelRefW, labelFontH
 local checkerTex -- 棋盤格貼圖（載入成功才快取；缺檔時底色略過）
@@ -147,6 +148,7 @@ local function drawChunkGridBody(inner)
 
     -- 文字（逐格編號＋所在 chunk 標籤）另有開關 ChunkGridLabels（預設開），關掉只留底色、格線與琥珀框
     local wantText = getBoolOption("ChunkGridLabels", true)
+    local tz = wantText and mapTextZoom() or 1 -- 地圖文字大小；1＝原 DrawTextCentre／DrawText 路徑
 
     -- 4) 逐格編號：畫面內 chunk 數封頂，且底墊整塊落在 chunk 平行四邊形內才畫——
     -- 底墊角點換回 chunk 局部座標 (u,v)，|u|、|v| ≤ ½ 即在內（正交與等軸測通用）
@@ -156,7 +158,9 @@ local function drawChunkGridBody(inner)
             labelRefW = tm:MeasureStringX(UIFont.Small, "0000,0000") -- 用例 ISFactionUI.lua:238
             labelFontH = tm:getFontHeight(UIFont.Small)
         end
-        local hw, hh = labelRefW / 2 + 3, labelFontH / 2 + 1
+        -- 字放大後底墊跟著變大，塞不進 chunk 的縮放檔自然不畫編號（同一條 |u|,|v|≤½ 判定）
+        local hw, hh = labelRefW * tz / 2 + 3, labelFontH * tz / 2 + 1
+        local tm = tz ~= 1 and getTextManager() or nil
         local u1, v1 = (fy * hw - fx * hh) / det, (ex * hh - ey * hw) / det
         local u2, v2 = (fy * hw + fx * hh) / det, (-ex * hh - ey * hw) / det
         if u1 < 0 then u1 = -u1 end
@@ -174,15 +178,27 @@ local function drawChunkGridBody(inner)
                         local key = i * 100000 + j -- |j| 遠小於 50000（B42 世界約 2500 chunk 寬）
                         local text = labelText[key]
                         if not text then
-                            if labelCount >= LABEL_CACHE_MAX then labelText, labelCount = {}, 0 end
+                            if labelCount >= LABEL_CACHE_MAX then labelText, labelW, labelCount = {}, {}, 0 end
                             text = i .. "," .. j
                             labelText[key] = text
                             labelCount = labelCount + 1
                         end
                         -- drawRect／drawTextCentre 的 Java 本體（ISUIElement.lua:1196／1286）
                         jo:DrawTextureScaledColor(nil, mx - hw, my - hh, hw * 2, hh * 2, 0, 0, 0, 0.45)
-                        local ty = my - labelFontH / 2 -- 上緣取整免點陣字模糊（座標已確認非負）
-                        jo:DrawTextCentre(UIFont.Small, text, mx, ty - ty % 1, 0.92, 0.92, 0.92, 0.9)
+                        local ty = my - labelFontH * tz / 2 -- 上緣取整免點陣字模糊（座標已確認非負）
+                        if tm then
+                            -- 縮放版沒有置中多載：自己量字寬（依 chunk 快取）後走 DrawText(font, …, zoom, …)
+                            -- （UIElement.java:178，ISUIElement.lua:1263 drawTextZoomed 的 Java 本體）
+                            local lw = labelW[key]
+                            if not lw then
+                                lw = tm:MeasureStringX(UIFont.Small, text)
+                                labelW[key] = lw
+                            end
+                            local tx = mx - lw * tz / 2
+                            jo:DrawText(UIFont.Small, text, tx - tx % 1, ty - ty % 1, tz, 0.92, 0.92, 0.92, 0.9)
+                        else
+                            jo:DrawTextCentre(UIFont.Small, text, mx, ty - ty % 1, 0.92, 0.92, 0.92, 0.9)
+                        end
                     end
                     mx, my = mx + ex, my + ey
                 end
@@ -210,7 +226,7 @@ local function drawChunkGridBody(inner)
             inner._minidoracatChunkTextH = tm:getFontHeight(UIFont.Small)
         end
         local text = inner._minidoracatChunkText
-        local tw, th = inner._minidoracatChunkTextW, inner._minidoracatChunkTextH
+        local tw, th = inner._minidoracatChunkTextW * tz, inner._minidoracatChunkTextH * tz
         local top, bottom = k1y, k1y
         if k2y < top then top = k2y elseif k2y > bottom then bottom = k2y end
         if k3y < top then top = k3y elseif k3y > bottom then bottom = k3y end
@@ -223,7 +239,11 @@ local function drawChunkGridBody(inner)
         -- 取整免點陣字模糊；貼頂時 ly 可為負，Kahlua 的 % 朝零截斷只差 1px，stencil 已裁
         lx, ly = lx - lx % 1, ly - ly % 1
         jo:DrawTextureScaledColor(nil, lx - 4, ly - 2, tw + 8, th + 4, 0, 0, 0, 0.7)
-        jo:DrawText(UIFont.Small, text, lx, ly, CUR_R, CUR_G, CUR_B, 1) -- ISUIElement.lua:1299
+        if tz == 1 then
+            jo:DrawText(UIFont.Small, text, lx, ly, CUR_R, CUR_G, CUR_B, 1) -- ISUIElement.lua:1299
+        else
+            jo:DrawText(UIFont.Small, text, lx, ly, tz, CUR_R, CUR_G, CUR_B, 1) -- UIElement.java:178
+        end
     end
 end
 

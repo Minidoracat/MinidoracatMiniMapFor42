@@ -409,11 +409,12 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         local txt = getText(isGhost() and "UI_MinidoracatMiniMap_GhostOn"
             or "UI_MinidoracatMiniMap_GhostOff")
         local tm = getTextManager()
-        local tw = tm:MeasureStringX(UIFont.Small, txt)
-        local fh = tm:getFontHeight(UIFont.Small)
+        local tz = Core.mapTextZoom()
+        local tw = tm:MeasureStringX(UIFont.Small, txt) * tz
+        local fh = tm:getFontHeight(UIFont.Small) * tz
         local x = math.max(8, math.floor((self.width - tw) / 2)) -- 底框 x-8 不出左緣
         self:drawRect(x - 8, 5, tw + 16, fh + 6, 0.72, 0, 0, 0)
-        self:drawText(txt, x, 8, 1, 0.85, 0.4, 1, UIFont.Small)
+        Core.drawMapText(self, txt, x, 8, 1, 0.85, 0.4, 1, UIFont.Small, tz)
     end
 end
 

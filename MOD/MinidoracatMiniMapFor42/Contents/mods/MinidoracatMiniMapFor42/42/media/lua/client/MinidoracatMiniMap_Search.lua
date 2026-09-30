@@ -2601,22 +2601,27 @@ Core.drawSearchPing = function(inner, mapAPI)
     end
     local ux = mapAPI:worldToUIX(ping.x, ping.y)
     local uy = mapAPI:worldToUIY(ping.x, ping.y)
-    -- 視野外整組跳過（菱形半徑上限 28，留 40px 緩衝）
-    if ux < -40 or uy < -40 or ux > inner.width + 40 or uy > inner.height + 40 then return end
-    for k = 0, 1 do
-        local phase = ((now / 1100) + k * 0.5) % 1
-        local rad = 6 + phase * 22
+    -- 幾何跟「標記大小」（px／16，預設 1＝原尺寸：菱形半徑 6～28、準星臂長 9）
+    local k = Core.markerIconSize() / 16
+    -- 視野外整組跳過（菱形半徑上限 28，留 40px 緩衝，同比例放大）
+    local pad = 40 * k
+    if ux < -pad or uy < -pad or ux > inner.width + pad or uy > inner.height + pad then return end
+    local lw = 2 * k
+    for ph = 0, 1 do
+        local phase = ((now / 1100) + ph * 0.5) % 1
+        local rad = (6 + phase * 22) * k
         local a = 0.85 * (1 - phase)
-        inner:drawLine(nil, ux - rad, uy, ux, uy - rad, 2, a, 1, 0.85, 0.2)
-        inner:drawLine(nil, ux, uy - rad, ux + rad, uy, 2, a, 1, 0.85, 0.2)
-        inner:drawLine(nil, ux + rad, uy, ux, uy + rad, 2, a, 1, 0.85, 0.2)
-        inner:drawLine(nil, ux, uy + rad, ux - rad, uy, 2, a, 1, 0.85, 0.2)
+        inner:drawLine(nil, ux - rad, uy, ux, uy - rad, lw, a, 1, 0.85, 0.2)
+        inner:drawLine(nil, ux, uy - rad, ux + rad, uy, lw, a, 1, 0.85, 0.2)
+        inner:drawLine(nil, ux + rad, uy, ux, uy + rad, lw, a, 1, 0.85, 0.2)
+        inner:drawLine(nil, ux, uy + rad, ux - rad, uy, lw, a, 1, 0.85, 0.2)
     end
-    inner:drawRect(ux - 2, uy - 2, 4, 4, 1, 1, 0.85, 0.2)
-    inner:drawLine(nil, ux - 9, uy, ux - 4, uy, 2, 0.9, 1, 0.85, 0.2)
-    inner:drawLine(nil, ux + 4, uy, ux + 9, uy, 2, 0.9, 1, 0.85, 0.2)
-    inner:drawLine(nil, ux, uy - 9, ux, uy - 4, 2, 0.9, 1, 0.85, 0.2)
-    inner:drawLine(nil, ux, uy + 4, ux, uy + 9, 2, 0.9, 1, 0.85, 0.2)
+    inner:drawRect(ux - 2 * k, uy - 2 * k, 4 * k, 4 * k, 1, 1, 0.85, 0.2)
+    local a1, a2 = 4 * k, 9 * k
+    inner:drawLine(nil, ux - a2, uy, ux - a1, uy, lw, 0.9, 1, 0.85, 0.2)
+    inner:drawLine(nil, ux + a1, uy, ux + a2, uy, lw, 0.9, 1, 0.85, 0.2)
+    inner:drawLine(nil, ux, uy - a2, ux, uy - a1, lw, 0.9, 1, 0.85, 0.2)
+    inner:drawLine(nil, ux, uy + a1, ux, uy + a2, lw, 0.9, 1, 0.85, 0.2)
 end
 
 Events.OnGameStart.Add(function()

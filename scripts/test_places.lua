@@ -8,6 +8,10 @@ local function readFile(path)
     local f = assert(io.open(path, "rb")); local text = f:read("*a"); f:close(); return text
 end
 local sources = { readFile(itineraryPath), readFile(placesPath) }
+-- 主檔地圖文字／標記大小 helper：抽 test:map-text 真實作，滑條值由 placeSliders 控制
+local mapTextSource = assert(readFile(dir .. "MinidoracatMiniMap.lua"):gsub("\r\n", "\n"):match(
+    "%-%- test:map%-text:start\n(.-)\n%-%- test:map%-text:end"), "找不到主檔 map-text 測試區段")
+local placeSliders = {}
 
 local function fixture()
     local handlers, players, client = {}, {}, false
@@ -18,6 +22,15 @@ local function fixture()
     end
     local log = { messages = {}, prompts = {}, dialogs = {} }
     local core = { ready = true, navGateAllows = function() return true end }
+    assert(load(mapTextSource, "map-text", "t", setmetatable({ Core = core,
+        getSliderValue = function(id, default)
+            if placeSliders[id] == nil then return default end
+            return placeSliders[id]
+        end }, { __index = _G })))()
+    -- 白 glyph 染色畫法（_Dots.lua adotsDrawGlyph）：記錄邊長與左上角
+    core.adotsDrawGlyph = function(inner, tex, x, y, size)
+        inner.glyphs[#inner.glyphs + 1] = { tex = tex, x = x, y = y, size = size }
+    end
     core.navMessage = function(pn, text, good) log.messages[#log.messages + 1] = { pn = pn, text = text, good = good } end
     core.navPromptTarget = function(pn, x, y, label, op)
         log.prompts[#log.prompts + 1] = { pn = pn, x = x, y = y, label = label, op = op }
@@ -45,6 +58,11 @@ local function fixture()
         ISTextBox = TextBox, ISToolTip = { new = function() return tooltip() end },
         getJoypadData = function() return nil end,
         HaloTextHelper = { addGoodText = function() end, addBadText = function() end },
+        UIFont = { Small = "Small" }, getTexture = function(path) return path end,
+        getTextManager = function()
+            return { getFontHeight = function() return 10 end,
+                MeasureStringX = function(_, _, s) return #s * 5 end }
+        end,
     }, { __index = _G })
     for i, source in ipairs(sources) do
         local chunk
@@ -307,6 +325,30 @@ do
     t.player(0, {})
     stale:press("OK", "Hijack")
     eq(t.core.placesState(0).count, 0, "換角色後舊對話框不寫入新角色")
+end
+
+-- 地圖標記：圖示邊長跟「標記大小」滑條（預設 16），名稱跟「地圖文字大小」並掛在圖示正下方。
+do
+    local t = fixture(); t.player(0)
+    assert(t.core.placesSetHomeAt(0, 500, 50))
+    local function surface()
+        local s = { playerNum = 0, width = 1000, height = 200, glyphs = {}, texts = {},
+            mapAPI = { worldToUIX = function(_, x) return x end, worldToUIY = function(_, _, y) return y end } }
+        function s:drawRect() end
+        function s:drawText(txt, x, y) self.texts[#self.texts + 1] = { s = txt, x = x, y = y, zoom = 1 } end
+        function s:drawTextZoomed(txt, x, y, z) self.texts[#self.texts + 1] = { s = txt, x = x, y = y, zoom = z } end
+        return s
+    end
+    local s1 = surface(); t.core.drawPlaces(s1)
+    eq(s1.glyphs[1].size, 16, "預設標記 16px"); eq(s1.glyphs[1].x, 492, "預設標記置中")
+    eq(s1.texts[1].zoom, 1, "預設名稱原尺寸"); eq(s1.texts[1].y, 50 + 8 + 2, "名稱在圖示下方")
+    placeSliders.MarkerIconSize, placeSliders.MapTextScale = 32, 200
+    local s2 = surface(); t.core.drawPlaces(s2)
+    eq(s2.glyphs[1].size, 32, "標記大小 32px"); eq(s2.glyphs[1].x, 484, "放大後仍置中")
+    eq(s2.texts[1].zoom, 2, "名稱兩倍字"); eq(s2.texts[1].y, 50 + 16 + 2, "名稱在放大後的圖示下方")
+    -- 字寬 #"UI_MinidoracatMiniMap_PlaceHome"*5*2 置中於 x=500
+    eq(s2.texts[1].x, 500 - #"UI_MinidoracatMiniMap_PlaceHome" * 5, "兩倍名稱置中")
+    placeSliders.MarkerIconSize, placeSliders.MapTextScale = nil, nil
 end
 
 print("test_places: ok")

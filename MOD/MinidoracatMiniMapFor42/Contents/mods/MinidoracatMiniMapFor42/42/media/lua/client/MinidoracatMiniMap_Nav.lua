@@ -10,6 +10,8 @@ local Policy = Core.policy -- nil＝舊版共用檔缺席／載入失敗，沿�
 local getBoolOption = Core.getBoolOption
 local clipSegment = Core.clipSegment
 local copyCoordsText = Core.copyCoordsText
+local mapTextZoom = Core.mapTextZoom
+local drawMapText = Core.drawMapText
 local function log(msg) print("[MinidoracatMiniMap] " .. tostring(msg)) end
 
 --------------------------------------------------------------------------------
@@ -202,39 +204,46 @@ function ISMiniMapInner:onMinidoracatPauseNav()
 end
 
 -- 旗標：黑框桿＋色旗（drawRect 疊法同殭屍點描邊）；label（分享者名）與 dist
--- （距離公尺）分兩行掛旗上——同行擠在一起難讀（使用者回饋），名字上、距離下
-local function drawNavFlag(inner, ux, uy, r, g, b, label, dist)
-    inner:drawRect(ux - 2, uy - 14, 4, 15, 0.8, 0, 0, 0)
-    inner:drawRect(ux - 1, uy - 13, 2, 13, 1, 1, 1, 1)
-    inner:drawRect(ux, uy - 14, 11, 8, 0.8, 0, 0, 0)
-    inner:drawRect(ux + 1, uy - 13, 9, 6, 1, r, g, b)
+-- （距離公尺）分兩行掛旗上——同行擠在一起難讀（使用者回饋），名字上、距離下。
+-- k＝標記大小倍率（滑條 px／16，預設 1＝原幾何）；tz＝地圖文字倍率
+-- 標籤行高：原固定 22px（Medium 字的字形高＋留白），隨文字倍率等比放大（倍率 1＝原像素）
+local function navLineH(tz)
+    return 22 * tz
+end
+
+local function drawNavFlag(inner, ux, uy, r, g, b, label, dist, k, tz)
+    inner:drawRect(ux - 2 * k, uy - 14 * k, 4 * k, 15 * k, 0.8, 0, 0, 0)
+    inner:drawRect(ux - k, uy - 13 * k, 2 * k, 13 * k, 1, 1, 1, 1)
+    inner:drawRect(ux, uy - 14 * k, 11 * k, 8 * k, 0.8, 0, 0, 0)
+    inner:drawRect(ux + k, uy - 13 * k, 9 * k, 6 * k, 1, r, g, b)
     -- 深色底墊字（同原版玩家名牌做法 UIWorldMap.java:509），淺色地圖上才清晰；
-    -- 位置夾進視窗（長名字貼上/右緣時不外溢）。Medium 字級＋離旗 10/44px
+    -- 位置夾進視窗（長名字貼上/右緣時不外溢）。Medium 字級，最下行離旗頂 8px
     local w, h = inner.width, inner.height
     local lines = {}
     -- 作者名行用旗色（隊友 ID 與其路線/旗同色一眼對應，使用者回饋）；距離行
     -- 維持白色（讀數清晰）
     if label then lines[#lines + 1] = { t = label, cr = r, cg = g, cb = b } end
     if dist then lines[#lines + 1] = { t = tostring(dist) .. "m", cr = 1, cg = 1, cb = 1 } end
-    local ly = uy - 44 - (#lines - 1) * 22 -- 多行往上長，最下行維持離旗 44px
+    local lineH = navLineH(tz)
+    local ly = uy - 14 * k - 8 - #lines * lineH -- 多行往上長，最下行維持離旗頂 8px
     for i = 1, #lines do
         local ln = lines[i]
-        local tw = getTextManager():MeasureStringX(UIFont.Medium, ln.t)
-        local lx = ux + 10
+        local tw = getTextManager():MeasureStringX(UIFont.Medium, ln.t) * tz
+        local lx = ux + 10 * k
         if lx < 2 then lx = 2 elseif lx > w - tw - 2 then lx = w - tw - 2 end
-        local cy2 = ly + (i - 1) * 22
-        if cy2 < 2 then cy2 = 2 elseif cy2 > h - 22 then cy2 = h - 22 end
-        inner:drawRect(lx - 4, cy2 - 1, tw + 8, 22, 0.6, 0, 0, 0)
-        inner:drawText(ln.t, lx, cy2, ln.cr, ln.cg, ln.cb, 0.95, UIFont.Medium) -- drawText＝ISUIElement.lua:1293
+        local cy2 = ly + (i - 1) * lineH
+        if cy2 < 2 then cy2 = 2 elseif cy2 > h - lineH then cy2 = h - lineH end
+        inner:drawRect(lx - 4, cy2 - 1, tw + 8, lineH, 0.6, 0, 0, 0)
+        drawMapText(inner, ln.t, lx, cy2, ln.cr, ln.cg, ln.cb, 0.95, UIFont.Medium, tz) -- drawText＝ISUIElement.lua:1293
     end
 end
 
 -- 目標在視窗內＝旗標；出視窗＝中心→目標線段裁到內縮 12px 矩形（重用 clipSegment），
 -- 交點畫 V 形箭頭（翼向量＝方向單位向量旋 ±25.8°，c=0.9/s=0.436，免 atan）
-local function drawNavIndicator(inner, tx, ty, r, g, b, label, dist)
+local function drawNavIndicator(inner, tx, ty, r, g, b, label, dist, k, tz)
     local w, h = inner.width, inner.height
-    if tx >= 8 and ty >= 16 and tx <= w - 14 and ty <= h - 4 then
-        drawNavFlag(inner, tx, ty, r, g, b, label, dist) -- 名字/距離分行由旗標函式排版
+    if tx >= 8 * k and ty >= 16 * k and tx <= w - 14 * k and ty <= h - 4 * k then
+        drawNavFlag(inner, tx, ty, r, g, b, label, dist, k, tz) -- 名字/距離分行由旗標函式排版
         return
     end
     local cx, cy = w / 2, h / 2
@@ -249,20 +258,22 @@ local function drawNavIndicator(inner, tx, ty, r, g, b, label, dist)
     local c, s = 0.9, 0.436
     local b1x, b1y = uxn * c - uyn * s, uxn * s + uyn * c
     local b2x, b2y = uxn * c + uyn * s, -uxn * s + uyn * c
-    inner:drawLine(nil, tipx, tipy, tipx - b1x * 11, tipy - b1y * 11, 2, 0.95, r, g, b)
-    inner:drawLine(nil, tipx, tipy, tipx - b2x * 11, tipy - b2y * 11, 2, 0.95, r, g, b)
+    local wing, lw = 11 * k, 2 * k
+    inner:drawLine(nil, tipx, tipy, tipx - b1x * wing, tipy - b1y * wing, lw, 0.95, r, g, b)
+    inner:drawLine(nil, tipx, tipy, tipx - b2x * wing, tipy - b2y * wing, lw, 0.95, r, g, b)
     local txt = label
     if dist then txt = tostring(dist) .. "m" end
     if txt then
         -- MeasureStringX 用例 ISFactionUI.lua:238；Medium 字級同旗標 label
-        local tw = getTextManager():MeasureStringX(UIFont.Medium, txt)
-        local px = tipx - uxn * 28 - tw / 2
-        local py = tipy - uyn * 28 - 10
+        local tw = getTextManager():MeasureStringX(UIFont.Medium, txt) * tz
+        local lineH = navLineH(tz)
+        local px = tipx - uxn * 28 * k - tw / 2
+        local py = tipy - uyn * 28 * k - (lineH / 2 - 1)
         if px < 2 then px = 2 elseif px > w - tw - 2 then px = w - tw - 2 end
-        if py < 2 then py = 2 elseif py > h - 22 then py = h - 22 end
+        if py < 2 then py = 2 elseif py > h - lineH then py = h - lineH end
         -- 深色底墊字（同原版玩家名牌做法 UIWorldMap.java:509），淺色地圖上才清晰
-        inner:drawRect(px - 4, py - 1, tw + 8, 22, 0.6, 0, 0, 0)
-        inner:drawText(txt, px, py, 1, 1, 1, 0.95, UIFont.Medium)
+        inner:drawRect(px - 4, py - 1, tw + 8, lineH, 0.6, 0, 0, 0)
+        drawMapText(inner, txt, px, py, 1, 1, 1, 0.95, UIFont.Medium, tz)
     end
 end
 
@@ -270,14 +281,14 @@ local tripLabels = {}
 local TRIP_COLORS = {
     pending = { 0.05, 0.86, 1.0 }, arrived = { 0.3, 0.95, 0.4 }, skipped = { 0.5, 0.5, 0.5 },
 }
-local function drawTripTargets(inner, pn, playerObj)
+local function drawTripTargets(inner, pn, playerObj, k, tz)
     local trip = Core.navItineraryState(pn)
     if not trip then tripLabels[pn] = nil; return end
     local tm = getTextManager()
     local fontH = tm:getFontHeight(UIFont.Small)
     local labels = tripLabels[pn]
     if not labels or labels.count ~= trip.count or labels.fontH ~= fontH then
-        labels = { count = trip.count, fontH = fontH, size = math.max(20, fontH + 6) }
+        labels = { count = trip.count, fontH = fontH }
         for i = 1, trip.count do
             local text = tostring(i)
             labels[i] = { text = text, width = tm:MeasureStringX(UIFont.Small, text),
@@ -285,6 +296,11 @@ local function drawTripTargets(inner, pn, playerObj)
         end
         tripLabels[pn] = labels
     end
+    -- 站點方塊：原 max(20, 字高+6)；邊長跟標記大小，但至少容得下放大後的站號
+    local numH = fontH * tz
+    local size = 20 * k
+    if size < numH + 6 then size = numH + 6 end
+    size = size - size % 1
     local mapAPI = inner.mapAPI
     local current = Core.navGetTarget(pn)
     local px, py = playerObj:getX(), playerObj:getY()
@@ -294,13 +310,13 @@ local function drawTripTargets(inner, pn, playerObj)
         if current and stop.id == current.id then
             local dx, dy = stop.x - px, stop.y - py
             drawNavIndicator(inner, ux, uy, 1, 0.85, 0.4, labels[i].current,
-                math.floor(math.sqrt(dx * dx + dy * dy) + 0.5))
+                math.floor(math.sqrt(dx * dx + dy * dy) + 0.5), k, tz)
         elseif ux >= 0 and uy >= 0 and ux <= inner.width and uy <= inner.height then
             local color = TRIP_COLORS[stop.status]
-            local size = labels.size
             inner:drawRect(ux - size / 2, uy - size / 2, size, size, 0.85, 0, 0, 0)
             inner:drawRectBorder(ux - size / 2, uy - size / 2, size, size, 1, color[1], color[2], color[3])
-            inner:drawText(labels[i].text, ux - labels[i].width / 2, uy - fontH / 2, 1, 1, 1, 1, UIFont.Small)
+            drawMapText(inner, labels[i].text, ux - labels[i].width * tz / 2, uy - numH / 2,
+                1, 1, 1, 1, UIFont.Small, tz)
             -- 完成與略過保留形狀線索，不只以顏色區別。
             if stop.status == "arrived" then
                 inner:drawLine(nil, ux + size / 2 - 5, uy + size / 2 - 3,
@@ -333,6 +349,9 @@ local function drawNavTargets(inner)
     end
     local mapAPI = inner.mapAPI
     local playerObj = getSpecificPlayer(pn)
+    -- 旗標／行程站跟「標記大小」（px，16＝原尺寸），標籤跟「地圖文字大小」；每幀讀值
+    local k = Core.markerIconSize() / 16
+    local tz = Core.mapTextZoom()
     -- 陣營分享來的：只畫「給這位玩家」的桶（青旗＋名字＋距離）；getUsername
     -- 原版用例 ISScoreboard.lua:108。已收到的目標仍受目前 AllowNavShare 閘門
     -- 即時控制（navGetShared 同源）
@@ -342,7 +361,7 @@ local function drawNavTargets(inner)
             local sdx, sdy = t.x - playerObj:getX(), t.y - playerObj:getY()
             local cr, cg, cb = Core.navShareColor(author)
             drawNavIndicator(inner, mapAPI:worldToUIX(t.x, t.y), mapAPI:worldToUIY(t.x, t.y),
-                cr, cg, cb, author, math.floor(math.sqrt(sdx * sdx + sdy * sdy) + 0.5))
+                cr, cg, cb, author, math.floor(math.sqrt(sdx * sdx + sdy * sdy) + 0.5), k, tz)
         end
     end
     -- 搜尋落點 ping（本體在 _Search.lua 掛 Core.drawSearchPing——主 chunk locvar
@@ -357,7 +376,7 @@ local function drawNavTargets(inner)
             log("places draw failed: " .. tostring(placesErr))
         end
     end
-    if allowed and playerObj then drawTripTargets(inner, pn, playerObj) end
+    if allowed and playerObj then drawTripTargets(inner, pn, playerObj, k, tz) end
 end
 -- test:nav-draw:end
 
@@ -406,7 +425,9 @@ local function drawPlayerCoords(inner)
         end
         txt, cw = cc.txt, cc.w
     end
-    local ch = tm:getFontHeight(UIFont.Small)
+    local tz = mapTextZoom()
+    cw = cw * tz
+    local ch = tm:getFontHeight(UIFont.Small) * tz
     local cx = (inner.width - cw) / 2
     cx = cx - cx % 1 -- 純 Lua floor（原 math.max+math.floor 兩次跨界）
     if cx < 0 then cx = 0 end
@@ -414,11 +435,12 @@ local function drawPlayerCoords(inner)
     if inner._minidoracatFreelook and getBoolOption("FreeLook", true) then
         cy = cy - ch - 10
     end
+    cy = cy - cy % 1 -- 縮放後字高可為小數；點陣字落在整數列才不糊
     inner:drawRect(cx - 8, cy - 3, cw + 16, ch + 6, 0.6, 0, 0, 0)
     if copied then
-        inner:drawText(txt, cx, cy, 1, 0.85, 0.4, 1, UIFont.Small)
+        drawMapText(inner, txt, cx, cy, 1, 0.85, 0.4, 1, UIFont.Small, tz)
     else
-        inner:drawText(txt, cx, cy, 1, 1, 1, 0.95, UIFont.Small)
+        drawMapText(inner, txt, cx, cy, 1, 1, 1, 0.95, UIFont.Small, tz)
     end
 end
 
@@ -465,10 +487,12 @@ local function drawAdminViewMarker(inner)
         end
         mk.w, mk.h, mk.txt = w, h, txt
     end
+    local tz = Core.mapTextZoom()
+    local bw, bh = mk.w * tz, mk.h * tz
     local Skin = Core.Skin
     local painted = false
     if Skin then
-        local ok, err = pcall(drawAdminMarkerSkin, Skin, inner, mk.w, mk.h)
+        local ok, err = pcall(drawAdminMarkerSkin, Skin, inner, bw, bh)
         painted = ok
         if not ok and not inner._minidoracatAdminMarkSkinErrLogged then
             inner._minidoracatAdminMarkSkinErrLogged = true
@@ -476,10 +500,10 @@ local function drawAdminViewMarker(inner)
         end
     end
     if not painted then
-        inner:drawRect(6, 6, mk.w + 12, mk.h + 6, 0.72, 0, 0, 0)
-        inner:drawRectBorder(6, 6, mk.w + 12, mk.h + 6, 1, 1, 0.85, 0.4)
+        inner:drawRect(6, 6, bw + 12, bh + 6, 0.72, 0, 0, 0)
+        inner:drawRectBorder(6, 6, bw + 12, bh + 6, 1, 1, 0.85, 0.4)
     end
-    inner:drawText(mk.txt, 12, 9, 1, 0.85, 0.4, 1, UIFont.Small)
+    Core.drawMapText(inner, mk.txt, 12, 9, 1, 0.85, 0.4, 1, UIFont.Small, tz)
 end
 -- test:admin-view-marker:end
 

@@ -63,6 +63,9 @@ end
 -- 狀態（module-level upvalue；closure 以參照捕捉）
 --------------------------------------------------------------------------------
 local poiZones = {}   -- 轉好的 zone 陣列（provider 每幀回傳此參照）
+-- 世界地圖圖例（_Legend.lua 讀）：與 poiZones 同一次建置、同一組選項＝圖例列出的類別、
+-- 彩色／單色貼圖與地圖上畫的完全一致；OnTick 暫停（單機開世界地圖）時兩者一起停在舊值
+local poiLegend = { count = 0, basement = false }
 local lastSig = nil   -- 上次建置時的開關/類別簽章；OnTick 比對變動才重建
 
 -- log 是離線測試接縫（test_zone_render 抽 test:poi-icon 區段注入 stub 驗 log-once）
@@ -134,6 +137,7 @@ end
 -- test:poi-convert:start
 local function buildPoiConverted()
     local built = {}
+    local legend = { count = 0, basement = false }
     local data = MinidoracatMiniMapPOIData
     local cats = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.CATEGORIES
     -- iconsOn/blocksOn 宣告在資料檢查之外：檔尾的聚合旗標（ZR-1）要用——資料缺失
@@ -241,7 +245,27 @@ local function buildPoiConverted()
                                     -- West Point 地下酒吧玩家回報）
                                     basement = (e.u == 1) or nil,
                                 }
+                                if tex and e.u == 1 then legend.basement = true end
                             end
+                        end
+                    end
+                end
+            end
+            -- 圖例：只列真的畫得出圖標的類別（勾選中且材質在），照 ORDER 顯示順序；
+            -- 貼圖與染色同上方 zone（彩色染白、單色染類別色）
+            local order = MinidoracatMiniMapPOICategories.ORDER
+            if iconsOn and type(order) == "table" then
+                for i = 1, #order do
+                    local cat = order[i]
+                    local def = cats[cat]
+                    if def and catOn[cat] then
+                        local tex, isColor = iconTexture(cat, colorMode)
+                        if tex then
+                            local color = def.color or { r = 0.7, g = 0.7, b = 0.7 }
+                            legend.count = legend.count + 1
+                            legend[legend.count] = { name = getText(def.nameKey), tex = tex,
+                                r = isColor and 1 or color.r, g = isColor and 1 or color.g,
+                                b = isColor and 1 or color.b }
                         end
                     end
                 end
@@ -258,6 +282,7 @@ local function buildPoiConverted()
     built.hasLine = blocksOn -- 名稱僅區塊模式存在；POI 恆無框線
     built.hasIcon = iconsOn
     poiZones = built -- 原子替換（provider 回此新參照）
+    poiLegend = legend
 end
 -- test:poi-convert:end
 
@@ -283,6 +308,14 @@ end
 -- 另受主檔的 POI 顯示距離閘連坐（沙盒 PoiDisplayDistance／全域上限 AllInfoDistance
 -- ＋玩家自訂距離，取最小正值）——距離啟用時 zone 依玩家距離被裁，非本檔可見的邏輯。
 MinidoracatMiniMapAPI.registerZoneProvider(OWN_PROVIDER_ID, function() return poiZones end, nil, true)
+
+-- 跨檔匯出（主檔先載、Core 已建好）：設定視窗類別格與世界地圖圖例都經此取圖，
+-- 彩色／單色與地圖同一套選擇（彩色缺檔回退單色時 isColor＝false，呼叫端照樣染類別色）
+local Core = MinidoracatMiniMapCore
+if Core then
+    Core.poiIconTexture = iconTexture
+    Core.poiLegend = function() return poiLegend end
+end
 
 Events.OnGameStart.Add(function()
     -- 翻譯已載入、ModOptions 存檔值已套用 → 首建帶正確名稱與開關狀態

@@ -26,6 +26,10 @@ local function readFile(path)
 end
 local navSource = readFile(navPath)
 local itinerarySource = readFile(itineraryPath)
+-- 主檔的文字／標記大小 helper（Core.mapTextZoom／drawMapText／markerIconSize）：抽真實作，
+-- 滑條恆回預設值（本測試驗的是繪製閘門與唯讀，不是尺寸）
+local mapTextSource = assert(readFile(CLIENT .. "MinidoracatMiniMap.lua"):match(
+    "%-%- test:map%-text:start\n(.-)\n%-%- test:map%-text:end"), "找不到主檔 map-text 測試區段")
 local compile = loadstring or load
 
 --------------------------------------------------------------------------------
@@ -47,6 +51,8 @@ local function fixture()
         clipSegment = function(x1, y1, x2, y2) return x1, y1, x2, y2 end,
         copyCoordsText = function() end,
     }
+    assert(load(mapTextSource, "map-text", "t", setmetatable({ Core = core,
+        getSliderValue = function(_, default) return default end }, { __index = _G })))()
     local api = {}
     local textManager = {
         MeasureStringX = function(_, _, text) return #tostring(text) * 6 end,

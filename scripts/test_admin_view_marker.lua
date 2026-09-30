@@ -15,6 +15,10 @@ local source, wmSource, prerenderSource = read(mainPath), read(wmPath), read(pre
 local body = assert(source:match(
     "%-%- test:admin%-view%-marker:start\n(.-)\n%-%- test:admin%-view%-marker:end"),
     "missing admin view marker test block")
+-- 主檔地圖文字 helper（Core.mapTextZoom／drawMapText）抽真實作；滑條恆回預設（倍率 1）
+local mapText = assert(prerenderSource:match(
+    "%-%- test:map%-text:start\n(.-)\n%-%- test:map%-text:end"),
+    "missing map-text test block")
 local compile = loadstring or load
 local prefix = [==[
 local tactical, privacy = false, false
@@ -60,7 +64,8 @@ return {
     lastPn = function() return lastPn end,
 }
 ]==]
-local chunk, err = compile(prefix .. "\n" .. body .. "\n" .. tail, "@admin-marker")
+local chunk, err = compile(prefix .. "\nlocal function getSliderValue(_, default) return default end\n"
+    .. mapText .. "\n" .. body .. "\n" .. tail, "@admin-marker")
 assert(chunk, err)
 local h = chunk()
 local assertions, failures = 0, 0

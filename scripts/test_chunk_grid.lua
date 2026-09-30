@@ -38,6 +38,12 @@ local Core = {
     visibleWorldAABB = helpers.visibleWorldAABB,
     deriveAffine = helpers.deriveAffine,
 }
+-- 主檔地圖文字 helper（Core.mapTextZoom 等）抽真實作；滑條值走 opts（未設＝預設 100%）
+assert(load(slice(main, "map-text"), "=map-text", "t", setmetatable({ Core = Core,
+    getSliderValue = function(id, default)
+        if opts[id] == nil then return default end
+        return opts[id]
+    end }, { __index = _G })))()
 local env = setmetatable({
     MinidoracatMiniMapCore = Core,
     UIFont = { Small = "Small" },
@@ -110,7 +116,10 @@ local function newInner(api, w, h)
             x3 - ABS_X, y3 - ABS_Y, x4 - ABS_X, y4 - ABS_Y, t = t, a = a }
     end
     function jo:DrawTextureScaledColor(_, x, y, rw, rh, r, g, b, a) rec.rects[#rec.rects + 1] = { x, y, rw, rh, a = a } end
-    function jo:DrawText(_, t, x, y) rec.texts[#rec.texts + 1] = { t = t, x = x, y = y } end
+    -- 8 參＝原尺寸；9 參＝DrawText(font, text, x, y, zoom, r, g, b, a)（UIElement.java:178）
+    function jo:DrawText(_, t, x, y, ...)
+        rec.texts[#rec.texts + 1] = { t = t, x = x, y = y, zoom = select("#", ...) == 5 and (...) or nil }
+    end
     function jo:DrawTextCentre(_, t, x, y) rec.texts[#rec.texts + 1] = { t = t, x = x, y = y, centre = true } end
     local inner = { mapAPI = api, width = w, height = h, playerNum = 0, javaObject = jo }
     function inner:setStencilRect() rec.set = rec.set + 1 end
@@ -270,6 +279,36 @@ do
     check(#rec.texts == 0 and #rec.rects == 0, "E2 文字關閉時不應畫任何文字或底墊")
     check(#rec.lines > thick and #rec.tex > 0 and thick == 4, "E2 文字關閉時格線、底色與所在 chunk 框照畫")
     opts.ChunkGridLabels = nil
+end
+
+-- E3. 地圖文字 200%：逐格編號與所在 chunk 標籤都走縮放繪製；底墊跟字一起放大，
+-- 80px 的 chunk 放不下兩倍字就不畫逐格編號（1 倍時畫得下，見 E），160px 才畫，且字置中於 chunk
+do
+    opts.MapTextScale = 200
+    local rec = run(10, false, 10763.3, 9771.7, 400, 400)
+    local zoomedCells = 0
+    for _, t in ipairs(rec.texts) do
+        if t.centre or (t.zoom and t.t:find("^%-?%d+,%-?%d+$")) then zoomedCells = zoomedCells + 1 end
+    end
+    local cur
+    for _, t in ipairs(rec.texts) do if t.t:find("^UI_MinidoracatMiniMap_ChunkInfo:") then cur = t end end
+    check(zoomedCells == 0, "E3 80px chunk 放不下兩倍字時不畫逐格編號")
+    check(cur and cur.zoom == 2, "E3 所在 chunk 標籤以兩倍繪製")
+    local api
+    rec, api = run(20, false, 10763.3, 9771.7, 800, 800)
+    local cells = 0
+    for _, t in ipairs(rec.texts) do
+        local i, j = t.t:match("^(%-?%d+),(%-?%d+)$")
+        if i then
+            cells = cells + 1
+            check(t.zoom == 2 and not t.centre, "E3 逐格編號應以兩倍繪製：" .. t.t)
+            local ux = api:worldToUIX(tonumber(i) * 8 + 4, tonumber(j) * 8 + 4)
+            local want = ux - 7 * #t.t * 2 / 2
+            check(t.x <= want + 1e-6 and t.x > want - 1, "E3 兩倍編號應置中於 chunk（左緣取整）：" .. t.t)
+        end
+    end
+    check(cells > 0, "E3 160px chunk 應畫兩倍逐格編號")
+    opts.MapTextScale = nil
 end
 
 -- F. 效能上限：世界地圖與小地圖尺寸下掃過整段縮放，每幀繪製呼叫數封頂

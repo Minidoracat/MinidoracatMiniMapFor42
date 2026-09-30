@@ -280,6 +280,10 @@ local zombieHarness = zombieChunk()
 local safehouseBody = assert(safehouseSource:match(
     "%-%- test:safehouse%-distance:start\n(.-)\n%-%- test:safehouse%-distance:end"),
     "找不到 drawSafehouses 測試區段")
+-- 主檔滑條 helper（Core.mapTextZoom／drawMapText）抽真實作，接在 harness 的 Core 之後
+local mapTextBody = assert(source:match(
+    "%-%- test:map%-text:start\n(.-)\n%-%- test:map%-text:end"),
+    "找不到主檔 map-text 測試區段")
 local safehousePrelude = [=[
 local distance, ndistance, playerPresent, px, py = nil, nil, true, 0, 10
 local houses, drawCount, iconCount, nameCount, drawnNames = {}, 0, 0, 0, {}
@@ -289,6 +293,13 @@ local clock, allowedCalls, username = 0, 0, "A"
 function getTimestampMs() return clock end
 -- 三顆玩家開關（預設只開範圍框，既有計數斷言只數框線）
 local opts = { Safehouses = true, SafehouseIcons = false, SafehouseNames = false }
+-- 滑條（圖標大小／地圖文字大小）：未設＝預設值
+local sliders = {}
+local function getSliderValue(id, default)
+    if sliders[id] == nil then return default end
+    return sliders[id]
+end
+local lastIcon, lastName = nil, nil
 local function javaList(values)
     return { size = function() return #values end, get = function(_, i) return values[i + 1] end }
 end
@@ -326,7 +337,10 @@ local function adotsTexture() return "tex" end
 -- 視野外接框（主檔 visibleWorldAABB）：view＝nil 時回全世界；viewCalls 數跨界次數
 local view, viewCalls = nil, 0
 local Core = {
-    adotsDrawGlyph = function() iconCount = iconCount + 1 end,
+    adotsDrawGlyph = function(_, _, x, y, size)
+        iconCount = iconCount + 1
+        lastIcon = { x = x, y = y, size = size }
+    end,
     visibleWorldAABB = function()
         viewCalls = viewCalls + 1
         if view then return view[1], view[2], view[3], view[4] end
@@ -343,7 +357,12 @@ local mapAPI = {
 }
 local inner = { playerNum = 0, mapAPI = mapAPI, width = 100, height = 100,
     drawRect = function() end,
-    drawText = function(_, text) nameCount = nameCount + 1; drawnNames[nameCount] = text end }
+    drawText = function(_, text, x, y)
+        nameCount = nameCount + 1; drawnNames[nameCount] = text; lastName = { x = x, y = y, zoom = 1 }
+    end,
+    drawTextZoomed = function(_, text, x, y, zoom)
+        nameCount = nameCount + 1; drawnNames[nameCount] = text; lastName = { x = x, y = y, zoom = zoom }
+    end }
 local function safehouse(x1, y1, x2, y2, mine, owner, title)
     return {
         getX = function() return x1 end,
@@ -370,6 +389,9 @@ return {
         return drawCount, iconCount, nameCount
     end,
     names = function() return drawnNames end,
+    lastIcon = function() return lastIcon end,
+    lastName = function() return lastName end,
+    setSlider = function(id, value) sliders[id] = value end,
     advance = function(ms) clock = clock + ms end,
     allowedCalls = function() return allowedCalls end,
     resetAllowedCalls = function() allowedCalls = 0 end,
@@ -390,8 +412,9 @@ return {
     safehouse = safehouse,
 }
 ]=]
-local safehouseChunk, safehouseErr = compile(
-    safehousePrelude .. "\n" .. safehouseBody .. "\n" .. safehouseSuffix)
+local safehouseChunk, safehouseErr = compile(safehousePrelude .. "\n" .. mapTextBody
+    .. "\nlocal mapTextZoom, drawMapText = Core.mapTextZoom, Core.drawMapText\n"
+    .. safehouseBody .. "\n" .. safehouseSuffix)
 assert(safehouseChunk, safehouseErr)
 local safehouseHarness = safehouseChunk()
 
@@ -763,6 +786,18 @@ safehouseHarness.setOption("SafehouseIcons", true)
 safehouseHarness.setOption("SafehouseNames", true)
 local rects, icons, names = safehouseHarness.draw()
 assert(rects == 0 and icons == 3 and names == 3, "圖標／名稱開關應獨立於範圍框")
+-- 圖標大小滑條（原固定 16px）：圖標邊長、置中與名稱掛點（圖標正下方）都跟著變；
+-- 地圖文字 200% 時名稱以兩倍繪製、寬度加倍後仍置中（最後畫的是 (50..60) 那間，中心 55）
+safehouseHarness.setSlider("SafehouseIconSize", 32)
+safehouseHarness.setSlider("MapTextScale", 200)
+safehouseHarness.draw()
+local lastIconDrawn, lastNameDrawn = safehouseHarness.lastIcon(), safehouseHarness.lastName()
+assert(lastIconDrawn.size == 32 and lastIconDrawn.x == 39 and lastIconDrawn.y == 39,
+    "安全屋圖標應依滑條畫成 32px 並置中")
+assert(lastNameDrawn.zoom == 2 and lastNameDrawn.x == 35 and lastNameDrawn.y == 55 + 16 + 1,
+    "名稱應以兩倍字置中、掛在放大後的圖標正下方")
+safehouseHarness.setSlider("SafehouseIconSize", nil)
+safehouseHarness.setSlider("MapTextScale", nil)
 safehouseHarness.setPlayerPosition(0, 10)
 safehouseHarness.setDistance(10)
 rects, icons, names = safehouseHarness.draw()

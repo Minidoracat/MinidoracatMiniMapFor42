@@ -69,7 +69,14 @@ local zcatBody = assert(source:match(
 local hasExtBody = assert(source:match(
     "%-%- test:has%-external%-provider:start\n(.-)\n%-%- test:has%-external%-provider:end"),
     "找不到 hasExternalZoneProvider 測試區段")
-zoneBody = csvBody .. "\n" .. hasExtBody .. "\n" .. affineBody .. "\n" .. zoneBody .. "\n" .. zcatBody
+-- 主檔地圖文字 helper（Core.mapTextZoom／drawMapText）抽真實作，拼在 zone body 前並照
+-- _Zones.lua 檔頭取同名別名（區段外相依）
+local mapTextBody = assert(source:match(
+    "%-%- test:map%-text:start\n(.-)\n%-%- test:map%-text:end"),
+    "找不到主檔 map-text 測試區段")
+zoneBody = csvBody .. "\n" .. hasExtBody .. "\n" .. affineBody .. "\n" .. mapTextBody
+    .. "\nlocal mapTextZoom, drawMapText = Core.mapTextZoom, Core.drawMapText\n"
+    .. zoneBody .. "\n" .. zcatBody
 local zonePrelude = [=[
 local registeredZoneProviders = {}
 local zoneLayerOn = true
@@ -109,7 +116,17 @@ local drawClippedEdgeCount = 0
 local function drawClippedEdge() drawClippedEdgeCount = drawClippedEdgeCount + 1 end
 -- drawZoneIcons 的兩個標記區段外相依（抽段後是全域）：滑條與可視外接框 stub
 local iconSize = 18
-local function getSliderValue(id) return id == "PoiIconAlpha" and 100 or iconSize end
+local textScale = 100 -- 地圖文字大小（%）
+local function getSliderValue(id)
+    if id == "MapTextScale" then return textScale end
+    return id == "PoiIconAlpha" and 100 or iconSize
+end
+-- 圖標名稱提示的指標（區段外相依 iconPointer）：nil＝滑鼠不在地圖上
+local pointer = nil
+local function iconPointer()
+    if pointer then return pointer[1], pointer[2] end
+end
+local function getText(key) return "T:" .. key end
 local zoneAABB = { 0, 100, 0, 100 }
 local function visibleWorldAABB() return zoneAABB[1], zoneAABB[2], zoneAABB[3], zoneAABB[4] end
 -- 距離閘的區段外相依：displayDist（鎖定選項名；沙盒×玩家合成另在
@@ -145,6 +162,9 @@ return {
     safe = safeDrawZone,
     setAABB = function(a, b, c, d) zoneAABB = { a, b, c, d } end,
     setIconSize = function(s) iconSize = s end,
+    setTextScale = function(v) textScale = v end,
+    setPointer = function(x, y) pointer = x and { x, y } or nil end,
+    basementBadge = drawBasementBadge,
     addProvider = function(owner, fn, internal)
         registeredZoneProviders[#registeredZoneProviders + 1] = { owner = owner, fn = fn, internal = internal }
     end,
@@ -1385,6 +1405,7 @@ return {
     build = buildPoiConverted,
     zones = function() return poiZones end,
     setOpt = function(k, v) opts[k] = v end,
+    legend = function() return poiLegend end,
 }
 ]=]
 local convChunk, convErr = compile(convPrelude .. "\n" .. convBody .. "\n" .. convSuffix)
@@ -1558,6 +1579,48 @@ local ld = conv.zones()
 assert(#ld[2].rects == 1 and ld[2].rects[1].x2 == 377,
     "poi-convert 預設：PoiWholeBuilding 未設時應預設整棟框（0.14.2 契約）")
 print("poi landmark LOD exemption cases passed")
+
+-- L. 世界地圖圖例（_Legend.lua 讀 poiLegend）：與 zone 同一次建置——只列勾選中、有貼圖的
+-- 類別，照 ORDER 排；彩色模式染白、單色染類別色；有地下設施圖標才帶地下列
+MinidoracatMiniMapPOICategories = {
+    ORDER = { "police", "gas", "pharmacy" },
+    CATEGORIES = {
+        police = { nameKey = "K_Police", color = { r = 0.2, g = 0.4, b = 0.8 } },
+        gas = { nameKey = "K_Gas", color = { r = 0.5, g = 0.2, b = 0.7 } },
+        pharmacy = { nameKey = "K_Pharmacy", color = { r = 0.1, g = 0.7, b = 0.4 } },
+    },
+}
+MinidoracatMiniMapPOIData = {
+    { cat = "pharmacy", rn = 1, r = { { x = 1, y = 1, w = 2, h = 2 } } },
+    { cat = "gas", rn = 1, u = 1, r = { { x = 5, y = 5, w = 2, h = 2 } } },
+}
+conv.setOpt("PoiIcons", true)
+conv.setOpt("PoiBlocks", false)
+conv.setOpt("PoiColorIcons", false)
+conv.setOpt("Cat_gas", nil)
+conv.build()
+local lg = conv.legend()
+assert(lg.count == 3 and lg[1].name == "T_K_Police" and lg[2].name == "T_K_Gas"
+    and lg[3].name == "T_K_Pharmacy", "圖例應照 ORDER 列出全部勾選類別（沒有條目的類別也列）")
+assert(lg[2].tex == "TEX_gas" and lg[2].r == 0.5 and lg[2].b == 0.7, "單色模式圖例染類別色")
+assert(lg.basement == true, "有地下設施圖標時圖例應帶地下列")
+conv.setOpt("Cat_gas", false)
+conv.setOpt("PoiColorIcons", true)
+conv.build()
+lg = conv.legend()
+assert(lg.count == 2 and lg[1].name == "T_K_Police" and lg[2].name == "T_K_Pharmacy",
+    "取消勾選的類別不應出現在圖例")
+assert(lg[1].r == 1 and lg[1].g == 1 and lg[1].b == 1, "彩色模式圖例不染色（同地圖）")
+assert(lg.basement == false, "唯一的地下設施類別取消勾選後不應再有地下列")
+conv.setOpt("PoiIcons", false)
+conv.setOpt("PoiBlocks", true)
+conv.build()
+assert(conv.legend().count == 0, "只開區塊、不開圖標時圖例應為空（地圖上沒有圖標可對照）")
+conv.setOpt("PoiIcons", nil)
+conv.setOpt("PoiBlocks", true)
+conv.setOpt("PoiColorIcons", false)
+conv.setOpt("Cat_gas", nil)
+print("poi legend L cases passed")
 
 MinidoracatMiniMapPOIData = nil
 MinidoracatMiniMapPOICategories = nil
@@ -1860,4 +1923,120 @@ do
     assert(zone.logCount() == 0, "A14-12 不得產生 provider 錯誤 log")
     zone.clearProviders()
     print("zone candidate cache (ZC) A14 cases passed")
+end
+
+-- H. 圖標名稱提示（滑鼠停在圖標上／手把準星）：指標下最上層圖標的名稱畫在圖標上方；
+-- 內建資源點＝類別名（地下設施加註），外部 zone＝name；地圖文字大小同步放大
+do
+    zone.clearProviders()
+    MinidoracatMiniMapPOICategories = { CATEGORIES = {
+        pharmacy = { nameKey = "K_Pharmacy" }, police = { nameKey = "K_Police" },
+    } }
+    local function poiIcon(cat, x1, y1, basement)
+        return { icon = { tex = "T", r = 1, g = 1, b = 1 }, iconOnce = true, category = cat,
+            basement = basement, rects = { { x1 = x1, y1 = y1, x2 = x1 + 4, y2 = y1 + 4 } } }
+    end
+    local function tipInner()
+        local inner = makeInner(10) -- 細節檔（scale≥6）：不去重疊，每顆都畫
+        inner.texts, inner.rects = {}, {}
+        inner.drawTextureScaled = function() end
+        inner.drawLine = function() end
+        inner.drawRect = function(_, x, y, w, h) inner.rects[#inner.rects + 1] = { x = x, y = y, w = w, h = h } end
+        inner.drawText = function(_, s, x, y) inner.texts[#inner.texts + 1] = { s = s, x = x, y = y, zoom = 1 } end
+        inner.drawTextZoomed = function(_, s, x, y, z)
+            inner.texts[#inner.texts + 1] = { s = s, x = x, y = y, zoom = z }
+        end
+        return inner
+    end
+    zone.setIconSize(18)
+    local list = { poiIcon("police", 48, 48), poiIcon("pharmacy", 48, 48), poiIcon("police", 10, 70, true) }
+    zone.addProvider("poiTip", function() return list end, true)
+
+    -- H1 沒有指標：不畫任何提示
+    zone.setPointer(nil)
+    local h1 = tipInner()
+    zone.icons(h1)
+    assert(#h1.texts == 0, "H1 指標不在地圖上時不應畫提示")
+
+    -- H2 兩顆圖標疊在 (50,50)：提示取最後畫、也就是最上層那顆；畫在圖標正上方並置中
+    zone.setPointer(50, 50)
+    local h2 = tipInner()
+    zone.icons(h2)
+    assert(#h2.texts == 1 and h2.texts[1].s == "T:K_Pharmacy" and h2.texts[1].zoom == 1,
+        "H2 疊在一起時應提示最上層圖標的類別名（得 " .. tostring(h2.texts[1] and h2.texts[1].s) .. "）")
+    -- 圖標 41..59；字寬 #"T:K_Pharmacy"*4=48、字高 10 → 左緣 50-24=26、上緣 41-10-6=25
+    assert(h2.texts[1].x == 26 and h2.texts[1].y == 25, "H2 提示應置中於圖標正上方")
+    local plate
+    for _, r in ipairs(h2.rects) do if r.w == 48 + 8 and r.h == 10 + 4 then plate = r end end
+    assert(plate and plate.x == 22 and plate.y == 23, "H2 提示應有包住文字的深色底墊")
+
+    -- H3 地下設施加註「（地下室）」鍵；指標落在圖標外（差 1px）不提示
+    zone.setPointer(12, 72)
+    local h3 = tipInner()
+    zone.icons(h3)
+    assert(#h3.texts == 1 and h3.texts[1].s == "T:K_PoliceT:UI_MinidoracatMiniMap_SearchBasement",
+        "H3 地下設施應在類別名後加地下室註記（得 " .. tostring(h3.texts[1] and h3.texts[1].s) .. "）")
+    zone.setPointer(21, 72) -- 圖標 3..21：右緣是開區間
+    local h3b = tipInner()
+    zone.icons(h3b)
+    assert(#h3b.texts == 0, "H3 指標在圖標外時不應提示")
+
+    -- H4 貼頂：上方放不下改畫在圖標下方；地圖文字 200% 時以兩倍字繪製
+    list[#list + 1] = poiIcon("police", 70, 8)
+    zone.setPointer(72, 10)
+    zone.setTextScale(200)
+    local h4 = tipInner()
+    zone.icons(h4)
+    assert(#h4.texts == 1 and h4.texts[1].zoom == 2, "H4 地圖文字 200% 時提示應以兩倍繪製")
+    -- 圖標 y 1..19 → 下方 19+4=23；字寬 #"T:K_Police"*4*2=80，置中左緣 32 會超出右緣，夾到 100-80-4=16
+    assert(h4.texts[1].y == 23 and h4.texts[1].x == 16, "H4 貼頂改畫在圖標下方、字寬按倍率計算並夾進地圖")
+    zone.setTextScale(100)
+
+    -- H5 外部 zone：有 name 用 name；沒有 name 不提示（也不拿類別名充數）
+    zone.clearProviders()
+    local ext = { { icon = { tex = "T", r = 1, g = 1, b = 1 }, name = "Trader", category = "police",
+        rects = { { x1 = 48, y1 = 48, x2 = 52, y2 = 52 } } },
+        { icon = { tex = "T", r = 1, g = 1, b = 1 }, category = "police",
+        rects = { { x1 = 18, y1 = 18, x2 = 22, y2 = 22 } } } }
+    zone.addProvider("extTip", function() return ext end)
+    zone.setPointer(50, 50)
+    local h5 = tipInner()
+    zone.icons(h5)
+    assert(#h5.texts == 1 and h5.texts[1].s == "Trader", "H5 外部 zone 應提示它的 name")
+    zone.setPointer(20, 20)
+    local h5b = tipInner()
+    zone.icons(h5b)
+    assert(#h5b.texts == 0, "H5 外部 zone 沒有 name 時不提示")
+    zone.setPointer(nil)
+    zone.clearProviders()
+    MinidoracatMiniMapPOICategories = nil
+    print("icon hover tip H1-H5 cases passed")
+end
+
+-- T. 地圖文字大小：區塊名稱依倍率放大（字寬、字高、置中與出界判定都用放大後尺寸）
+do
+    zone.clearProviders()
+    local named = { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, name = "ABCD",
+        rects = { { x1 = 40, y1 = 40, x2 = 60, y2 = 60 } } } }
+    zone.addProvider("nameZoom", function() return named end)
+    local calls = {}
+    local inner = makeInner(10)
+    inner.drawText = function(_, s, x, y) calls[#calls + 1] = { s = s, x = x, y = y, zoom = 1 } end
+    inner.drawTextZoomed = function(_, s, x, y, z) calls[#calls + 1] = { s = s, x = x, y = y, zoom = z } end
+    zone.setTextScale(200)
+    zone.lines(inner)
+    -- 中心 50；字寬 4*4*2=32、字高 10*2=20 → 左上 (34, 40)
+    assert(#calls == 1 and calls[1].zoom == 2 and calls[1].x == 34 and calls[1].y == 40,
+        "T 區塊名稱應以兩倍字置中")
+    zone.setTextScale(300)
+    calls = {}
+    local tiny = makeInner(10)
+    tiny.width, tiny.height = 60, 60
+    tiny.drawText = inner.drawText
+    tiny.drawTextZoomed = function(_, s, x, y, z) calls[#calls + 1] = { s = s, zoom = z } end
+    zone.lines(tiny)
+    assert(#calls == 0, "T 放大後的名稱出界時不應畫（字寬 48 超出 60px 視窗的可用寬）")
+    zone.setTextScale(100)
+    zone.clearProviders()
+    print("map text zoom T cases passed")
 end
