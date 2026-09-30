@@ -999,6 +999,9 @@ end
 -- 2026-09-30 B42.21.0 GameProfiler A/B 各 3 輪：「MOD＋常駐小地圖」資源點／殭屍／動物／
 -- 載具圖標全開、小地圖 405×396（重於預設）＋0.38ms/幀 ≈ 60fps 幀預算 2.3%，文案取整
 -- 約 0.4ms／約 2％）——無逐項 profiler 數據，不給逐項百分比（數字表述紀律）。
+-- 資源點標「中」：2026-09-30 fps-sp 拆 pass，拉到整張地圖入鏡時它是小地圖的主要成本
+-- （0.33.2 後 icons 1.5-1.8ms／每次重畫），一般縮放很輕由描述說明。
+-- 文案寫給一般玩家：不用「幀預算、快取、取樣」這類詞；遊戲選項名稱照原版翻譯。
 local PERF_LEVELS = {
     [0] = { key = "UI_MinidoracatMiniMap_PerfLv0", r = 0.40, g = 0.80, b = 0.40 },
     [1] = { key = "UI_MinidoracatMiniMap_PerfLv1", r = 0.90, g = 0.85, b = 0.35 },
@@ -1006,7 +1009,7 @@ local PERF_LEVELS = {
 }
 local PERF_ITEMS = {
     { name = "UI_MinidoracatMiniMap_PerfItemMap", lvl = 0, desc = "UI_MinidoracatMiniMap_PerfDescMap" },
-    { name = "UI_MinidoracatMiniMap_PerfItemPoi", lvl = 1, desc = "UI_MinidoracatMiniMap_PerfDescPoi" },
+    { name = "UI_MinidoracatMiniMap_PerfItemPoi", lvl = 2, desc = "UI_MinidoracatMiniMap_PerfDescPoi" },
     { name = "UI_MinidoracatMiniMap_PerfItemZone", lvl = 1, desc = "UI_MinidoracatMiniMap_PerfDescZone" },
     { name = "UI_MinidoracatMiniMap_PerfItemZombie", lvl = 2, desc = "UI_MinidoracatMiniMap_PerfDescZombie" },
     { name = "UI_MinidoracatMiniMap_PerfItemAnimal", lvl = 1, desc = "UI_MinidoracatMiniMap_PerfDescAnimal" },
@@ -1027,6 +1030,8 @@ end
 local function unifiedBuildPerf(ctx)
     unifiedAddWrappedNote(ctx, getText("UI_MinidoracatMiniMap_PerfIntro"))
     ctx.curY = ctx.curY + 4
+    unifiedAddWrappedNote(ctx, getText("UI_MinidoracatMiniMap_PerfZoom"))
+    ctx.curY = ctx.curY + 4
     unifiedAddDivider(ctx)
     local tm = getTextManager()
     for i = 1, #PERF_ITEMS do
@@ -1046,8 +1051,12 @@ local function unifiedBuildPerf(ctx)
     end
     ctx.curY = ctx.curY + 4
     unifiedAddDivider(ctx)
-    unifiedAddWrappedNote(ctx, getText("UI_MinidoracatMiniMap_PerfNoteWorldmap"))
-    ctx.curY = ctx.curY + 4
+    -- 世界地圖、遊戲選項（螢幕外介面渲染／介面渲染幀率）、-debug：各一段，都不是本 MOD 的開關
+    for _, key in ipairs({ "UI_MinidoracatMiniMap_PerfNoteWorldmap", "UI_MinidoracatMiniMap_PerfGame",
+        "UI_MinidoracatMiniMap_PerfDebug" }) do
+        unifiedAddWrappedNote(ctx, getText(key))
+        ctx.curY = ctx.curY + 4
+    end
     -- 收尾行動建議提亮（整區唯一的「該做什麼」）
     unifiedAddWrappedNote(ctx, getText("UI_MinidoracatMiniMap_PerfAdvice"), 0, 0.88, 0.85, 0.70)
 end
