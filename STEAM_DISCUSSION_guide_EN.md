@@ -5,9 +5,9 @@
 [b]繁體中文版：[/b][url=https://steamcommunity.com/workshop/filedetails/discussion/3763913359/569297034317714443/]小地圖完整說明：功能、導航與道路資料[/url]
 
 [h2]🚀 Quick start[/h2]
-Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url]; in multiplayer the server must enable this mod. Keep all series mods updated; restart after updating. UI languages: Traditional/Simplified Chinese, English, Japanese.
+Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url]; in multiplayer the server must enable it. Keep series mods updated; restart after updating. UI languages: Traditional/Simplified Chinese, English, Japanese.
 [olist]
-[*] Press [b]/[/b] to toggle the mini-map (rebind: Options → Key Bindings → [MinidoracatMiniMap]). The floating map icon: left-click toggles the mini-map, right-click toggles ghost mode, drag to move.
+[*] Press [b]/[/b] to toggle the mini-map (rebind: Options → Key Bindings → [MinidoracatMiniMap]). Floating map icon: left-click toggles the mini-map, right-click ghost mode, drag to move.
 [*] Press [b]M[/b] for the world map.
 [*] Press [b];[/b] for the search / trip window.
 [*] Click the gear on the mini-map for Map Display Settings.
@@ -26,17 +26,17 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [h3]📍 Built-in POIs[/h3]
 [list]
 [*] 1669 vanilla POIs in 20 color-coded categories, as tinted silhouettes, full-color icons or translucent blocks, with per-category toggles.
-[*] Categories come from room loot types, not the map's zoning colors — actual supplies decide.
+[*] Categories come from room loot types (actual supplies), not zoning colors.
 [*] Basement facilities show "↓" on the icon and "(basement)" in search and hover names; their use may differ from the building above.
-[*] [b]Legend & hover names[/b]: a POI legend sits under the vanilla world-map legend (S hides both); hover an icon (gamepad: world-map crosshair) to see its name.
+[*] [b]Legend & hover names[/b]: a POI legend sits under the world-map legend (S hides both); hover an icon (gamepad: crosshair) to see its name.
 [/list]
 
 [h3]🔍 Search & trip window[/h3]
 [list]
 [*] Open with the toolbar magnifier, right-click "Search map...", or [b];[/b].
-[*] Type coordinates (e.g. 12895,3499), a street name (original or translated) or one of 20 facility categories; results are sorted by distance.
+[*] Type coordinates (e.g. 12895,3499), a street name (original or translated) or one of 20 facility categories, sorted by distance.
 [*] Show a result on the map, navigate to it or add it to your trip. Right-click results or trip stops for more actions.
-[*] A "MOD map: name" tag only identifies a confirmed source — not an error flag or a driving certification.
+[*] A "MOD map: name" tag only marks a confirmed source — not an error or a driving certification.
 [/list]
 
 [h3]🧭 Multi-target navigation[/h3]
@@ -44,7 +44,7 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [*] Up to 16 targets: add to the end, insert before a stop or "Go here first"; reorder, remove/undo, skip and preview the remaining route.
 [*] New trips continue automatically; step mode or stopover targets wait for you. Existing trips stay step-by-step. In a vehicle, stop first.
 [*] Routes follow roads, preferring paved ones, and replan when you go off course.
-[*] In multiplayer you can share your current stop with your faction; servers can disable this.
+[*] In MP you can share your current stop with your faction; servers can disable this.
 [*] Hands-free driving: [url=https://steamcommunity.com/workshop/filedetails/discussion/3792675881/586187095760051144/]AutoDrive Guide[/url].
 [/list]
 
@@ -57,7 +57,7 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 
 [h3]🖱️ Mini-map controls[/h3]
 [list]
-[*] / works even when the sandbox disables the mini-map; the floating icon remembers its position and can be turned off.
+[*] / works even if the sandbox disables the mini-map; the floating icon remembers its position and can be hidden.
 [*] [b]Size[/b]: four presets, or drag an edge/corner to resize freely.
 [*] [b]Ghost mode[/b] (hotkey [b]'[/b]): clicks and wheel pass through to the game; the map turns semi-transparent with an amber border.
 [*] [b]Free look[/b]: drag to inspect; click once to snap back to the player.
@@ -87,7 +87,7 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [b]Street names, street search and navigation need a native streets.xml from the map author. Without it the image still shows, but that area has no street names, search or navigation (not a missing translation).[/b]
 [list]
 [*] Roads must match the real surface, or routes fail, detour or go off-road.
-[*] Overlapping maps follow map priority (in multiplayer, the server Map= order); lower-priority streets can drop out, so neither original nor translated names are found.
+[*] Overlapping maps follow map priority (in MP, the server Map= order); lower-priority streets can drop out, so neither original nor translated names are found.
 [*] Which maps have road data: [url=https://steamcommunity.com/workshop/filedetails/discussion/3763914102/586187095760050601/]MOD Maps supported map list & requests[/url].
 [/list]
 
@@ -99,7 +99,7 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [*] Current street format; polylines on the road centre with 2+ valid points and a valid width, following real bends and junctions; connect junctions and map seams.
 [*] worldmap.xml and images don't replace streets.xml. Restart after edits (no hot-reload).
 [/list]
-MiniMap doesn't auto-correct road coordinates; it only fixes a few vanilla roads.
+MiniMap doesn't auto-correct roads; it only fixes a few vanilla ones.
 
 [h2]❓ FAQ[/h2]
 [b]Q: The mod won't load / a dependency is missing?[/b]
@@ -109,7 +109,7 @@ A: Subscribe to and enable Minidoracat UI Library for B42, then restart.
 A: Usually no author road data, or a higher-priority map covers the area. See "Mod maps & road data".
 
 [b]Q: Will it lower my FPS?[/b]
-A: Barely: ~0.4 ms/frame with all icons on vs no mod, FPS on par (GameProfiler A/B, Sep 2026, B42.21.0, Ryzen 9 9950X3D).
+A: Barely at normal zoom: ~0.4 ms/frame with all icons on vs no mod (A/B test, B42.21.0). Far zoom-out with POIs costs more. If it lags: fewer POI categories, keep "UI Offscreen Rendering" on, lower "UI Rendering FPS", avoid -debug.
 
 [h2]📝 Reporting issues[/h2]
 [list]
