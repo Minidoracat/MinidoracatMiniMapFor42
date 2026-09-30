@@ -982,10 +982,10 @@ end
 -- 逐項說明）。版式＝逐項「名稱（白）＋等級（彩色右對齊）」
 -- 標題列＋縮排描述行（懸掛式；取代舊「- 」前綴純文字清單——貪婪斷行會把
 -- 前綴孤立成整行、續行頂格難讀，實測截圖回饋）。等級色沿家族 Okabe-Ito
--- 色盲友善向（綠／黃／橘）。等級是機制推導＋整包實測錨點（AGENTS.md
--- 2026-08-19 GameProfiler A/B：「MOD＋常駐小地圖預設設定」上界 0.56ms/幀
--- ≈ 60fps 幀預算 3.4%，文案取整約 0.6ms／約 4％）——無逐項 profiler 數據，
--- 不給逐項百分比（數字表述紀律）。
+-- 色盲友善向（綠／黃／橘）。等級是機制推導＋整包實測錨點（AGENTS.md 效能量測
+-- 2026-09-30 B42.21.0 GameProfiler A/B 各 3 輪：「MOD＋常駐小地圖」資源點／殭屍／動物／
+-- 載具圖標全開、小地圖 405×396（重於預設）＋0.38ms/幀 ≈ 60fps 幀預算 2.3%，文案取整
+-- 約 0.4ms／約 2％）——無逐項 profiler 數據，不給逐項百分比（數字表述紀律）。
 local PERF_LEVELS = {
     [0] = { key = "UI_MinidoracatMiniMap_PerfLv0", r = 0.40, g = 0.80, b = 0.40 },
     [1] = { key = "UI_MinidoracatMiniMap_PerfLv1", r = 0.90, g = 0.85, b = 0.35 },
@@ -2235,10 +2235,12 @@ local function toggleSettingsWindow(outer)
     if not settingsUI then settingsUI = buildSettingsWindow() end
     local pn = outer.playerNum or 0
     if settingsUI:isVisible() then
-        -- 同一位玩家再按＝關閉；不同玩家按（分割畫面：世界地圖單例／各自小地圖
+        -- 同一位玩家再按＝關閉，但視窗被世界地圖蓋住時看不見：改走下方重建重定位＋置頂，一按就出現
+        -- （Core.isBehindWorldMap 在 _Search.lua）。不同玩家按（分割畫面：世界地圖單例／各自小地圖
         -- 都會轉呼此處）＝改掛新擁有者重建重定位，而不是把前一位的視窗關掉——
         -- 否則 P2 第一按只會關 P1 的窗，或直接沿用 P1 身分讀寫引擎選項
-        if settingsUI._playerNum == pn then
+        if settingsUI._playerNum == pn
+                and not (Core.isBehindWorldMap and Core.isBehindWorldMap(settingsUI, pn)) then
             settingsUI:close()
             return
         end

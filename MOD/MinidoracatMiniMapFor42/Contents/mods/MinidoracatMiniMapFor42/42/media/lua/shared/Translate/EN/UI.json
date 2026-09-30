@@ -357,7 +357,7 @@
     "UI_MinidoracatMiniMap_DistZone": "Custom zone display distance",
     "UI_MinidoracatMiniMap_DistUnlimited": "No limit",
     "UI_MinidoracatMiniMap_SecPerf": "Performance notes",
-    "UI_MinidoracatMiniMap_PerfIntro": "The more icons and blocks shown, the higher the cost (roughly proportional to the on-screen count; off = zero cost). Measured anchor: this mod plus the always-on minimap at default settings costs about 0.6ms per frame, about 4 percent of a 60fps frame budget.",
+    "UI_MinidoracatMiniMap_PerfIntro": "The more icons and blocks shown, the higher the cost (roughly proportional to the on-screen count; off = zero cost). Measured anchor: this mod plus the always-on minimap, with resource point, zombie, animal and vehicle icons all on, costs about 0.4ms per frame, about 2 percent of a 60fps frame budget (default settings cost less).",
     "UI_MinidoracatMiniMap_PerfLv0": "minimal",
     "UI_MinidoracatMiniMap_PerfLv1": "low",
     "UI_MinidoracatMiniMap_PerfLv2": "medium",

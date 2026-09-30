@@ -357,7 +357,7 @@
     "UI_MinidoracatMiniMap_DistZone": "カスタムゾーンの表示距離",
     "UI_MinidoracatMiniMap_DistUnlimited": "無制限",
     "UI_MinidoracatMiniMap_SecPerf": "パフォーマンス説明",
-    "UI_MinidoracatMiniMap_PerfIntro": "表示するアイコンや塗りつぶしが多いほど負荷が上がります（画面内の表示数にほぼ比例。オフ＝コストゼロ）。実測の目安：本 MOD＋常時表示ミニマップは既定設定で約 0.6ms/フレーム＝60fps のフレーム予算の約 4％。",
+    "UI_MinidoracatMiniMap_PerfIntro": "表示するアイコンや塗りつぶしが多いほど負荷が上がります（画面内の表示数にほぼ比例。オフ＝コストゼロ）。実測の目安：本 MOD＋常時表示ミニマップは資源ポイント・ゾンビ・動物・車両アイコンをすべてオンにして約 0.4ms/フレーム＝60fps のフレーム予算の約 2％（既定設定ならさらに低い）。",
     "UI_MinidoracatMiniMap_PerfLv0": "極小",
     "UI_MinidoracatMiniMap_PerfLv1": "低",
     "UI_MinidoracatMiniMap_PerfLv2": "中",

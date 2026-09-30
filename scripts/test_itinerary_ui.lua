@@ -564,6 +564,40 @@ win:prerender()
 eq(tripRow(win, 9).item.stopId, 9, "A10: 行程改查新擁有者，不把前一位玩家的行程搬過來")
 Core.toggleSearchWindow(1)
 
+-- 被同一位玩家的世界地圖蓋住：開關鈕第一下叫到前面（看不見的窗不關）；在世界地圖之上才關
+do
+    local wmJava, winJava, uiList = {}, {}, {}
+    UIManager = { getUI = function()
+        return { size = function() return #uiList end, get = function(_, i) return uiList[i + 1] end }
+    end }
+    ISWorldMap_instance = { javaObject = wmJava, playerNum = 0, visible = true }
+    function ISWorldMap_instance:isVisible() return self.visible end
+    win = openWindow(0)
+    win.javaObject = winJava
+    uiList = { winJava, wmJava } -- 先從小地圖開搜尋窗、後開世界地圖＝世界地圖在上
+    win.entry:unfocus()
+    UI.top = nil
+    removedBefore = #UI.removed
+    Core.toggleSearchWindow(0)
+    truthy(win:isVisible(), "A11: 被自己的世界地圖蓋住時再按不得關窗")
+    eq(#UI.removed, removedBefore, "A11: 不得移出 UIManager")
+    eq(UI.top, win, "A11: 叫到最上層")
+    truthy(win.entry:isFocused(), "A11: 搜尋頁叫回來可直接打字")
+    uiList = { wmJava, winJava } -- 已在世界地圖之上＝看得見
+    Core.toggleSearchWindow(0)
+    falsy(win:isVisible(), "A12: 在世界地圖之上再按＝關窗")
+    win = openWindow(0)
+    uiList = { winJava, wmJava }
+    ISWorldMap_instance.playerNum = 1 -- 分割畫面：別人的世界地圖只蓋別人的 viewport
+    Core.toggleSearchWindow(0)
+    falsy(win:isVisible(), "A13: 他人的世界地圖不算蓋住自己的窗，照常關窗")
+    win = openWindow(0)
+    ISWorldMap_instance.playerNum, ISWorldMap_instance.visible = 0, false
+    Core.toggleSearchWindow(0)
+    falsy(win:isVisible(), "A14: 世界地圖已關，照常關窗")
+    ISWorldMap_instance, UIManager, win.javaObject = nil, nil, nil
+end
+
 --------------------------------------------------------------------------------
 -- B. 提示列永不當座標／站點；復原入口保留
 --------------------------------------------------------------------------------

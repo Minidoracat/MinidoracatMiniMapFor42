@@ -1749,8 +1749,9 @@ if ISMiniMapOuter and ISMiniMapOuter.onToggleOptionsPanel then
     end
 end
 
--- 尺寸重建前收掉舊頂層面板：Recreate 對 outer 整個 removeFromUIManager 再新建
--- （ISMiniMap.lua:778-781），搬到頂層的面板不會跟著消失，須手動移除免殘留
+-- Recreate 包裝（原版對 outer 整個 removeFromUIManager 再新建，ISMiniMap.lua:778-781）：
+-- 收掉搬到頂層的舊面板（不會跟著 outer 消失，須手動移除免殘留）、帶過原生三項開關、維持疊放順序
+-- test:recreate-zorder:start
 if ISMiniMap and ISMiniMap.Recreate then
     local originalRecreate = ISMiniMap.Recreate
     function ISMiniMap.Recreate(playerNum)
@@ -1776,6 +1777,23 @@ if ISMiniMap and ISMiniMap.Recreate then
                 RemoteSymbols = api:getBoolean("RemoteSymbols"),
             }
         end
+        -- 疊放順序：新 outer 經 addToUIManager 進 UIManager.toAdd，下一次 update 附加到清單尾端＝最上層
+        -- （UIManager.java:112-117/497-506），原本疊在小地圖上的視窗（世界地圖、從它開的設定視窗）
+        -- 會被新小地圖蓋住。記下舊 outer 上方的頂層元件，重建後逐一 bringToTop：同一次 update 先附加
+        -- 新 outer，再依清單順序把 toTop 元件搬到尾端（:546-560），相對順序不變、畫面不閃
+        local above
+        local oldJava = mm and mm.javaObject
+        if oldJava then
+            local uis = UIManager.getUI()
+            for i = 0, uis:size() - 1 do
+                local el = uis:get(i)
+                if above then
+                    above[#above + 1] = el
+                elseif el == oldJava then
+                    above = {}
+                end
+            end
+        end
         local result = originalRecreate(playerNum)
         if snap then
             local nmm = getPlayerMiniMap(playerNum)
@@ -1786,9 +1804,13 @@ if ISMiniMap and ISMiniMap.Recreate then
                 napi:setBoolean("RemoteSymbols", snap.RemoteSymbols)
             end
         end
+        if above then
+            for i = 1, #above do above[i]:bringToTop() end
+        end
         return result
     end
 end
+-- test:recreate-zorder:end
 
 --------------------------------------------------------------------------------
 -- 按鈕列擴充（定位玩家／複製座標改用共用 icon；缺框架退回 C／XY）

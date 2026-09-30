@@ -357,7 +357,7 @@
     "UI_MinidoracatMiniMap_DistZone": "自訂區域顯示距離",
     "UI_MinidoracatMiniMap_DistUnlimited": "不限",
     "UI_MinidoracatMiniMap_SecPerf": "效能說明",
-    "UI_MinidoracatMiniMap_PerfIntro": "顯示越多圖標與色塊越吃效能（成本約與畫面內數量成正比，關閉＝零成本）。實測錨點：本 MOD＋常駐小地圖在預設設定下約 0.6ms/幀＝60fps 幀預算約 4％。",
+    "UI_MinidoracatMiniMap_PerfIntro": "顯示越多圖標與色塊越吃效能（成本約與畫面內數量成正比，關閉＝零成本）。實測錨點：本 MOD＋常駐小地圖在資源點、殭屍、動物、載具圖標全開時約 0.4ms/幀＝60fps 幀預算約 2％（預設設定更低）。",
     "UI_MinidoracatMiniMap_PerfLv0": "極低",
     "UI_MinidoracatMiniMap_PerfLv1": "低",
     "UI_MinidoracatMiniMap_PerfLv2": "中",

@@ -2465,11 +2465,30 @@ local function centerToPlayer(win, pn)
     win:setY(sy + math.max(0, math.floor((sh - win.height) / 2)))
 end
 
+-- 視窗開著卻被同一位玩家的世界地圖（全螢幕）整片蓋住＝玩家看不見它：開關鈕此時該叫到前面而不是關掉
+-- （從小地圖開窗後再開世界地圖，世界地圖經 addToUIManager 排到最上層，UIManager.java:112-117）。
+-- UIManager.getUI() 由下而上，從尾端往前先遇到誰誰就在上面；分割畫面只看同一位玩家的世界地圖
+-- （ShowWorldMap 設 playerNum，別人的只蓋別人的 viewport）。_Settings 的開關共用這個判斷
+Core.isBehindWorldMap = function(win, pn)
+    local wm = ISWorldMap_instance
+    if not (win and win.javaObject and wm and wm.javaObject and wm:isVisible()
+            and (wm.playerNum or 0) == (pn or 0)) then
+        return false
+    end
+    local uis = UIManager.getUI()
+    for i = uis:size() - 1, 0, -1 do
+        local el = uis:get(i)
+        if el == wm.javaObject then return true end
+        if el == win.javaObject then return false end
+    end
+    return false
+end
+
 -- 開關搜尋／行程視窗（按鈕/右鍵選單/快捷鍵入口共用）。引擎冷啟動由 winRefresh 的
 -- Core.navKickAvailable 負責（開窗後首個 prerender 即泵）。
 -- page＝"search"／"itinerary" 時語意是「開啟或切到該頁」，**絕不關窗**——
 -- 右鍵「行程管理」按兩次不該把視窗關掉；不帶 page 保留原本的 toggle。
--- 收合狀態下再按等於展開，不用先展開再按一次。
+-- 收合狀態下再按等於展開，不用先展開再按一次；被世界地圖蓋住時再按＝叫到前面（看不見的窗不關）。
 -- 分割畫面：同人再按＝關；他人按＝owner-transfer 重刷（同 _Settings 慣例），
 -- 不誤關別人的視窗
 Core.toggleSearchWindow = function(pn, page)
@@ -2487,6 +2506,13 @@ Core.toggleSearchWindow = function(pn, page)
             if page then
                 setPage(searchWin, page)
                 searchWin:bringToTop()
+                return
+            end
+            if Core.isBehindWorldMap(searchWin, pn) then
+                searchWin:bringToTop()
+                if searchWin.page == "search" and searchWin.entry and searchWin.entry.focus then
+                    searchWin.entry:focus() -- 同開窗路徑：叫回來就能直接打字
+                end
                 return
             end
             closeWindow(searchWin)
