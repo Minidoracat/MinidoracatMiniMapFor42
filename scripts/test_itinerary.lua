@@ -172,6 +172,96 @@ do
     eq(trip(t).phase, "completed", "手動抵達原座標才完成")
 end
 
+-- 站點在路面上但過了中線（1002y）：車停在自己車道上，車心離站點 >5、離路線終錨 ≤5 仍是到站。
+-- 終錨只認 Core.navRouteEnd（為這個站點算出的路線）；站點在路外、超出死路盡頭、車離終錨也遠、路線
+-- 未就緒時只量站點本身。寬 10 的路沿 y=0（終段方向 +x）：站點投影到終錨 (x, 0)、半寬 5，路緣外
+-- 1 格內仍算路面。anchor 覆寫終錨 x（死路盡頭）；anchor.dir == false＝零長度路線沒有方向。
+local function laneFixture(sx, sy, second, anchor)
+    local t = fixture(); local p = t.player(0); local v = vehicle(p)
+    local ex, ux, uy = anchor and anchor.x or sx, 1, 0
+    if anchor and anchor.dir == false then ux, uy = nil, nil end
+    t.core.navRouteEnd = function(pn, tx, ty)
+        if pn == 0 and tx == sx and ty == sy then return ex, 0, 5, ux, uy end
+    end
+    assert(edit(t, "append", sx, sy))
+    if second then assert(edit(t, "append", 200, 0)) end
+    return t, p, v
+end
+local function reportAt(sx, sy, vx, vy, anchor)
+    local t, p, v = laneFixture(sx, sy, false, anchor)
+    local token = assert(t.api.claimNavLeg(0, "Auto", assert(start(t))))
+    p.x, p.y, v.x, v.y = vx, vy, vx, vy
+    local _, outcome = t.api.reportNavArrival(0, "Auto", token)
+    return outcome, trip(t)
+end
+do
+    local outcome, it = reportAt(100, 3, 96.5, -2.5) -- 車心離站點 6.52、離終錨 4.30
+    eq(outcome, "arrived", "過了中線的路面站點，車道上停妥就是到站")
+    eq(it.stops[1].status, "arrived", "站點標成已抵達")
+    eq(reportAt(100, 6, 96.5, -2.5), "arrived", "路緣外 1 格內仍算路面")
+    eq(reportAt(100, 6.2, 96.5, -2.5), "road_end", "再遠就是路外：開到路邊仍是道路終點")
+    eq(reportAt(100, 3, 94, -2.5), "road_end", "離終錨也超過 5 格不算到站")
+    -- 死路：路在 x=300 結束，站點投影都落在盡頭 (300, 0)；車停在 (296.5, -2.5)，離盡頭 4.30
+    eq(reportAt(306, 0, 296.5, -2.5, { x = 300 }), "road_end", "超出死路盡頭 6 格不是路面")
+    eq(reportAt(300.8, 3, 296.5, -2.5, { x = 300 }), "arrived", "超出盡頭 1 格內（路緣、點擊誤差）的路旁站點仍是路面")
+    eq(reportAt(306, 0, 296.5, -2.5, { x = 300, dir = false }), "arrived",
+        "零長度路線沒有方向，退回距終錨半寬＋1 格的圓")
+    local t, p, v = laneFixture(100, 3)
+    t.core.navRouteEnd = function() return nil end
+    local token = assert(t.api.claimNavLeg(0, "Auto", assert(start(t))))
+    p.x, p.y, v.x, v.y = 96.5, -2.5, 96.5, -2.5
+    eq(select(2, t.api.reportNavArrival(0, "Auto", token)), "road_end", "沒有這個站點的終錨就只量站點")
+end
+
+-- isNavLegReached：同一條規則的純查詢（AutoDrive 備下一段時用來讓 Core 被動收站），不看停妥、
+-- 不看 claim、不改狀態；只回答 navigating 段。
+do
+    local t, p, v = laneFixture(100, 3, true)
+    eq(t.api.isNavLegReached(0), false, "還沒出發（draft）沒有活動段")
+    local token = assert(t.api.claimNavLeg(0, "Auto", assert(start(t))))
+    p.x, p.y, v.x, v.y = 96.5, -2.5, 96.5, -2.5
+    v.stopped = false
+    local rev = trip(t).revision
+    eq(t.api.isNavLegReached(0), true, "接管中、還在動，查詢照樣用同一條規則（量車心到終錨）")
+    eq(trip(t).stops[1].status, "pending", "查詢不收站"); eq(trip(t).revision, rev, "查詢不改 revision")
+    eq(t.api.getNavLeg(0), token, "查詢不動 token")
+    p.vehicle = nil
+    eq(t.api.isNavLegReached(0), false, "徒步同一位置只量站點")
+    p.vehicle = v; v.x = 90
+    eq(t.api.isNavLegReached(0), false, "離終錨也遠就沒到")
+    eq(t.api.isNavLegReached(1), false, "沒有行程的槽位")
+    eq(t.api.isNavLegReached(9), false, "壞槽位")
+end
+
+-- 沒有自駕 claim（玩家自己開）：navigating 時車上同一條規則；approach 已決定步行、徒步可以走到
+-- 站點上，兩者只量站點本身。車上一律量車心，不是座位（與自駕回報同一點）。
+do
+    local t, p, v = laneFixture(100, 3, true)
+    assert(autoContinue(t, false)); assert(start(t))
+    p.x, p.y, v.x, v.y = 96.5, -2.5, 96.5, -2.5
+    v.stopped = false; t.fire("OnTick")
+    eq(trip(t).stops[1].status, "pending", "車還在動不算到站")
+    v.stopped = true; t.fire("OnTick")
+    eq(trip(t).stops[1].status, "arrived", "自己開到車道上停妥也是到站")
+    eq(trip(t).phase, "waiting", "逐點模式停在等候")
+    t, p, v = laneFixture(100, 3, true)
+    assert(autoContinue(t, false)); assert(start(t))
+    assert(t.core.navGuideItinerary(0, trip(t).revision, "approach"))
+    p.x, p.y, v.x, v.y = 96.5, -2.5, 96.5, -2.5; t.fire("OnTick")
+    eq(trip(t).stops[1].status, "pending", "approach 不用終錨")
+    t, p, v = laneFixture(100, 3, true)
+    assert(autoContinue(t, false)); assert(start(t))
+    p.vehicle = nil; p.x, p.y = 96.5, -2.5; t.fire("OnTick")
+    eq(trip(t).stops[1].status, "pending", "徒步只量站點本身")
+    t, p, v = laneFixture(100, 20, true) -- 路外站點（終錨遠在 20 格外），終錨規則不適用
+    assert(autoContinue(t, false)); assert(start(t))
+    p.x, p.y, v.x, v.y = 100, 15.2, 100, 14.8 -- 座位 4.8、車心 5.2
+    t.fire("OnTick")
+    eq(trip(t).stops[1].status, "pending", "車上量車心，不量座位")
+    v.y = 15.1; t.fire("OnTick")
+    eq(trip(t).stops[1].status, "arrived", "車心進 5 格內才算到站")
+end
+
 -- 編輯正規化、恢復、筆數與邊界拒絕皆保留合法行程。
 do
     local t = fixture(); local p = t.player(0)
@@ -862,4 +952,4 @@ end
 
 print("test_itinerary: PASS (ordered stops, token ownership, stopping, editing, persistence, "
     .. "split-screen, continuation mode, stop holds, passive auto-continue, gate hold-off, "
-    .. "insert/priority anchors, report dispositions, v1/v2 migration)")
+    .. "insert/priority anchors, report dispositions, lane-side arrival at route anchor, v1/v2 migration)")

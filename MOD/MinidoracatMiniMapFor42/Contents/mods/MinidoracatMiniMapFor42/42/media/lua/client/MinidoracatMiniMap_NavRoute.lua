@@ -2312,7 +2312,30 @@ local function ensureRoute(key, target, px, py, weight, notify)
     if notify then navLegResult(key, target.x, target.y, "noroad") end
     return nil
 end
+-- 活動段終錨（目的地投影到路網的點＝路線最後一點，AutoDrive 判到站量的也是這一點）、終段半寬
+-- 與終段單位方向：_Itinerary 判「車停在目的地旁的車道上」用（區段外掛成 Core.navRouteEnd）。
+-- 方向讓判定分得出「站點在路旁」與「站點超出死路盡頭」；零長度路線沒有方向（回 nil）。
+-- 只認為這個目標算出、仍有效的快取；否則回 nil，到站判定照舊只量目的地本身。
+local function routeEnd(key, tx, ty)
+    local rs = navRoutes[key]
+    local route = rs and rs.tx == tx and rs.ty == ty and rs.route -- 只有 state=ok 的快取帶 route
+    local widths = route and route.segWidth
+    local width = widths and widths[#widths]
+    if type(width) ~= "number" or type(route.ex) ~= "number" or type(route.ey) ~= "number" then
+        return nil
+    end
+    local pts = route.pts
+    local n = type(pts) == "table" and #pts or 0
+    local ux, uy
+    if n >= 4 then
+        local dx, dy = pts[n - 1] - pts[n - 3], pts[n] - pts[n - 2]
+        local length = sqrt(dx * dx + dy * dy)
+        if length > 1e-6 then ux, uy = dx / length, dy / length end
+    end
+    return route.ex, route.ey, width * 0.5, ux, uy
+end
 -- test:nav-cache:end
+Core.navRouteEnd = routeEnd
 
 -- 路線雙層線（深底＋亮青面，同旗標黑框色面美學；青色與自標金旗/分享青旗區分靠
 -- 線形 vs 點形）。approach 段（玩家→進度投影點、終錨→目標）細半透明線＝非路網段。

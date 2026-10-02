@@ -379,6 +379,43 @@ local function owned(pn, owner, token, operation, reason, needsPlayer)
     if not slot.claim or slot.claim.owner ~= owner then return nil, "busy" end
     return slot
 end
+-- 到站判定（自駕回報、每 tick 補判、isNavLegReached 共用這一份）：(x, y) 距站點 ≤5 格。人在車上
+-- （navigating）且站點落在路線終錨所在的路面上時，改量到終錨（站點投影到路網的點；AutoDrive 判
+-- 到站量的也是它）：車只能停在自己的車道上，站點若過了中線，車心離它常超過 5 格——Dixie 南行
+-- 靠右，車心離過中線 1 格的站點 5.39 格，被判成道路終點（AutoDrive 1002y 實測）。「在路面上」＝
+-- 站點相對終錨沿終段方向不超出 1 格（死路盡頭外不算）、橫向在半寬＋1 格內（路緣、點擊誤差）；
+-- 零長度路線沒有方向，退回距終錨半寬＋1 格的圓。其餘照舊只量站點本身，開到路邊仍是道路終點。
+local ARRIVE_SQ, ROAD_EDGE_SLACK = 25, 1
+local function arrivedAt(pn, current, x, y, onRoad)
+    local dx, dy = x - current.x, y - current.y
+    if dx * dx + dy * dy <= ARRIVE_SQ then return true end
+    if not onRoad or not Core.navRouteEnd then return false end
+    local ex, ey, half, ux, uy = Core.navRouteEnd(pn, current.x, current.y)
+    if not ex then return false end
+    local gx, gy, reach = current.x - ex, current.y - ey, half + ROAD_EDGE_SLACK
+    if ux then
+        local along, side = gx * ux + gy * uy, gx * uy - gy * ux
+        if along > ROAD_EDGE_SLACK or along < -ROAD_EDGE_SLACK or side > reach or side < -reach then
+            return false
+        end
+    elseif gx * gx + gy * gy > reach * reach then
+        return false
+    end
+    dx, dy = x - ex, y - ey
+    return dx * dx + dy * dy <= ARRIVE_SQ
+end
+-- 純查詢（API.isNavLegReached）：目前 navigating 段依同一條規則是否已到；不看停妥、不看 claim、
+-- 不改狀態。AutoDrive 備下一段時用它判斷該不該讓 Core 被動收站，不自己另抄一份到站規則。
+local function legReached(pn)
+    if not validPlayerNum(pn) then return false end
+    local slot = slots[pn]
+    local current = slot and slot.trip and slot.trip.phase == "navigating" and slot.current
+    local player = current and getSpecificPlayer(pn)
+    if not player or player ~= slot.player then return false end
+    local vehicle = player:getVehicle()
+    if vehicle then return arrivedAt(pn, current, vehicle:getX(), vehicle:getY(), true) end
+    return arrivedAt(pn, current, player:getX(), player:getY(), false)
+end
 local function report(pn, owner, token)
     local slot, reason = owned(pn, owner, token, "report", nil, true)
     if not slot then return reason == "duplicate", reason end
@@ -387,9 +424,8 @@ local function report(pn, owner, token)
     if not vehicle:isStopped() then return false, "notstopped" end
     local trip = copyTrip(slot.trip)
     local current = slot.current
-    local dx, dy = vehicle:getX() - current.x, vehicle:getY() - current.y
     local outcome, nextToken, disposition
-    if dx * dx + dy * dy <= 25 then
+    if arrivedAt(pn, current, vehicle:getX(), vehicle:getY(), true) then
         disposition = finishStop(trip, current.id, "arrived")
         outcome = "arrived"
     else
@@ -607,8 +643,10 @@ local function tickSlot(pn)
     end
     if vehicle and not vehicle:isStopped() then return end
     local current = slot.current
-    local dx, dy = player:getX() - current.x, player:getY() - current.y
-    if dx * dx + dy * dy <= 25 then
+    -- 車上量車心（與自駕回報同一點，不是座位）；approach 已決定步行，只量站點本身
+    local x, y = player:getX(), player:getY()
+    if vehicle then x, y = vehicle:getX(), vehicle:getY() end
+    if arrivedAt(pn, current, x, y, vehicle ~= nil and slot.trip.phase == "navigating") then
         local trip = copyTrip(slot.trip)
         local disposition = finishStop(trip, current.id, "arrived")
         local token
@@ -660,7 +698,7 @@ end
 API.getNavItinerary, API.getNavLeg = getItinerary, getLeg
 API.startNavItinerary, API.claimNavLeg = start, claim
 API.reportNavArrival, API.releaseNavLeg = report, release
-API.getNavTarget = getTarget
+API.getNavTarget, API.isNavLegReached = getTarget, legReached
 API.setNavContinuation = function(pn, expectedRevision, enabled)
     return edit(pn, expectedRevision, "mode", enabled)
 end

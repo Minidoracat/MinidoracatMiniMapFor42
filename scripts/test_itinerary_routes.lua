@@ -125,7 +125,7 @@ local Events = {
 local suffix = [=[
 return {
     Core = Core, engine = engine, navRoutes = navRoutes, navPreview = navPreview,
-    ensureRoute = ensureRoute, logs = logs, results = results, kicks = kicks,
+    ensureRoute = ensureRoute, routeEnd = routeEnd, logs = logs, results = results, kicks = kicks,
     players = players, trips = trips,
     draws = draws, drawPreview = drawPreview,
     resetDraws = function() for i = #draws, 1, -1 do draws[i] = nil end end,
@@ -593,8 +593,59 @@ T.resetDraws()
 T.drawPreview(mmInner, mmInner.mapAPI, 0)
 assert(#T.draws == 0, "P32: 沒有段就不得畫任何線")
 
+--------------------------------------------------------------------------------
+-- 十四、活動段終錨（1002y）：只認為同一目標算出的 ok 快取，回終錨（路線最後一點）、終段半寬與方向
+--------------------------------------------------------------------------------
+T.engine.state, T.engine.graph = "ready", GRAPH
+do
+    local sx, sy = 10760, 9703
+    local r = assert(T.ensureRoute(2, { x = sx, y = sy }, PX, PY, 12), "P33: 先算出真路線")
+    local ex, ey, half, ux, uy = T.routeEnd(2, sx, sy)
+    assert(ex == r.ex and ey == r.ey and ex == r.pts[#r.pts - 1] and ey == r.pts[#r.pts],
+        "P33: 終錨＝路線最後一點（AutoDrive 判到站量的那一點）")
+    near(ey, 9700, "P33: 終錨是站點投影到路面的點")
+    near(half, r.segWidth[#r.segWidth] * 0.5, "P33: 半寬取終段")
+    assert(ux ~= nil and uy ~= nil, "P33: 有長度的路線要回終段方向（分沿線／橫向用）")
+    near(ux, 1, "P33: 終段方向（沿橫街往東）x"); near(uy, 0, "P33: 終段方向 y")
+    assert(T.routeEnd(2, sx + 1, sy) == nil and T.routeEnd(2, sx, sy + 1) == nil
+        and T.routeEnd(3, sx, sy) == nil, "P34: 別的站點／別的槽位不得借用這條路線")
+    T.ensureRoute(2, { x = S3X, y = S3Y }, PX, PY, 12)
+    assert(T.navRoutes[2].state == "noroad" and T.routeEnd(2, S3X, S3Y) == nil,
+        "P34: 無路的快取沒有終錨")
+    T.navRoutes[2] = nil
+end
+-- P35：寬路轉進窄巷，半寬要取終段（窄巷），不是起段
+do
+    local b = NavCore.newBuild({
+        { name = "Wide Road", src = "M", width = 14, pts = { 0, 0, 200, 0 } },
+        { name = "Narrow Lane", src = "M", width = 6, pts = { 100, 0, 100, 150 } },
+    }, nil)
+    local built = false
+    for _ = 1, 100000 do
+        if NavCore.step(b, 500) then built = true break end
+    end
+    assert(built, "P35: 小路網須建成")
+    T.engine.graph = b.graph
+    local r = assert(T.ensureRoute(2, { x = 102, y = 120 }, 20, 0, 12), "P35: 寬路→窄巷有路")
+    local ex, ey, half, ux, uy = T.routeEnd(2, 102, 120)
+    near(r.segWidth[1], 14, "P35: 起段是寬路")
+    near(ex, 100, "P35: 終錨在窄巷中線"); near(ey, 120, "P35: 終錨與站點同高")
+    near(half, 3, "P35: 半寬取終段（窄巷寬 6）")
+    near(ux, 0, "P35: 方向取終段（窄巷往南）x"); near(uy, 1, "P35: 方向取終段 y")
+    T.engine.graph = GRAPH
+    T.navRoutes[2] = nil
+end
+-- P36：車與站點投影到同一點＝零長度路線（Follower 起不了段），沒有方向可分沿線／橫向
+do
+    local r = assert(T.ensureRoute(2, { x = 10760, y = 9703 }, 10760, 9698, 12), "P36: 零長度路線照樣快取")
+    assert(r.len == 0, "P36: 起終投影重合")
+    local ex, ey, half, ux = T.routeEnd(2, 10760, 9703)
+    assert(ex == 10760 and ey == 9700 and half and ux == nil, "P36: 有終錨與半寬、沒有方向")
+    T.navRoutes[2] = nil
+end
+
 print("test_itinerary_routes: OK（預覽分段/真路網距離 P1-P3、快取隔離 P4、"
     .. "失效條件 P5-P7、引擎/選項/gate P8-P10b、預覽例外 P11、零殘留 P12-P13、"
     .. "16 站上限 P14、回報邊界 P15-P17、非繪製維護 P18-P23、"
     .. "多站預設自動＋雙表面繪製 P24-P26、單站/追加/明確關閉 P27-P29、"
-    .. "換角色隔離與清空 P30-P32）")
+    .. "換角色隔離與清空 P30-P32、活動段終錨 P33-P36）")
