@@ -786,6 +786,63 @@ do
 end
 
 --------------------------------------------------------------------------------
+-- 十七之二、端點被橫向吸附時保留原線（AutoDrive 1002x）：吸附把路段端點／折線頂點
+-- 橫向拖走，整段會被拉斜——Station Link Road 南端併到 4.5 格外的路口點，109 格斜到
+-- 路面邊緣；KY-841 南線頂點被拖到北線成 V 形。現在原端點留在原線上，另接一條短接線
+-- 到吸附點：直行沿原線，連通照舊。
+--------------------------------------------------------------------------------
+do
+    -- 沿路線折線在 y＝某值處內插 x（路線須單調南行或北行）
+    local function xAtY(r, y)
+        for i = 1, #r.pts - 3, 2 do
+            local ax, ay, bx, by = r.pts[i], r.pts[i + 1], r.pts[i + 2], r.pts[i + 3]
+            if (ay - y) * (by - y) <= 0 and ay ~= by then
+                return ax + (bx - ax) * (y - ay) / (by - ay)
+            end
+        end
+    end
+    -- 錯位接續：Link 南端 (100,111) 與 First 起點 (95.5,111) 端點對端點合流
+    local g = buildAll({
+        { name = "Link", src = "M", width = 7, pts = { 100, 0, 100, 111 } },
+        { name = "First", src = "M", width = 14, pts = { 95.5, 111, 95.5, 400 } },
+    }, nil)
+    local r = route(g, 100, 10, 95.5, 390)
+    assert(r, "錯位接續：連通")
+    for _, y in ipairs({ 20, 60, 100, 105 }) do
+        assert(math.abs(xAtY(r, y) - 100) < 0.01, ("錯位接續：Link 在 y=%d 仍在原線 x=100，實得 %s"):format(y, tostring(xAtY(r, y))))
+    end
+    for _, y in ipairs({ 117, 200, 380 }) do
+        assert(math.abs(xAtY(r, y) - 95.5) < 0.01, ("錯位接續：First 在 y=%d 仍在原線 x=95.5，實得 %s"):format(y, tostring(xAtY(r, y))))
+    end
+    assert(r.len > 384 and r.len < 386, "錯位接續：長度 ≈ 101＋4.5＋279，實得 " .. tostring(r.len))
+    -- 雙線公路頂點：南線內部頂點 (150,10) 投影到北線 (150,0) 成 T 字
+    g = buildAll({
+        { name = "HwyN", src = "M", width = 6, pts = { 0, 0, 300, 0 } },
+        { name = "HwyS", src = "M", width = 6, pts = { 0, 10, 150, 10, 300, 10 } },
+    }, nil)
+    r = route(g, 5, 10, 295, 10)
+    assert(r and math.abs(r.len - 290) < 0.01, "雙線頂點：南線直行 290，實得 " .. tostring(r and r.len))
+    for i = 2, #r.pts, 2 do
+        assert(math.abs(r.pts[i] - 10) < 0.01, "雙線頂點：南線直行不經北線（不再是 V 形），y=" .. r.pts[i])
+    end
+    r = route(g, 5, 10, 295, 0)
+    assert(r and r.len < 320, "雙線頂點：兩線仍由短接線互通，實得 " .. tostring(r and r.len))
+    -- 小幅錯位（3 格 ≤ 路的半寬 5）：拉斜後的線仍在路面內，照舊合流成一點，不多一個折點——
+    -- 兩條街各自被併到偏出去的路口點時，保留原端點反而會在路口畫出折去再折回的尖角。
+    g = buildAll({
+        { name = "LinkW", src = "M", width = 10, pts = { 100, 0, 100, 111 } },
+        { name = "FirstW", src = "M", width = 10, pts = { 97, 111, 97, 400 } },
+    }, nil)
+    r = route(g, 100, 10, 97, 390)
+    assert(r, "小幅錯位：連通")
+    local ends = 0
+    for i = 1, #r.pts, 2 do
+        if r.pts[i + 1] == 111 and (r.pts[i] == 100 or r.pts[i] == 97) then ends = ends + 1 end
+    end
+    assert(ends == 1, "小幅錯位：只經過一個合流點，不保留兩個原端點；實得 " .. ends)
+end
+
+--------------------------------------------------------------------------------
 -- 十八、深野外 nearestSnap fallback（2026-08-20 軍事基地實測回歸）：目標離
 -- 路網超過 SNAP_RING 上限 160 格→ring 全空，須改導到「路網最近點」而非整條
 -- noroad（實案：Muldraugh(12895,3498)→基地(5783,12484) 終點離最近路 >160）。
@@ -1280,7 +1337,8 @@ do
         .. " bucketRefs=" .. officialBuilder.bucketReferenceCount
         .. " cutRecords=" .. officialBuilder.cutRecords
         .. " maxCutsPerSegment=" .. officialBuilder.maxCutsPerSegment
-        .. " epMoveCount=" .. officialBuilder.epMoveCount)
+        .. " epMoveCount=" .. officialBuilder.epMoveCount
+        .. " keptEnds=" .. tostring(officialBuilder.keptEnds))
     -- Elder Road（0915 截圖 3651,11400）：官方圖上仍沿 y=11399.5，不是 Main St 切點被
     -- 拖走後的斜線；起錨就在車位下方。
     do
@@ -1354,8 +1412,8 @@ do
                     "KY-841路口：行駛線留在 x=15600 南北道路，不沿 KY-841 繞行")
             end
         end
-        -- 南側車道在 x15313／15898 的頂點被吸到北線（0924a 記錄的雙線 Z 字，修補前就有），
-        -- 東西線不是水平，這裡只驗長度不變、也不在新接線的兩個穿越點換到對側。
+        -- 南側車道在 x15313／15898 的頂點被吸到北線（0924a 記錄的雙線 Z 字）：1002x 起原頂點
+        -- 留在原線、另接短接線，東西直行兩線都是水平，也不在新接線的兩個穿越點換到對側。
         for _, y in ipairs({ 3325, 3335 }) do
             local other = y == 3325 and 3335 or 3325
             for _, xs in ipairs({ { 15590, 15750 }, { 15750, 15590 } }) do
@@ -1365,8 +1423,70 @@ do
                 for i = 1, #r.pts, 2 do
                     assert(not (math.abs(r.pts[i] - 15600) < 0.5 and math.abs(r.pts[i + 1] - other) < 0.5),
                         "KY-841東西直行不借新接線換到對側車道")
+                    assert(math.abs(r.pts[i + 1] - y) < 1, "KY-841東西直行留在本側車道，y=" .. r.pts[i + 1])
                 end
             end
+        end
+        -- 南線整段（跨過兩個被吸附的頂點 x15313／15898）：舊版畫成 (15320,3325)→(15600,3335)→
+        -- (15890,3325) 的 V 形，車道線跨過分隔帶。
+        for _, xs in ipairs({ { 15320, 15890 }, { 15890, 15320 } }) do
+            local r = mod.findRoute(g, xs[1], 3336, xs[2], 3336, nil, nil, nil, 12)
+            assertRouteMetadata(r, "KY-841南線全段")
+            assert(math.abs(r.len - 570) < 1, "KY-841南線全段約570m；實得 " .. r.len)
+            for i = 2, #r.pts, 2 do
+                assert(math.abs(r.pts[i] - 3335) < 1, "KY-841南線全段不斜跨分隔帶，y=" .. r.pts[i])
+            end
+        end
+    end
+    -- Station Link Road 南端（AutoDrive 1002x 玩家截圖「太早改道」）：官方 (12517.5,2398)→(12517.5,2509)
+    -- 的南端與 S 1st St 起點、3rd St、Train Station Access Road 合成路口點 (12513,2514)；舊版整段
+    -- 109 格拉斜，y2489 時線在路面西緣 x12514，靠右車道落到人行道。路面 x12514–12520。
+    do
+        local g = officialBuilder.graph
+        for _, ends in ipairs({ { 12517.5, 2420, 12513, 2700 }, { 12513, 2700, 12517.5, 2420 } }) do
+            local r = mod.findRoute(g, ends[1], ends[2], ends[3], ends[4], nil, nil, nil, 12)
+            assertRouteMetadata(r, "Station Link Road 南端")
+            local kept = false
+            for _, y in ipairs({ 2430, 2470, 2489, 2500, 2505 }) do
+                local x
+                for i = 1, #r.pts - 3, 2 do
+                    local ay, by = r.pts[i + 1], r.pts[i + 3]
+                    if (ay - y) * (by - y) <= 0 and ay ~= by then
+                        x = r.pts[i] + (r.pts[i + 2] - r.pts[i]) * (y - ay) / (by - ay)
+                        break
+                    end
+                end
+                assert(x and math.abs(x - 12517.5) < 0.01,
+                    ("Station Link Road：路口以北 y=%d 的線留在路面中線 x12517.5，實得 %s"):format(y, tostring(x)))
+            end
+            for i = 1, #r.pts, 2 do
+                if math.abs(r.pts[i] - 12517.5) < 0.01 and math.abs(r.pts[i + 1] - 2509) < 0.01 then kept = true end
+            end
+            assert(kept, "Station Link Road：路線經過原南端 (12517.5,2509) 再接到路口")
+            assert(math.abs(r.len - 281.7) < 1, "Station Link Road：長度約 89＋6.7＋186；實得 " .. r.len)
+        end
+    end
+    -- KY-1394 分流點（12067,3173→12062／12072,3180）：兩條車道起點互相 T 字投影到對方的分流段，
+    -- 舊版每條車道都被拉到對側、整段 125 格斜成 X 形。保留原端點後，往西車道的路線經西分流段
+    -- 接到 (12062,3180)、往東車道經東分流段接到 (12072,3180)，分流點以南沿各自車道直行。
+    -- 同一個原端點要整點一致保留：只保留車道那一段時，分流段仍被拉往對側，路線先往對側再折回。
+    do
+        local g = officialBuilder.graph
+        for _, c in ipairs({ { 12062, 12067.5, math.huge }, { 12072, -math.huge, 12066.5 } }) do
+            local lane, loX, hiX = c[1], c[2], c[3]
+            local r = mod.findRoute(g, 12067, 3050, lane, 3300, nil, nil, nil, 12)
+            assertRouteMetadata(r, "KY-1394 分流點")
+            local reached = false
+            for i = 1, #r.pts, 2 do
+                local x, y = r.pts[i], r.pts[i + 1]
+                assert(not (y > 3173 and y < 3180 and x > loX and x < hiX),
+                    ("KY-1394 分流點：往 x%d 的路線不先折到對側分流段 (%s,%s)"):format(lane, x, y))
+                if y >= 3180 then
+                    assert(math.abs(x - lane) < 0.01, ("KY-1394 分流點：y≥3180 沿車道 x%d，實得 (%s,%s)"):format(lane, x, y))
+                    reached = reached or math.abs(y - 3180) < 0.01
+                end
+            end
+            assert(reached, "KY-1394 分流點：路線經過車道原起點 (" .. lane .. ",3180)")
         end
     end
     -- 同類分隔帶缺接線四處（2026-09-30 全圖掃描：兩條支路端點同軸對望 ≤30 格、連線穿過 ≥2 條他街、

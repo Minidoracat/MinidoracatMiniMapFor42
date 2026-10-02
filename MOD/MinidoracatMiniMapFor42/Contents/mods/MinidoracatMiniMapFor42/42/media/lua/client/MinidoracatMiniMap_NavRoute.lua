@@ -113,6 +113,7 @@ local ATTACH_SLACK = 4.5      -- 半寬和之外的路口間隙容差（格）�
                               -- < 4.5 格，塞不下建築，「可通行」語義成立
 local CUT_MERGE = 0.25        -- 同段切割點合併距（格）
 local ATTACH_END = 1.0        -- 投影點併入彼段端點的世界距（格）——同路口語義
+local KEEP_END_LAT = 1.0      -- 端點被吸附橫向拖超過此距（格）＝原端點留在原線上，另接短接線到吸附點
 local SNAP_RING = { 16, 48, 96, 160 } -- snap 擴圈搜尋半徑（格）
 local PROGRESS_WINDOW = 12    -- 偏航增量投影的段窗口（±）
 local MAX_POINTS_PER_STREET = 4096
@@ -600,7 +601,7 @@ function NavCore.newBuild(streets, winnerOf)
         buck = {}, bkeys = {}, bn = 0, peakBucket = 0, bucketReferenceCount = 0,
         cuts = {},
         seenPair = {}, pairWork = 0, pairScanWork = 0, cutRecords = 0,
-        maxCutsPerSegment = 0,
+        maxCutsPerSegment = 0, keptEnds = 0, keepKey = {}, kci = 1,
         epMove = {}, epMoveCount = 0, epStreet = {}, junction = {},
         epOrd = {}, epOrdCount = 0, epLink = {}, pinned = {},
         epKeys = {}, rpath = {}, ri = 1, rn = 0, rid = 0,
@@ -741,6 +742,23 @@ local function addCut(b, segIdx, t, x, y)
     if #list >= MAX_CUTS_PER_SEGMENT then error("per-segment cut limit exceeded") end
     list[#list + 1] = { t = t, x = x, y = y }
     if #list > b.maxCutsPerSegment then b.maxCutsPerSegment = #list end
+end
+
+-- 吸附把路段端點橫向拖走時，原端點照舊留在原線上當切點（t＝0／1），吸附點與它之間
+-- 另成一條短接線：直行路徑沿原線走，只有轉進路口那一小段斜接。拖動整段會把長路段
+-- 拉斜（AutoDrive 1002x：Station Link Road 南端被併到 4.5 格外的路口點，109 格斜到
+-- 路面邊緣；KY-841 南線的頂點被拖到北線，整段畫成跨分隔帶的 V 形）。不計入
+-- MAX_CUT_RECORDS（每段至多兩筆、有界），單段切點已滿時保留舊行為。
+local function keepEnd(b, segIdx, t, x, y)
+    local list = b.cuts[segIdx]
+    if not list then
+        list = {}
+        b.cuts[segIdx] = list
+    elseif #list >= MAX_CUTS_PER_SEGMENT then
+        return
+    end
+    list[#list + 1] = { t = t, x = x, y = y }
+    b.keptEnds = b.keptEnds + 1
 end
 
 -- 段對處理：X 內部交叉互記切點；端點靠近彼段（≤兩路半寬和＋餘裕）者記「端點
@@ -1044,6 +1062,25 @@ local function graphSnapSeg(g, x1, y1, x2, y2, a, b2, surface, width)
     end
 end
 
+-- 標記要保留的原端點：端點被吸附橫向拖超過路的半寬（至少 KEEP_END_LAT）＝拉斜後的線會
+-- 跑出路面。以點為單位：任一段在該點超過門檻，該點的每一段都保留（同一個原端點／頂點
+-- 照舊相連，吸附點只是旁接）；只保留其中一段會在路口畫出往吸附點折去再折回的尖角。
+-- 小幅橫移照舊拖動：兩條街各自被併到偏出去的路口點時，各自保留同樣會畫出尖角。
+-- 外積²＞門檻²×段長²＝橫移量超過門檻；純沿線延伸的 T 字不算橫移。
+local function markKeep(b, i)
+    local ox1, oy1, ox2, oy2 = b.gx1[i], b.gy1[i], b.gx2[i], b.gy2[i]
+    local sx, sy = ox2 - ox1, oy2 - oy1
+    local lat = (b.gwidth[i] or 0) * 0.5
+    if lat < KEEP_END_LAT then lat = KEEP_END_LAT end
+    local lim = lat * lat * (sx * sx + sy * sy)
+    local x, y = resolveMoved(b, ox1, oy1)
+    local c = sx * (y - oy1) - sy * (x - ox1)
+    if c * c > lim then b.keepKey[quantKey(ox1, oy1)] = true end
+    x, y = resolveMoved(b, ox2, oy2)
+    c = sx * (y - oy2) - sy * (x - ox2)
+    if c * c > lim then b.keepKey[quantKey(ox2, oy2)] = true end
+end
+
 -- 階段三：依切點切割段 → 節點/邊/snap 索引
 local function stepCut(b, budget)
     local g = b.graph
@@ -1061,6 +1098,12 @@ local function stepCut(b, budget)
         b.graph = g
     end
     local ops = 0
+    -- 先逐段標記要保留的原端點（同一點的每一段要一致），標完才切段建圖
+    while ops < budget and b.kci <= b.gn do
+        markKeep(b, b.kci)
+        b.kci = b.kci + 1
+        ops = ops + 1
+    end
     while ops < budget do
         local i = b.ci
         if i > b.gn then
@@ -1068,13 +1111,17 @@ local function stepCut(b, budget)
             -- 建圖完成即釋放中間產物（bucket/切點/去重表佔記憶體大頭）
             b.buck, b.bkeys, b.cuts, b.seenPair = nil, nil, nil, nil
             b.epMove, b.epStreet, b.junction, b.epKeys = nil, nil, nil, nil
-            b.epOrd, b.epLink, b.pinned = nil, nil, nil
+            b.epOrd, b.epLink, b.pinned, b.keepKey = nil, nil, nil, nil
             b.gx1, b.gy1, b.gx2, b.gy2, b.gsid = nil, nil, nil, nil, nil
             b.gwidth, b.gsurface = nil, nil
             return ops
         end
-        local x1, y1 = resolveMoved(b, b.gx1[i], b.gy1[i])
-        local x2, y2 = resolveMoved(b, b.gx2[i], b.gy2[i])
+        local ox1, oy1, ox2, oy2 = b.gx1[i], b.gy1[i], b.gx2[i], b.gy2[i]
+        local x1, y1 = resolveMoved(b, ox1, oy1)
+        local x2, y2 = resolveMoved(b, ox2, oy2)
+        local keep, mergeEnd = b.keepKey, CUT_MERGE * CUT_MERGE
+        if keep[quantKey(ox1, oy1)] and dist2(x1, y1, ox1, oy1) > mergeEnd then keepEnd(b, i, 0, ox1, oy1) end
+        if keep[quantKey(ox2, oy2)] and dist2(x2, y2, ox2, oy2) > mergeEnd then keepEnd(b, i, 1, ox2, oy2) end
         local ts = b.cuts[i]
         if not ts then
             local a = graphNode(g, x1, y1)
