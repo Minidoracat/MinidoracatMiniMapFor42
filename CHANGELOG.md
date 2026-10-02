@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### 修正
+
+- 修正 Salt River Road 東北邊那個大彎的導航線跑進樹林：官方道路資料把這個彎畫成直角，轉角正好落在路旁的樹林裡，自動駕駛照著開會衝進樹叢卡住。現在依實際礫石路面重畫成順著路走的彎道，兩個方向都沿路走；街道搜尋照樣找得到 Salt River Road。
+
+> 技術要點：只改 RoadPatch 資料（`scripts/road_patch_approvals.json` 重生 `MinidoracatMiniMapRoadPatches.lua`），不改 NavCore、導航 API 版本不變。官方 Salt River Road（streetIndex 423）兩段都碰到樹林中的直角頂點，整條以沿礫石路帶中線的 9 點折線取代，兩端沿用官方端點；同名的 424 保留供街道搜尋。同區的 Caroline Staunton Road 經路面點陣逐格比對全線在路上，未改。
+
 ## [42.21.0-0.33.4] - 2026-10-01
 
 ### 修正

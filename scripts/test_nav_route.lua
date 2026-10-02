@@ -1516,6 +1516,49 @@ do
             "Deer Trail Road：只保留段0（南北段），段1／2 由人工折線取代")
         assert(mod.streetSearchable(deer), "Deer Trail Road：保留段讓街道仍可搜尋")
     end
+    -- Salt River Road 東北角（AutoDrive E2E 隨機路線同角 8 次 StopStuck）：官方 423 是
+    -- (12878.5,6900)→(13200,6900)→(13200,6469) 的直角 L，角點在樹林、離路帶 12.7 格；實際礫石路
+    -- 從 y≈6867 往西南彎、到 x≈13167 併回 y6900。橫截面取自 pinned floor raster，雙向都要穿過路帶、
+    -- 不經舊角點；423 兩段都由人工折線取代，同名的 424 保留供街道搜尋。
+    do
+        local g = officialBuilder.graph
+        for _, ends in ipairs({ { 12950, 6900, 13200, 6700 }, { 13200, 6700, 12950, 6900 } }) do
+            local r = mod.findRoute(g, ends[1], ends[2], ends[3], ends[4], nil, nil, nil, 12)
+            assertRouteMetadata(r, "Salt River Road 彎道")
+            for _, band in ipairs({
+                { "y", 6870.5, 13195, 13203 },
+                { "y", 6880.5, 13190, 13198 },
+                { "y", 6888.5, 13183, 13193 },
+                { "x", 13180.5, 6890, 6898 },
+            }) do
+                local hit, n = nil, 0
+                for i = 1, #r.pts - 2, 2 do
+                    local x0, y0, x1, y1 = r.pts[i], r.pts[i + 1], r.pts[i + 2], r.pts[i + 3]
+                    local a0, a1, b0, b1 = y0, y1, x0, x1
+                    if band[1] == "x" then a0, a1, b0, b1 = x0, x1, y0, y1 end
+                    if (a0 < band[2] and a1 >= band[2]) or (a1 < band[2] and a0 >= band[2]) then
+                        hit, n = b0 + (b1 - b0) * (band[2] - a0) / (a1 - a0), n + 1
+                    end
+                end
+                assert(n == 1, "Salt River Road：穿過橫截面 " .. band[1] .. "=" .. band[2] .. " 一次，實得 " .. n)
+                assert(hit >= band[3] and hit < band[4],
+                    "Salt River Road：導航線需留在礫石路帶，" .. band[1] .. "=" .. band[2] .. " 交點 " .. hit)
+            end
+            for i = 1, #r.pts, 2 do
+                assert(not (math.abs(r.pts[i] - 13200) < 0.5 and math.abs(r.pts[i + 1] - 6900) < 0.5),
+                    "Salt River Road：路線不再經過 L 角舊頂點")
+            end
+        end
+        local l, kept
+        for i = 1, patch.geometryCount do
+            local pts = streets[i].pts
+            if #pts == 6 and pts[1] == 12878.5 and pts[2] == 6900 then l = streets[i] end
+            if #pts == 22 and pts[1] == 12300 and pts[2] == 7216 then kept = streets[i] end
+        end
+        assert(l and kept, "Salt River Road：找到官方 423／424")
+        assert(l.segRemoved[1] and l.segRemoved[2], "Salt River Road：423 兩段由人工折線取代")
+        assert(mod.streetSearchable(kept), "Salt River Road：同名 424 讓街道仍可搜尋")
+    end
     -- River Walk Road 河岸彎：官方與 worldmap 都畫直弦，但實際 gravel 在西南側。
     -- 三個橫截面取自 pinned floor raster；驗導航實線在路帶，不釘修補頂點的數量。
     do

@@ -144,7 +144,9 @@
     "10a544accfa08aab0aa31b64e54029fb0419305fb3eecce41499b49240797457:12",
     "dfbe7a348a9f13c3f442639fb4689d0319a15478f70a31cb953040992aa35021:0",
     "c1a7e1c63be9ce93c8c94e15b8df52b9fcbbefc31572b30009c41f0cfb2b3733:1",
-    "c1a7e1c63be9ce93c8c94e15b8df52b9fcbbefc31572b30009c41f0cfb2b3733:2"
+    "c1a7e1c63be9ce93c8c94e15b8df52b9fcbbefc31572b30009c41f0cfb2b3733:2",
+    "3b40cc29a9747edbdcc3ebb0acdfcd4d2ff3fea0f2a583ab504adfaccc5aaf20:0",
+    "3b40cc29a9747edbdcc3ebb0acdfcd4d2ff3fea0f2a583ab504adfaccc5aaf20:1"
   ],
   "width": [],
   "surface": [],
@@ -426,6 +428,15 @@
       "surface": "gravel",
       "searchable": false,
       "reason": "Deer Trail Road 兩個彎的官方線跑到路外（2026-09-30，伺服器玩家回報「這兩個彎自動駕駛會飛出去」，截圖車位 (6408,10494)、(6298,10591)；AutoDrive E2E replay 同路段重現，CarNormal 在兩個角點各有一段 isDoingOffroad、另因路外障礙繞行）：官方 streetIndex 543 只有 4 點 (6295.5,11197)→(6295.5,10594)→(6394.5,10494.5)→(7395,10494.5)，東北角點 (6394.5,10494.5) 在 tertiary 多邊形外 7.4 格、raster dirt-candidate，實際礫石路從 x≈6420 就轉向西南；西南角點 (6295.5,10594) 的 raster 也是 dirt-candidate，實際路帶要到 y≈10611 才接回 x6295.5。段1、段2 以 0.5 格取樣 2283 個有 100 個 dirt-candidate。2026-09-06 交叉驗證已判 confirmed，但三段都碰到壞頂點而列待人工。修法：移除段1、段2，保留段0（x6295.5 南北段，街道仍可搜尋）；以 6 點折線取代：起點用原東端 (7395,10494.5)（照舊接 Crooked Eye Road），沿 y10494.5（東西段路帶 y10492–10496 的中線）到 (6417.5,10494.5)，彎道頂點取 pinned raster 逐列礫石路帶中點再以 0.5 格 DP 簡化（第三方清單只當線索，差距 ≤1 格），止於段0 上的 (6295.5,10611.5)＝T 字接回（南北段路帶 x6293–6297 中線）。段0 北端殘段 (6295.5,10594) 距新折線末段 7.83 格，小於吸附容差 9.5，建圖時被併到新線上、不留懸空岔路。新折線 2305 個取樣全為 gravel、到路帶邊 ≥2.08 格；寬度 5 同官方。不增加街名、不放大全圖吸附容差。"
+    },
+    {
+      "id": "m:muldraugh-salt-river-road-bend",
+      "operation": "add",
+      "points": [12878.5, 6900, 13167, 6900, 13175, 6897, 13182, 6893.5, 13188.5, 6888.5, 13193.5, 6882, 13197, 6875, 13200, 6867, 13200, 6469],
+      "width": 6,
+      "surface": "gravel",
+      "searchable": false,
+      "reason": "Salt River Road 東北角的官方 L 角穿過樹林（2026-10-02，AutoDrive E2E 隨機路線同一角落 rc16／22／23／28／53／55 累計 8 次 StopStuck，車停在草地樹叢、礫石路就在旁邊）：官方 streetIndex 423（w6）只有 3 點 (12878.5,6900)→(13200,6900)→(13200,6469)，角點在 pinned raster 是 dirt-candidate、離最近路面格 12.7 格；實際礫石路從 y≈6867 就離開 x13200 往西南彎，到 x≈13167 才併回 y6900。兩段都碰到角點，0.5 格取樣 1506 個有 97 個 dirt-candidate（(13176,6900)→角點→(13200,6876)）。worldmap.xml 的 tertiary 多邊形畫同一個 L，屬同源資料、不背書。修法：移除段0、段1（同名的 streetIndex 424 Salt River Road 仍可搜尋，比照 Station Road 252 整條移除）；以 9 點折線取代，兩端用官方端點座標（照舊接 424 與 Bearcamp Road／Caroline Staunton Road）：直段沿路帶中線 y6900（路帶 y6897–6902）與 x13200（路帶 x13197–13202），彎道以 (13167,6867) 為心逐度取放射線上礫石路帶中點（半徑 33→30.3→33、帶寬 6–8 格、對 45° 對稱），平滑擬合後每 15° 取一頂點、四捨五入到 0.5 格。1476 個取樣全為 gravel／paved、到路帶邊 ≥2.46 格；寬度 6 同官方。"
     }
   ]
 }
