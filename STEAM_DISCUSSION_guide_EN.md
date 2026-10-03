@@ -42,7 +42,7 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [h3]🧭 Multi-target navigation[/h3]
 [list]
 [*] Up to 16 targets: add to the end, insert before a stop or "Go here first"; reorder, remove/undo, skip and preview the remaining route.
-[*] New trips continue automatically; step mode or stopover targets wait for you. Existing trips stay step-by-step. In a vehicle, stop first.
+[*] New trips continue automatically; step mode or stopover targets wait for you. Existing trips stay step-by-step. In a vehicle, stop first. For a target on the road, stopping in the lane beside it counts as arrived; for an off-road target, you are told to walk the rest.
 [*] Routes follow roads, preferring paved ones, and replan when you go off course.
 [*] In MP you can share your current stop with your faction; servers can disable this.
 [*] Hands-free driving: [url=https://steamcommunity.com/workshop/filedetails/discussion/3792675881/586187095760051144/]AutoDrive Guide[/url].
