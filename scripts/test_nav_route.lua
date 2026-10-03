@@ -840,6 +840,24 @@ do
         if r.pts[i + 1] == 111 and (r.pts[i] == 100 or r.pts[i] == 97) then ends = ends + 1 end
     end
     assert(ends == 1, "小幅錯位：只經過一個合流點，不保留兩個原端點；實得 " .. ends)
+    -- 橫拖恰等於半寬（AutoDrive 玩家回報 Rosewood Road）：轉角頂點被併到 4 格外、同在東西線上的
+    -- 支路端點，w8 拖 4.0＝半寬；舊判定（嚴格大於）不保留，整段 200 格斜到路緣。兩種折線方向各
+    -- 守 markKeep 的起點／終點判定：正向轉角是南北段的終點，反向是起點。
+    for _, rosePts in ipairs({ { 100, 0, 100, 200, 160, 200 }, { 160, 200, 100, 200, 100, 0 } }) do
+        local label = rosePts[1] == 100 and "恰等於半寬（終點）" or "恰等於半寬（起點）"
+        g = buildAll({
+            { name = "Rose", src = "M", width = 8, pts = rosePts },
+            { name = "Angel", src = "M", width = 8, pts = { 0, 200, 96, 200 } },
+        }, nil)
+        r = route(g, 100, 10, 150, 200)
+        assert(r, label .. "：連通")
+        for _, y in ipairs({ 20, 100, 180, 195 }) do
+            assert(math.abs(xAtY(r, y) - 100) < 0.01,
+                ("%s：南北段在 y=%d 仍在原線 x=100，實得 %s"):format(label, y, tostring(xAtY(r, y))))
+        end
+        r = route(g, 10, 200, 100, 10)
+        assert(r and math.abs(r.len - 280) < 0.01, label .. "：支路照舊接上轉角（86＋4＋190），實得 " .. tostring(r and r.len))
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -1487,6 +1505,25 @@ do
                 end
             end
             assert(reached, "KY-1394 分流點：路線經過車道原起點 (" .. lane .. ",3180)")
+        end
+    end
+    -- Rosewood Road（AutoDrive 玩家回報：往南、往北都「偵測到前方障礙」、繞進路旁草地）：官方
+    -- (8273,11780)→(8273,11982) 在 y11982 轉東；轉角被併到 4 格外的 Angel Road 端點 (8269,11982)，
+    -- w8 橫拖恰為半寬 4.0，舊版整段 202 格斜到路緣（路面 x8270–8275），靠右車道落進草地與西側路燈列。
+    do
+        local g = officialBuilder.graph
+        for _, ends in ipairs({ { 8272, 11832, 8345, 12231 }, { 8347, 12100, 8273, 11800 } }) do
+            local r = mod.findRoute(g, ends[1], ends[2], ends[3], ends[4], nil, nil, nil, 12)
+            assertRouteMetadata(r, "Rosewood Road")
+            local corner = false
+            for i = 1, #r.pts, 2 do
+                local x, y = r.pts[i], r.pts[i + 1]
+                if y < 11982 then
+                    assert(math.abs(x - 8273) < 0.01, ("Rosewood Road：南北段留在路面中線 x8273，實得 (%s,%s)"):format(x, y))
+                end
+                corner = corner or (math.abs(x - 8273) < 0.01 and math.abs(y - 11982) < 0.01)
+            end
+            assert(corner, "Rosewood Road：路線在原轉角 (8273,11982) 轉彎，不繞到 Angel Road 端點")
         end
     end
     -- 同類分隔帶缺接線四處（2026-09-30 全圖掃描：兩條支路端點同軸對望 ≤30 格、連線穿過 ≥2 條他街、

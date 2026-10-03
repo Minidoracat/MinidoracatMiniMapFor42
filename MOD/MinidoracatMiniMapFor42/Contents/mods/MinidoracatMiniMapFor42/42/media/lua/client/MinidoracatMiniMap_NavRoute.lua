@@ -113,7 +113,7 @@ local ATTACH_SLACK = 4.5      -- 半寬和之外的路口間隙容差（格）�
                               -- < 4.5 格，塞不下建築，「可通行」語義成立
 local CUT_MERGE = 0.25        -- 同段切割點合併距（格）
 local ATTACH_END = 1.0        -- 投影點併入彼段端點的世界距（格）——同路口語義
-local KEEP_END_LAT = 1.0      -- 端點被吸附橫向拖超過此距（格）＝原端點留在原線上，另接短接線到吸附點
+local KEEP_END_LAT = 1.0      -- 端點被吸附橫向拖達此距（格）＝原端點留在原線上，另接短接線到吸附點
 local SNAP_RING = { 16, 48, 96, 160 } -- snap 擴圈搜尋半徑（格）
 local PROGRESS_WINDOW = 12    -- 偏航增量投影的段窗口（±）
 local MAX_POINTS_PER_STREET = 4096
@@ -1062,11 +1062,13 @@ local function graphSnapSeg(g, x1, y1, x2, y2, a, b2, surface, width)
     end
 end
 
--- 標記要保留的原端點：端點被吸附橫向拖超過路的半寬（至少 KEEP_END_LAT）＝拉斜後的線會
--- 跑出路面。以點為單位：任一段在該點超過門檻，該點的每一段都保留（同一個原端點／頂點
+-- 標記要保留的原端點：端點被吸附橫向拖到路的半寬以上（至少 KEEP_END_LAT）＝拉斜後的線會
+-- 壓到路緣或跑出路面。剛好等於半寬也算：vanilla 常把支路端點畫在另一條路的路緣線上，橫拖量
+-- 正好是半寬（Rosewood Road 轉角被併到 4 格外的 Angel Road 端點，w8 拖 4.0，整段 202 格斜到
+-- 路緣，自駕靠右開進草地）。以點為單位：任一段在該點達到門檻，該點的每一段都保留（同一個原端點／頂點
 -- 照舊相連，吸附點只是旁接）；只保留其中一段會在路口畫出往吸附點折去再折回的尖角。
 -- 小幅橫移照舊拖動：兩條街各自被併到偏出去的路口點時，各自保留同樣會畫出尖角。
--- 外積²＞門檻²×段長²＝橫移量超過門檻；純沿線延伸的 T 字不算橫移。
+-- 外積²≥門檻²×段長²＝橫移量達到門檻；純沿線延伸的 T 字不算橫移。
 local function markKeep(b, i)
     local ox1, oy1, ox2, oy2 = b.gx1[i], b.gy1[i], b.gx2[i], b.gy2[i]
     local sx, sy = ox2 - ox1, oy2 - oy1
@@ -1075,10 +1077,10 @@ local function markKeep(b, i)
     local lim = lat * lat * (sx * sx + sy * sy)
     local x, y = resolveMoved(b, ox1, oy1)
     local c = sx * (y - oy1) - sy * (x - ox1)
-    if c * c > lim then b.keepKey[quantKey(ox1, oy1)] = true end
+    if c * c >= lim then b.keepKey[quantKey(ox1, oy1)] = true end
     x, y = resolveMoved(b, ox2, oy2)
     c = sx * (y - oy2) - sy * (x - ox2)
-    if c * c > lim then b.keepKey[quantKey(ox2, oy2)] = true end
+    if c * c >= lim then b.keepKey[quantKey(ox2, oy2)] = true end
 end
 
 -- 階段三：依切點切割段 → 節點/邊/snap 索引
