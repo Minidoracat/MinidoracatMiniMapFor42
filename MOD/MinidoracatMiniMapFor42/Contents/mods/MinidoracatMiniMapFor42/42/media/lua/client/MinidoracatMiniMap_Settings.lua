@@ -58,6 +58,7 @@ local UNIFIED_LAYER_TICKS = {
     { id = "PlaceNames", label = "UI_MinidoracatMiniMap_PlaceNames", default = true },
     { id = "StreetNames", label = "UI_MinidoracatMiniMap_StreetNames", default = true },
     { id = "NavRoute", label = "UI_MinidoracatMiniMap_NavRoute", default = true },
+    { id = "KeepFinishedTrip", label = "UI_MinidoracatMiniMap_KeepFinishedTrip", default = false },
     { id = "ChunkGrid", label = "UI_MinidoracatMiniMap_ChunkGrid", default = false },
     { id = "ChunkGridLabels", label = "UI_MinidoracatMiniMap_ChunkGridLabels", default = true },
     -- Safehouses 移入獨立「安全屋」區塊（safehouse）；PoiIcons/PoiBlocks 移入獨立

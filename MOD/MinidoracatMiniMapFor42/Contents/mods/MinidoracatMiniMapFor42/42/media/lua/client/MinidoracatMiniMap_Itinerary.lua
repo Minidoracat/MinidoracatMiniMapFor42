@@ -490,6 +490,10 @@ local function edit(pn, expectedRevision, operation, a, b, c, d)
             touched = old ~= nil
             trip.stops, trip.count, trip.currentStopId, trip.phase, trip.reason = {}, 0, nil, "draft", nil
             trip.autoContinue = true
+        elseif trip.phase == "completed" and d == nil then
+            -- 走完的行程不當前綴：加點＝開新行程（站號從 1 起、stop id 照 nextStopId 遞增），
+            -- 接續模式沿用；舊站不留在地圖上累加編號。插到指定站前（d）照舊驗錨點
+            trip.stops, trip.count, trip.currentStopId, trip.reason = {}, 0, nil, nil
         elseif trip.count >= MAX_STOPS then return false, "limit" end
         if trip.nextStopId >= MAX_INTEGER - 1 then return false, "limit" end
         local position = trip.count + 1

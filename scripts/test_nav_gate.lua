@@ -37,7 +37,7 @@ local compile = loadstring or load
 --------------------------------------------------------------------------------
 local function fixture()
     local printed, packets, players, handlers, events = {}, {}, {}, {}, {}
-    local client, shareAllowed = false, true
+    local client, shareAllowed, opts = false, true, {}
     local draws = { route = 0, ping = 0, rects = 0, routeFail = false, texts = {} }
     for _, name in ipairs({ "OnCreatePlayer", "OnGameStart", "OnTick", "OnServerCommand" }) do
         handlers[name] = {}
@@ -47,7 +47,10 @@ local function fixture()
     local core = {
         ready = true,
         policy = { readBool = function() return shareAllowed end },
-        getBoolOption = function(_, default) return default end,
+        getBoolOption = function(name, default)
+            if opts[name] ~= nil then return opts[name] end
+            return default
+        end,
         clipSegment = function(x1, y1, x2, y2) return x1, y1, x2, y2 end,
         copyCoordsText = function() end,
     }
@@ -120,7 +123,7 @@ local function fixture()
         }
     end
     return {
-        core = core, api = api, printed = printed, packets = packets, draws = draws,
+        core = core, api = api, printed = printed, packets = packets, draws = draws, opts = opts,
         player = player, inner = inner,
         client = function(v) client = v end,
         share = function(v) shareAllowed = v end,
@@ -405,6 +408,22 @@ do
         "D4 log 須指名路線繪製失敗")
     assert(hasText(t, "2/2"), "D4 路線壞掉不得連坐站點繪製")
 
+    -- D6: 走完的行程預設不畫站號（KeepFinishedTrip 關，Workshop 回報每趟都要手動清）；
+    -- 開啟才保留。分享旗不受影響
+    t.draws.routeFail = false
+    p.x, p.y = 60, 60
+    t.fire("OnTick")
+    eq(trip(t).phase, "completed", "D6 前置：最後一站到站、行程結束")
+    t.resetDraws()
+    Core.drawNavTargets(inner)
+    assert(not hasText(t, "1") and not hasText(t, "2"), "D6 預設不畫走完行程的站號")
+    assert(hasText(t, "Bob"), "D6 分享旗照畫")
+    t.opts.KeepFinishedTrip = true
+    t.resetDraws()
+    Core.drawNavTargets(inner)
+    assert(hasText(t, "1") and hasText(t, "2"), "D6 開啟保留時照畫站號")
+    t.opts.KeepFinishedTrip = nil
+
     -- D5: 行程清空＝站點層不畫，分享旗與搜尋 ping 仍照畫（無行程不得吃掉其他層）
     t.draws.routeFail = false
     assert(edit(t, "clear"), "D5 清空行程")
@@ -460,4 +479,4 @@ do
 end
 
 print("test_nav_gate: OK（註冊/判定 G1-G9＋set 閘門 S1-S6＋分享撤回 H1-H3"
-    .. "＋繪製閘門與繪製唯讀 D1-D5＋getNavTarget Q1-Q4）")
+    .. "＋繪製閘門與繪製唯讀 D1-D6＋getNavTarget Q1-Q4）")

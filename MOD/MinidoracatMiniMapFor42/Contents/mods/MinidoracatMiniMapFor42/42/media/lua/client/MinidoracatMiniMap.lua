@@ -1090,6 +1090,10 @@ if PZAPI and PZAPI.ModOptions then
     -- 索引與 graph 同一條建置流水線（一次性背景成本，非每幀）
     modOptions:addTickBox("NavRoute", "UI_MinidoracatMiniMap_NavRoute", true,
         "UI_MinidoracatMiniMap_NavRoute_tooltip")
+    -- 走完的行程留在地圖上（預設關）：關＝最後一站到達後，站號標記從小地圖與世界地圖
+    -- 消失（_Nav.lua drawTripTargets）；行程頁仍列出結果，下一次加點或設目標就開新行程
+    modOptions:addTickBox("KeepFinishedTrip", "UI_MinidoracatMiniMap_KeepFinishedTrip", false,
+        "UI_MinidoracatMiniMap_KeepFinishedTrip_tooltip")
     -- chunk 格線（預設關）：8×8 格 chunk 的棋盤格底色／格線／所在 chunk 編號與範圍，
     -- 小地圖與世界地圖共用（_ChunkGrid.lua）；繪製端每幀讀值即時生效
     modOptions:addTickBox("ChunkGrid", "UI_MinidoracatMiniMap_ChunkGrid", false,

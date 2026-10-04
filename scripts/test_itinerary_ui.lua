@@ -654,6 +654,14 @@ Core.navPromptTarget(0, 111, 222, "Home", "replace")
 falsy(UI.confirm, "C1: 沒有舊行程時取代不必確認")
 eq(lastCall("set").x, 111, "C1: 直接走 navSetTarget")
 
+-- 走完的行程沒有待前往站可丟：取代直接走 navSetTarget，不必多按一次確認
+setTrip(0, "completed", { stop(1, 100, 100, "arrived"), stop(2, 120, 100, "skipped") }, nil, nil, 6)
+clearCalls()
+UI.confirm = nil
+Core.navPromptTarget(0, 112, 223, "Next", "replace")
+falsy(UI.confirm, "C1b: 行程已結束時取代不必確認")
+eq(lastCall("set").x, 112, "C1b: 直接走 navSetTarget")
+
 setTrip(0, "draft", { stop(1, 100, 100) }, nil, nil, 7)
 clearCalls()
 UI.confirm = nil

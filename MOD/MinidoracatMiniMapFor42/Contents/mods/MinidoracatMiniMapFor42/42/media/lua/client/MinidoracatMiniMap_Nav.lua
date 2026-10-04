@@ -284,6 +284,8 @@ local TRIP_COLORS = {
 local function drawTripTargets(inner, pn, playerObj, k, tz)
     local trip = Core.navItineraryState(pn)
     if not trip then tripLabels[pn] = nil; return end
+    -- 走完的行程預設不畫（KeepFinishedTrip 關）：到站後站點不留在地圖上；行程頁照樣列出結果
+    if trip.phase == "completed" and not getBoolOption("KeepFinishedTrip", false) then return end
     local tm = getTextManager()
     local fontH = tm:getFontHeight(UIFont.Small)
     local labels = tripLabels[pn]
@@ -534,7 +536,7 @@ if ISMiniMapInner and ISMiniMapInner.onRightMouseUp then
         local worldY = self.mapAPI:uiToWorldY(x, y)
         -- 加點入口順序（兩張地圖一致）：加到行程最後（主要）→插在指定停靠點之前
         -- （子選單列出待前往站，Core.navInsertSubMenu 共用同一份錨點防線）→
-        -- 先去這裡→取代整趟（會立刻出發，故排在後面且一律先確認）→行程管理
+        -- 先去這裡→取代整趟（會立刻出發，故排在後面；會丟待前往站時先確認）→行程管理
         context:addOption(getText("UI_MinidoracatMiniMap_TripAdd"), self,
             self.onMinidoracatAddStop, worldX, worldY)
         Core.navInsertSubMenu(context, self, pn, worldX, worldY)

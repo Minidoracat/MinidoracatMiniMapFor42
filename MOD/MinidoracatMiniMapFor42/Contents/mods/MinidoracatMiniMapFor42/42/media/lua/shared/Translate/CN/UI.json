@@ -43,6 +43,8 @@
     "UI_MinidoracatMiniMap_StreetNames_tooltip": "在小地图上沿道路显示街道名称。原版小地图不载入街道数据（只有世界地图有），本 MOD 已补载；使用中文街名翻译 MOD 时同步生效。小地图拉得很远（视野超过默认约 8 倍宽）时不画：字太挤看不清，又会拖慢画面。",
     "UI_MinidoracatMiniMap_NavRoute": "导航路线（沿道路）",
     "UI_MinidoracatMiniMap_NavRoute_tooltip": "右键设定导航目标后，自动沿道路计算路线并绘制在小地图与世界地图上（目标旗标之下）。数据来源为各地图的官方街道数据；附近无道路数据时退回直线指示。",
+    "UI_MinidoracatMiniMap_KeepFinishedTrip": "行程结束后保留站点标记",
+    "UI_MinidoracatMiniMap_KeepFinishedTrip_tooltip": "默认关闭。关闭时，抵达行程的最后一站后，小地图与世界地图上的站号标记会消失；行程规划窗口仍会列出这趟已结束的行程。开启则保留标记到你开始新行程为止（绿框打勾为已抵达、灰框斜线为已略过）。不论开关，行程结束后再加站点或设置新的导航目标，都会开始新行程，站号从 1 起算。",
     "UI_MinidoracatMiniMap_ChunkGrid": "显示 chunk 网格线（8x8 格）",
     "UI_MinidoracatMiniMap_ChunkGrid_tooltip": "在小地图与世界地图上标出每个 chunk（8x8 格，游戏存档以 chunk 为单位）：相邻 chunk 交错深浅底色并画出网格线；你所在的 chunk 以琥珀色框出，并标示 chunk 编号与坐标范围。放大到放得下文字时，每个 chunk 中央也会标上编号；缩小到网格线过密时自动隐藏。默认关闭。",
     "UI_MinidoracatMiniMap_ChunkGridLabels": "chunk 网格线显示编号文字",

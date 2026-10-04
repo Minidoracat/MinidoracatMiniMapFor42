@@ -98,7 +98,26 @@ do
     p.x = 0; assert(start(t)); t.fire("OnTick")
     eq(trip(t).stops[4].status, "pending", "同座標仍是不同站")
     assert(start(t)); t.fire("OnTick"); eq(trip(t).phase, "completed", "明確逐站完成")
+    local lastId = trip(t).stops[4].id
     assert(edit(t, "append", 40, 0)); eq(trip(t).phase, "draft", "完成後加站回草稿")
+    -- 走完的行程不當前綴：舊站不留在地圖上累加編號（Workshop 回報），新行程從 1 編號
+    local it = trip(t)
+    eq(it.count, 1, "完成後加站開新行程、舊站清掉")
+    eq(it.stops[1].x, 40, "新行程只有剛加的站"); eq(it.stops[1].status, "pending", "新站待前往")
+    assert(it.stops[1].id > lastId, "stop id 照 nextStopId 遞增、不重用")
+    eq(it.autoContinue, false, "接續模式沿用舊行程")
+end
+
+-- 走完的行程插到舊站前照舊拒絕（錨點不是待前往站），沒有錨點的插入等於加點、同樣開新行程。
+do
+    local t = fixture(); local p = t.player(0)
+    assert(edit(t, "append", 10, 0, "A")); assert(start(t)); p.x = 10; t.fire("OnTick")
+    eq(trip(t).phase, "completed", "單站完成")
+    eq(select(2, editAt(t, "insert", 20, 0, nil, trip(t).stops[1].id)), "state", "完成站不能當錨點")
+    eq(trip(t).count, 1, "被拒的插入不動舊站")
+    assert(editAt(t, "insert", 30, 0, "tail"), "沒有錨點的插入照常可用")
+    eq(trip(t).count, 1, "沒有錨點的插入同樣開新行程")
+    eq(trip(t).stops[1].label, "tail", "新行程只有剛插入的站")
 end
 
 -- 單一目標自駕中換目標：沿用同一 claim／token、只換目的地；多站行程仍被 claim 守住。
@@ -673,7 +692,8 @@ do
     it = trip(t)
     eq(it.activation, "start", "沒有其他待辦時視為重新開始")
     eq(it.phase, "navigating", "仍然直接開始導航")
-    eq(it.currentStopId, it.stops[2].id, "新站成為目前站")
+    eq(it.count, 1, "完成後的優先站開新行程、舊站清掉")
+    eq(it.currentStopId, it.stops[1].id, "新站成為目前站")
     eq(select(2, t.core.navEditItinerary(0, trip(t).revision, "next", 80, 0)), "badargs",
         "沒有 next 別名")
 end

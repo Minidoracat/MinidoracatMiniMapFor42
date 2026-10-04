@@ -16,7 +16,7 @@
 -- 就捕捉 owner＋revision＋錨點 id，延遲點擊不得插到別的位置；長站名只放有界短標籤，
 -- 全文走既有可捲確認面板讀完再套用——原生選單寬度＝最長選項全文寬，不封頂會出畫面）
 -- ／先去這裡（op=priority：插在第一個待前往站之前並明確開始導航，不啟自駕）／取代整趟
--- （op=replace，次要動作且一律先確認）。選不到結果時（空字串／載入中／查無命中的
+-- （op=replace，次要動作；會丟待前往站時先確認）。選不到結果時（空字串／載入中／查無命中的
 -- 說明列）這些動作一律停用——不留按了沒反應的按鈕。
 -- 未輸入時列出收藏（家第一，權威在 _Places.lua，本檔只現查唯讀狀態）；「收藏」鈕以
 -- 原生選單依選中項提供設為家／改名／移除或加入收藏。行程頁另有永遠可按的「回家」。
@@ -1157,9 +1157,10 @@ local function tripPrompt(pn, textKey, arg, actionKey, payload)
 end
 
 -- 雙地圖右鍵與搜尋頁共用的目標入口。op 一律明確傳入：
--- replace＝Core.navSetTarget，取代整份行程成單站並**立即開始導航**，所以有舊行程
--- 或壞資料時一律先確認；append 只加到清單最後、不出發；priority 插在第一個待前往
--- 站之前並明確開始導航（不啟自駕），取代舊的 next——沒有別名、沒有舊語意入口。
+-- replace＝Core.navSetTarget，取代整份行程成單站並**立即開始導航**，所以會丟掉待前往
+-- 站或壞資料時一律先確認（走完的行程沒有東西可丟，直接取代）；append 只加到清單最後、
+-- 不出發；priority 插在第一個待前往站之前並明確開始導航（不啟自駕），取代舊的 next——
+-- 沒有別名、沒有舊語意入口。
 -- 舊 next 與任何未知 op（含 nil）一律回報 badargs 並停止：把未知操作「落回
 -- replace」會把一次編輯升格成取代整趟，空行程時更直接建立單站行程發車
 -- （review UI-1）——那是這支函式最破壞性的一條路，不能靠猜。
@@ -1176,8 +1177,9 @@ Core.navPromptTarget = function(pn, x, y, label, op)
         tripEdit(pn, tripRevision(st), op, x, y, label)
         return
     end
-    -- 壞資料時 snapshot 可能是 nil，但取代同樣要確認（不偷偷抹掉待診斷資料）
-    if (st and (st.count or 0) > 0) or tripErrorReason(pn) then
+    -- 壞資料時 snapshot 可能是 nil，但取代同樣要確認（不偷偷抹掉待診斷資料）；
+    -- 待前往站數＝插入錨點數（Core.navInsertAnchors，本檔下方）
+    if Core.navInsertAnchors(pn) > 0 or tripErrorReason(pn) then
         tripPrompt(pn, "UI_MinidoracatMiniMap_TripConfirmReplace",
             label or string.format("%d, %d", math.floor(x), math.floor(y)),
             "UI_MinidoracatMiniMap_TripReplaceAction",
@@ -2341,7 +2343,7 @@ local function createSearchWindow(pn)
         tripShowOnMap(target)
     end)
     -- 搜尋頁：主要＝加到行程最後／在地圖顯示；次要＝插在指定站之前／先去這裡／
-    -- 取代整趟（取代會立刻出發，放次要且一律先確認）／收藏（原生選單依選中項切換）
+    -- 取代整趟（取代會立刻出發，放次要；會丟待前往站時先確認）／收藏（原生選單依選中項切換）
     win.searchBtns = {
         { key = "UI_MinidoracatMiniMap_TripAdd", action = winAddStop, field = "addBtn" },
         { key = "UI_MinidoracatMiniMap_SearchGoto", action = winGoto, field = "gotoBtn" },

@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### 變更
+
+- 行程開完後，地圖上不再留下一排數字標記：以前每趟開完，抵達過的站點都以綠框數字留在小地圖與世界地圖上；下一趟用「加到行程最後」或「先去這裡」時還會接著舊站往下編號，要乾淨就得每趟手動清空行程。現在最後一站抵達後，站號標記就從地圖上消失（行程規劃視窗仍列出這趟的結果）；之後再加站點或設定新的導航目標，會直接開新行程、從 1 開始編號，「設定導航目標」也不再跳出取代確認。想保留標記的玩家，可在設定開啟新選項「行程結束後保留站點標記」。
+
+> 技術要點：`_Itinerary` 對 phase=completed 的 append／priority／不帶錨點的 insert 先清空舊站（stop id 照 `nextStopId` 遞增、`autoContinue` 沿用），帶錨點的 insert 照舊回 `state`；`navPromptTarget` 的取代只在有 pending 站或壞資料時確認。新增客戶端選項 `KeepFinishedTrip`（預設關）控制 completed 行程是否畫在地圖上。導航 API 版本不變，`getNavItinerary` 對 completed 行程的快照內容不變。
+
 ## [42.21.0-0.34.0] - 2026-10-04
 
 ### 變更
