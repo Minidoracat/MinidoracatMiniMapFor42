@@ -36,10 +36,10 @@ local nextRoute, nextRouteState = nil, nil
 local detourCalls = {}
 local nextDetourRoute, nextDetourError = nil, nil
 local NavCore = {
-    findRoute = function(graph, sx, sy, tx, ty, ax, ay, ar, approachWeight)
+    findRoute = function(graph, sx, sy, tx, ty, ax, ay, ar, approachWeight, more)
         detourCalls[#detourCalls + 1] = {
             graph = graph, sx = sx, sy = sy, tx = tx, ty = ty,
-            ax = ax, ay = ay, ar = ar, w = approachWeight,
+            ax = ax, ay = ay, ar = ar, w = approachWeight, more = more,
         }
         return nextDetourRoute, nextDetourError
     end,
@@ -316,6 +316,33 @@ detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5)
 assert(detour == nil and detourState == "failed" and #T.detourCalls == 1,
     "A18: failed latch 後重呼不得再進 findRoute")
 
+-- A19（v9）：第 7 參 moreAvoid 原表轉給 findRoute；不傳＝nil（v8 呼叫逐位元不變）
+resetAll()
+T.players[0] = player(1, 2)
+T.engine.graph = { id = "graph" }
+T.setDetour(detourV4, nil)
+local more = { 100, 200, 40, -5.5, 7, 12 }
+detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5, more)
+assert(detour == detourV4 and detourState == "ok" and T.detourCalls[1].more == more,
+    "A19: moreAvoid 原表轉遞給 findRoute")
+detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5)
+assert(detourState == "ok" and T.detourCalls[2].more == nil, "A19: 六參數呼叫不帶 moreAvoid")
+
+-- A20（v9）：moreAvoid 驗參同主圈——外部傳壞值當場擋下、不進 A*
+for label, bad in pairs({
+    ["非表"] = 5, ["長度非 3 倍數"] = { 1, 2 }, ["超過 8 圈"] = {
+        1, 1, 1, 2, 2, 1, 3, 3, 1, 4, 4, 1, 5, 5, 1, 6, 6, 1, 7, 7, 1, 8, 8, 1, 9, 9, 1 },
+    ["NaN"] = { NAN, 0, 5 }, ["Infinity"] = { 0, INF, 5 }, ["r=0"] = { 0, 0, 0 }, ["r<0"] = { 0, 0, -1 },
+    ["非數字"] = { "a", 0, 5 },
+}) do
+    resetAll()
+    T.players[0] = player(1, 2)
+    T.engine.graph = { id = "graph" }
+    detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5, bad)
+    assert(detour == nil and detourState == "badargs" and #T.detourCalls == 0,
+        "A20: moreAvoid " .. label .. " → badargs 且不進 A*")
+end
+
 --------------------------------------------------------------------------------
 -- 六、ensureRoute 快取／偏航（test:nav-cache 區段；跑 production 本體）
 -- 實測病灶（2026-09-01 AutoDrive telemetry）：車在 (10716,9756) 拿到首點
@@ -498,5 +525,5 @@ do
         "C8: 已在折返路線後段，不因落在首段後方誤判重算")
 end
 
-print("test_nav_api: OK（requestRoute A1-A12＋requestDetour A13-A18"
+print("test_nav_api: OK（requestRoute A1-A12＋requestDetour A13-A20"
     .. "＋ensureRoute 快取/偏航 C0-C8）")

@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### 變更
+
+- 自動駕駛（AutoDrive）同一趟連續遇到兩處堵死、需要再改道時，新路線會同時避開先前已經過不去的地方，不會原路繞回第一處堵點再卡住一次。需要 AutoDrive 同步更新才有作用。
+
+> 技術要點：nav API v9（additive）：`requestDetour` 第 7 參 `moreAvoid`＝更多避讓圈的扁平表 `{ x1, y1, r1, … }`（最多 8 圈），NavCore 同一次查詢對每圈施同樣的軟封鎖懲罰；驗參同主圈，六參數呼叫行為不變。回歸 `test_nav_api` A19–A20、`test_nav_route` 多避讓圈三路網。
+
 ## [42.21.0-0.33.7] - 2026-10-03
 
 ### 修正

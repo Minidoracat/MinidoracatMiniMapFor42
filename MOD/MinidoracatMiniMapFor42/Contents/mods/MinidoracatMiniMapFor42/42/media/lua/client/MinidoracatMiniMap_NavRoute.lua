@@ -1310,7 +1310,7 @@ local function heapPop(hI, hF, query)
     return topI
 end
 
--- 避讓軟封鎖（nav API v3 detour）：邊對堵點圈的線段距離判定。懲罰不是硬移除
+-- 避讓軟封鎖（nav API v3 detour；v9 起可多圈）：邊對堵點圈的線段距離判定。懲罰不是硬移除
 -- ——目標貼著堵點時 A* 仍要給路（吃罰照走），有替代路徑時罰額保證繞開。
 local AVOID_PENALTY = 100000 -- 十萬米：任何真實繞路都比它便宜
 local function segAvoidHit(x1, y1, x2, y2, ax, ay, ar2)
@@ -1340,11 +1340,12 @@ local function edgeTravelCost(len, surface, _width)
     return len * multiplier
 end
 
-local function segmentAvoidPenalty(len, x1, y1, x2, y2, avoidX, avoidY, avoidR2)
-    if len > 1e-6 and avoidR2
-        and segAvoidHit(x1, y1, x2, y2, avoidX, avoidY, avoidR2)
-    then
-        return AVOID_PENALTY
+-- av＝避讓圈扁平表 { x1, y1, r1², x2, y2, r2², … }（nil＝不避；findRouteInner 組）：任一圈命中＝一份懲罰
+local function segmentAvoidPenalty(len, x1, y1, x2, y2, av)
+    if len > 1e-6 and av then
+        for i = 1, #av, 3 do
+            if segAvoidHit(x1, y1, x2, y2, av[i], av[i + 1], av[i + 2]) then return AVOID_PENALTY end
+        end
     end
     return 0
 end
@@ -1352,7 +1353,7 @@ end
 -- A*（雙源起點＝snap 段兩端；終點＝臨時節點注入 snap 段兩端後回滾）。
 -- 回 route：len＝路網 pts 的幾何長；cost＝只套 surface 倍率的路網段成本；
 -- avoidPenalty 另列。三者皆不污染 adjLen，且都不含兩端 approach。
-local function runAStar(g, startCand, endCand, tx, ty, avoidX, avoidY, avoidR2, query)
+local function runAStar(g, startCand, endCand, tx, ty, av, query)
     if type(g.nx) ~= "table" or type(g.ny) ~= "table" or type(g.adjHead) ~= "table"
         or type(g.adjTo) ~= "table" or type(g.adjLen) ~= "table"
         or type(g.adjNext) ~= "table" or type(g.adjSurface) ~= "table"
@@ -1396,9 +1397,9 @@ local function runAStar(g, startCand, endCand, tx, ty, avoidX, avoidY, avoidR2, 
     local lenA = sqrt(dist2(px, py, g.nx[a], g.ny[a]))
     local lenB = sqrt(dist2(px, py, g.nx[b2], g.ny[b2]))
     local gA = edgeTravelCost(lenA, startSurface, startWidth)
-        + segmentAvoidPenalty(lenA, px, py, g.nx[a], g.ny[a], avoidX, avoidY, avoidR2)
+        + segmentAvoidPenalty(lenA, px, py, g.nx[a], g.ny[a], av)
     local gB = edgeTravelCost(lenB, startSurface, startWidth)
-        + segmentAvoidPenalty(lenB, px, py, g.nx[b2], g.ny[b2], avoidX, avoidY, avoidR2)
+        + segmentAvoidPenalty(lenB, px, py, g.nx[b2], g.ny[b2], av)
     local reached = false
     local okSearch, searchErr = pcall(function()
         g.nx[Q], g.ny[Q], g.adjHead[Q] = endCand.qx, endCand.qy, 0
@@ -1431,8 +1432,7 @@ local function runAStar(g, startCand, endCand, tx, ty, avoidX, avoidY, avoidR2, 
                     local to = g.adjTo[e]
                     local edgeLen = g.adjLen[e]
                     local ng = gn + edgeTravelCost(edgeLen, g.adjSurface[e], g.adjWidth[e])
-                        + segmentAvoidPenalty(edgeLen, g.nx[n], g.ny[n], g.nx[to], g.ny[to],
-                            avoidX, avoidY, avoidR2)
+                        + segmentAvoidPenalty(edgeLen, g.nx[n], g.ny[n], g.nx[to], g.ny[to], av)
                     if stamp[to] ~= gen or ng < gS[to] then
                         stamp[to], gS[to], fromN[to], fromEdge[to], closed[to] =
                             gen, ng, n, e, false
@@ -1497,7 +1497,7 @@ local function runAStar(g, startCand, endCand, tx, ty, avoidX, avoidY, avoidR2, 
             routeLen = routeLen + edgeLen
             routeCost = routeCost + edgeTravelCost(edgeLen, surface, width)
             avoidPenalty = avoidPenalty
-                + segmentAvoidPenalty(edgeLen, prevX, prevY, x, y, avoidX, avoidY, avoidR2)
+                + segmentAvoidPenalty(edgeLen, prevX, prevY, x, y, av)
         end
     end
     return {
@@ -1512,13 +1512,24 @@ end
 -- 反方向」，終點防「最近段是斷連孤島、次近段可達卻回 nil」（codex review）。
 -- 總代價含兩端 approach 距離（×approachWeight，缺省 3＝徒步；車上由呼叫端給 12），
 -- 取最短。第二回傳＝A* 內部例外（呼叫端 log）
-local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight)
+-- extraAvoid（v9，可省）＝更多避讓圈的扁平表 { x1, y1, r1, … }（同一次查詢的懲罰與主圈相同；requestDetour 已驗參）。
+local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight, extraAvoid)
     approachWeight = approachWeight or 3
     if not g or g.nodeCount == 0 then return nil end
-    local avoidR2 = nil
+    local av = nil
     if type(avoidR) == "number" and avoidR > 0
         and type(avoidX) == "number" and type(avoidY) == "number" then
-        avoidR2 = avoidR * avoidR
+        av = { avoidX, avoidY, avoidR * avoidR }
+    end
+    if type(extraAvoid) == "table" then
+        for i = 1, #extraAvoid - 2, 3 do
+            local ex, ey, er = extraAvoid[i], extraAvoid[i + 1], extraAvoid[i + 2]
+            if type(ex) == "number" and type(ey) == "number" and type(er) == "number" and er > 0 then
+                if not av then av = {} end
+                local k = #av
+                av[k + 1], av[k + 2], av[k + 3] = ex, ey, er * er
+            end
+        end
     end
     local query = { n = 0 }
     local starts = snapCandidates(g, sx, sy, 2, query)
@@ -1537,8 +1548,7 @@ local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approac
                 -- 段端折返成 U 形——測試「gate 勝者段」抓到的路徑膨脹）
                 local dlen = sqrt(dist2(sc.qx, sc.qy, ec.qx, ec.qy))
                 local surface, width = g.sSurface[sc.seg], g.sWidth[sc.seg]
-                local avoidPenalty = segmentAvoidPenalty(dlen, sc.qx, sc.qy, ec.qx, ec.qy,
-                    avoidX, avoidY, avoidR2)
+                local avoidPenalty = segmentAvoidPenalty(dlen, sc.qx, sc.qy, ec.qx, ec.qy, av)
                 r = {
                     pts = { sc.qx, sc.qy, ec.qx, ec.qy },
                     len = dlen, cost = edgeTravelCost(dlen, surface, width),
@@ -1550,7 +1560,7 @@ local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approac
                 }
                 if avoidPenalty > 0 then
                     local alternate, alternateErr =
-                        runAStar(g, sc, ec, tx, ty, avoidX, avoidY, avoidR2, query)
+                        runAStar(g, sc, ec, tx, ty, av, query)
                     if alternateErr then return nil, alternateErr end
                     if alternate and alternate.cost + alternate.avoidPenalty
                         < r.cost + r.avoidPenalty
@@ -1559,7 +1569,7 @@ local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approac
                     end
                 end
             else
-                r, err = runAStar(g, sc, ec, tx, ty, avoidX, avoidY, avoidR2, query)
+                r, err = runAStar(g, sc, ec, tx, ty, av, query)
                 if err then return nil, err end
             end
             if r then
@@ -1582,8 +1592,9 @@ local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approac
     return best
 end
 
-function NavCore.findRoute(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight)
-    local ok, route, err = pcall(findRouteInner, g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight)
+function NavCore.findRoute(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight, extraAvoid)
+    local ok, route, err = pcall(findRouteInner, g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight,
+        extraAvoid)
     if not ok then return nil, route end
     return route, err
 end
@@ -2915,7 +2926,11 @@ end
 -- 成功時**覆寫**該玩家的路線快取——minimap 與後續 requestRoute 沿用 detour 線；
 -- target 未變、ensureRoute 不會立刻重算蓋回（偏航／冷卻規則照舊）。
 -- 回 (route, state)：state 字彙同 requestRoute。
-MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoidX, avoidY, avoidR)
+-- v9：第 7 參 moreAvoid（可省）＝更多避讓圈的扁平表 { x1, y1, r1, x2, y2, r2, … }，最多 8 圈；同一次查詢裡
+-- 每圈與主圈同樣軟封鎖（路線穿任一圈 avoidPenalty>0）。AutoDrive 用它避開同一趟先前改道時已判死的堵點
+-- （只避新堵點時 A* 會原路繞回舊堵點）。每圈同主圈驗參（有限數字、r>0），長度不是 3 的倍數、超過 8 圈或
+-- 任一值不合＝badargs；舊消費者不傳＝行為與 v8 相同。
+MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoidX, avoidY, avoidR, moreAvoid)
     if type(avoidX) ~= "number" or type(avoidY) ~= "number" or type(avoidR) ~= "number"
         or avoidX ~= avoidX or avoidY ~= avoidY or avoidR ~= avoidR
         or avoidX == math.huge or avoidX == -math.huge
@@ -2924,12 +2939,23 @@ MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoi
     then
         return nil, "badargs"
     end
+    if moreAvoid ~= nil then
+        if type(moreAvoid) ~= "table" or #moreAvoid % 3 ~= 0 or #moreAvoid > 24 then return nil, "badargs" end
+        for i = 1, #moreAvoid do
+            local v = moreAvoid[i]
+            if type(v) ~= "number" or v ~= v or v == math.huge or v == -math.huge
+                or (i % 3 == 0 and v <= 0)
+            then
+                return nil, "badargs"
+            end
+        end
+    end
     local playerObj, argState = apiPlayer(playerNum, targetX, targetY)
     if not playerObj then return nil, argState end
     local px, py = playerObj:getX(), playerObj:getY()
     local weight = approachWeightFor(playerObj)
     local route, aerr = NavCore.findRoute(engine.graph, px, py, targetX, targetY,
-        avoidX, avoidY, avoidR, weight)
+        avoidX, avoidY, avoidR, weight, moreAvoid)
     if aerr then
         failNavEngine(aerr)
         return nil, "failed"

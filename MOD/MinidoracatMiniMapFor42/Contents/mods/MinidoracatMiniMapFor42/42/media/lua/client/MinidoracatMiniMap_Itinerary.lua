@@ -702,7 +702,7 @@ API.getNavTarget, API.isNavLegReached = getTarget, legReached
 API.setNavContinuation = function(pn, expectedRevision, enabled)
     return edit(pn, expectedRevision, "mode", enabled)
 end
-API.navApiVersion = 8 -- v8：getNavHome／goNavHome（定義在 _Places.lua）
+API.navApiVersion = 9 -- v9：requestDetour 第 7 參多避讓圈（_NavRoute.lua）；v8：getNavHome／goNavHome（_Places.lua）
 
 Events.OnCreatePlayer.Add(function(pn) loadPlayer(pn) end)
 Events.OnGameStart.Add(function()

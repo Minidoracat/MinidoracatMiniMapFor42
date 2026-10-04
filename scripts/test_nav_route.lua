@@ -1015,6 +1015,29 @@ do
         "同段 avoid：runAStar 找到 SNAP_RING 外的合法遠端繞路")
 end
 
+-- 多避讓圈（nav API v9 requestDetour 第 7 參）：直路被主圈 A 堵、北環被附加圈 B 堵 → 走南環；只給主圈＝北環
+-- （AutoDrive E2E dixie9050w：第二次改道只避新堵點，A* 原路繞回第一次的堵點）。三條都被圈住＝軟封鎖照樣給路。
+do
+    local g = buildAll({
+        { name = "Straight", src = "M", pts = { 0, 0, 200, 0 } },
+        { name = "NorthW", src = "M", pts = { 0, 0, 0, 60 } },
+        { name = "NorthN", src = "M", pts = { 0, 60, 200, 60 } },
+        { name = "NorthE", src = "M", pts = { 200, 60, 200, 0 } },
+        { name = "SouthW", src = "M", pts = { 0, 0, 0, -150 } },
+        { name = "SouthS", src = "M", pts = { 0, -150, 200, -150 } },
+        { name = "SouthE", src = "M", pts = { 200, -150, 200, 0 } },
+    }, nil)
+    local north = mod.findRoute(g, 5, 0, 195, 0, 100, 0, 12)
+    assert(north and north.avoidPenalty == 0 and north.len > 250 and north.len < 400,
+        "多避讓圈：只避直路 → 北環（len ≈310，實得 " .. tostring(north and north.len) .. "）")
+    local south = mod.findRoute(g, 5, 0, 195, 0, 100, 0, 12, nil, { 100, 60, 12 })
+    assertRouteMetadata(south, "多避讓圈南環")
+    assert(south.avoidPenalty == 0 and south.len > 450 and south.len < 600,
+        "多避讓圈：直路與北環都堵 → 南環（len ≈510，實得 " .. tostring(south.len) .. "）")
+    local all = mod.findRoute(g, 5, 0, 195, 0, 100, 0, 12, nil, { 100, 60, 12, 100, -150, 12 })
+    assert(all and all.avoidPenalty > 0, "多避讓圈：三條都堵仍給路（軟封鎖），avoidPenalty>0 標出穿圈")
+end
+
 --------------------------------------------------------------------------------
 -- 二十一、RoadPatch fingerprint：街名翻譯不影響、其他 src/map MOD 不影響；
 -- targetSrc 的 geometry 或 width 任一不符則原子 fail closed。
