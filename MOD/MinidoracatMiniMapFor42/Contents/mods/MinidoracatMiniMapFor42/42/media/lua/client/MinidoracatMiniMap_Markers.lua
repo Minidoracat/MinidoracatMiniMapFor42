@@ -82,6 +82,9 @@ local function drawProvider(inner, provider, pn, surface)
                     fh = fh or getTextManager():getFontHeight(UIFont.Small) * tz
                     local lc = type(m.labelColor) == "table" and m.labelColor or WHITE
                     local lx, ly = ox + outer + 2, cy - fh / 2
+                    -- 右側放不下（字會被視窗右緣切掉）就改放最外層左側；左側也放不下才維持右側
+                    local tw = getTextManager():MeasureStringX(UIFont.Small, m.label) * tz
+                    if lx + tw > w - 1 and ox - 2 - tw >= 1 then lx = ox - 2 - tw end
                     Core.drawMapText(inner, m.label, lx + 1, ly + 1, 0, 0, 0, a, UIFont.Small, tz)
                     Core.drawMapText(inner, m.label, lx, ly, lc.r or 1, lc.g or 1, lc.b or 1, a, UIFont.Small, tz)
                 end

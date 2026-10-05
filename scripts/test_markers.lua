@@ -5,7 +5,8 @@
 --   * 一個 provider 拋錯不拖垮其他 provider，且每場只 log 一次
 --   * 同 owner 重註冊＝取代（不重複畫）；壞參數拒收
 --   * v2：scale 夾 1..2.5；ring→badge→icon 由外而內、各差 4／6px；裁切以最外層為準；
---     非 live 0.55 乘到所有層；缺 badge.texture 時 ring 靜默略過；label 先黑影後色字、置於最外層右側垂直置中
+--     非 live 0.55 乘到所有層；缺 badge.texture 時 ring 靜默略過；label 先黑影後色字、置於最外層右側垂直置中，
+--     右側會被視窗右緣切掉時改放最外層左側
 --   * 玩家「標記大小」滑條等比放大基準邊長與 badge／ring 外擴；「地圖文字大小」放大標籤
 -- 用法：lua scripts/test_markers.lua [MinidoracatMiniMap_Markers.lua]
 local path = arg[1] or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Markers.lua"
@@ -17,7 +18,7 @@ local printed = {}
 MinidoracatMiniMapCore = {}
 MinidoracatMiniMapAPI = {}
 UIFont = { Small = "Small" }
-getTextManager = function() return { getFontHeight = function() return 10 end } end
+getTextManager = function() return { getFontHeight = function() return 10 end, MeasureStringX = function(_, _, s) return #s * 6 end } end
 print = function(msg) printed[#printed + 1] = msg end
 assert((loadstring or load)(source))()
 local API, Core = MinidoracatMiniMapAPI, MinidoracatMiniMapCore
@@ -142,6 +143,13 @@ local ghost = draw2("mini", { { id = "g", x = 100, y = 100, texture = "car", sta
     badge = { texture = "disc", a = 0.8 }, ring = {} } })
 check(ghost.tex[1].a == 0.55 and ghost.tex[2].a == 0.8 * 0.55 and ghost.tex[3].a == 0.55
     and ghost.text[1].a == 0.55 and ghost.text[2].a == 0.55, "non-live 0.55 applies to every layer and the label")
+
+-- 視窗寬 200：圖示在 x=180 時「41 tiles east」（13 字 × 6 = 78px）放右側會超出右緣，改放左側
+local edge = draw2("mini", { { id = "e", x = 180, y = 100, texture = "car", state = "live", label = "41 tiles east" } })
+check(edge.text[2].x == 174 - 2 - 78 and edge.text[2].y == 95,
+    "a label that would cross the right edge sits left of the marker instead")
+local near = draw2("mini", { { id = "n2", x = 150, y = 100, texture = "car", state = "live", label = "E 41" } })
+check(near.text[2].x == 144 + 12 + 2, "a label that fits on the right stays on the right")
 
 local nPrinted2 = #printed
 local nob = draw2("mini", { { id = "n", x = 100, y = 100, texture = "car", state = "live",
