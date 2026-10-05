@@ -484,7 +484,7 @@ for _script, _label, _may_skip in _lua_tests:
               if l.strip()]
     _err_tail = (_r.stderr or b"").decode("utf-8", "replace").splitlines()[-3:]
     if _r.returncode != 0:
-        fail(_gate, (_lines[-3:] or []) + _err_tail)
+        fail(_gate, [f"退出碼 {_r.returncode}"] + _lines[-3:] + _err_tail)
     elif _may_skip and _lines and _lines[0].startswith("SKIP"):
         skip(_gate, _lines[0])
     else:
@@ -502,7 +502,7 @@ for _script, _label in (
     _lines = [line for line in (_r.stdout or "").splitlines() if line.strip()]
     _err_tail = (_r.stderr or "").splitlines()[-3:]
     if _r.returncode != 0:
-        fail(_gate, (_lines[-3:] or []) + _err_tail)
+        fail(_gate, [f"退出碼 {_r.returncode}"] + _lines[-3:] + _err_tail)
     elif not _lines or _lines[-1] != _sentinel:
         fail(_gate, ["缺少預期 sentinel：%s" % _sentinel] + _lines[-3:])
     else:
