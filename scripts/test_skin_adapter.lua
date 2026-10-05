@@ -18,6 +18,8 @@
      所以 WriteIni→ReadIni→重建實例跑的是原版序列化與解析度配對本身。
      驗拖曳放開立即落盤、依解析度各自記錄、ModOptions 舊位置一次性遷移。
      全程只碰記憶體，不讀寫真的 layout.ini／ModOptions.ini，也不啟動遊戲。
+  D3. 家族工具列 Dock：能力在場時只登記一個入口、不建獨立浮鈕，各回呼照契約；
+     登記被拒退回 D 的浮鈕路徑（能力缺席＝態 D 本身）。
   E. 主檔工具列 icon consumer：定位狀態／複製／文字退回。
 框架自身行為由框架 repo 的 smoke_harness 覆蓋；此處只驗 adapter 契約。
 
@@ -766,6 +768,84 @@ do
         and tonumber((rowAt("1920x1080", MM_NAME) or {}).x) == 88
         and core._floatIcon == nil,
         "態D2 重試讀取失敗保留原有完整 cache，不中斷其他視窗的原版保存")
+
+    -- ============================================================
+    print()
+    print("態 D3：家族工具列（Dock，框架 rev 13）登記與退回")
+    -- ============================================================
+    -- 假 Dock 只記錄登記與 refresh；框架自身的 Dock 行為由框架 harness 覆蓋。
+    local mui = MinidoracatUI.v1
+    local registered, refreshes, registerResult = {}, 0, true
+    mui.CAPABILITIES.dock = true
+    mui.Dock = {
+        register = function(spec) registered[#registered + 1] = spec; return registerResult end,
+        refresh = function() refreshes = refreshes + 1 end,
+    }
+    local function dockBoot()
+        for i = #elements, 1, -1 do table.remove(elements, i) end
+        installEvents()
+        resetDisk({})
+        dofile(ISLM)
+        core._floatIcon = nil
+        registered, refreshes = {}, 0
+        dofile(MM_FLOAT)
+        fire("OnGameBoot")
+        fire("OnGameStart")
+    end
+    players[0] = {}
+    _G.__floatIconOptionOn = true
+    toggles, ghosts = 0, 0
+    dockBoot()
+    local spec = registered[1] or {}
+    check(#registered == 1 and spec.id == "minimap" and spec.order == 10
+        and spec.bind == "MinidoracatMiniMap_Toggle" and spec.icon == "media/ui/minimap_toggle.png",
+        "態D3 Dock 只登記一個小地圖入口（id／order／bind／icon）")
+    check(core._floatIcon == nil and #elements == 0 and refreshes == 1,
+        "態D3 docked：開局不建獨立浮鈕，改請 Dock 重評")
+    check(spec.label() == "[UI_MinidoracatMiniMap_DockLabel]", "態D3 label 只回名稱翻譯")
+    spec.onClick(); spec.onRightClick()
+    check(toggles == 1 and ghosts == 1, "態D3 左鍵開關小地圖、右鍵切穿透（防鎖死鏈第二層）")
+
+    local miniMapShown = false
+    local miniMap = { isReallyVisible = function() return miniMapShown end }
+    local hasMiniMap = false
+    _G.getPlayerMiniMap = function(pn) return pn == 0 and hasMiniMap and miniMap or nil end
+    local beforeCreate = spec.isActive()
+    hasMiniMap = true
+    local hidden = spec.isActive()
+    miniMapShown = true
+    check(beforeCreate == false and hidden == false and spec.isActive() == true,
+        "態D3 isActive 跟主玩家小地圖實際顯示（未建／隱藏／顯示）")
+
+    local ghostOn = false
+    core.isGhost = function() return ghostOn end
+    check(spec.getState() == nil
+        and spec.getStatus() == "[UI_MinidoracatMiniMap_FloatIcon_ghost_tip|SLASH]",
+        "態D3 非穿透：無狀態框，提示列出右鍵穿透與目前熱鍵")
+    ghostOn = true
+    check(spec.getState() == "on" and spec.getStatus() == "[UI_MinidoracatMiniMap_GhostOn]",
+        "態D3 穿透中：金框狀態，提示寫穿透模式開啟")
+    ghostOn = false
+    local toggleGhost = core.toggleGhost
+    core.toggleGhost = nil
+    spec.onRightClick()
+    check(spec.getStatus() == nil and ghosts == 1, "態D3 穿透模組缺席：不廣告右鍵、右鍵空轉")
+    core.toggleGhost = toggleGhost
+
+    _G.__floatIconOptionOn = false
+    local hiddenAvailable = spec.isAvailable()
+    core.updateFloatIconVisibility()
+    _G.__floatIconOptionOn = true
+    check(hiddenAvailable == false and spec.isAvailable() == true and refreshes == 2
+        and core._floatIcon == nil and #elements == 0,
+        "態D3 FloatIcon 選項改控 isAvailable，套用時只請 Dock 重評")
+
+    registerResult = false -- 框架拒收 spec：退回原本浮鈕路徑
+    dockBoot()
+    check(#registered == 1 and core._floatIcon ~= nil and core._floatIcon:getIsVisible()
+        and refreshes == 0, "態D3 Dock 登記失敗：照舊建立獨立浮鈕")
+    mui.CAPABILITIES.dock, mui.Dock, _G.getPlayerMiniMap = nil, nil, nil
+    core.isGhost = function() return false end
 end
 print()
 print("態 E：小地圖工具列 icon consumer（定位狀態／複製／文字退回）")
@@ -835,8 +915,8 @@ return toolbarIconButtonRender, installToolbarIcon,
 end
 print()
 -- 條數守門（家族慣例）：整段被註解掉時數字變小但不會紅，靠這裡擋
--- 預設 65；--family-floats 另驗三包共用版面、重生與原生視窗層級。
-local EXPECTED_ASSERTIONS = familyFloats and 78 or 65
+-- 預設 75；--family-floats 另驗三包共用版面、重生與原生視窗層級。
+local EXPECTED_ASSERTIONS = familyFloats and 88 or 75
 if assertionCount ~= EXPECTED_ASSERTIONS then
     print("斷言條數不符：預期 " .. EXPECTED_ASSERTIONS .. "、實際 " .. assertionCount
         .. "（有測試被刪掉或跳過？）")

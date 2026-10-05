@@ -1,19 +1,20 @@
 -- MinidoracatMiniMap_FloatIcon.lua
--- 本檔範圍：浮動開關圖標——家族 UI 框架 FloatButton 的 thin wrapper。
+-- 本檔範圍：小地圖開關入口。框架有家族工具列（Dock，API rev 13）時登記進 Dock、
+-- 不建獨立浮鈕；否則退回家族 UI 框架 FloatButton 的 thin wrapper。
 -- 拖曳（setCapture 五件套＋4px 門檻）、每幀 clamp、右鍵 800ms 過期守衛、
 -- tooltip 500ms 節流、無玩家自我隱藏——全部上移框架
 -- `MinidoracatUI/Widgets/FloatButton.lua`（本檔曾有的實作正是其契約來源之一）。
 -- 本檔只剩本 MOD 業務：
---   1. 位置持久化：原版 layout.ini（依解析度），拖曳放開立即保存
+--   1. 位置持久化：原版 layout.ini（依解析度），拖曳放開立即保存（Dock 位置由框架管）
 --   2. 點擊＝開關小地圖、右鍵＝穿透模式（Ghost）開關
---   3. 內容繪製：toggle 貼圖（缺圖畫「M」）＋穿透中染琥珀（含邊框）
+--   3. 內容繪製：toggle 貼圖（缺圖畫「M」）＋穿透中染琥珀（含邊框）；Dock 由框架畫外框與狀態
 --   4. hover 提示文字組裝（動作＋當前快捷鍵＋ghost 熱鍵＋-debug 渲染狀態）
---   5. updateFloatIconVisibility 顯示收斂點（選項開關）
+--   5. updateFloatIconVisibility 顯示收斂點（選項開關；docked 時改請 Dock 重評）
 --
 -- 載入順序假設：PZ 依字母序載入同目錄 lua，'.'(0x2E) < '_'(0x5F) → 主檔先載，
 -- 本檔載入期只讀 Core 的一次性賦值；框架 MOD 經 mod.info require= 先於本 MOD 全量載入。
 --
--- 【退回】框架 FloatButton 能力缺席時不建圖標（degraded：無浮動入口——
+-- 【退回】Dock 與 FloatButton 能力皆缺席時不建入口（degraded：無浮動入口——
 -- 快捷鍵與 ESC 選項頁仍可開小地圖，防鎖死鏈不受影響）。
 local Core = MinidoracatMiniMapCore
 if not (Core and Core.ready) then return end
@@ -185,6 +186,56 @@ local function drawContent(btn)
     end
 end
 
+-- 右鍵＝穿透模式開關（本體在 _Ghost.lua，載入序在後——事件時查表）。
+-- 浮鈕／Dock 入口是頂層獨立元件、不隨小地圖穿透失效＝穿透中保證存在的滑鼠
+-- 回頭路（防鎖死鏈第二層；第一層熱鍵、第三層 ESC 選項頁）
+local function toggleGhostIfLoaded()
+    if Core.toggleGhost then Core.toggleGhost() end
+end
+
+-- ===== 家族工具列（Dock）=====
+-- 回呼可能每幀被叫：不建 table、Core 成員呼叫時查表（_Resize／_Ghost 載入序在後）。
+-- 框架以 pcall 呼叫並負責外框、開啟中與金框繪製，這裡只回資料。
+local DOCK_SPEC = {
+    id = "minimap",
+    order = 10,
+    bind = "MinidoracatMiniMap_Toggle",
+    icon = "media/ui/minimap_toggle.png",
+    label = function() return getText("UI_MinidoracatMiniMap_DockLabel") end,
+    getStatus = function()
+        if Core.isGhost and Core.isGhost() then return getText("UI_MinidoracatMiniMap_GhostOn") end
+        if Core.toggleGhost then
+            return getText("UI_MinidoracatMiniMap_FloatIcon_ghost_tip",
+                currentBindKeyText("MinidoracatMiniMap_Ghost"))
+        end
+        return nil
+    end,
+    onClick = function()
+        if Core.togglePlayerMiniMap then Core.togglePlayerMiniMap() end
+    end,
+    onRightClick = toggleGhostIfLoaded,
+    -- 同 togglePlayerMiniMap 與原版 ISMiniMap.ToggleMiniMap（ISMiniMap.lua:752）的開關判斷
+    isActive = function()
+        local mm = getPlayerMiniMap(0)
+        return mm ~= nil and mm:isReallyVisible()
+    end,
+    getState = function()
+        if Core.isGhost and Core.isGhost() then return "on" end
+        return nil
+    end,
+    isAvailable = function() return getBoolOption("FloatIcon", true) end,
+}
+
+-- 框架 Dock 契約（rev 13）：能力旗標＋facade 都在才登記；登記回 false＝退回浮鈕
+local dock
+do
+    local ui = MinidoracatUI and MinidoracatUI.v1
+    if ui and ui.API_MAJOR == 1 and ui.CAPABILITIES and ui.CAPABILITIES.dock == true
+            and ui.Dock and ui.Dock.register(DOCK_SPEC) == true then
+        dock = ui.Dock
+    end
+end
+
 -- ===== 建立與顯示收斂 =====
 
 local function ensureFloatIcon()
@@ -204,12 +255,7 @@ local function ensureFloatIcon()
         drawContent = drawContent,
         getTooltip = tooltipText,
         onClick = Core.togglePlayerMiniMap,
-        -- 右鍵＝穿透模式開關（本體在 _Ghost.lua，載入序在後——事件時查表）。
-        -- FloatIcon 是頂層獨立元件、不隨小地圖穿透失效＝穿透中保證存在的滑鼠
-        -- 回頭路（防鎖死鏈第二層；第一層熱鍵、第三層 ESC 選項頁）
-        onRightClick = function()
-            if Core.toggleGhost then Core.toggleGhost() end
-        end,
+        onRightClick = toggleGhostIfLoaded,
         onMoved = ISLayoutManager.OnPostSave,
     })
     ui.tex = getTexture("media/ui/minimap_toggle.png")
@@ -224,6 +270,10 @@ end
 -- 不建立已關閉的圖標；主檔經 Core.updateFloatIconVisibility
 -- 呼叫時查表＋nil 防呆（本檔載入序在主檔之後）
 local function updateFloatIconVisibility()
+    if dock then
+        dock.refresh() -- 選項改了：入口顯示與否由 isAvailable 決定，不建獨立浮鈕
+        return
+    end
     if not getSpecificPlayer(0) then return end
     if getBoolOption("FloatIcon", true) then
         local ui = ensureFloatIcon()
