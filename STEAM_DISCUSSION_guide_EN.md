@@ -7,7 +7,7 @@
 [h2]🚀 Quick start[/h2]
 Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url]; in multiplayer the server must enable it. Keep series mods updated; restart after updating. UI languages: Traditional/Simplified Chinese, English, Japanese.
 [olist]
-[*] Press [b]/[/b] to toggle the mini-map (rebind: Options → Key Bindings → [MinidoracatMiniMap]). Floating map icon: left-click toggles the mini-map, right-click ghost mode, drag to move.
+[*] Press [b]/[/b] to toggle the mini-map (rebind: Options → Key Bindings → [MinidoracatMiniMap]). Or use the Minimap button in the family toolbar (right edge of the screen, left of the moodles): left-click toggles the mini-map, right-click ghost mode.
 [*] Press [b]M[/b] for the world map.
 [*] Press [b];[/b] for the search / trip window.
 [*] Click the gear on the mini-map for Map Display Settings.
@@ -58,11 +58,11 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 
 [h3]🖱️ Mini-map controls[/h3]
 [list]
-[*] / works even if the sandbox disables the mini-map; the floating icon remembers its position and can be hidden.
+[*] [b]Toggle button & hotkey[/b]: / works even if the sandbox disables the mini-map. The Minimap button lives in the family toolbar: collapse the toolbar (press [b].[/b] to open it) or hold any button to drag the whole strip; hide the button with "Show mini-map toggle button". With an older Minidoracat UI Library it stays a draggable floating icon.
 [*] [b]Size[/b]: four presets, or drag an edge/corner to resize freely.
 [*] [b]Ghost mode[/b] (hotkey [b]'[/b]): clicks and wheel pass through to the game; the map turns semi-transparent with an amber border.
 [*] [b]Free look[/b]: drag to inspect; click once to snap back to the player.
-[*] [b]Coordinates[/b]: x, y, z under both maps; the toolbar copy icon copies yours, right-click "Copy coordinates" copies any spot.
+[*] [b]Coordinates[/b]: x, y, z under both maps; the copy icon in the mini-map's button row copies yours, right-click "Copy coordinates" copies any spot.
 [/list]
 
 [h3]👁️ Icons & display[/h3]

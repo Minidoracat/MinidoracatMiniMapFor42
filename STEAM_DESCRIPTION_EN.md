@@ -14,7 +14,7 @@ Keep every Minidoracat MiniMap series mod up to date and restart the game after 
 
 [h2]🚀 Quick start[/h2]
 [olist]
-[*] Press [b]/[/b] or click the floating map icon on screen to toggle the mini-map
+[*] Press [b]/[/b] or click the Minimap button in the family toolbar (right edge of the screen) to toggle the mini-map
 [*] Press [b]M[/b] for the world map
 [*] Press [b];[/b] to open the search / trip window: look up coordinates, streets or facilities and set them as navigation targets
 [*] Click the gear button on the mini-map to open the settings
