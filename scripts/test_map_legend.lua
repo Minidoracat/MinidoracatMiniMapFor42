@@ -181,8 +181,23 @@ map.keyUI = nil
 frame()
 check(panel.x == 10 and panel.y == 10 and panel.height > 0, "B6 沒有原版圖例時放在左上角")
 
+-- B7 功能閘門 poi 被擋（世界地圖、該地圖目前玩家）：地圖上沒有資源點，圖例一併收起；放行即恢復
+map.playerNum = 1
+local asked
+Core.featureAllowed = function(pn, feature, surface)
+    asked = tostring(pn) .. ":" .. feature .. ":" .. tostring(surface)
+    return false
+end
+frame()
+check(panel.width == 0 and panel.height == 0 and #drawn.tex == 0 and asked == "1:poi:world",
+    "B7 poi 被擋時圖例收起（問該地圖玩家的 world 表面）")
+Core.featureAllowed = function() return true end
+frame()
+check(panel.height > 0, "B7 放行後圖例恢復")
+Core.featureAllowed = nil
+
 if failures > 0 then
     print(("map legend: %d check(s) failed"):format(failures))
     os.exit(1)
 end
-print("map legend: layout A1-A7 + panel mount/visibility/position/content B1-B6 cases passed")
+print("map legend: layout A1-A7 + panel mount/visibility/position/content B1-B7 cases passed")

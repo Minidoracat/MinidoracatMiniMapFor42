@@ -78,9 +78,12 @@ Core.navTargetChanged = function(pn, playerObj)
 end
 
 -- NavRoute 分享路線用：回「給此玩家的分享目標桶」（[author]={x,y}）；沙盒
--- 閘門與旗標繪製同源——閘門關閉時旗與路線一起消失，不會旗滅線存
+-- 閘門與旗標繪製同源——閘門關閉時旗與路線一起消失，不會旗滅線存。
+-- 功能閘門 share 被擋（錶沒有通訊）同樣回 nil；收到的封包照存，恢復即顯示
 Core.navGetShared = function(pn)
     if not Core.navShareAllowed() then return nil end
+    local fa = Core.featureAllowed
+    if fa and not fa(pn, "share") then return nil end
     local playerObj = getSpecificPlayer(pn)
     return playerObj and sharedTargets[playerObj:getUsername()] or nil
 end
@@ -138,8 +141,10 @@ function MinidoracatMiniMapAPI.registerNavGate(ownerModId, gateFn)
     gates[#gates + 1] = { owner = ownerModId, fn = gateFn }
     return true
 end
--- 閘門查詢（繪製路徑每幀呼叫：零註冊在 #gates 後即返回，無配置、無 pcall）
-Core.navGateAllows = function(playerNum, context)
+-- 舊 addon 閘門查詢（只看 registerNavGate 的註冊表）：分享目標的繪製只吃這一層
+-- ＋share，不吃功能閘門的 nav（沒有定位模組照樣看得到隊友分享）。
+-- 繪製路徑每幀呼叫：零註冊在 #gates 後即返回，無配置、無 pcall
+Core.navAddonGateAllows = function(playerNum, context)
     local gates = Core.navGates
     local n = #gates
     if n == 0 then return true end
@@ -158,12 +163,26 @@ Core.navGateAllows = function(playerNum, context)
     end
     return true
 end
+-- 導航閘門＝舊 addon 閘門 AND 功能閘門 nav（_FeatureGate.lua；有快取，缺檔＝放行）。
+-- set／draw／預覽三種 consumer 都經這裡；舊閘門先判，reasonKey 回第一個擋阻者
+Core.navGateAllows = function(playerNum, context)
+    local allowed, reasonKey = Core.navAddonGateAllows(playerNum, context)
+    if not allowed then return false, reasonKey end
+    local fa = Core.featureAllowed
+    if fa then
+        local ok, featureReason = fa(playerNum, "nav")
+        if not ok then return false, featureReason end
+    end
+    return true
+end
 -- test:nav-gate:end
 Core.navShareTarget = function(pn)
     local playerObj = getSpecificPlayer(pn)
     local t = Core.navGetTarget(pn)
     if not (playerObj and t and isClient()) then return end
     if not Core.navShareAllowed() then return end -- 伺服器沙盒禁用／政策模組缺席
+    local fa = Core.featureAllowed
+    if fa and not fa(pn, "share") then return end -- 功能閘門（錶沒有通訊）
     navShared[pn] = true
     sendClientCommand(playerObj, "MinidoracatMiniMap", "shareTarget", { x = t.x, y = t.y })
 end
@@ -240,12 +259,14 @@ end
 
 -- 目標在視窗內＝旗標；出視窗＝中心→目標線段裁到內縮 12px 矩形（重用 clipSegment），
 -- 交點畫 V 形箭頭（翼向量＝方向單位向量旋 ±25.8°，c=0.9/s=0.436，免 atan）
-local function drawNavIndicator(inner, tx, ty, r, g, b, label, dist, k, tz)
+-- arrow＝功能閘門 arrow（呼叫端每表面算一次）；false 時畫面外不畫箭頭，畫面內旗標照畫
+local function drawNavIndicator(inner, tx, ty, r, g, b, label, dist, k, tz, arrow)
     local w, h = inner.width, inner.height
     if tx >= 8 * k and ty >= 16 * k and tx <= w - 14 * k and ty <= h - 4 * k then
         drawNavFlag(inner, tx, ty, r, g, b, label, dist, k, tz) -- 名字/距離分行由旗標函式排版
         return
     end
+    if arrow == false then return end
     local cx, cy = w / 2, h / 2
     local m = 12
     local sx1, sy1, sx2, sy2 = clipSegment(cx - m, cy - m, tx - m, ty - m, w - 2 * m, h - 2 * m)
@@ -281,7 +302,7 @@ local tripLabels = {}
 local TRIP_COLORS = {
     pending = { 0.05, 0.86, 1.0 }, arrived = { 0.3, 0.95, 0.4 }, skipped = { 0.5, 0.5, 0.5 },
 }
-local function drawTripTargets(inner, pn, playerObj, k, tz)
+local function drawTripTargets(inner, pn, playerObj, k, tz, arrow)
     local trip = Core.navItineraryState(pn)
     if not trip then tripLabels[pn] = nil; return end
     -- 走完的行程預設不畫（KeepFinishedTrip 關）：到站後站點不留在地圖上；行程頁照樣列出結果
@@ -312,7 +333,7 @@ local function drawTripTargets(inner, pn, playerObj, k, tz)
         if current and stop.id == current.id then
             local dx, dy = stop.x - px, stop.y - py
             drawNavIndicator(inner, ux, uy, 1, 0.85, 0.4, labels[i].current,
-                math.floor(math.sqrt(dx * dx + dy * dy) + 0.5), k, tz)
+                math.floor(math.sqrt(dx * dx + dy * dy) + 0.5), k, tz, arrow)
         elseif ux >= 0 and uy >= 0 and ux <= inner.width and uy <= inner.height then
             local color = TRIP_COLORS[stop.status]
             inner:drawRect(ux - size / 2, uy - size / 2, size, size, 0.85, 0, 0, 0)
@@ -337,13 +358,19 @@ end
 local function drawNavTargets(inner)
     local pn = inner.playerNum or 0
     -- gate 只限制顯示；到站更新在 _Itinerary.lua 的非繪製事件內。
-    local allowed = Core.navGateAllows(pn, "draw")
+    -- addonOk＝舊 addon 閘門（分享目標也吃）；allowed 再 AND 功能閘門 nav（自己的行程）；
+    -- arrow＝功能閘門 arrow（畫面外箭頭）。零註冊三者皆 true
+    local addonOk = Core.navAddonGateAllows(pn, "draw")
+    local fa = Core.featureAllowed
+    local allowed = addonOk and (not fa or fa(pn, "nav")) and true or false
+    local arrow = not fa or fa(pn, "arrow", inner == ISWorldMap_instance and "world" or "mini")
     -- 路線層（_NavRoute.lua 掛 Core.drawNavRoute）：先畫＝墊在旗標/箭頭/分享旗
-    -- 之下。收 err＋實例旗標 log-once（同動物繪製/_WorldMapNav 慣例：主檔
+    -- 之下；第二參＝自己的路線與預覽是否可畫（分享路線另經 navGetShared 判 share）。
+    -- 收 err＋實例旗標 log-once（同動物繪製/_WorldMapNav 慣例：主檔
     -- :4022-4027 明寫「持久錯誤首次記 log 免全靜默」——裸 pcall 吞錯會讓路線
     -- 靜默消失且每幀重試失敗熱路徑，三 review lanes 一致指認）
-    if allowed and Core.drawNavRoute then
-        local navOk, navErr = pcall(Core.drawNavRoute, inner)
+    if addonOk and Core.drawNavRoute then
+        local navOk, navErr = pcall(Core.drawNavRoute, inner, allowed)
         if not navOk and not inner._minidoracatNavRouteErrLogged then
             inner._minidoracatNavRouteErrLogged = true
             log("nav route draw failed: " .. tostring(navErr))
@@ -356,14 +383,14 @@ local function drawNavTargets(inner)
     local tz = Core.mapTextZoom()
     -- 陣營分享來的：只畫「給這位玩家」的桶（青旗＋名字＋距離）；getUsername
     -- 原版用例 ISScoreboard.lua:108。已收到的目標仍受目前 AllowNavShare 閘門
-    -- 即時控制（navGetShared 同源）
-    local bucket = allowed and Core.navGetShared and Core.navGetShared(pn) or nil
+    -- 與功能閘門 share 即時控制（navGetShared 同源）
+    local bucket = addonOk and Core.navGetShared and Core.navGetShared(pn) or nil
     if bucket and playerObj then
         for author, t in pairs(bucket) do
             local sdx, sdy = t.x - playerObj:getX(), t.y - playerObj:getY()
             local cr, cg, cb = Core.navShareColor(author)
             drawNavIndicator(inner, mapAPI:worldToUIX(t.x, t.y), mapAPI:worldToUIY(t.x, t.y),
-                cr, cg, cb, author, math.floor(math.sqrt(sdx * sdx + sdy * sdy) + 0.5), k, tz)
+                cr, cg, cb, author, math.floor(math.sqrt(sdx * sdx + sdy * sdy) + 0.5), k, tz, arrow)
         end
     end
     -- 搜尋落點 ping（本體在 _Search.lua 掛 Core.drawSearchPing——主 chunk locvar
@@ -378,7 +405,7 @@ local function drawNavTargets(inner)
             log("places draw failed: " .. tostring(placesErr))
         end
     end
-    if allowed and playerObj then drawTripTargets(inner, pn, playerObj, k, tz) end
+    if allowed and playerObj then drawTripTargets(inner, pn, playerObj, k, tz, arrow) end
 end
 -- test:nav-draw:end
 
@@ -529,6 +556,9 @@ if ISMiniMapInner and ISMiniMapInner.onRightMouseUp then
         local pn = self.playerNum or 0
         local playerObj = getSpecificPlayer(pn)
         if not playerObj then return end
+        -- 功能閘門 minimap 被擋＝畫面是「無訊號」，不追加任何地圖選項
+        local fa = Core.featureAllowed
+        if fa and not fa(pn, "minimap", "mini") then return end
         -- 取 player 0 的單例：原版 onRightMouseUp 硬編碼 ISContextMenu.get(0,...)
         -- （ISMiniMap.lua:284-287），追加必須跟它同一個 menu
         local context = getPlayerContextMenu(0)
@@ -561,7 +591,7 @@ if ISMiniMapInner and ISMiniMapInner.onRightMouseUp then
             context:addOption(getText("UI_MinidoracatMiniMap_TripPause"), self,
                 self.onMinidoracatPauseNav)
             if isClient() and Faction and Faction.getPlayerFaction(playerObj)
-                and Core.navShareAllowed() then
+                and Core.navShareAllowed() and (not fa or fa(pn, "share")) then
                 -- Faction.getPlayerFaction 用例 ISFactionUI.lua:408
                 context:addOption(getText("UI_MinidoracatMiniMap_ShareTarget"), self,
                     self.onMinidoracatShareTarget)

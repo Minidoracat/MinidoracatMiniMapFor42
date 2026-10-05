@@ -970,6 +970,38 @@ do
         "切回途中取消不能被舊候選覆寫")
 end
 
-print("test_itinerary: PASS (ordered stops, token ownership, stopping, editing, persistence, "
+-- 功能閘門 nav 中途失效（錶沒電）＝tick 暫停並撤銷 token 與認領（自駕交還控制）；
+-- 舊 registerNavGate（AutoDrive 的 GPS）擋住不撤銷；沒有功能閘門（舊主檔／跨包樁）照舊
+do
+    local t = fixture(); local p = t.player(0)
+    local car = vehicle(p)
+    assert(edit(t, "append", 100, 0)); assert(start(t))
+    local token = t.api.claimNavLeg(0, "Auto", t.api.getNavLeg(0))
+    assert(token, "前置：自駕認領目前段")
+    car.stopped = false
+    t.gate(false)
+    t.fire("OnTick")
+    assert(trip(t).phase == "navigating" and t.api.getNavLeg(0) == token,
+        "舊 nav gate 擋住不得撤銷進行中的行程")
+    t.gate(true)
+    local asked = {}
+    t.core.featureAllowed = function(pn, feature) asked[#asked + 1] = feature; return feature ~= "nav" end
+    t.fire("OnTick")
+    eq(trip(t).phase, "paused", "功能閘門 nav 失效＝暫停")
+    eq(trip(t).reason, "unavailable", "暫停原因 unavailable")
+    assert(t.api.getNavLeg(0) == nil and not trip(t).claimed, "撤銷 token 與自駕認領")
+    eq(table.concat(asked, ","), "nav", "tick 只問 nav，不問其他功能")
+    t.fire("OnTick")
+    eq(#asked, 1, "已暫停的行程不再每 tick 問閘門")
+end
+do
+    local t = fixture(); t.player(0)
+    assert(edit(t, "append", 100, 0)); assert(start(t))
+    t.core.featureAllowed = function() return true end
+    t.fire("OnTick")
+    eq(trip(t).phase, "navigating", "功能閘門放行不得暫停")
+end
+
+print("test_itinerary: PASS (feature-gate nav revocation, ordered stops, token ownership, stopping, editing, persistence, "
     .. "split-screen, continuation mode, stop holds, passive auto-continue, gate hold-off, "
     .. "insert/priority anchors, report dispositions, lane-side arrival at route anchor, v1/v2 migration)")

@@ -461,6 +461,7 @@ _lua_tests = [
     ("test_nav_route.lua", "導航路網與街道覆蓋邊界", False),
     ("test_nav_api.lua", "導航 API 與路線快取", False),
     ("test_worldmap_nav.lua", "世界地圖右鍵選單合併／開圖重包", False),
+    ("test_feature_gate.lua", "功能閘門 registerFeatureGate／featureAllowed", False),
     ("test_nav_gate.lua", "addon 導航閘門／繪製唯讀／目標查詢", False),
     ("test_itinerary.lua", "多站行程權威與 token 擁有權", False),
     ("test_places.lua", "家／收藏點與一鍵回家", False),

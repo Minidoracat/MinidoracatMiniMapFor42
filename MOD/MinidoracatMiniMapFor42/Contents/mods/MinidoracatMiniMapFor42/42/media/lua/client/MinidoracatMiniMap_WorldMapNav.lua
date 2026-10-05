@@ -139,7 +139,9 @@ local function installWMRightMouseUp()
             if isClient() and Faction and Faction.getPlayerFaction(playerObj)
                 -- ⚠ 不傳 pn＝AllowNavShare 永不列入管理員旁路白名單（會影響其他
                 -- 玩家、需伺服器轉送的功能閘；主檔 navShareGateTick 註解同義）
-                and Core.navShareAllowed and Core.navShareAllowed() then
+                and Core.navShareAllowed and Core.navShareAllowed()
+                -- 功能閘門 share（_FeatureGate.lua；缺檔＝放行）
+                and (not Core.featureAllowed or Core.featureAllowed(pn, "share")) then
                 -- Faction.getPlayerFaction 用例 ISFactionUI.lua:408
                 context:addOption(getText("UI_MinidoracatMiniMap_ShareTarget"), self,
                     self.onMinidoracatShareTarget)

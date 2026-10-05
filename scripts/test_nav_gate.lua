@@ -13,10 +13,11 @@
 --   * draw 被擋只擋導航層（路線／分享旗／行程站點）：搜尋 ping 照畫
 --   * 繪製永不改狀態：站在目標上畫幾幀也不到站、不清目標；到站只由真 OnTick 產生
 --   * getNavTarget 是純狀態讀取：槽位驗證從嚴、無活動站回 "notarget"、只交出純量
--- 用法：lua scripts/test_nav_gate.lua [_Nav.lua] [_Itinerary.lua]
+-- 用法：lua scripts/test_nav_gate.lua [_Nav.lua] [_Itinerary.lua] [_FeatureGate.lua]
 local CLIENT = "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/"
 local navPath = arg[1] or (CLIENT .. "MinidoracatMiniMap_Nav.lua")
 local itineraryPath = arg[2] or (CLIENT .. "MinidoracatMiniMap_Itinerary.lua")
+local featurePath = arg[3] or (CLIENT .. "MinidoracatMiniMap_FeatureGate.lua")
 
 local function readFile(path)
     local file = assert(io.open(path, "rb"))
@@ -26,6 +27,7 @@ local function readFile(path)
 end
 local navSource = readFile(navPath)
 local itinerarySource = readFile(itineraryPath)
+local featureSource = readFile(featurePath)
 -- 主檔的文字／標記大小 helper（Core.mapTextZoom／drawMapText／markerIconSize）：抽真實作，
 -- 滑條恆回預設值（本測試驗的是繪製閘門與唯讀，不是尺寸）
 local mapTextSource = assert(readFile(CLIENT .. "MinidoracatMiniMap.lua"):match(
@@ -38,7 +40,7 @@ local compile = loadstring or load
 local function fixture()
     local printed, packets, players, handlers, events = {}, {}, {}, {}, {}
     local client, shareAllowed, opts = false, true, {}
-    local draws = { route = 0, ping = 0, rects = 0, routeFail = false, texts = {} }
+    local draws = { route = 0, ping = 0, rects = 0, lines = 0, routeFail = false, texts = {} }
     for _, name in ipairs({ "OnCreatePlayer", "OnGameStart", "OnTick", "OnServerCommand" }) do
         handlers[name] = {}
         events[name] = { Add = function(fn) handlers[name][#handlers[name] + 1] = fn end }
@@ -85,11 +87,15 @@ local function fixture()
         end
         chunk()
     end
-    run(itinerarySource, "itinerary") -- 同目錄字母序：_Itinerary（I）早於 _Nav（N）
+    -- 同目錄字母序：_FeatureGate（F）早於 _Itinerary（I）早於 _Nav（N）。功能閘門零註冊時
+    -- 所有既有斷言必須照舊成立（逐位元相同的回歸防線）
+    run(featureSource, "featuregate")
+    run(itinerarySource, "itinerary")
     run(navSource, "nav")
     -- 其他檔擁有的繪製層（_NavRoute／_Search）在此以可觀測樁掛上
-    core.drawNavRoute = function()
+    core.drawNavRoute = function(_, own)
         draws.route = draws.route + 1
+        draws.routeOwn = own
         if draws.routeFail then error("injected route failure") end
     end
     core.drawSearchPing = function() draws.ping = draws.ping + 1 end
@@ -118,7 +124,7 @@ local function fixture()
             },
             drawRect = function() draws.rects = draws.rects + 1 end,
             drawRectBorder = function() end,
-            drawLine = function() end,
+            drawLine = function() draws.lines = draws.lines + 1 end,
             drawText = function(_, text) draws.texts[#draws.texts + 1] = tostring(text) end,
         }
     end
@@ -131,7 +137,7 @@ local function fixture()
             for _, fn in ipairs(handlers[event]) do fn(...) end
         end,
         resetDraws = function()
-            draws.route, draws.ping, draws.rects, draws.routeFail = 0, 0, 0, false
+            draws.route, draws.ping, draws.rects, draws.lines, draws.routeFail = 0, 0, 0, 0, false
             for i = #draws.texts, 1, -1 do draws.texts[i] = nil end
         end,
     }
@@ -478,5 +484,107 @@ do
     eq(sy, 666, "Q4 即時反映新目標 y")
 end
 
+--------------------------------------------------------------------------------
+-- 六、功能閘門 nav／share／arrow（registerFeatureGate）與行程撤銷
+--------------------------------------------------------------------------------
+do
+    local t = fixture()
+    local API, Core = t.api, t.core
+    t.client(true)
+    local p = t.player(0, "Alice")
+    p.online = 7
+    local blocked = {}
+    local function setBlocked(list)
+        blocked = list
+        -- 重新註冊＝清 250ms 快取（本 fixture 時鐘固定為 0）
+        API.registerFeatureGate("Watch", function(_, feature)
+            if blocked[feature] then return false, "UI_Watch_No_" .. feature end
+        end)
+    end
+    setBlocked({})
+
+    -- F1: nav 被擋＝navGateAllows 擋並帶原因；舊 addon 閘門不受影響
+    setBlocked({ nav = true })
+    local ok, why = Core.navGateAllows(0, "set")
+    eq(ok, false, "F1 功能閘門 nav 擋 set")
+    eq(why, "UI_Watch_No_nav", "F1 帶功能閘門 reasonKey")
+    eq(Core.navAddonGateAllows(0, "set"), true, "F1 舊 addon 閘門本身放行")
+    local _, whySet, detailSet = Core.navSetTarget(0, 50, 50)
+    eq(whySet, "blocked", "F1 設目標被擋")
+    eq(detailSet, "UI_Watch_No_nav", "F1 halo 用功能閘門原因")
+
+    -- F2: 兩層都擋時回舊 addon 閘門的原因（舊閘門先判）
+    API.registerNavGate("GPS", function() return false, "UI_Addon_NeedGPS" end)
+    local _, whyBoth = Core.navGateAllows(0, "draw")
+    eq(whyBoth, "UI_Addon_NeedGPS", "F2 舊閘門先判")
+
+    -- F3: 只有舊 addon 閘門擋（AutoDrive 的 GPS）＝行程不撤銷（行為不變）
+    Core.navGates = {}
+    setBlocked({})
+    assert(edit(t, "append", 30, 30, "First"), "F3 第一站")
+    assert(edit(t, "append", 900, 900, "Far"), "F3 第二站")
+    assert(start(t), "F3 出發")
+    API.registerNavGate("GPS", function() return false end)
+    t.fire("OnTick")
+    eq(trip(t).phase, "navigating", "F3 舊 nav gate 不撤銷進行中的行程")
+    Core.navGates = {}
+
+    -- F4: 功能閘門 nav 中途失效＝tick 暫停（unavailable）、撤銷 token、目標不再外露
+    local leg = API.getNavLeg(0)
+    assert(leg, "F4 前置：有活動 token")
+    setBlocked({ nav = true })
+    t.fire("OnTick")
+    eq(trip(t).phase, "paused", "F4 nav 失效即暫停")
+    eq(trip(t).reason, "unavailable", "F4 暫停原因 unavailable")
+    eq(API.getNavLeg(0), nil, "F4 token 撤銷（自駕據此交還控制）")
+    eq(API.getNavTarget(0), nil, "F4 暫停後不外露目標")
+    setBlocked({})
+    t.fire("OnTick")
+    eq(trip(t).phase, "paused", "F4 恢復不自動續行（玩家手動再出發）")
+
+    -- F5: nav 擋、share 放行＝自己的行程不畫、路線層只畫分享；分享旗照畫
+    assert(start(t), "F5 再出發")
+    t.fire("OnServerCommand", "MinidoracatMiniMap", "sharedTarget",
+        { author = "Bob", to = "Alice", x = 90, y = 90 })
+    local inner = t.inner(0)
+    setBlocked({ nav = true })
+    t.resetDraws()
+    Core.drawNavTargets(inner)
+    eq(t.draws.route, 1, "F5 路線層仍呼叫（畫分享路線）")
+    eq(t.draws.routeOwn, false, "F5 路線層收到 own=false")
+    assert(hasText(t, "Bob"), "F5 分享旗不吃錶的 nav")
+    assert(not hasText(t, "1/2") and not hasText(t, "2"), "F5 自己的行程站點不畫")
+    eq(trip(t).phase, "navigating", "F5 繪製不得改狀態")
+
+    -- F6: share 擋、nav 放行＝分享旗消失、自己的行程照畫；分享送出與桶一併擋
+    setBlocked({ share = true })
+    t.resetDraws()
+    Core.drawNavTargets(inner)
+    eq(t.draws.routeOwn, true, "F6 nav 放行 own=true")
+    assert(not hasText(t, "Bob"), "F6 share 擋＝分享旗不畫")
+    eq(Core.navGetShared(0), nil, "F6 navGetShared 回 nil（路線同源）")
+    local sent = #t.packets
+    Core.navShareTarget(0)
+    eq(#t.packets, sent, "F6 share 擋＝不送分享封包")
+    setBlocked({})
+    assert(Core.navGetShared(0) and Core.navGetShared(0).Bob, "F6 恢復後收過的分享再現")
+
+    -- F7: arrow 擋＝畫面外目標不畫箭頭與距離，畫面內旗標照畫
+    p.x, p.y = 30, 30
+    t.fire("OnTick") -- 到第一站（多站預設自動接續；手動模式則再出發）
+    if trip(t).phase ~= "navigating" then assert(start(t), "F7 再出發") end
+    eq(API.getNavTarget(0), 900, "F7 前往畫面外的第二站")
+    t.resetDraws()
+    Core.drawNavTargets(inner)
+    local allowedLines = t.draws.lines -- 已到站的第一站另畫 2 條勾號線
+    assert(hasText(t, "1230m"), "F7 放行時畫面外畫距離")
+    setBlocked({ arrow = true })
+    t.resetDraws()
+    Core.drawNavTargets(inner)
+    eq(allowedLines - t.draws.lines, 2, "F7 arrow 擋＝少畫箭頭兩翼，其餘站點照畫")
+    assert(not hasText(t, "1230m"), "F7 arrow 擋＝不畫畫面外距離")
+    assert(hasText(t, "Bob"), "F7 畫面內分享旗不受 arrow 影響")
+end
+
 print("test_nav_gate: OK（註冊/判定 G1-G9＋set 閘門 S1-S6＋分享撤回 H1-H3"
-    .. "＋繪製閘門與繪製唯讀 D1-D6＋getNavTarget Q1-Q4）")
+    .. "＋繪製閘門與繪製唯讀 D1-D6＋getNavTarget Q1-Q4＋功能閘門與行程撤銷 F1-F7）")

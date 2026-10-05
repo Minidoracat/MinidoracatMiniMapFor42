@@ -2793,9 +2793,12 @@ local function drawPreview(inner, mapAPI, pn)
 end
 -- test:nav-preview-draw:end
 
+-- test:nav-route-draw:start（scripts/test_itinerary_routes.lua 抽本區段驗 own 旗標）
 -- 主入口（主檔 drawNavTargets 開頭呼叫＝畫在旗標/箭頭之下；inner＝小地圖 inner
--- 或 ISWorldMap，共用 mapAPI/width/height/playerNum——相容論證同主檔 nav 一節）
-local function drawNavRoute(inner)
+-- 或 ISWorldMap，共用 mapAPI/width/height/playerNum——相容論證同主檔 nav 一節）。
+-- own＝自己的行程（預覽＋活動路線）可畫；false＝功能閘門 nav 擋下，只畫分享路線
+-- （分享另經 navGetShared 判 share）。nil 視同 true
+local function drawNavRoute(inner, own)
     if getBoolOption("NavRoute", true) ~= true then return end
     local pn = inner.playerNum or 0
     local playerObj = getSpecificPlayer(pn)
@@ -2805,7 +2808,7 @@ local function drawNavRoute(inner)
     local mapAPI = inner.mapAPI
     -- 未來段先畫：分享線與活動青線隨後蓋上。放在 target 早退之前——draft／
     -- waiting／paused 沒有活動目標，但剩餘行程照樣要看得見
-    drawPreview(inner, mapAPI, pn)
+    if own ~= false then drawPreview(inner, mapAPI, pn) end
     local target = Core.navGetTarget and Core.navGetTarget(pn) or nil
     -- 陣營分享目標的路線（接收方本地各自算路，零網路增量；沙盒閘門在
     -- navGetShared 內）。key 掃除：桶裡消失的作者，其殘留 route 一併清
@@ -2824,6 +2827,7 @@ local function drawNavRoute(inner)
                 SHARED_UNDER, sharedOverStyle(author))
         end
     end
+    if own == false then return end
     if not target then
         if navRoutes[pn] then clearRoute(pn) end
         return
@@ -2840,6 +2844,7 @@ local function drawNavRoute(inner)
     if engine.state == "idle" then kickEngine(inner) end
     drawOneRoute(inner, mapAPI, pn, target, px, py, weight)
 end
+-- test:nav-route-draw:end
 
 Core.drawNavRoute = drawNavRoute
 -- _Search.lua：街名索引（ready 前回 nil＝搜尋端顯示載入中）＋引擎冷啟動

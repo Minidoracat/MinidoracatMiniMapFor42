@@ -181,7 +181,7 @@ local OPTION_PREFIX = "MinidoracatMiniMap."
 local TTL_MS = 250
 local NUM_LIMIT = 1000000000 -- 數字合理值域（±1e9）：順手把 inf 一併排除
 
--- 21 鍵 schema：{ 沙盒鍵名, 型別, 預設值 }。預設值必須與
+-- 23 鍵 schema：{ 沙盒鍵名, 型別, 預設值 }。預設值必須與
 -- media/sandbox-options.txt 的 default 逐鍵一致——這是「舊伺服器缺鍵」時的
 -- 實際生效值，寫錯會讓缺鍵的伺服器行為與有鍵的不同。enum 以 number 表示
 -- （Java 端 getValue 回選項索引）。
@@ -207,8 +207,12 @@ local SCHEMA = {
     { "ExportOfflinePlayers", "boolean", true },
     { "AllowAdminTacticalView", "boolean", false },
     { "AllowAdminPrivacyView", "boolean", false },
+    -- 掃描間隔（秒，0＝即時）：不在任何旁路白名單——戰術檢視的「一律即時」由
+    -- _Dots.lua scanIntervalMs 判 tacticalActive，不經 gate()/sandboxDistance()
+    { "ZombieScanInterval", "number", 0 },
+    { "VehicleAnimalScanInterval", "number", 0 },
 }
-local SCHEMA_N = 21 -- 顯式筆數（家規：不用 # 依賴隱性長度）
+local SCHEMA_N = 23 -- 顯式筆數（家規：不用 # 依賴隱性長度）
 
 local KIND = {}
 for i = 1, SCHEMA_N do

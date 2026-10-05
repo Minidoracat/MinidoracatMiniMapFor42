@@ -2439,6 +2439,9 @@ end
 if ISWorldMap and ISWorldMap.prerender then
     local originalWorldMapPrerender = ISWorldMap.prerender
     function ISWorldMap:prerender()
+        -- 功能閘門 share 被擋：每幀壓掉引擎隊友圖層；放行後還原玩家期望值（_FeatureGate.lua，
+        -- 世界地圖期望值追蹤原版選項面板勾選；缺檔＝不壓）
+        if Core.gateRemotePlayers then Core.gateRemotePlayers(self, self.playerNum or 0, true) end
         -- Zone 填色置於 wrap 最前端＝最底層：Java 地圖本體早在 Lua prerender 前畫完
         -- （UIWorldMap.java:152→317），置頂即壓在 base map 之上、動物圖標與框線之下
         Core.drawZonePass(self, "drawZoneFill", "_minidoracatWMZoneFillErrLogged")
@@ -2457,12 +2460,12 @@ if ISWorldMap and ISWorldMap.prerender then
         -- 持久繪製錯誤首次記 log（同小地圖動物繪製的 log-once 策略）。
         -- 點雲本體在 _Dots.lua（主 chunk locvar 上限拆檔），Core.* 動態查：
         -- 模組缺席（載入失敗）時 pcall(nil) 回 false，照走 log-once 可診斷
-        local adOk, adErr = pcall(Core.drawAnimalDots, self, "WMAnimalWild", "WMAnimalLivestock", "WMVehicleDots")
+        local adOk, adErr = pcall(Core.drawAnimalDots, self, "WMAnimalWild", "WMAnimalLivestock", "WMVehicleDots", "world")
         if not adOk and not self._minidoracatWMADotsErrLogged then
             self._minidoracatWMADotsErrLogged = true
             log("world map animal icons draw failed: " .. tostring(adErr))
         end
-        local zdOk, zdErr = pcall(Core.drawZombieDotsOn, self, "WMZombieDots")
+        local zdOk, zdErr = pcall(Core.drawZombieDotsOn, self, "WMZombieDots", "world")
         if not zdOk and not self._minidoracatWMZDotsErrLogged then
             self._minidoracatWMZDotsErrLogged = true
             log("world map zombie dots draw failed: " .. tostring(zdErr))
@@ -2610,14 +2613,18 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
     local originalInnerPrerender = ISMiniMapInner.prerender
     function ISMiniMapInner:prerender()
         originalInnerPrerender(self)
+        local pn = self.playerNum or 0
+        local fa = Core.featureAllowed -- 功能閘門（_FeatureGate.lua）；缺檔＝放行
         -- 沙盒禁用殭屍熱度時每幀壓回；重新允許時恢復（雙向即時）。
         -- 以實例旗標記住「是本閘門壓過」才恢復；恢復值讀 ModOptions——面板勾選
         -- 已回寫 ModOptions（見齒輪面板 onTickBox wrap），它即單一真相，
         -- 壓制期間玩家改勾選也會在重新允許時恢復成玩家要的值。
-        -- 無 PZAPI（面板不回寫）時維持舊行為：恢復為開。
+        -- 無 PZAPI（面板不回寫）時維持舊行為：恢復為開。功能閘門 zombie 被擋同樣壓回
+        -- （熱度跟偵測一起閘）。
         -- （置於 WM-1 早退之前：沙盒不變式須每幀維持，且引擎側小地圖 Java render
         -- 在遮蔽下照跑，本段只設引擎旗標、不繪製，順序與 zone 填色互不影響）
-        if sandboxGate("AllowZombieIntensity", true, self.playerNum or 0) == false then
+        if sandboxGate("AllowZombieIntensity", true, pn) == false
+            or (fa and not fa(pn, "zombie", "mini")) then
             if self.mapAPI:getBoolean("ZombieIntensity") then
                 self._minidoracatZISuppressed = true
                 self.mapAPI:setBoolean("ZombieIntensity", false)
@@ -2626,6 +2633,20 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
             self._minidoracatZISuppressed = nil
             self.mapAPI:setBoolean("ZombieIntensity",
                 modOptions == nil or getBoolOption("ZombieIntensity", false))
+        end
+        if fa then
+            -- share 被擋：隊友圖標每幀壓回（同熱度做法）；恢復值讀 ModOptions（同 applyToggleOptions）
+            Core.gateRemotePlayers(self, pn, false)
+            -- minimap 被擋（開著時錶失效）：保留視窗、蓋掉底圖畫「無訊號」，不畫任何疊加層；
+            -- 街名順手關掉省每幀排版（恢復後下方縮放閘門會依選項重設）
+            local mmOk, mmReason = fa(pn, "minimap", "mini")
+            if not mmOk then
+                if self.mapAPI:getBoolean("ShowStreetNames") then
+                    self.mapAPI:setBoolean("ShowStreetNames", false)
+                end
+                Core.drawNoSignal(self, mmReason)
+                return
+            end
         end
         -- perf 稽核 WM-1：世界地圖精確全螢幕（ISWorldMap.lua:1505-1506 INSET=0）且
         -- 原版從不隱藏小地圖——M 開啟期間小地圖的全部 mod 加繪 100% 被遮蔽，整段
@@ -2666,7 +2687,7 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         Core.drawZonePass(self, "drawZoneIcons", "_minidoracatZoneIconErrLogged") -- POI 圖標，同層
         -- 動物圖標（畫在殭屍點位之下：殭屍小點蓋大圖標可辨）。持久錯誤首次記 log
         -- 免全靜默（API 漂移/第三方動物資料異常可診斷；既有三個 pcall 沿舊慣例不動）
-        local adOk, adErr = pcall(Core.drawAnimalDots, self, "AnimalWild", "AnimalLivestock", "VehicleDots")
+        local adOk, adErr = pcall(Core.drawAnimalDots, self, "AnimalWild", "AnimalLivestock", "VehicleDots", "mini")
         if not adOk and not self._minidoracatADotsErrLogged then
             self._minidoracatADotsErrLogged = true
             log("animal icons draw failed: " .. tostring(adErr))
@@ -2696,7 +2717,7 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
             cBtn.borderColor.a = flOn and 1 or 0.35
         end
         if Core.drawZombieDotsOn then -- 繪製本體在 _Dots.lua（世界地圖用 WMZombieDots）
-            Core.drawZombieDotsOn(self, "ZombieDots")
+            Core.drawZombieDotsOn(self, "ZombieDots", "mini")
         end
         -- addon marker（_Markers.lua）壓在自有載具／動物／殭屍點之上（綁定車須蓋過同位置
         -- 方向盤點），座標列／導航之下（同世界地圖：點雲在主檔 wrap、座標／導航在外層 _WorldMapNav）

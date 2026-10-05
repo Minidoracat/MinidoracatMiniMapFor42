@@ -179,6 +179,7 @@ return {
     zoneCategories = function() return Core.zoneExternalCategories() end,
     setPoiDist = function(d) poiDist = d end,
     setZoneDist = function(d) zoneDist = d end,
+    setFeatureGate = function(fn) Core.featureAllowed = fn end,
     setPlayerPos = function(x, y) playerPos = x and { x, y } or nil end,
     lastPn = function() return lastPlayerNum end,
     logCount = function()
@@ -990,6 +991,32 @@ do
     assert(off.polyCount == 1, "A8-5 閘未啟用時遠 zone 應照畫")
     zone.clearProviders()
     zone.setPlayerPos(50, 50)
+
+    -- A8-6 功能閘門 poi 被擋：內部 POI provider 整段不畫（連 fn 都不呼叫，同 fail closed）；
+    -- 外部 zone 不受影響；距離閘未啟用也照擋；問的是該 inner 的 pn 與 mini 表面
+    local asked
+    zone.setFeatureGate(function(pn, feature, surface)
+        asked = tostring(pn) .. ":" .. feature .. ":" .. tostring(surface)
+        return feature ~= "poi"
+    end)
+    local poiCalled = 0
+    zone.addProvider("poiGated", function()
+        poiCalled = poiCalled + 1
+        return distZone(20, 20, 30, 30)
+    end, true)
+    zone.addProvider("extGated", function() return distZone(20, 20, 30, 30) end)
+    local gated = makeDistInner()
+    gated.playerNum = 2
+    zone.fill(gated); zone.icons(gated)
+    assert(poiCalled == 0, "A8-6 poi 被擋時內部 provider 不應被呼叫")
+    assert(gated.polyCount == 1 and gated.draws == 1, "A8-6 外部 zone 不受 poi 閘影響")
+    assert(asked == "2:poi:mini", "A8-6 問該 inner 的 pn 與 mini 表面（得 " .. tostring(asked) .. "）")
+    zone.setFeatureGate(function() return true end)
+    local reopened = makeDistInner()
+    zone.fill(reopened)
+    assert(poiCalled == 1 and reopened.polyCount == 2, "A8-6 放行後 POI 恢復")
+    zone.setFeatureGate(nil)
+    zone.clearProviders()
 
     -- A8-7 自訂區域距離閘（ZoneDisplayDistance）：只裁外部 provider——internal
     -- （POI）不受 zoneDist 影響（兩閘各走各的距離，見主檔 distGateParams）。

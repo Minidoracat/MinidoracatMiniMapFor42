@@ -68,6 +68,11 @@ return {
     end,
     sent = sent,
     logs = logs,
+    api = MinidoracatMiniMapServerAPI,
+    addMember = function(name)
+        factionNames[name] = "blue"
+        online[#online + 1] = player(name)
+    end,
 }
 ]==]
 
@@ -143,7 +148,40 @@ check(h.sent[2].args.author == "actor" and h.sent[2].args.to == "ally",
 h.fire("shareTarget", { x = "bad", y = 20 })
 check(#h.sent == 2, "invalid coordinates do not relay")
 
-local EXPECTED_ASSERTIONS = 12
+-- 伺服器分享過濾 API（shareApiVersion 1）：逐收件者判、明確 false 才不轉、拋錯放行
+-- 且只 log 一次、clearShared 不過濾（收過舊座標的人必須收到撤回）、同 owner 覆蓋
+local S = h.api
+check(S and S.shareApiVersion == 1, "server share API version")
+check(not S.registerShareFilter(nil, function() end) and not S.registerShareFilter("W", 1),
+    "bad share filter arguments rejected")
+h.addMember("far")
+local seen
+check(S.registerShareFilter("Watch", function(sender, recipient, x, y)
+    seen = sender:getUsername() .. ">" .. recipient:getUsername() .. "@" .. x .. "," .. y
+    return recipient:getUsername() ~= "far"
+end), "share filter registers")
+local before = #h.sent
+h.fire()
+check(#h.sent == before + 1 and h.sent[#h.sent].target == "ally",
+    "filter false skips only that recipient")
+check(seen == "actor>far@10,20", "filter receives sender, recipient and coordinates")
+before = #h.sent
+h.fire("clearShared", {})
+check(#h.sent == before + 2, "clearShared is never filtered")
+S.registerShareFilter("Boom", function() error("injected") end)
+before = #h.sent
+h.fire(); h.fire()
+local boomLogs = 0
+for i = 1, #h.logs do
+    if h.logs[i]:find("share filter error (Boom)", 1, true) then boomLogs = boomLogs + 1 end
+end
+check(#h.sent == before + 2 and boomLogs == 1, "throwing filter fails open and logs once")
+S.registerShareFilter("Watch", function() return true end)
+before = #h.sent
+h.fire()
+check(#h.sent == before + 2, "same owner re-registration replaces the filter")
+
+local EXPECTED_ASSERTIONS = 20
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
         .. ", actual " .. assertions)

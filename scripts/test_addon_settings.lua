@@ -24,6 +24,7 @@ local registryChunk, registryErr = compile([[
 local messages = {}
 local function print(message) messages[#messages + 1] = message end
 local addonSettingsById = {}
+local addonSectionOrder = {}
 local UNIFIED_SECTIONS = { { id = "layers" }, { id = "perf" } }
 local settingsUI = { visible = false }
 function settingsUI:isVisible() return self.visible end
@@ -37,6 +38,7 @@ return {
     api = MinidoracatMiniMapAPI,
     sections = UNIFIED_SECTIONS,
     registry = addonSettingsById,
+    order = addonSectionOrder,
     ui = settingsUI,
     rebuilds = function() return rebuildCalls end,
     indexBuilds = function() return indexCalls end,
@@ -47,7 +49,7 @@ assert(registryChunk, registryErr)
 local registry = registryChunk()
 local api = registry.api
 
-checkEq(api.settingsApiVersion, 2, "settings API version")
+checkEq(api.settingsApiVersion, 3, "settings API version")
 check(not api.registerSettingsSection(nil, {}), "nil owner rejected")
 check(not api.registerSettingsSection("A", {}), "missing label rejected")
 check(not api.registerSettingsSection("A", { label = "UI_A", ticks = {
@@ -173,6 +175,17 @@ checkEq(registry.registry.OwnerC.addon.actions[1].label, "UI_Copy2",
     "hot reload updates action")
 checkEq(#registry.registry.OwnerC.addon.actions, 1, "hot reload action count")
 checkEq(#registry.registry.OwnerC.addon.ticks, 0, "hot reload clears omitted ticks")
+
+-- v3：visible(pn) 選用；非函式拒收，函式原樣保存；註冊順序表每 owner 只進一次
+check(not api.registerSettingsSection("OwnerD", { label = "UI_D", visible = true }),
+    "non-function visible rejected")
+local visibleFn = function() return false end
+check(api.registerSettingsSection("OwnerD", { label = "UI_D", visible = visibleFn })
+    and registry.registry.OwnerD.addon.visible == visibleFn, "visible function stored")
+checkEq(#registry.order, 4, "each owner enters registration order once")
+api.registerSettingsSection("OwnerD", { label = "UI_D2" })
+check(#registry.order == 4 and registry.registry.OwnerD.addon.visible == nil,
+    "re-registration keeps order and drops omitted visible")
 
 local callbacksBody = assert(source:match(
     "%-%- test:addon%-settings%-callbacks:start\n(.-)\n%-%- test:addon%-settings%-callbacks:end"),
@@ -321,7 +334,7 @@ local added = indexChunk()
 checkEq(#added, 3, "addon index covers ticks, combos, actions")
 checkEq(added[3].kind, "navigate", "actions are searchable navigate hits")
 checkEq(added[3].first.label, "UI_Copy", "action label indexed")
-local EXPECTED_ASSERTIONS = 75
+local EXPECTED_ASSERTIONS = 79
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
         .. ", actual " .. assertions)

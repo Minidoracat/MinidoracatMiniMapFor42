@@ -640,6 +640,10 @@ local function tickSlot(pn)
     end
     if not active(slot.trip) then return end
     if player:isDead() then pause(slot, "unavailable"); return end
+    -- 功能閘門 nav 中途失效（例：錶沒電）＝暫停行程；pause 撤銷 token，自駕據此交還控制。
+    -- 只看功能閘門：registerNavGate（AutoDrive 的 GPS）維持只擋 set／draw。有 250ms 快取
+    local fa = Core.featureAllowed
+    if fa and not fa(pn, "nav") then pause(slot, "unavailable"); return end
     local vehicle = player:getVehicle()
     if slot.claim then
         if vehicle ~= slot.claim.vehicle or not vehicle:isDriver(player) then pause(slot, "unavailable") end

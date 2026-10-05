@@ -95,39 +95,77 @@ local function zdotsStateFor(el)
         st.nextMs = 0
         st.hasPlayer = nil
         st.failOnce = nil
+        st.scanReadMs = nil
     end
     return st
 end
 
+-- 掃描間隔（沙盒 ZombieScanInterval／VehicleAnimalScanInterval，秒；0＝即時＝原本的
+-- ZDOTS/ADOTS_INTERVAL_MS 節流）。回 nil＝即時；正數＝定時（毫秒）。管理員戰術檢視
+-- 一律即時；Policy 缺席（舊共用檔）＝即時。取樣在客戶端，伺服器負擔不受此值影響。
+-- 只由取樣器在即時節流節奏呼叫（每 ZDOTS/ADOTS_INTERVAL_MS 至多一次）：Policy 讀值含
+-- refreshPolicy＋pcall(getTimestampMs)，每幀每表面呼叫會讓預設 0 也多付成本
+local function scanIntervalMs(name, pn)
+    local Policy = Core.policy
+    if not Policy then return nil end
+    local sec = Policy.readNumber(name, 0)
+    if not sec or sec <= 0 or Policy.tacticalActive(pn) then return nil end
+    return sec * 1000
+end
+
+-- 定時模式以玩家為中心取樣：不套視窗框（平移／縮放不會在兩次掃描之間出現空白），
+-- 以玩家為仿射錨點。上下界取遠大於任何地圖的常數（Kahlua 不保證 math.huge）
+local SCAN_ALL = 1e9
+
 -- test:zombie-sampling:start
-local function sampleZombieDots(inner)
+-- gateMax＝功能閘門 zombie 的 maxDist（nil＝不限），與 displayDist 取小；
+-- scanKey＝掃描間隔的沙盒鍵：每 ZDOTS_INTERVAL_MS 才重讀一次（st.scanMs，nil＝即時：
+-- 每 ZDOTS_INTERVAL_MS 依視窗取樣），切換最多延遲一個即時節流窗
+local function sampleZombieDots(inner, gateMax, scanKey)
     local pn = inner.playerNum or 0
     local st = zdotsStateFor(inner)
     local dist = displayDist("ZombieDotDistance", pn)
+    if gateMax and (not dist or gateMax < dist) then dist = gateMax end
     local now = getTimestampMs()
+    if not st.scanReadMs or now >= st.scanReadMs then
+        st.scanReadMs = now + ZDOTS_INTERVAL_MS
+        st.scanLive = scanIntervalMs(scanKey, pn)
+    end
+    local scanMs = st.scanLive
     local playerObj = getSpecificPlayer(pn)
     local hasPlayer = playerObj ~= nil
-    if now < st.nextMs and st.distance == dist and st.hasPlayer == hasPlayer then return st end
+    if now < st.nextMs and st.distance == dist and st.hasPlayer == hasPlayer
+        and st.scanMs == scanMs then return st end
     st.distance = dist
     st.hasPlayer = hasPlayer
-    st.nextMs = now + ZDOTS_INTERVAL_MS
+    st.scanMs = scanMs
+    st.nextMs = now + (scanMs or ZDOTS_INTERVAL_MS)
     st.count = 0
     -- 距離閘門啟用時缺玩家物件必須 fail closed；先於 mapAPI/list 存取，兼顧 teardown。
     if dist and not playerObj then return st end
     local cell = getCell()
     local list = cell and cell:getZombieList()
     if not list then return st end
-    -- 只收「小地圖可視範圍內」的殭屍再套 ZDOTS_MAX：getZombieList 的順序是
+    -- 即時模式只收「小地圖可視範圍內」的殭屍再套 ZDOTS_MAX：getZombieList 的順序是
     -- 載入序而非距離序，早期版本取「清單前 N 隻」會被別處先生成的大群吃光
     -- 名額，玩家身邊的反而畫不出來（實測：管理員刷群後即重現）。
-    local minX, maxX, minY, maxY = visibleWorldAABB(inner)
-    -- 仿射錨點＝取樣時的視野中心（供繪製端 deriveAffine 用）：錨定視野中心使
-    -- 最壞偏移距離＝半個視野跨度（錨定首點是全跨度、float32 係數誤差×距離會
-    -- 放大一倍——世界地圖全圖縮放下可差 px 級）；x-x%1 即 floor（座標恆正）
-    local sacx = (minX + maxX) / 2
-    local sacy = (minY + maxY) / 2
-    st.acx = sacx - sacx % 1
-    st.acy = sacy - sacy % 1
+    -- 定時模式改以玩家為中心（見 SCAN_ALL），名額仍由下方近→中→遠分桶優先給近的
+    local minX, maxX, minY, maxY
+    if scanMs and playerObj then
+        minX, maxX, minY, maxY = -SCAN_ALL, SCAN_ALL, -SCAN_ALL, SCAN_ALL
+        local ax, ay = playerObj:getX(), playerObj:getY()
+        st.acx = ax - ax % 1
+        st.acy = ay - ay % 1
+    else
+        minX, maxX, minY, maxY = visibleWorldAABB(inner)
+        -- 仿射錨點＝取樣時的視野中心（供繪製端 deriveAffine 用）：錨定視野中心使
+        -- 最壞偏移距離＝半個視野跨度（錨定首點是全跨度、float32 係數誤差×距離會
+        -- 放大一倍——世界地圖全圖縮放下可差 px 級）；x-x%1 即 floor（座標恆正）
+        local sacx = (minX + maxX) / 2
+        local sacy = (minY + maxY) / 2
+        st.acx = sacx - sacx % 1
+        st.acy = sacy - sacy % 1
+    end
     -- 上限檔位每輪讀值（ZombieDotMax combobox），存檔即生效
     local maxDots = ZDOTS_MAXES[getComboIndex("ZombieDotMax", 2)] or ZDOTS_MAX
     -- 距離基準＝玩家位置（自由查看拖走視窗也以「離自己」為優先，符合直覺）；
@@ -200,14 +238,23 @@ end
 -- test:zombie-sampling:end
 
 -- 殭屍點繪製（小地圖與世界地圖共用；el 需有 mapAPI/width/height/playerNum）。
--- optId＝該表面的開關（小地圖 ZombieDots／世界地圖 WMZombieDots）；
--- 顏色/大小/上限與伺服器沙盒閘兩表面共用
-local function drawZombieDotsOn(el, optId)
+-- optId＝該表面的開關（小地圖 ZombieDots／世界地圖 WMZombieDots）；surface＝"mini"／"world"
+-- （功能閘門 zombie 用）；顏色/大小/上限與伺服器沙盒閘兩表面共用
+local function drawZombieDotsOn(el, optId, surface)
     if not getBoolOption(optId, false) then return end -- 關閉＝零成本
     -- 伺服器沙盒禁用（管理員戰術檢視生效時 Policy 對此鍵回 true＝旁路）：
     -- 兩表面共用同一判定，pn 取該表面目前的擁有者（世界地圖 singleton 會換人）
-    if sandboxGate("AllowZombieDots", true, el.playerNum or 0) == false then return end
-    local st = sampleZombieDots(el)
+    local pn = el.playerNum or 0
+    if sandboxGate("AllowZombieDots", true, pn) == false then return end
+    -- 功能閘門 zombie（_FeatureGate.lua；缺檔＝放行，戰術檢視在閘門內旁路）
+    local fa = Core.featureAllowed
+    local gateMax
+    if fa then
+        local ok, _, max = fa(pn, "zombie", surface)
+        if not ok then return end
+        gateMax = max
+    end
+    local st = sampleZombieDots(el, gateMax, "ZombieScanInterval")
     local c = ZDOTS_COLORS[getComboIndex("ZombieDotColor", 1)] or ZDOTS_COLORS[1]
     local size = getSliderValue("ZombieDotSize", 3, 1, 16)
     local af = getSliderValue("ZombieDotAlpha", 100, 10, 100) / 100 -- 透明度係數（描邊/本體等比）
@@ -374,8 +421,10 @@ end
 
 -- 取樣狀態掛在地圖元件上（分槽理由同 zdotsStateFor：兩表面/分割畫面各自持有）
 -- test:animal-sampling:start
--- wantNames＝一併取動物名稱（getFullName＋公母；每 500ms 取樣一次，不逐幀跨界）
-local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh, wantNames)
+-- wantNames＝一併取動物名稱（getFullName＋公母；每 500ms 取樣一次，不逐幀跨界）；
+-- gateMax＝功能閘門 scan 的 maxDist（nil＝不限，與動物、載具距離各取小）；
+-- scanKey＝掃描間隔的沙盒鍵（每 ADOTS_INTERVAL_MS 才重讀一次，語意同 sampleZombieDots）
+local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh, wantNames, gateMax, scanKey)
     local pn = inner.playerNum or 0
     local st = inner._minidoracatADots
     if not st then
@@ -395,10 +444,20 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh, wantNames)
         st.rawV = nil
         st.mode = nil
         st.errLogged = nil
+        st.scanReadMs = nil
     end
     local now = getTimestampMs()
+    if not st.scanReadMs or now >= st.scanReadMs then
+        st.scanReadMs = now + ADOTS_INTERVAL_MS
+        st.scanLive = scanIntervalMs(scanKey, pn)
+    end
+    local scanMs = st.scanLive
     local da = displayDist("AnimalIconDistance", pn)
     local dv = displayDist("VehicleIconDistance", pn)
+    if gateMax then
+        if not da or gateMax < da then da = gateMax end
+        if not dv or gateMax < dv then dv = gateMax end
+    end
     local livestockMode = livestockVisibilityMode(pn)
     -- cache key 逐欄位比較（perf 稽核 ICON-3，殭屍側 st.distance 既有寫法）：
     -- 原每幀組 flags 字串（5 次 tostring＋串接）＝穩定的 GC churn 來源。開關組合
@@ -416,7 +475,7 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh, wantNames)
     local hasPlayer = playerObj ~= nil
     if now < st.nextMs and st.mask == mask and st.da == da and st.dv == dv
         and st.rawA == rawA and st.rawV == rawV and st.mode == livestockMode
-        and st.username == username and st.hasPlayer == hasPlayer then
+        and st.username == username and st.hasPlayer == hasPlayer and st.scanMs == scanMs then
         return st
     end
     -- 座標 getter 延後到節流通過後（ICON-3）：px/py 僅重取樣的距離閘用，
@@ -431,16 +490,26 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh, wantNames)
     st.mode = livestockMode
     st.username = username
     st.hasPlayer = hasPlayer
-    st.nextMs = now + ADOTS_INTERVAL_MS
+    st.scanMs = scanMs
+    st.nextMs = now + (scanMs or ADOTS_INTERVAL_MS)
     st.count = 0
     local cell = getCell()
     if not cell then return st end
-    local minX, maxX, minY, maxY = visibleWorldAABB(inner) -- 可視框剔除（同殭屍取樣）
-    -- 仿射錨點＝取樣時的視野中心（理由同殭屍取樣的 st.acx 註解）
-    local sacx = (minX + maxX) / 2
-    local sacy = (minY + maxY) / 2
-    st.acx = sacx - sacx % 1
-    st.acy = sacy - sacy % 1
+    local minX, maxX, minY, maxY
+    if scanMs and playerObj then
+        -- 定時模式以玩家為中心（見 SCAN_ALL）；ponytail: 不分距離桶，ADOTS_MAX 名額照清單序
+        -- 先到先得（動物／載具量級數十），真的被遠處吃光再比照殭屍加近→遠分桶
+        minX, maxX, minY, maxY = -SCAN_ALL, SCAN_ALL, -SCAN_ALL, SCAN_ALL
+        st.acx = px - px % 1
+        st.acy = py - py % 1
+    else
+        minX, maxX, minY, maxY = visibleWorldAABB(inner) -- 可視框剔除（同殭屍取樣）
+        -- 仿射錨點＝取樣時的視野中心（理由同殭屍取樣的 st.acx 註解）
+        local sacx = (minX + maxX) / 2
+        local sacy = (minY + maxY) / 2
+        st.acx = sacx - sacx % 1
+        st.acy = sacy - sacy % 1
+    end
     -- 距離啟用但缺玩家時，對應動物或載具類別 fail closed
     local da2 = da and da * da
     local dv2 = dv and dv * dv
@@ -603,8 +672,9 @@ local function adotsStyleTexture(art, styleItem)
 end
 
 -- wildOpt/liveOpt/vehOpt＝該表面的開關選項（小地圖 AnimalWild…／世界地圖 WM 前綴）；
+-- surface＝"mini"／"world"（功能閘門 scan 用）；
 -- 風格/大小/顏色/物種與類別篩選、伺服器沙盒閘皆兩表面共用
-local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
+local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt, surface)
     -- 沙盒閘門逐玩家判定（管理員戰術檢視生效時 Policy 對這兩鍵回 true＝旁路）
     local pn = inner.playerNum or 0
     local allowAnimals = sandboxGate("AllowAnimalDots", true, pn) ~= false
@@ -613,10 +683,19 @@ local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt)
     local wantVeh = getBoolOption(vehOpt, false)
         and sandboxGate("AllowVehicleDots", true, pn) ~= false
     if not (wantWild or wantLive or wantVeh) then return end -- 全關＝零成本
+    -- 功能閘門 scan（載具與動物合一；_FeatureGate.lua，缺檔＝放行，戰術檢視在閘門內旁路）
+    local fa = Core.featureAllowed
+    local gateMax
+    if fa then
+        local ok, _, max = fa(pn, "scan", surface)
+        if not ok then return end
+        gateMax = max
+    end
     -- 動物名稱（預設關）：取樣時一併帶名字；AnimalNameDistance 0＝不限，
     -- N＞0＝距玩家 N 格內才標名（純客戶端偏好，圖標本身仍受伺服器距離閘）
     local wantNames = (wantWild or wantLive) and getBoolOption("AnimalNames", false)
-    local st = sampleAnimalDots(inner, wantWild, wantLive, wantVeh, wantNames)
+    local st = sampleAnimalDots(inner, wantWild, wantLive, wantVeh, wantNames,
+        gateMax, "VehicleAnimalScanInterval")
     if st.count == 0 then return end
     local nd = wantNames and getSliderValue("AnimalNameDistance", 0, 0, 2000) or 0
     local nameP = nd > 0 and getSpecificPlayer(pn) or nil

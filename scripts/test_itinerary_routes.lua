@@ -94,11 +94,13 @@ local function getBoolOption(name, default)
     if name == "NavRoute" then return navRouteOption end
     return default
 end
+local sharedBucket = nil
 local Core = {
     navItineraryState = function(pn) return trips[pn] end,
     navGetTarget = function(pn) return activeTarget end,
     navGateAllows = function(pn, context) return gateAllows end,
     navRouteResult = function(pn, state) results[#results + 1] = { pn = pn, state = state } end,
+    navGetShared = function(pn) return sharedBucket end,
 }
 -- kickEngine 樁：只記錄被泵的表面（production 的 idle 早退由呼叫端守）
 local function kickEngine(inner) kicks[#kicks + 1] = inner end
@@ -114,6 +116,13 @@ local function drawApproach(inner, mapAPI, x1, y1, x2, y2, style)
     draws[#draws + 1] = { surface = inner, kind = "approach",
         ax = x1, ay = y1, bx = x2, by = y2 }
 end
+-- nav-route-draw 區段的單條路線（活動段／分享段）只記 key：本測試驗 own 旗標分流，
+-- 不驗路線幾何
+local SHARED_UNDER = {}
+local function sharedOverStyle(author) return author end
+local function drawOneRoute(inner, mapAPI, key)
+    draws[#draws + 1] = { surface = inner, kind = "one", key = key }
+end
 local ticks, pausedTicks = {}, {}
 local Events = {
     OnTick = { Add = function(fn) ticks[#ticks + 1] = fn end },
@@ -127,7 +136,8 @@ return {
     Core = Core, engine = engine, navRoutes = navRoutes, navPreview = navPreview,
     ensureRoute = ensureRoute, routeEnd = routeEnd, logs = logs, results = results, kicks = kicks,
     players = players, trips = trips,
-    draws = draws, drawPreview = drawPreview,
+    draws = draws, drawPreview = drawPreview, drawNavRoute = drawNavRoute,
+    setShared = function(v) sharedBucket = v end,
     resetDraws = function() for i = #draws, 1, -1 do draws[i] = nil end end,
     tick = function()
         for i = 1, #pausedTicks do pausedTicks[i]() end
@@ -144,7 +154,7 @@ return {
 
 local T = assert(compile(
     prelude .. section("nav%-cache") .. "\n" .. section("nav%-preview") .. "\n"
-        .. section("nav%-preview%-draw") .. "\n" .. suffix,
+        .. section("nav%-preview%-draw") .. "\n" .. section("nav%-route%-draw") .. "\n" .. suffix,
     "itinerary-routes"))(NavCore, GRAPH)
 local Core = T.Core
 
@@ -643,9 +653,40 @@ do
     assert(ex == 10760 and ey == 9700 and half and ux == nil, "P36: 有終錨與半寬、沒有方向")
     T.navRoutes[2] = nil
 end
+-- P37：功能閘門 nav 擋（drawNavTargets 傳 own=false）＝預覽與自己的活動路線不畫，
+-- 分享路線照畫；own 省略（nil）＝與加 API 前相同全畫
+do
+    T.players[0] = player(PX, PY)
+    T.trips[0] = trip(60, "navigating", stop(1, S1X, S1Y), stop(2, S2X, S2Y))
+    ticks(LEG_TICKS + 2)
+    T.setTarget({ x = S1X, y = S1Y })
+    T.setShared({ Bob = { x = S2X, y = S2Y } })
+    local inner = { playerNum = 0, mapAPI = {} }
+    local function summary()
+        local own, shared, preview = 0, 0, 0
+        for i = 1, #T.draws do
+            local d = T.draws[i]
+            if d.kind == "one" and d.key == 0 then own = own + 1
+            elseif d.kind == "one" and d.key == "0:Bob" then shared = shared + 1
+            elseif d.kind == "route" or d.kind == "approach" then preview = preview + 1 end
+        end
+        return own, shared, preview
+    end
+    T.resetDraws()
+    T.drawNavRoute(inner)
+    local own, shared, preview = summary()
+    assert(own == 1 and shared == 1 and preview > 0, "P37: own 省略＝自己的路線、分享、預覽全畫")
+    T.resetDraws()
+    T.drawNavRoute(inner, false)
+    own, shared, preview = summary()
+    assert(own == 0 and preview == 0, "P37: own=false 不畫自己的路線與預覽")
+    assert(shared == 1, "P37: own=false 分享路線照畫")
+    T.setShared(nil)
+    T.setTarget(nil)
+end
 
 print("test_itinerary_routes: OK（預覽分段/真路網距離 P1-P3、快取隔離 P4、"
     .. "失效條件 P5-P7、引擎/選項/gate P8-P10b、預覽例外 P11、零殘留 P12-P13、"
     .. "16 站上限 P14、回報邊界 P15-P17、非繪製維護 P18-P23、"
     .. "多站預設自動＋雙表面繪製 P24-P26、單站/追加/明確關閉 P27-P29、"
-    .. "換角色隔離與清空 P30-P32、活動段終錨 P33-P36）")
+    .. "換角色隔離與清空 P30-P32、活動段終錨 P33-P36、功能閘門 own 分流 P37）")

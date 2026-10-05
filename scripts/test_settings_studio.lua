@@ -104,8 +104,8 @@ check(source:find("Policy.setLocalTactical", 1, true) ~= nil
     "admin builder wires tactical master and gated privacy child")
 check(source:find("sandboxDist(entry.capBy, ctx.pn)", 1, true) ~= nil,
     "admin distance bypass remains per-player and client slider still tightens")
-check(source:find("if adminSectionSync(pn) and win._searchIndex then", 1, true) ~= nil,
-    "unified rebuild synchronizes dynamic admin membership before rebuilding rows")
+check(source:find("local membersChanged = adminSectionSync(pn)\n    if addonSectionSync(pn) then membersChanged = true end\n    if membersChanged and win._searchIndex then", 1, true) ~= nil,
+    "unified rebuild synchronizes dynamic admin and addon membership before rebuilding rows")
 check(source:find('studioIndexAdd(index, sec, "UI_MinidoracatMiniMap_AdminTactical", "navigate")', 1, true) ~= nil
     and source:find('studioIndexAdd(index, sec, "UI_MinidoracatMiniMap_AdminPrivacy", "navigate")', 1, true) ~= nil,
     "admin search results navigate to the gated section instead of exposing raw checkboxes")
@@ -114,6 +114,40 @@ check(source:find("Policy.setLocalTactical(target._playerNum or 0, false)", 1, t
 check(source:find("studioSearchEnabled(hit, target._playerNum or 0)", 1, true) ~= nil
     and source:find("studioSearchEnabled(hit, ctx.pn)", 1, true) ~= nil,
     "admin-aware search enablement receives the active player slot")
+
+-- settingsApiVersion 3：addon 分類 visible(pn)。明確 false 才藏、拋錯照顯示且 log 一次、
+-- 成員變動時依註冊順序重插在 admin／perf 之前，未提供 visible 的分類永不移動
+local addonVisChunk, addonVisErr = compile([[
+local printed = {}
+local function print(message) printed[#printed + 1] = message end
+local UNIFIED_SECTIONS = { { id = "layers" } }
+]] .. extract("settings%-studio%-addon%-visible") .. "\n" .. [[
+return addonSectionSync, addonSectionOrder, UNIFIED_SECTIONS, printed
+]])
+assert(addonVisChunk, addonVisErr)
+local addonSync, addonOrder, addonSections, addonPrinted = addonVisChunk()
+local seenPn
+local secA = { id = "A", addon = {} }
+local secB = { id = "B", addon = { visible = function(pn) seenPn = pn; return pn ~= 1 end } }
+local secC = { id = "C", addon = { visible = function() error("boom") end } }
+addonOrder[1], addonOrder[2], addonOrder[3] = secA, secB, secC
+for _, sec in ipairs({ secA, secB, secC, { id = "admin" }, { id = "perf" } }) do
+    addonSections[#addonSections + 1] = sec
+end
+local function sectionIds()
+    local ids = {}
+    for i = 1, #addonSections do ids[i] = addonSections[i].id end
+    return table.concat(ids, ",")
+end
+check(not addonSync(0) and #addonPrinted == 1,
+    "throwing visible keeps its section and logs")
+check(not addonSync(0) and #addonPrinted == 1, "visible error logs only once per section")
+check(addonSync(1) and sectionIds() == "layers,A,C,admin,perf",
+    "explicit false hides only that addon section")
+check(not addonSync(1), "hidden addon membership is idempotent")
+check(addonSync(0) and sectionIds() == "layers,A,B,C,admin,perf",
+    "re-shown addon section returns in registration order before admin")
+checkEq(seenPn, 0, "visible receives the window owner's player slot")
 
 local effectiveChunk, effectiveErr = compile([[
 local gates, livestock = {}, 2
@@ -530,7 +564,7 @@ check(hardLine ~= "" and hardRest ~= "" and hardLine .. hardRest == "abcdefghijk
     "an overlong Latin word is hard-cut and still makes progress")
 local tinyLine, tinyRest = wrapCut("中文", 5, "Small")
 check(tinyLine == "中" and tinyRest == "文", "a width narrower than one character still places one character")
-local EXPECTED_ASSERTIONS = 111
+local EXPECTED_ASSERTIONS = 117
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
         .. ", actual " .. assertions)

@@ -299,12 +299,27 @@ if ISMiniMapOuter and ISMiniMapInner and ISMiniMapTitleBar then
     -- bottomPanel 是裸 ISPanel 實例，在 InitPlayer hook 內逐實例補掛（見上方）
 
     -- 拖曳中小地圖被 Toggle 移除（開關快捷鍵/世界地圖輪盤）→ mouse up 收不到，
-    -- 先取消拖曳再走原版，避免幽靈縮放狀態
+    -- 先取消拖曳再走原版，避免幽靈縮放狀態。
+    -- 功能閘門（_FeatureGate.lua）：只擋「開」不擋「關」（X 鈕也走 Toggle，ISMiniMap.lua:601-603）；
+    -- 被擋時在原版之前返回＝不寫 MiniMap.StartVisible（ISMiniMap.lua:763-766）。
+    -- FocusMiniMap（手把輪盤，ISDPadWheels.lua:78）同閘：原版會對沒開成的視窗 setJoypadFocus
     if ISMiniMap and ISMiniMap.ToggleMiniMap then
         local originalToggleMiniMap = ISMiniMap.ToggleMiniMap
         function ISMiniMap.ToggleMiniMap(playerNum)
             if resizeState then cancelResize() end
+            local mm = getPlayerMiniMap(playerNum)
+            if mm and not mm:isReallyVisible() and Core.minimapOpenBlocked
+                and Core.minimapOpenBlocked(playerNum) then return end
             return originalToggleMiniMap(playerNum)
+        end
+    end
+    if ISMiniMap and ISMiniMap.FocusMiniMap then
+        local originalFocusMiniMap = ISMiniMap.FocusMiniMap
+        function ISMiniMap.FocusMiniMap(playerNum)
+            local mm = getPlayerMiniMap(playerNum)
+            if mm and not mm:isReallyVisible() and Core.minimapOpenBlocked
+                and Core.minimapOpenBlocked(playerNum) then return end
+            return originalFocusMiniMap(playerNum)
         end
     end
 end
@@ -396,6 +411,8 @@ local function togglePlayerMiniMap()
     -- 不受沙盒 AllowMiniMap 限制：原版沒建小地圖時（getPlayerMiniMap 為 nil）
     -- 照 ISMiniMap.Recreate 的做法自己建（經過我們 hook 的 InitPlayer 會套 pyramid）。
     if not getPlayerMiniMap(0) then
+        -- 主動開啟被功能閘門擋下：不建（建了會依 StartVisible 自動顯示）
+        if Core.minimapOpenBlocked and Core.minimapOpenBlocked(0) then return end
         local ok, err = pcall(function()
             getPlayerData(0).miniMap = ISMiniMap.InitPlayer(0)
         end)

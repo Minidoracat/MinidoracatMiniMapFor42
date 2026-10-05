@@ -277,6 +277,8 @@
     "UI_MinidoracatMiniMap_ClearTarget": "Clear navigation target",
     "UI_MinidoracatMiniMap_ShareTarget": "Share target with faction",
     "UI_MinidoracatMiniMap_NavBlocked": "Navigation equipment required",
+    "UI_MinidoracatMiniMap_FeatureUnavailable": "This feature is currently unavailable",
+    "UI_MinidoracatMiniMap_NoSignal": "NO SIGNAL",
     "UI_MinidoracatMiniMap_BtnWorldMap": "Open world map (M)",
     "UI_MinidoracatMiniMap_BtnZoomOut": "Zoom out",
     "UI_MinidoracatMiniMap_BtnZoomIn": "Zoom in",

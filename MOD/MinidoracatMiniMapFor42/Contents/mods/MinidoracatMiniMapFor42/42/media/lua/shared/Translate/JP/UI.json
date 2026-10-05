@@ -274,6 +274,8 @@
     "UI_MinidoracatMiniMap_ClearTarget": "ナビ目標を解除",
     "UI_MinidoracatMiniMap_ShareTarget": "目標を陣営と共有",
     "UI_MinidoracatMiniMap_NavBlocked": "ナビゲーション機器が必要です",
+    "UI_MinidoracatMiniMap_FeatureUnavailable": "この機能は現在使用できません",
+    "UI_MinidoracatMiniMap_NoSignal": "信号なし",
     "UI_MinidoracatMiniMap_BtnCenter": "プレイヤーに戻る",
     "UI_MinidoracatMiniMap_BtnLayers": "レイヤー切替",
     "UI_MinidoracatMiniMap_BtnSettings": "マップ設定",

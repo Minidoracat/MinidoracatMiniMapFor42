@@ -166,7 +166,10 @@ local function adotsDisabledGroups(optId)
 end
 local ADOTS_SPECIES_UI, ADOTS_VEHCAT_UI = {}, {}
 local function visibleWorldAABB() return -100, 100, -100, 100 end
-local ADOTS_INTERVAL_MS, ADOTS_MAX, ADOTS_SCAN_MAX = 500, 500, 1000
+local ADOTS_INTERVAL_MS, ADOTS_MAX, ADOTS_SCAN_MAX, SCAN_ALL = 500, 500, 1000, 1e9
+-- 掃描間隔（沙盒）樁：回毫秒或 nil（即時）；reads 數取樣器實際讀了幾次（守「每幀不讀 policy」）
+local scanSettings, scanReads = {}, 0
+local function scanIntervalMs(name) scanReads = scanReads + 1; return scanSettings[name] end
 local function adotsSafehouseRects(user) return rectsByUser[user] end
 local function adotsLivestockVisible(ax, ay, currentMode, rects)
     if currentMode == 1 then return true end
@@ -209,6 +212,8 @@ end
 local sampleSuffix = [=[
 return {
     sample = sampleAnimalDots,
+    setScan = function(name, ms) scanSettings[name] = ms end,
+    scanReads = function() return scanReads end,
     setNow = function(value) now = value end,
     setMode = function(value) mode = value end,
     setUsername = function(value) username = value end,
@@ -236,7 +241,9 @@ local zombieBody = assert(dotsSource:match(
 local zombiePrelude = [=[
 local now, distance, playerPresent = 1000, nil, true
 local zombies = {}
-local ZDOTS_INTERVAL_MS, ZDOTS_MAX, ZDOTS_SCAN_MAX = 300, 10, 100
+local ZDOTS_INTERVAL_MS, ZDOTS_MAX, ZDOTS_SCAN_MAX, SCAN_ALL = 300, 10, 100, 1e9
+local scanSettings, scanReads = {}, 0
+local function scanIntervalMs(name) scanReads = scanReads + 1; return scanSettings[name] end
 local ZDOTS_NEAR, ZDOTS_MID, ZDOTS_MAXES = 20, 50, { 10 }
 local function getTimestampMs() return now end
 local function displayDist() return distance end
@@ -266,6 +273,8 @@ end
 local zombieSuffix = [=[
 return {
     sample = sampleZombieDots,
+    setScan = function(name, ms) scanSettings[name] = ms end,
+    scanReads = function() return scanReads end,
     setNow = function(value) now = value end,
     setDistance = function(value) distance = value end,
     setPlayerPresent = function(value) playerPresent = value end,
@@ -568,15 +577,23 @@ end
 assert(safehouseSource:find('local shMode = safehouseDisplayMode%(pn%)')
     and safehouseSource:find('local nameMode = safehouseNameMode%(pn%)'),
     "安全屋顯示／名稱模式必須使用目前 surface 的 pn")
-assert(source:find('sandboxGate%("AllowZombieIntensity", true, self%.playerNum or 0%)'),
+assert(source:find('local pn = self%.playerNum or 0\n%s*local fa = Core%.featureAllowed')
+    and source:find('sandboxGate%("AllowZombieIntensity", true, pn%)'),
     "殭屍熱度閘門不得借用 slot 0")
-assert(dotsSource:find('sandboxGate%("AllowZombieDots", true, el%.playerNum or 0%)'),
+assert(dotsSource:find('local pn = el%.playerNum or 0\n%s*if sandboxGate%("AllowZombieDots", true, pn%)'),
     "殭屍點位閘門不得借用 slot 0")
 assert(dotsSource:find('sandboxGate%("AllowAnimalDots", true, pn%)')
     and dotsSource:find('sandboxGate%("AllowVehicleDots", true, pn%)'),
     "動物／載具閘門必須使用目前 surface 的 pn")
 assert(dotsSource:find('livestockVisibilityMode%(pn%)'),
     "牲畜隱私模式必須使用目前 surface 的 pn")
+assert(dotsSource:find('if not sec or sec <= 0 or Policy%.tacticalActive%(pn%) then return nil end')
+    and dotsSource:find('sampleZombieDots%(el, gateMax, "ZombieScanInterval"%)')
+    and dotsSource:find('gateMax, "VehicleAnimalScanInterval"%)')
+    and not dotsSource:find('scanIntervalMs%("'),
+    "掃描間隔逐 slot 讀沙盒、戰術檢視一律即時，殭屍與載具動物各用自己的鍵；繪製端只傳鍵、不每幀讀 Policy")
+assert(dotsSource:find('fa%(pn, "zombie", surface%)') and dotsSource:find('fa%(pn, "scan", surface%)'),
+    "點雲功能閘門依表面判定（zombie／scan）")
 assert(settingsSource:find('sandboxGate%("AllowZombieDots", true, pn%)')
     and settingsSource:find('sandboxGate%("AllowAnimalDots", true, pn%)')
     and settingsSource:find('sandboxGate%("AllowVehicleDots", true, pn%)'),
@@ -740,6 +757,85 @@ assert(zombieHarness.sample(zombieInner).count == 0, "殭屍距離啟用且缺�
 zombieHarness.setDistance(nil)
 zombieHarness.setNow(1150)
 assert(zombieHarness.sample(zombieInner).count == 2, "未限制距離時缺玩家未沿用視窗中心")
+
+-- 掃描間隔（沙盒 ZombieScanInterval／VehicleAnimalScanInterval）與功能閘門 maxDist（gateMax）：
+-- 定時模式以玩家為中心（視窗外也取）、錨點在玩家、間隔內不重掃；設定只在即時節流節奏
+-- （殭屍 300ms／動物載具 500ms）重讀——每幀不讀 Policy，切換最多延遲一個節流窗；
+-- gateMax 與 displayDist 取小。設定 0／nil 且 gateMax nil＝與加功能前相同
+local ZK, VK = "ZombieScanInterval", "VehicleAnimalScanInterval"
+local scanInner = { playerNum = 0 }
+zombieHarness.setPlayerPresent(true)
+zombieHarness.setDistance(nil)
+zombieHarness.setZombies({ zombieHarness.zombie(10, 0), zombieHarness.zombie(500, 0) })
+zombieHarness.setNow(5000)
+local zReads = zombieHarness.scanReads()
+assert(zombieHarness.sample(scanInner, nil, ZK).count == 1, "殭屍即時模式只取視窗內")
+zombieHarness.setScan(ZK, 60000)
+for t = 5010, 5290, 10 do -- 一個節流窗內 29 幀：設定剛改也不重讀
+    zombieHarness.setNow(t)
+    assert(zombieHarness.sample(scanInner, nil, ZK).count == 1, "殭屍節流窗內沿用舊設定")
+end
+assert(zombieHarness.scanReads() - zReads == 1, "殭屍掃描間隔每 ZDOTS_INTERVAL_MS 至多讀一次（每幀不讀 Policy）")
+zombieHarness.setNow(5300)
+local zst = zombieHarness.sample(scanInner, nil, ZK)
+assert(zst.count == 2 and zst.acx == 0 and zst.acy == 0, "殭屍定時模式以玩家為中心取樣、錨點在玩家")
+zombieHarness.setZombies({ zombieHarness.zombie(10, 0) })
+zombieHarness.setNow(60000)
+assert(zombieHarness.sample(scanInner, nil, ZK).count == 2, "殭屍定時模式間隔內不重掃")
+zombieHarness.setNow(65400)
+assert(zombieHarness.sample(scanInner, nil, ZK).count == 1, "殭屍定時模式滿間隔才重掃")
+zombieHarness.setScan(ZK, nil) -- 戰術檢視開啟／沙盒改 0
+zombieHarness.setZombies({ zombieHarness.zombie(10, 0), zombieHarness.zombie(20, 0),
+    zombieHarness.zombie(500, 0) })
+zombieHarness.setNow(65500)
+assert(zombieHarness.sample(scanInner, nil, ZK).count == 1, "切回即時前仍在讀值節流窗內")
+zombieHarness.setNow(65700)
+assert(zombieHarness.sample(scanInner, nil, ZK).count == 2, "切回即時最多延遲一個節流窗就重取樣")
+zombieHarness.setNow(66000)
+assert(zombieHarness.sample(scanInner, 5, ZK).count == 0, "殭屍功能閘門 maxDist 生效")
+zombieHarness.setDistance(30)
+zombieHarness.setNow(66500)
+assert(zombieHarness.sample(scanInner, 50, ZK).count == 2, "殭屍 maxDist 與 displayDist 取小")
+zombieHarness.setDistance(8)
+zombieHarness.setNow(67000)
+assert(zombieHarness.sample(scanInner, 50, ZK).count == 0, "殭屍 displayDist 較小時以它為準")
+zombieHarness.setDistance(nil)
+
+local scanAInner = { playerNum = 0 }
+harness.setMode(1)
+harness.setDisabledAnimalGroups(nil)
+harness.setPlayerPresent(true)
+harness.setDistances(nil, nil)
+harness.setAnimals({ harness.animal(10, 0, true), harness.animal(500, 0, true) })
+harness.setVehicles({ harness.vehicle(20, 0), harness.vehicle(600, 0) })
+harness.setNow(9000)
+local aReads = harness.scanReads()
+assert(harness.sample(scanAInner, true, false, true, false, nil, VK).count == 2, "動物載具即時模式只取視窗內")
+harness.setScan(VK, 30000)
+for t = 9010, 9490, 10 do -- 一個節流窗內 49 幀
+    harness.setNow(t)
+    harness.sample(scanAInner, true, false, true, false, nil, VK)
+end
+assert(harness.scanReads() - aReads == 1, "動物載具掃描間隔每 ADOTS_INTERVAL_MS 至多讀一次（每幀不讀 Policy）")
+harness.setNow(9500)
+local ast = harness.sample(scanAInner, true, false, true, false, nil, VK)
+assert(ast.count == 4 and ast.acx == 0 and ast.acy == 0, "動物載具定時模式以玩家為中心取樣")
+harness.setAnimals({ harness.animal(10, 0, true) })
+harness.setNow(20000)
+assert(harness.sample(scanAInner, true, false, true, false, nil, VK).count == 4,
+    "動物載具定時模式間隔內不重掃")
+harness.setNow(39500)
+assert(harness.sample(scanAInner, true, false, true, false, nil, VK).count == 3,
+    "動物載具定時模式滿間隔才重掃")
+harness.setNow(39600)
+assert(harness.sample(scanAInner, true, false, true, false, 15, VK).count == 1,
+    "scan maxDist 同時套動物（10 格內）與載具（20 格被擋）")
+harness.setDistances(5, nil)
+harness.setNow(39700)
+assert(harness.sample(scanAInner, true, false, true, false, 15, VK).count == 0,
+    "scan maxDist 與動物 displayDist 取小")
+harness.setDistances(nil, nil)
+harness.setScan(VK, nil)
 
 safehouseHarness.setHouses({ safehouseHarness.safehouse(10, 10, 20, 20, false) })
 safehouseHarness.setPlayerPosition(0, 10)

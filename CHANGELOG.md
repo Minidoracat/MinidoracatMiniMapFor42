@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### 新增
+
+- 伺服器管理員可以在沙盒的圖標分頁設定「殭屍點位掃描間隔」與「載具與動物圖標掃描間隔」（秒）：預設 0＝和現在一樣即時更新；設成例如 30，這些點位每 30 秒才更新一次，並改成以玩家為中心掃描，拖動或縮放地圖時不會在兩次更新之間出現空白。開啟戰術檢視的管理員一律即時。按「套用」後立即生效，不需重啟。
+- 為之後的「地圖腕錶」附加 MOD 預先加裝功能限制接口。沒有安裝會用到它的 MOD 時，小地圖、資源點、導航、陣營分享與各種圖標都和現在完全一樣。
+
+> 技術要點：client 新增 `featureApiVersion` 1＋`registerFeatureGate`（feature：minimap／arrow／poi／nav／share／scan／zombie；只有明確回 false 才擋，零註冊時行為不變）；伺服器新增全域 `MinidoracatMiniMapServerAPI`（`shareApiVersion` 1＋`registerShareFilter`，逐收件者過濾陣營分享）；`settingsApiVersion` 3：`registerSettingsSection` 的 spec 新增選用 `visible(pn)`。沙盒新增 `ZombieScanInterval`、`VehicleAnimalScanInterval`（秒，0＝即時，預設 0）。`navApiVersion` 不變，`requestRoute` 回傳狀態不變。
+
 ## [42.21.0-0.36.0] - 2026-10-05
 
 ### 變更

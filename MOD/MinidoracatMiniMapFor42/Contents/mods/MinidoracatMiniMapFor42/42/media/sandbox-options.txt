@@ -18,6 +18,9 @@ option MinidoracatMiniMap.AllowZombieDots
 option MinidoracatMiniMap.ZombieDotDistance
 {type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMapIcons, translation = MinidoracatMiniMapZombieDotDistance,}
 
+option MinidoracatMiniMap.ZombieScanInterval
+{type = integer, min = 0, max = 3600, default = 0, page = MinidoracatMiniMapIcons, translation = MinidoracatMiniMapZombieScanInterval,}
+
 option MinidoracatMiniMap.AllowZombieIntensity
 {type = boolean, default = true, page = MinidoracatMiniMapIcons, translation = MinidoracatMiniMapAllowZombieIntensity,}
 
@@ -35,6 +38,9 @@ option MinidoracatMiniMap.AllowVehicleDots
 
 option MinidoracatMiniMap.VehicleIconDistance
 {type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMapIcons, translation = MinidoracatMiniMapVehicleIconDistance,}
+
+option MinidoracatMiniMap.VehicleAnimalScanInterval
+{type = integer, min = 0, max = 3600, default = 0, page = MinidoracatMiniMapIcons, translation = MinidoracatMiniMapVehicleAnimalScanInterval,}
 
 option MinidoracatMiniMap.PoiDisplayDistance
 {type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMapAreas, translation = MinidoracatMiniMapPoiDisplayDistance,}

@@ -44,6 +44,48 @@ local function navShareAllowed()
     return P.readBool("AllowNavShare", true)
 end
 
+-- 伺服器端分享過濾 API（shareApiVersion 1；首個消費者＝地圖錶 addon 的通訊距離／中繼核心）。
+-- 客戶端的 MinidoracatMiniMapAPI 在 dedicated 不存在（client 資料夾只算 checksum），
+-- 故另建伺服器全域表。fn(sender, recipient, x, y) 回 false＝不轉給這位收件者；
+-- 其他值放行；拋錯＝放行並依 owner 只 log 一次。多個 filter 取 AND；同 owner 再註冊＝覆蓋。
+-- 只過濾 shareTarget：clearShared 是撤回，收件者若收過舊座標就必須收到撤回。
+-- 零註冊＝逐收件者迴圈裡 # 判斷後直接放行（行為與加 API 前相同）。
+MinidoracatMiniMapServerAPI = MinidoracatMiniMapServerAPI or {}
+local ServerAPI = MinidoracatMiniMapServerAPI
+local shareFilters = {} -- { { owner=, fn=, errLogged= }, ... }
+ServerAPI.shareApiVersion = 1
+function ServerAPI.registerShareFilter(ownerModId, fn)
+    if type(ownerModId) ~= "string" or ownerModId == "" or type(fn) ~= "function" then
+        print("[MinidoracatMiniMap] registerShareFilter bad arguments (need ownerModId string, fn function)")
+        return false
+    end
+    for i = 1, #shareFilters do
+        if shareFilters[i].owner == ownerModId then
+            shareFilters[i].fn = fn
+            shareFilters[i].errLogged = nil
+            return true
+        end
+    end
+    shareFilters[#shareFilters + 1] = { owner = ownerModId, fn = fn }
+    return true
+end
+
+local function shareFilterAllows(sender, recipient, x, y)
+    for i = 1, #shareFilters do
+        local f = shareFilters[i]
+        local ok, allowed = pcall(f.fn, sender, recipient, x, y)
+        if not ok then
+            if not f.errLogged then
+                f.errLogged = true
+                print("[MinidoracatMiniMap] share filter error (" .. tostring(f.owner) .. "): " .. tostring(allowed))
+            end
+        elseif allowed == false then
+            return false
+        end
+    end
+    return true
+end
+
 local Commands = {}
 
 -- payload 帶 to（收件角色名）：sendServerCommand(player,...) 定位的是該玩家的
@@ -57,8 +99,10 @@ function Commands.shareTarget(player, args)
     if not members then return end
     local author = player:getUsername()
     for i = 1, #members do
-        sendServerCommand(members[i], "MinidoracatMiniMap", "sharedTarget",
-            { author = author, x = args.x, y = args.y, to = members[i]:getUsername() })
+        if shareFilterAllows(player, members[i], args.x, args.y) then
+            sendServerCommand(members[i], "MinidoracatMiniMap", "sharedTarget",
+                { author = author, x = args.x, y = args.y, to = members[i]:getUsername() })
+        end
     end
 end
 

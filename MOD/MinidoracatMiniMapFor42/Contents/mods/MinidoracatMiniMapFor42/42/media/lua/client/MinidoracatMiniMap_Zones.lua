@@ -127,21 +127,24 @@ end
 -- 屋距離閘——zone 矩形（distRects 或 rects）最近點距玩家 N 格內才顯示；二維、
 -- 不計樓層。回傳 px, py, pdist², zdist²（各自未啟用＝nil＝該類全放行）與
 -- poiBlocked/zoneBlocked（該類距離啟用但缺玩家：fail closed，該類 provider
--- 整段不畫——同 drawSafehouses 的缺玩家語意）。
+-- 整段不畫——同 drawSafehouses 的缺玩家語意）。功能閘門 poi 被擋（_FeatureGate.lua，
+-- 缺檔＝放行）同樣讓 poiBlocked 為真：只關內建 POI，外部 zone 與搜尋不受影響
 local function distGateParams(inner)
     local pn = inner.playerNum or 0
+    local fa = Core.featureAllowed
+    local poiOff = fa ~= nil and not fa(pn, "poi", inner == ISWorldMap_instance and "world" or "mini")
     local pdist = displayDist("PoiDisplayDistance", pn)
     -- zdist 僅在有外部 provider 時求值：displayDist 內含 "Client"..name 字串
     -- 配置＋選項/沙盒查找，純本體（無 zone addon）每幀 3 pass×2 表面全屬浪費
     -- （三 lane review 同報）；hasExternalZoneProvider 是 ≤2 項純 Lua 迴圈
     local zdist = hasExternalZoneProvider() and displayDist("ZoneDisplayDistance", pn) or nil
-    if not pdist and not zdist then return nil, nil, nil, nil, false, false end
+    if not pdist and not zdist then return nil, nil, nil, nil, poiOff, false end
     local playerObj = getSpecificPlayer(pn)
     if not playerObj then
-        return nil, nil, nil, nil, pdist ~= nil, zdist ~= nil
+        return nil, nil, nil, nil, poiOff or pdist ~= nil, zdist ~= nil
     end
     return playerObj:getX(), playerObj:getY(),
-        pdist and pdist * pdist or nil, zdist and zdist * zdist or nil, false, false
+        pdist and pdist * pdist or nil, zdist and zdist * zdist or nil, poiOff, false
 end
 
 -- 玩家點到矩形最近點的距離平方；夾限用純 Lua 比較而非 math.max/min——Kahlua

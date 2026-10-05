@@ -285,6 +285,54 @@ local settingsUI -- 單例；獨立頂層視窗，不隨小地圖 Recreate 消�
 -- Addon client 設定區：addon 註冊純資料＋get/set callbacks；值仍由 addon 自己保存。
 local addonSettingsById = {}
 
+-- addon 分類的可見性（settingsApiVersion 3 的選用 spec.visible(pn)）：同 adminSectionSync，
+-- 成員是 live 值，每次 unifiedRebuild 先同步。只有明確回 false 才藏；visible 拋錯＝顯示，
+-- 依分類只 log 一次。成員有變時把 addon 分類依註冊順序整批重插在 admin／perf 之前
+-- （未提供 visible 的 addon 永不變動，零使用時 UNIFIED_SECTIONS 與加 API 前相同）。
+-- test:settings-studio-addon-visible:start
+local addonSectionOrder = {} -- 註冊順序；同 owner 再註冊不重排
+local function addonSectionSync(pn)
+    local changed = false
+    for i = 1, #addonSectionOrder do
+        local sec = addonSectionOrder[i]
+        local fn = sec.addon.visible
+        local want = true
+        if fn then
+            local ok, v = pcall(fn, pn)
+            if not ok then
+                if not sec.visibleErrLogged then
+                    sec.visibleErrLogged = true
+                    print("[MinidoracatMiniMap] settings section visible() error ("
+                        .. tostring(sec.id) .. "): " .. tostring(v))
+                end
+            elseif v == false then
+                want = false
+            end
+        end
+        sec.want = want
+        if want == (sec.hidden == true) then changed = true end
+    end
+    if not changed then return false end
+    for i = #UNIFIED_SECTIONS, 1, -1 do
+        if UNIFIED_SECTIONS[i].addon then table.remove(UNIFIED_SECTIONS, i) end
+    end
+    local insertAt = #UNIFIED_SECTIONS + 1
+    for i = 1, #UNIFIED_SECTIONS do
+        local id = UNIFIED_SECTIONS[i].id
+        if id == "admin" or id == "perf" then insertAt = i; break end
+    end
+    for i = 1, #addonSectionOrder do
+        local sec = addonSectionOrder[i]
+        sec.hidden = not sec.want or nil
+        if sec.want then
+            table.insert(UNIFIED_SECTIONS, insertAt, sec)
+            insertAt = insertAt + 1
+        end
+    end
+    return true
+end
+-- test:settings-studio-addon-visible:end
+
 -- 地圖包 addon 專屬選項（有註冊才出現）：OnGameBoot＝所有 MOD lua 載入完
 -- （地圖包 require=本 MOD，其註冊呼叫已執行）、且早於 MainOptions 建立——
 -- 實際順序 OnGameBoot → OnMainMenuEnter → MainOptions:create →
@@ -2019,7 +2067,9 @@ unifiedRebuild = function(win)
     local pn = win._playerNum or 0
     -- 分類成員是 live 值（政策、引擎權限、本機旗標都可能在視窗開著時變）：
     -- 先同步成員再清列，成員有變時搜尋索引必須一併重建
-    if adminSectionSync(pn) and win._searchIndex then
+    local membersChanged = adminSectionSync(pn)
+    if addonSectionSync(pn) then membersChanged = true end
+    if membersChanged and win._searchIndex then
         win._searchIndex = studioBuildIndex()
     end
     studioClearRows(win)
@@ -2383,8 +2433,10 @@ local function normalizeAddonSettings(ownerModId, spec)
             or type(spec) ~= "table" or type(spec.label) ~= "string"
             or spec.label == "" then return nil end
     -- API v1 相容：舊呼叫端可繼續傳 spec.lane，但地圖顯示設定不讀、不正規化、
-    -- 不複製也不保存它；分類順序只由註冊順序決定。v2 另複製 actions（最多 16）。
-    local out = { label = spec.label, ticks = {}, combos = {}, actions = {} }
+    -- 不複製也不保存它；分類順序只由註冊順序決定。v2 另複製 actions（最多 16）；
+    -- v3 另收選用 visible(pn)（見 addonSectionSync）。
+    if spec.visible ~= nil and type(spec.visible) ~= "function" then return nil end
+    local out = { label = spec.label, ticks = {}, combos = {}, actions = {}, visible = spec.visible }
     local ticks = spec.ticks
     if ticks ~= nil and type(ticks) ~= "table" then return nil end
     local tickN = ticks and #ticks or 0
@@ -2438,7 +2490,7 @@ local function normalizeAddonSettings(ownerModId, spec)
     return out
 end
 
-MinidoracatMiniMapAPI.settingsApiVersion = 2
+MinidoracatMiniMapAPI.settingsApiVersion = 3 -- v3：spec.visible(pn)；v2：actions
 function MinidoracatMiniMapAPI.registerSettingsSection(ownerModId, spec)
     local normalized = normalizeAddonSettings(ownerModId, spec)
     if not normalized then
@@ -2451,9 +2503,11 @@ function MinidoracatMiniMapAPI.registerSettingsSection(ownerModId, spec)
     if sec then
         sec.label = normalized.label
         sec.addon = normalized
+        sec.visibleErrLogged = nil -- 新 visible 的錯誤值得記一次新 log
     else
         sec = { id = sectionId, label = normalized.label, addon = normalized, icon = "layers" }
         addonSettingsById[ownerModId] = sec
+        addonSectionOrder[#addonSectionOrder + 1] = sec
         local insertAt = #UNIFIED_SECTIONS + 1
         for i = 1, #UNIFIED_SECTIONS do
             if UNIFIED_SECTIONS[i].id == "perf" then insertAt = i; break end
