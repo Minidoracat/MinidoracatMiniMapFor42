@@ -10,6 +10,7 @@
 --   3. 內容繪製：toggle 貼圖（缺圖畫「M」）＋穿透中染琥珀（含邊框）；Dock 由框架畫外框與狀態
 --   4. hover 提示文字組裝（動作＋當前快捷鍵＋ghost 熱鍵＋-debug 渲染狀態）
 --   5. updateFloatIconVisibility 顯示收斂點（選項開關；docked 時改請 Dock 重評）
+--   6. 框架通知（Toast）避開區：通知堆疊不蓋住開著的小地圖
 --
 -- 載入順序假設：PZ 依字母序載入同目錄 lua，'.'(0x2E) < '_'(0x5F) → 主檔先載，
 -- 本檔載入期只讀 Core 的一次性賦值；框架 MOD 經 mod.info require= 先於本 MOD 全量載入。
@@ -226,6 +227,16 @@ local DOCK_SPEC = {
     isAvailable = function() return getBoolOption("FloatIcon", true) end,
 }
 
+-- 框架通知避開區（rev 12 toastAvoid）：通知堆疊在全螢幕右上，分割畫面時那裡是別的玩家的畫面，
+-- 所以每個槽位各登記一次（owner "MinidoracatMiniMap<pn>"）。fn 由框架每幀 pcall：每次現查
+-- getPlayerMiniMap，移動、縮放、Recreate 換實例與標題列展開都即時跟上，不配置 table；
+-- 未建或隱藏回 nil＝此刻不避（等同解除）。
+local function toastAvoidRect(pn)
+    local mm = getPlayerMiniMap(pn)
+    if mm == nil or not mm:isReallyVisible() then return nil end
+    return mm:getAbsoluteX(), mm:getAbsoluteY(), mm:getWidth(), mm:getHeight()
+end
+
 -- 框架 Dock 契約（rev 13）：能力旗標＋facade 都在才登記；登記回 false＝退回浮鈕
 local dock
 do
@@ -233,6 +244,13 @@ do
     if ui and ui.API_MAJOR == 1 and ui.CAPABILITIES and ui.CAPABILITIES.dock == true
             and ui.Dock and ui.Dock.register(DOCK_SPEC) == true then
         dock = ui.Dock
+    end
+    -- 載入期登記：框架反覆閃避到位置不再變，與 Dock 等其他避開區的登記順序無關
+    if ui and ui.API_MAJOR == 1 and (ui.API_REVISION or 0) >= 12 and ui.CAPABILITIES
+            and ui.CAPABILITIES.toastAvoid == true and ui.Toast and ui.Toast.setAvoid then
+        for pn = 0, 3 do
+            ui.Toast.setAvoid("MinidoracatMiniMap" .. pn, function() return toastAvoidRect(pn) end)
+        end
     end
 end
 

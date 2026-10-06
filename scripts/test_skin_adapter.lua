@@ -19,7 +19,8 @@
      驗拖曳放開立即落盤、依解析度各自記錄、ModOptions 舊位置一次性遷移。
      全程只碰記憶體，不讀寫真的 layout.ini／ModOptions.ini，也不啟動遊戲。
   D3. 家族工具列 Dock：能力在場時只登記一個入口、不建獨立浮鈕，各回呼照契約；
-     登記被拒退回 D 的浮鈕路徑（能力缺席＝態 D 本身）。
+     登記被拒退回 D 的浮鈕路徑（能力缺席＝態 D 本身）。框架通知避開區（toastAvoid）的
+     登記、矩形回呼（可見／移動／隱藏／Recreate／分屏槽位／零配置）與框架缺席不登記。
   E. 主檔工具列 icon consumer：定位狀態／複製／文字退回。
 框架自身行為由框架 repo 的 smoke_harness 覆蓋；此處只驗 adapter 契約。
 
@@ -844,6 +845,70 @@ do
     dockBoot()
     check(#registered == 1 and core._floatIcon ~= nil and core._floatIcon:getIsVisible()
         and refreshes == 0, "態D3 Dock 登記失敗：照舊建立獨立浮鈕")
+
+    -- 通知避開區（框架 rev 12 toastAvoid）：假 Toast 只記錄登記；dodge 規則由框架 harness 覆蓋。
+    local avoids
+    mui.CAPABILITIES.toastAvoid = true
+    mui.Toast = { setAvoid = function(owner, fn) avoids[owner] = fn end }
+    local function avoidBoot()
+        avoids = {}
+        dockBoot()
+        local n = 0
+        for _ in pairs(avoids) do n = n + 1 end
+        return n
+    end
+    local function fakeMiniMap(x, y, w, h)
+        local m = { shown = true }
+        function m:isReallyVisible() return self.shown end
+        function m:getAbsoluteX() return x end
+        function m:getAbsoluteY() return y end
+        function m:getWidth() return w end
+        function m:getHeight() return h end
+        function m:move(nx, ny, nw, nh) x, y, w, h = nx, ny, nw, nh end
+        return m
+    end
+    local maps = {}
+    _G.getPlayerMiniMap = function(pn) return maps[pn] end
+    local count = avoidBoot()
+    local fn0, fn1 = avoids.MinidoracatMiniMap0, avoids.MinidoracatMiniMap1
+    check(count == 4 and fn0 and avoids.MinidoracatMiniMap3 and fn0() == nil,
+        "態D3 Toast 避開區：載入時四個玩家槽各登記一個 owner，小地圖未建回 nil（不避）")
+    maps[0] = fakeMiniMap(1500, 600, 300, 380)
+    local ax, ay, aw, ah = fn0()
+    local shownRect = ax == 1500 and ay == 600 and aw == 300 and ah == 380
+    maps[0]:move(1400, 500, 420, 480) -- 拖曳／縮放
+    ax, ay, aw, ah = fn0()
+    local movedRect = ax == 1400 and ay == 500 and aw == 420 and ah == 480
+    maps[0].shown = false
+    local hiddenNil = fn0() == nil
+    maps[0] = fakeMiniMap(10, 20, 200, 210) -- Recreate 換實例
+    ax = fn0()
+    check(shownRect and movedRect and hiddenNil and ax == 10,
+        "態D3 Toast 避開區：可見回螢幕矩形，移動縮放即時跟上，隱藏回 nil，Recreate 跟新實例")
+    maps[1] = fakeMiniMap(960, 0, 200, 200)
+    ax = fn1()
+    check(ax == 960 and fn0() == 10, "態D3 Toast 避開區：各槽位只回自己的小地圖")
+    collectgarbage("collect"); collectgarbage("stop")
+    local before = collectgarbage("count")
+    for _ = 1, 2000 do fn0(); fn1(); avoids.MinidoracatMiniMap2() end
+    local grew = collectgarbage("count") - before
+    collectgarbage("restart")
+    check(grew < 1, "態D3 Toast 避開區：每幀呼叫不配置（2000 幀增量 " .. grew .. " KB）")
+
+    local rev = mui.API_REVISION
+    mui.API_REVISION = 11
+    local oldRev = avoidBoot()
+    mui.API_REVISION = rev
+    mui.CAPABILITIES.toastAvoid = false
+    local noCap = avoidBoot()
+    mui.CAPABILITIES.toastAvoid = true
+    local toast = mui.Toast
+    mui.Toast = nil
+    local noToast = pcall(avoidBoot)
+    mui.Toast = toast
+    check(oldRev == 0 and noCap == 0 and noToast and next(avoids) == nil,
+        "態D3 Toast 避開區：框架 rev<12、無 toastAvoid 能力或無 Toast 時不登記、不炸")
+    mui.CAPABILITIES.toastAvoid, mui.Toast = nil, nil
     mui.CAPABILITIES.dock, mui.Dock, _G.getPlayerMiniMap = nil, nil, nil
     core.isGhost = function() return false end
 end
@@ -915,8 +980,8 @@ return toolbarIconButtonRender, installToolbarIcon,
 end
 print()
 -- 條數守門（家族慣例）：整段被註解掉時數字變小但不會紅，靠這裡擋
--- 預設 75；--family-floats 另驗三包共用版面、重生與原生視窗層級。
-local EXPECTED_ASSERTIONS = familyFloats and 88 or 75
+-- 預設 80；--family-floats 另驗三包共用版面、重生與原生視窗層級。
+local EXPECTED_ASSERTIONS = familyFloats and 93 or 80
 if assertionCount ~= EXPECTED_ASSERTIONS then
     print("斷言條數不符：預期 " .. EXPECTED_ASSERTIONS .. "、實際 " .. assertionCount
         .. "（有測試被刪掉或跳過？）")
