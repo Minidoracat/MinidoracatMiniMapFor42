@@ -80,6 +80,7 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [h3]🛡️ Server settings (sandbox)[/h3]
 [list]
 [*] Disable zombie dots, heatmap, animal and vehicle icons; cap display distances; four livestock-visibility levels; safehouse display scope; faction sharing toggle. Changes apply live.
+[*] [b]Scan intervals[/b]: "Zombie dot scan interval" and "Vehicle and animal icon scan interval" (seconds) on the icons page. 0 (default) = real time; N = refresh only every N seconds, scanned around the player, so panning or zooming leaves no gaps. Admins in Tactical view always see real time; scanning runs on each client, so server load is unchanged.
 [*] Players can only tighten distances. Only data the client already receives is drawn.
 [*] Custom server zones: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones[/url] (zones.json), with its own display distance.
 [/list]
