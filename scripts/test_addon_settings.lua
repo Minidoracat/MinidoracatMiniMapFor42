@@ -49,7 +49,7 @@ assert(registryChunk, registryErr)
 local registry = registryChunk()
 local api = registry.api
 
-checkEq(api.settingsApiVersion, 3, "settings API version")
+checkEq(api.settingsApiVersion, 4, "settings API version")
 check(not api.registerSettingsSection(nil, {}), "nil owner rejected")
 check(not api.registerSettingsSection("A", {}), "missing label rejected")
 check(not api.registerSettingsSection("A", { label = "UI_A", ticks = {
@@ -187,6 +187,67 @@ api.registerSettingsSection("OwnerD", { label = "UI_D2" })
 check(#registry.order == 4 and registry.registry.OwnerD.addon.visible == nil,
     "re-registration keeps order and drops omitted visible")
 
+-- v4：sliders。壞值整個 spec 拒收（fail closed）；合法值複製、default 對齊 step、fmt 預設依整數性
+local function sliderSpec(over)
+    local e = { label = "UI_Vol", min = 0, max = 100, step = 5,
+        get = function() return 50 end, set = function() end }
+    for k, v in pairs(over) do e[k] = v end
+    return { label = "UI_S", sliders = { e } }
+end
+local nan, inf = 0 / 0, math.huge
+local badSliders = {
+    { { min = 10, max = 10 }, "min == max" },
+    { { min = 20, max = 10 }, "min > max" },
+    { { step = 0 }, "zero step" },
+    { { step = -5 }, "negative step" },
+    { { step = nan }, "NaN step" },
+    { { step = 200 }, "step wider than range" },
+    { { min = nan }, "NaN min" },
+    { { min = -inf }, "infinite min" },
+    { { max = inf }, "infinite max" },
+    { { min = "0" }, "string min" },
+    { { default = 101 }, "default above max" },
+    { { default = -1 }, "default below min" },
+    { { default = true }, "non-number default" },
+    { { fmt = 5 }, "non-string fmt" },
+    { { fmt = "%y" }, "fmt that throws" },
+    { { fmt = "%30d" }, "fmt wider than value label" },
+    { { set = "x" }, "non-function set" },
+    { { get = false }, "non-function get" },
+    { { label = "" }, "empty label" },
+    { { tooltip = 3 }, "non-string tooltip" },
+}
+for i = 1, #badSliders do
+    check(not api.registerSettingsSection("OwnerS", sliderSpec(badSliders[i][1])),
+        "slider " .. badSliders[i][2] .. " rejected")
+end
+check(not api.registerSettingsSection("OwnerS", { label = "UI_S", sliders = "x" }),
+    "non-table sliders rejected")
+check(not api.registerSettingsSection("OwnerS", { label = "UI_S", sliders = { 1 } }),
+    "non-table slider entry rejected without throwing")
+local tooManySliders = {}
+for i = 1, 33 do tooManySliders[i] = sliderSpec({}).sliders[1] end
+check(not api.registerSettingsSection("OwnerS", { label = "UI_S", sliders = tooManySliders }),
+    "33 sliders rejected")
+checkEq(registry.registry.OwnerS, nil, "rejected slider specs never register")
+local sliderSrc = sliderSpec({ default = 47, tooltip = "UI_Vol_tip", fmt = "%d%%" })
+check(api.registerSettingsSection("OwnerS", sliderSrc), "valid slider registers")
+local sl = registry.registry.OwnerS.addon.sliders[1]
+check(sl ~= sliderSrc.sliders[1] and sl.min == 0 and sl.max == 100 and sl.step == 5
+    and sl.fmt == "%d%%" and sl.tooltip == "UI_Vol_tip" and sl.get == sliderSrc.sliders[1].get,
+    "slider copied with range, fmt, tooltip and callbacks")
+checkEq(sl.default, 45, "slider default snapped to step")
+sliderSrc.sliders[1].max = 5
+checkEq(sl.max, 100, "later slider mutation isolated")
+api.registerSettingsSection("OwnerS", sliderSpec({}))
+checkEq(registry.registry.OwnerS.addon.sliders[1].default, 0, "missing default falls back to min")
+checkEq(registry.registry.OwnerS.addon.sliders[1].fmt, "%d", "integral range defaults to %d")
+api.registerSettingsSection("OwnerS", sliderSpec({ min = 0, max = 1, step = 0.1, default = 1 }))
+check(registry.registry.OwnerS.addon.sliders[1].fmt == "%.2f"
+    and registry.registry.OwnerS.addon.sliders[1].default == 1,
+    "fractional step defaults to %.2f and keeps max default")
+checkEq(#registry.registry.OwnerC.addon.sliders, 0, "spec without sliders stores empty sliders")
+
 local callbacksBody = assert(source:match(
     "%-%- test:addon%-settings%-callbacks:start\n(.-)\n%-%- test:addon%-settings%-callbacks:end"),
     "missing addon callbacks test block")
@@ -222,7 +283,25 @@ local function unifiedAddBtn(ctx, x, yy, w, labelText, fn, tooltip)
     rows[#rows + 1] = b
     return b
 end
-]] .. callbacksBody .. "\n" .. builderBody .. "\n" .. [=[
+local function utw(text) return #text * 6 end
+-- 同 production unifiedAddSlider 的契約：methods 先蓋上、setCurrentValue(value, true) 不觸發回呼、
+-- 改值經 doOnValueChange → onChange；onJoypadDirLeft／Right 同原版（±stepValue）
+local function unifiedAddSlider(ctx, entry, maxV, value, valW, text, onChange, onCommit, methods)
+    local label = unifiedAdd(ctx, { kind = "slabel", text = getText(entry.label) })
+    local s = { kind = "slider", _entry = entry, maxValue = maxV, stepValue = entry.step,
+        valW = valW, onCommit = onCommit }
+    function s:doOnValueChange(v) self.shown = text(onChange(v, self)) end
+    function s:getCurrentValue() return self.currentValue end
+    function s:onJoypadDirRight() self:setCurrentValue(self.currentValue + self.stepValue) end
+    function s:onJoypadDirLeft() self:setCurrentValue(self.currentValue - self.stepValue) end
+    for k, fn in pairs(methods or {}) do s[k] = fn end
+    s:setCurrentValue(value, true)
+    s.shown = text(s:getCurrentValue())
+    unifiedAdd(ctx, s)
+    return s, label
+end
+]] .. callbacksBody .. "\nlocal ADDON_SLIDER_METHODS = { setCurrentValue = addonSliderSetValue }\n"
+    .. builderBody .. "\n" .. [=[
 return {
     build = unifiedBuildAddon,
     rows = rows,
@@ -314,6 +393,56 @@ local runOk = pcall(rows[4].callback, ctx.win, rows[4])
 check(runOk and #builder.errors == errCount + 1,
     "throwing run is isolated and diagnosed")
 
+-- v4 滑條：初值對齊、拖曳／點擊／手把與鍵盤左右（皆經 setCurrentValue）只在換格時 set、夾在範圍、
+-- 非 0 起點的格點、get／set 拋錯隔離
+local volume, volumeSets = 47, {}
+local volEntry = { label = "UI_Vol", tooltip = "UI_Vol_tip", min = 0, max = 100, step = 5,
+    default = 50, fmt = "%d%%",
+    get = function() return volume end,
+    set = function(v) volumeSets[#volumeSets + 1] = v; volume = v end }
+local oddEntry = { label = "UI_Odd", min = 1, max = 10, step = 2, default = 1, fmt = "%d",
+    get = function() return 1 end, set = function() end }
+ctx.sec = { addon = { sliders = { volEntry, oddEntry } } }
+rebuildAddon()
+local volLabel, vol, odd = rows[1], rows[2], rows[4]
+check(volLabel.kind == "slabel" and volLabel.tooltip == "T:UI_Vol_tip" and vol.kind == "slider",
+    "slider row has label with tooltip and slider")
+check(vol.currentValue == 45 and vol.shown == "45%" and #volumeSets == 0,
+    "getter value snapped to step without writing back")
+check(vol.valW >= #"100%" * 6 + 10, "value column fits the widest formatted value")
+vol:setCurrentValue(63)
+check(vol.currentValue == 65 and volumeSets[1] == 65 and vol.shown == "65%",
+    "drag value snaps to step and writes once")
+vol:setCurrentValue(64)
+checkEq(#volumeSets, 1, "same snapped cell does not write again")
+vol:setCurrentValue(1000)
+checkEq(volumeSets[#volumeSets], 100, "value above max clamps to max")
+vol:setCurrentValue(-7)
+checkEq(volumeSets[#volumeSets], 0, "value below min clamps to min")
+vol:onJoypadDirRight()
+checkEq(volumeSets[#volumeSets], 5, "right step writes next cell")
+vol:onJoypadDirLeft()
+checkEq(volumeSets[#volumeSets], 0, "left step writes previous cell")
+vol:setCurrentValue(0 / 0)
+checkEq(vol.currentValue, 50, "NaN value falls back to default")
+odd:onJoypadDirRight()
+checkEq(odd.currentValue, 3, "off-zero min keeps its own step grid")
+odd:setCurrentValue(10)
+checkEq(odd.currentValue, 10, "off-grid max stays reachable")
+vol.disabled = true
+local beforeDisabled = #volumeSets
+vol:setCurrentValue(20)
+checkEq(#volumeSets, beforeDisabled, "disabled slider ignores value changes")
+volEntry.get = function() error("bad slider getter") end
+volEntry.set = function() error("bad slider setter") end
+rebuildAddon()
+vol = rows[2]
+checkEq(vol.currentValue, 50, "throwing slider getter falls back to default")
+local sliderErrs = #builder.errors
+local sliderSetOk = pcall(vol.setCurrentValue, vol, 80)
+check(sliderSetOk and vol.currentValue == 80 and #builder.errors == sliderErrs + 1,
+    "throwing slider setter is isolated and diagnosed")
+
 local indexBody = assert(source:match(
     "%-%- test:addon%-settings%-index:start\n(.-)\n%s*%-%- test:addon%-settings%-index:end"),
     "missing addon settings index test block")
@@ -326,15 +455,18 @@ local index = {}
 local sec = { addon = {
     ticks = { { label = "UI_T" } },
     combos = { { label = "UI_C" } },
+    sliders = { { label = "UI_S" } },
     actions = { { label = "UI_Copy" } },
 } }
 ]] .. indexBody .. "\nreturn added")
 assert(indexChunk, indexErr)
 local added = indexChunk()
-checkEq(#added, 3, "addon index covers ticks, combos, actions")
-checkEq(added[3].kind, "navigate", "actions are searchable navigate hits")
-checkEq(added[3].first.label, "UI_Copy", "action label indexed")
-local EXPECTED_ASSERTIONS = 79
+checkEq(#added, 4, "addon index covers ticks, combos, sliders, actions")
+check(added[3].kind == "navigate" and added[3].first.label == "UI_S",
+    "sliders are searchable navigate hits")
+checkEq(added[4].kind, "navigate", "actions are searchable navigate hits")
+checkEq(added[4].first.label, "UI_Copy", "action label indexed")
+local EXPECTED_ASSERTIONS = 127
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
         .. ", actual " .. assertions)

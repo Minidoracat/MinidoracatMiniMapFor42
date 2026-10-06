@@ -463,6 +463,12 @@ if api and type(api.settingsApiVersion) == "number"
                 enabled = function(playerNum) return hasLatest() end },
         }
     end
+    if api.settingsApiVersion >= 4 then
+        spec.sliders = {
+            { label = "UI_Addon_Volume", min = 0, max = 100, step = 5, default = 70,
+                fmt = "%d%%", get = getVolume, set = setVolume },
+        }
+    end
     api.registerSettingsSection("AddonModId", spec)
 end
 ```
@@ -476,6 +482,30 @@ end
   `run(playerNum)` 與 `enabled(playerNum)` 收到設定窗擁有者；`enabled` 回 `false` 時按鈕停用。
   執行錯誤以 pcall 隔離。超過 16 項或任一項無效時，整次註冊回傳 `false`，ticks／combos 也不更新；未傳 `actions` 的 v1 spec 完全相容。
 - `enabled` 只控制按鈕可用狀態，拋錯時會 fail closed；它不是權限邊界。addon 與 MiniMap 共用 Lua VM，`run` 涉及權限或可變狀態時仍須在 callback 內重驗。
+- **v4 `sliders`**（最多 32）：每項 `label`／`get`／`set`／`min`／`max`／`step` 必填，`default`（缺＝`min`）、`fmt`（`string.format` 格式，缺＝整數用 `"%d"`）、`tooltip` 可選。
+  `min < max`、`0 < step ≤ max - min`、皆為有限數，`fmt` 在註冊時試格式化；任一不合整次回傳 `false`。
+  `set(value)` 收到對齊 `min + k×step` 並夾在範圍內的值，只在換格時呼叫（拖曳中每換一格一次）；滑鼠點過的滑桿可用鍵盤 ←／→ 一格一格調。
+  v3 以下的 MiniMap 會忽略 `sliders`，請在 `>= 4` 才放、否則退成 combo。
+
+## 第三方小地圖標題列狀態 API
+
+在小地圖標題列右側顯示一段短狀態（例如裝置電量）：
+
+```lua
+local api = MinidoracatMiniMapAPI
+if api and type(api.titleStatusApiVersion) == "number" and api.titleStatusApiVersion >= 1
+        and type(api.registerTitleStatus) == "function" then
+    api.registerTitleStatus("AddonModId", function(playerNum)
+        local pct = batteryPercent(playerNum)
+        if not pct then return nil end
+        return getText("UI_Addon_Battery", pct), pct <= 15 and "warn" or nil
+    end)
+end
+```
+
+- 回傳**已翻譯**的短文字；`nil`／空字串＝不顯示。第二個回傳值 `"warn"` 為警示外觀（紅底）。
+- 每 250ms 以該小地圖的 `playerNum` 呼叫一次（分割畫面各自呼叫）；多個 addon 時第一個警示勝出，否則取先註冊者。
+- 只用標題列右半；放不下時截短加 `...`，小地圖太窄時不顯示。callback 拋錯時記錄一次並停用，直到同 ID 再註冊。
 
 ## 第三方動物相容 API
 

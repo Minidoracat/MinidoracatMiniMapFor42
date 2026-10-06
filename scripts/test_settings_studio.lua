@@ -350,13 +350,46 @@ check(engine[0].Isometric == true and engine[0].Symbols == false
 resetSection({}, { _studioSec = { id = "addon_x", addon = {
     ticks = { { label = "show", default = true } },
     combos = { { label = "width", default = 2 } },
+    sliders = { { label = "volume", default = 45 } },
 } } })
-check(addonValues.show == true and addonValues.width == 2,
+check(addonValues.show == true and addonValues.width == 2 and addonValues.volume == 45,
     "addon category reset delegates declared defaults")
 check(resetStats.apply == 1 and resetStats.save == 1 and resetStats.rebuild == 2,
     "addon reset leaves host ModOptions untouched and rebuilds once")
 check(source:find('studioResetId("ClientZoneDisplayDistance"', 1, true) == nil,
     "zones reset never changes the Distance category slider")
+
+-- addon 滑條鍵盤：只有 ←／→、有焦點滑條、視窗可見未收合、搜尋框沒在打字時才處理並宣告吞鍵
+local keyChunk, keyErr = compile([[
+Keyboard = { KEY_LEFT = 203, KEY_RIGHT = 205, KEY_UP = 200, KEY_A = 30 }
+]] .. extract("settings%-studio%-slider%-key") .. "\n" .. [[
+return studioSliderKeyTarget, studioSliderKey
+]])
+assert(keyChunk, keyErr)
+local keyTarget, keyPress = keyChunk()
+local moves = {}
+local keySlider = {
+    onJoypadDirLeft = function() moves[#moves + 1] = "L" end,
+    onJoypadDirRight = function() moves[#moves + 1] = "R" end,
+}
+local typing = false
+local keyWin = { visible = true, _searchEntry = { isFocused = function() return typing end } }
+function keyWin:isVisible() return self.visible end
+check(keyTarget(keyWin, 205) == nil, "no focused addon slider consumes no keys")
+keyWin._keySlider = keySlider
+check(keyTarget(keyWin, 203) == keySlider and keyTarget(keyWin, 205) == keySlider,
+    "left and right reach the focused addon slider")
+check(keyTarget(keyWin, 200) == nil and keyTarget(keyWin, 30) == nil,
+    "other keys (movement, menus) stay with the game")
+keyPress(keyWin, 203); keyPress(keyWin, 205); keyPress(keyWin, 200)
+checkEq(table.concat(moves), "LR", "key press steps the slider one cell per press")
+typing = true
+check(keyTarget(keyWin, 205) == nil, "typing in search keeps arrow keys for the text box")
+typing = false
+keyWin.isCollapsed = true
+check(keyTarget(keyWin, 205) == nil, "collapsed window does not consume keys")
+keyWin.isCollapsed, keyWin.visible = nil, false
+check(keyTarget(keyWin, 205) == nil, "hidden window does not consume keys")
 
 local required = { "layers", "poicat", "safehouse", "distance", "zombie", "animals",
     "vehicles", "worldmap", "appearance", "perf" }
@@ -564,7 +597,7 @@ check(hardLine ~= "" and hardRest ~= "" and hardLine .. hardRest == "abcdefghijk
     "an overlong Latin word is hard-cut and still makes progress")
 local tinyLine, tinyRest = wrapCut("中文", 5, "Small")
 check(tinyLine == "中" and tinyRest == "文", "a width narrower than one character still places one character")
-local EXPECTED_ASSERTIONS = 117
+local EXPECTED_ASSERTIONS = 124
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
         .. ", actual " .. assertions)

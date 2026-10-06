@@ -590,6 +590,43 @@ local function unifiedOnAddonCombo(target, combo, entry)
     addonWrite(entry, combo.selected)
 end
 
+-- addon 滑條值（settingsApiVersion 4）：非數值／NaN 退 default，夾在 [min,max]，
+-- 對齊 min＋k×step（max 不在格點上時仍可拉到 max）。原版 ISSliderPanel 以 0 為基準
+-- 四捨五入（ISSliderPanel.lua:184-185），min 不是 step 倍數時會卡格，所以 addon 滑條
+-- 的 setCurrentValue 換成 addonSliderSetValue（拖曳、點軌道、-／+、手把與鍵盤左右都經它）。
+local function addonSliderSnap(entry, v)
+    if type(v) ~= "number" or v ~= v then v = entry.default end
+    local lo, hi = entry.min, entry.max
+    if v <= lo then return lo end
+    if v >= hi then return hi end
+    v = lo + math.floor((v - lo) / entry.step + 0.5) * entry.step
+    if v > hi then return hi end
+    return v
+end
+
+local function addonSliderText(entry, v)
+    local ok, s = pcall(string.format, entry.fmt, v)
+    if ok and type(s) == "string" then return s end
+    return tostring(v)
+end
+
+-- 元件方法（self＝ISSliderPanel）：同原版簽名，disabled 不動、ignoreOnChange 不觸發回呼
+local function addonSliderSetValue(self, v, ignoreOnChange)
+    if self.disabled then return end
+    v = addonSliderSnap(self._entry, v)
+    self.currentValue = v
+    if not ignoreOnChange then self:doOnValueChange(v) end
+end
+
+-- 值真的換格才 set：拖曳中同一格不重複寫（拖曳全程每換一格寫一次，addon 自己決定何時落盤）
+local function addonSliderChanged(value, slider)
+    if value ~= slider._addonLast then
+        slider._addonLast = value
+        addonWrite(slider._entry, value)
+    end
+    return value
+end
+
 -- action 按鈕：把視窗擁有者 pn 交給 run/enabled；enabled 回 false 不跑；
 -- run 拋錯只留一則診斷，不得炸掉設定窗。
 local function unifiedOnAddonAction(target, button)
@@ -695,10 +732,73 @@ local function unifiedSliderRender(self)
     end
 end
 
+-- 內建滑條（ModOptions）改值：只寫記憶體值（繪製端每幀讀值＝即時預覽），落盤在 onCommit
+local function unifiedSliderChanged(value, slider)
+    if modOptions then
+        local opt = modOptions:getOption(slider._entry.id)
+        if opt then opt:setValue(value) end -- 同步 ESC 頁元件（ModOptions.lua slider setValue）
+    end
+    return value
+end
+local function unifiedSaveModOptions()
+    if PZAPI and PZAPI.ModOptions then PZAPI.ModOptions:save() end
+end
+
+-- 滑條列骨架（內建與 addon 共用）：標籤＋ISSliderPanel（換 render）＋右側數值標。
+-- text(v)→數值標字串；onChange(v, slider) 每次改值觸發、回傳要顯示的值；
+-- onCommit（選配）在放開滑鼠時觸發；methods（選配）在設值前蓋到元件上（addon 滑條的
+-- 對齊、鍵盤焦點與焦點框）。回傳 slider, 標籤。
+local function unifiedAddSlider(ctx, entry, maxV, value, valW, text, onChange, onCommit, methods)
+    local label = unifiedAdd(ctx, ISLabel:new(ctx.curX, ctx.curY + 3, ctx.fontH, getText(entry.label), 1, 1, 1, 1, UIFont.Small, true))
+    local valLabel = ISLabel:new(ctx.curX + ctx.laneW - valW, ctx.curY + 3, ctx.fontH, "", 1, 1, 1, 1, UIFont.Small, true)
+    -- ISSliderPanel 的 sliderBarDim.w＝元件寬-30（左右箭頭），onMouseDown
+    -- 拿它當除數（ISSliderPanel.lua:55/80）：極小 viewport 或極長翻譯把列寬
+    -- 壓到 30 以下時會得 nan，並經 setCurrentValue 寫進 ini。地圖顯示設定已
+    -- 依字型實測需求在不足時切單 pane，這裡仍保留 90px 最終資料安全防線
+    -- （有效 bar 60px）；寧可個別極端語系列變擠，也不准產生 nan。
+    local sliderW = ctx.laneW - ctx.comboLabelW - valW - 14
+    if sliderW < 90 then sliderW = 90 end
+    local slider = ISSliderPanel:new(ctx.curX + ctx.comboLabelW + 8, ctx.curY + 1,
+        sliderW, ctx.fontH + 4, ctx.win,
+        function(target, v, s) valLabel:setName(text(onChange(v, s))) end)
+    slider:initialise()
+    slider._entry = entry
+    slider.render = unifiedSliderRender
+    if methods then
+        for k, fn in pairs(methods) do slider[k] = fn end
+    end
+    slider.doToolTip = false
+    -- setValues 第 5 參 _ignoreCurVal 必須為 true：否則它會拿「建構期初始
+    -- currentValue（50）」觸發 onValueChange → 回呼把 50 夾限值寫進選項，
+    -- 污染存檔（實測：殭屍/動物大小開窗即變 16/48、透明度變 50——
+    -- 原版 MainOptions 沒中是因為它先 setValues 後掛回呼）
+    slider:setValues(entry.min, maxV, entry.step, entry.step * 5, true)
+    slider:setCurrentValue(value, true)
+    valLabel:setName(text(slider:getCurrentValue()))
+    -- 放開才落盤（拖曳結束/點軌道/箭頭按鈕皆經 onMouseUp；拖出元件外走 Outside）
+    if onCommit then
+        local origUp = slider.onMouseUp
+        function slider:onMouseUp(mx, my)
+            local r = origUp(self, mx, my)
+            onCommit()
+            return r
+        end
+        local origUpOutside = slider.onMouseUpOutside
+        function slider:onMouseUpOutside(mx, my)
+            local r = origUpOutside(self, mx, my)
+            onCommit()
+            return r
+        end
+    end
+    unifiedAdd(ctx, slider)
+    unifiedAdd(ctx, valLabel)
+    ctx.curY = ctx.curY + ctx.rowH
+    return slider, label
+end
+
 local function unifiedAddSliderRows(ctx, list)
     for i = 1, #list do
         local entry = list[i]
-        unifiedAdd(ctx, ISLabel:new(ctx.curX, ctx.curY + 3, ctx.fontH, getText(entry.label), 1, 1, 1, 1, UIFont.Small, true))
         -- capBy＝伺服器沙盒距離選項名：cap 供數值標顯示「/上限」，上限經
         -- unifiedSliderRange 動態計算（含全域上限 AllInfoDistance；存值超上限時
         -- 讓位不截斷）。兩者都在重建時現算——開窗／分類切換即反映現值；
@@ -719,53 +819,39 @@ local function unifiedAddSliderRows(ctx, list)
             local zw = utw(unifiedSliderText(entry, 0, cap))
             if zw > valW then valW = zw end
         end
-        valW = valW + 10
-        local valLabel = ISLabel:new(ctx.curX + ctx.laneW - valW, ctx.curY + 3, ctx.fontH, "", 1, 1, 1, 1, UIFont.Small, true)
-        -- ISSliderPanel 的 sliderBarDim.w＝元件寬-30（左右箭頭），onMouseDown
-        -- 拿它當除數（ISSliderPanel.lua:55/80）：極小 viewport 或極長翻譯把列寬
-        -- 壓到 30 以下時會得 nan，並經 setCurrentValue 寫進 ini。地圖顯示設定已
-        -- 依字型實測需求在不足時切單 pane，這裡仍保留 90px 最終資料安全防線
-        -- （有效 bar 60px）；寧可個別極端語系列變擠，也不准產生 nan。
-        local sliderW = ctx.laneW - ctx.comboLabelW - valW - 14
-        if sliderW < 90 then sliderW = 90 end
-        local slider = ISSliderPanel:new(ctx.curX + ctx.comboLabelW + 8, ctx.curY + 1,
-            sliderW, ctx.fontH + 4, ctx.win,
-            function(target, value)
-                valLabel:setName(unifiedSliderText(entry, value, cap))
-                if not modOptions then return end
-                local opt = modOptions:getOption(entry.id)
-                if opt then opt:setValue(value) end -- 同步 ESC 頁元件（ModOptions.lua slider setValue）
-            end)
-        slider:initialise()
-        slider.render = unifiedSliderRender
-        slider.doToolTip = false
-        -- setValues 第 5 參 _ignoreCurVal 必須為 true：否則它會拿「建構期初始
-        -- currentValue（50）」觸發 onValueChange → 回呼把 50 夾限值寫進選項，
-        -- 污染存檔（實測：殭屍/動物大小開窗即變 16/48、透明度變 50——
-        -- 原版 MainOptions 沒中是因為它先 setValues 後掛回呼）
-        slider:setValues(entry.min, maxV, entry.step, entry.step * 5, true)
-        slider:setCurrentValue(getSliderValue(entry.id, entry.default, entry.min, maxV), true)
-        -- ⚠ cap 必須與 onValueChange 內同樣傳入：漏傳會讓開窗時顯示「200」、
+        -- ⚠ cap 必須與初值同樣傳入：漏傳會讓開窗時顯示「200」、
         -- 動過滑條才變「200/300」（codex review 抓出；守衛見 test_livestock_visibility）
-        valLabel:setName(unifiedSliderText(entry, slider:getCurrentValue(), cap))
-        -- 放開才落盤（拖曳結束/點軌道/箭頭按鈕皆經 onMouseUp；拖出元件外走 Outside）
-        local origUp = slider.onMouseUp
-        function slider:onMouseUp(mx, my)
-            local r = origUp(self, mx, my)
-            if PZAPI and PZAPI.ModOptions then PZAPI.ModOptions:save() end
-            return r
-        end
-        local origUpOutside = slider.onMouseUpOutside
-        function slider:onMouseUpOutside(mx, my)
-            local r = origUpOutside(self, mx, my)
-            if PZAPI and PZAPI.ModOptions then PZAPI.ModOptions:save() end
-            return r
-        end
-        unifiedAdd(ctx, slider)
-        unifiedAdd(ctx, valLabel)
-        ctx.curY = ctx.curY + ctx.rowH
+        unifiedAddSlider(ctx, entry, maxV,
+            getSliderValue(entry.id, entry.default, entry.min, maxV), valW + 10,
+            function(v) return unifiedSliderText(entry, v, cap) end,
+            unifiedSliderChanged, unifiedSaveModOptions)
     end
 end
+
+-- addon 滑條（settingsApiVersion 4）的元件方法：設值一律走 addonSliderSetValue（對齊 step），
+-- 滑鼠按下＝成為視窗的鍵盤焦點（←／→ 一格，見 studioSliderKeyTarget），焦點畫琥珀框。
+-- 只有 addon 滑條會設焦點、視窗也是第一次點到它才要鍵盤事件：沒有 addon 滑條時方向鍵
+-- 照舊不被吞，內建滑條行為不變。
+local function addonSliderMouseDown(self, x, y)
+    local win = self.target
+    if not win._keySliderArmed then
+        win._keySliderArmed = true
+        win:setWantKeyEvents(true)
+    end
+    win._keySlider = self
+    return ISSliderPanel.onMouseDown(self, x, y)
+end
+local function addonSliderRender(self)
+    unifiedSliderRender(self)
+    if self.target and self.target._keySlider == self then
+        self:drawRectBorder(0, 0, self.width, self.height, 0.55, 1, 0.85, 0.4)
+    end
+end
+local ADDON_SLIDER_METHODS = {
+    setCurrentValue = addonSliderSetValue,
+    onMouseDown = addonSliderMouseDown,
+    render = addonSliderRender,
+}
 
 -- colW2 雙欄網格骨架（六個 builder 共用）：add(i, x, y, w) 建格；回 false＝跳過不佔格
 local function unifiedAddTickCols(ctx, n, add)
@@ -1302,6 +1388,20 @@ local function unifiedBuildAddon(ctx)
             ctx.curY = ctx.curY + ctx.rowH
         end
     end
+    local sliders = spec.sliders
+    if type(sliders) == "table" then
+        for i = 1, #sliders do
+            local entry = sliders[i]
+            local valW = math.max(utw("100%"), utw(addonSliderText(entry, entry.min)),
+                utw(addonSliderText(entry, entry.max))) + 10
+            local slider, label = unifiedAddSlider(ctx, entry, entry.max,
+                addonRead(entry.get, entry.default), valW,
+                function(v) return addonSliderText(entry, v) end,
+                addonSliderChanged, nil, ADDON_SLIDER_METHODS)
+            slider._addonLast = slider:getCurrentValue()
+            if entry.tooltip then label.tooltip = getText(entry.tooltip) end
+        end
+    end
     local actions = spec.actions
     if type(actions) == "table" then
         local pn = ctx.pn or 0
@@ -1451,6 +1551,12 @@ local function unifiedMeasureLayout()
                 comboLabelW = math.max(comboLabelW, tw(getText(combos[j].label)))
             end
         end
+        local sliders = spec and spec.sliders
+        if type(sliders) == "table" then
+            for j = 1, #sliders do
+                comboLabelW = math.max(comboLabelW, tw(getText(sliders[j].label)))
+            end
+        end
     end
     -- lane 寬＝滿足 lane 內最寬需求（2 欄雙倍/3 欄三倍/combo 標籤＋最小下拉 130），
     -- 夾上限後降欄數（2→1、3→2→1）——寧可長高（有捲動兜底），不裁字
@@ -1521,6 +1627,7 @@ local function studioBuildIndex()
             -- test:addon-settings-index:start
             studioIndexList(index, sec, sec.addon.ticks or {}, "boolean", "addon")
             studioIndexList(index, sec, sec.addon.combos or {}, "navigate")
+            studioIndexList(index, sec, sec.addon.sliders or {}, "navigate")
             studioIndexList(index, sec, sec.addon.actions or {}, "navigate")
             -- test:addon-settings-index:end
         elseif sec.id == "layers" then
@@ -1770,6 +1877,10 @@ local function studioResetSection(target, button)
             local entry = sec.addon.combos[i]
             addonWrite(entry, entry.default or 1)
         end
+        for i = 1, #sec.addon.sliders do
+            local entry = sec.addon.sliders[i]
+            addonWrite(entry, entry.default)
+        end
     elseif sec.id == "layers" then
         changed = studioResetList(UNIFIED_LAYER_TICKS, false)
     elseif sec.id == "poicat" then
@@ -1843,6 +1954,7 @@ local function studioClearRows(win)
         if row.parent then row.parent:removeChild(row) end
     end
     win._rows, win._navRows, win._pills, win._icons, win._cards = {}, {}, {}, {}, {}
+    win._keySlider = nil -- addon 滑條的鍵盤焦點跟著列一起失效
 end
 
 local function studioSetupPanel(win)
@@ -2275,6 +2387,24 @@ local function studioStyleCloseButton(button)
 end
 -- test:settings-studio-titlebar:end
 
+-- addon 滑條鍵盤：←／→ 對「最後按過的 addon 滑條」各調一格（原版 onJoypadDirLeft／Right＝±step，
+-- ISSliderPanel.lua:232-238，再經 addonSliderSetValue 對齊）。只宣告真的處理的鍵：沒有焦點滑條、
+-- 視窗收合／隱藏或搜尋框在打字時一律不吞。視窗要等第一次點到 addon 滑條才 setWantKeyEvents。
+-- test:settings-studio-slider-key:start
+local function studioSliderKeyTarget(win, key)
+    if key ~= Keyboard.KEY_LEFT and key ~= Keyboard.KEY_RIGHT then return nil end
+    local slider = win._keySlider
+    if not slider or not win:isVisible() or win.isCollapsed then return nil end
+    if win._searchEntry and win._searchEntry:isFocused() then return nil end
+    return slider
+end
+local function studioSliderKey(win, key)
+    local slider = studioSliderKeyTarget(win, key)
+    if not slider then return end
+    if key == Keyboard.KEY_LEFT then slider:onJoypadDirLeft() else slider:onJoypadDirRight() end
+end
+-- test:settings-studio-slider-key:end
+
 
 local function buildSettingsWindow()
     local win = ISCollapsableWindow:new(0, 0, 700, 200) -- 寬高由 unifiedRebuild 重算
@@ -2376,6 +2506,11 @@ local function buildSettingsWindow()
         if self._searchEntry and self._searchEntry.unfocus then self._searchEntry:unfocus() end
         originalClose(self)
     end
+    -- UIElement.onConsumeKeyPress：先呼叫 onKeyPress，再問 isKeyConsumed（UIElement.java:2185-2188）。
+    -- 不掛 onKeyRepeat：GameKeyboard 在按住期間「每幀」都派 repeat（GameKeyboard.java:59-62，不是 OS 連發），
+    -- 掛上去按一下就會連跳好幾格（E2E 實測 80ms 按住 70→100）。repeat／release 照樣由 isKeyConsumed 吞掉。
+    win.onKeyPress = studioSliderKey
+    win.isKeyConsumed = function(self, key) return studioSliderKeyTarget(self, key) ~= nil end
     return win
 end
 
@@ -2423,7 +2558,7 @@ Core.refreshSettingsWindow = function(pn)
     end
 end
 
--- 公開 addon client-settings API v2。ownerModId 是唯一身分：同 owner 重註冊
+-- 公開 addon client-settings API（版本見 settingsApiVersion）。ownerModId 是唯一身分：同 owner 重註冊
 -- 視為熱重載更新，不同 addon 即使自選同名 label 也不互相覆蓋。外部 spec
 -- 在註冊期完整驗證並複製；壞值 fail closed，不得把整個 MiniMap 設定窗炸掉。
 -- 導覽列只顯示分類名稱與主開關，不讀取、保存或計算摘要／數量 callback。
@@ -2434,9 +2569,10 @@ local function normalizeAddonSettings(ownerModId, spec)
             or spec.label == "" then return nil end
     -- API v1 相容：舊呼叫端可繼續傳 spec.lane，但地圖顯示設定不讀、不正規化、
     -- 不複製也不保存它；分類順序只由註冊順序決定。v2 另複製 actions（最多 16）；
-    -- v3 另收選用 visible(pn)（見 addonSectionSync）。
+    -- v3 另收選用 visible(pn)（見 addonSectionSync）；v4 另複製 sliders（最多 32）。
     if spec.visible ~= nil and type(spec.visible) ~= "function" then return nil end
-    local out = { label = spec.label, ticks = {}, combos = {}, actions = {}, visible = spec.visible }
+    local out = { label = spec.label, ticks = {}, combos = {}, sliders = {}, actions = {},
+        visible = spec.visible }
     local ticks = spec.ticks
     if ticks ~= nil and type(ticks) ~= "table" then return nil end
     local tickN = ticks and #ticks or 0
@@ -2474,6 +2610,41 @@ local function normalizeAddonSettings(ownerModId, spec)
         out.combos[i] = { label = e.label, tooltip = e.tooltip,
             default = default, get = e.get, set = e.set, items = copyItems }
     end
+    local sliders = spec.sliders
+    if sliders ~= nil and type(sliders) ~= "table" then return nil end
+    local sliderN = sliders and #sliders or 0
+    if sliderN > 32 then return nil end
+    for i = 1, sliderN do
+        local e = sliders[i]
+        if type(e) ~= "table" then return nil end
+        local lo, hi, step = e.min, e.max, e.step
+        -- 有限數：NaN（自身不等）與 ±inf 都拒收
+        if type(e.label) ~= "string" or e.label == ""
+                or type(e.get) ~= "function" or type(e.set) ~= "function"
+                or (e.tooltip ~= nil and type(e.tooltip) ~= "string")
+                or (e.fmt ~= nil and type(e.fmt) ~= "string")
+                or type(lo) ~= "number" or lo ~= lo or lo == math.huge or lo == -math.huge
+                or type(hi) ~= "number" or hi ~= hi or hi == math.huge
+                or type(step) ~= "number" or step ~= step
+                or lo >= hi or step <= 0 or step > hi - lo then return nil end
+        local default = e.default
+        if default == nil then default = lo end
+        if type(default) ~= "number" or default < lo or default > hi then return nil end
+        if default < hi then -- 對齊格點（同 addonSliderSnap；max 不在格點上時仍可為 default）
+            default = lo + math.floor((default - lo) / step + 0.5) * step
+            if default > hi then default = hi end
+        end
+        -- 數值格式：預設整數範圍用 "%d"、否則兩位小數；在真 runtime 試格式化兩端，
+        -- 拋錯或結果超過 24 字（數值標放不下）整個 spec 拒收
+        local fmt = e.fmt
+        if fmt == nil then fmt = (lo % 1 == 0 and step % 1 == 0) and "%d" or "%.2f" end
+        local okLo, sLo = pcall(string.format, fmt, lo)
+        local okHi, sHi = pcall(string.format, fmt, hi)
+        if not okLo or not okHi or type(sLo) ~= "string" or type(sHi) ~= "string"
+                or #sLo > 24 or #sHi > 24 then return nil end
+        out.sliders[i] = { label = e.label, tooltip = e.tooltip, min = lo, max = hi,
+            step = step, default = default, fmt = fmt, get = e.get, set = e.set }
+    end
     local actions = spec.actions
     if actions ~= nil and type(actions) ~= "table" then return nil end
     local actionN = actions and #actions or 0
@@ -2490,7 +2661,7 @@ local function normalizeAddonSettings(ownerModId, spec)
     return out
 end
 
-MinidoracatMiniMapAPI.settingsApiVersion = 3 -- v3：spec.visible(pn)；v2：actions
+MinidoracatMiniMapAPI.settingsApiVersion = 4 -- v4：sliders；v3：spec.visible(pn)；v2：actions
 function MinidoracatMiniMapAPI.registerSettingsSection(ownerModId, spec)
     local normalized = normalizeAddonSettings(ownerModId, spec)
     if not normalized then
