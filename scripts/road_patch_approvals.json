@@ -161,14 +161,12 @@
     "38939734d43a3085ec3eb2f5040765e01134fc1a9b3033f5b284716d1a36936d:1",
     "38939734d43a3085ec3eb2f5040765e01134fc1a9b3033f5b284716d1a36936d:2",
     "cf839f294882979113d7c067b9079e5b6838ec2403156cc7a6eb991358df7fff:7",
-    "4969d9dbf2d2c8ed5821888f05ba0249f82476e2e5012e938eada66dd3f5342b:0"
+    "4969d9dbf2d2c8ed5821888f05ba0249f82476e2e5012e938eada66dd3f5342b:0",
+    "3973f24df4b4882ebd008b6ba18532d6c2d0ca2f45b5f0e5d3897b5338290a9d:0",
+    "cac51bc6a2d1dc714ad9c4cfaed5577e194ca65efc252ba4eacfc7f197115bb4:0",
+    "cac51bc6a2d1dc714ad9c4cfaed5577e194ca65efc252ba4eacfc7f197115bb4:1"
   ],
-  "width": [
-    {
-      "id": "3973f24df4b4882ebd008b6ba18532d6c2d0ca2f45b5f0e5d3897b5338290a9d:0",
-      "width": 10
-    }
-  ],
+  "width": [],
   "surface": [
     {
       "id": "4969d9dbf2d2c8ed5821888f05ba0249f82476e2e5012e938eada66dd3f5342b:1",
@@ -559,8 +557,9 @@
       ],
       "width": 5,
       "surface": "gravel",
-      "searchable": false,
-      "reason": "Trail Link Road 東端對齊 KY-79／Old State Road 跨接（2026-10-06，見 m:muldraugh-ky79-east-lane-junction）：官方 Trail Link（單段）東端停在 (1964,6891.5)，比雙車道跨接 y6888.5 偏 3 格，路線 (1967,6888.5)→(1967,6891.5) 夾 3 格短段兩個 90°。pinned raster：Trail Link 碎石帶 y6889–6893，西車道鋪面 x1964–1969。以 (1430,6891.5)→(1958,6891.5)→(1967,6888.5) 取代官方段0，末 9.5 格以 18° 斜進路口（全在碎石帶／鋪面內，56 個取樣 49 gravel、7 paved），跨接成一條直線；內部頂點 (1958,6891.5) 另被 T 投影到西車道 (1967,6891.5)，留作南下右轉。代價：Trail Link Road 全圖只有這一段，移除後不再出現在街名搜尋（使用者 2026-10-06 裁定接受，保留 Old State Road 搜尋）。"
+      "name": "Trail Link Road",
+      "searchable": true,
+      "reason": "Trail Link Road 東端對齊 KY-79／Old State Road 跨接（2026-10-06，見 m:muldraugh-ky79-east-lane-junction）：官方 Trail Link（單段）東端停在 (1964,6891.5)，比雙車道跨接 y6888.5 偏 3 格，路線 (1967,6888.5)→(1967,6891.5) 夾 3 格短段兩個 90°。pinned raster：Trail Link 碎石帶 y6889–6893，西車道鋪面 x1964–1969。以 (1430,6891.5)→(1958,6891.5)→(1967,6888.5) 取代官方段0，末 9.5 格以 18° 斜進路口（全在碎石帶／鋪面內，56 個取樣 49 gravel、7 paved），跨接成一條直線；內部頂點 (1958,6891.5) 另被 T 投影到西車道 (1967,6891.5)，留作南下右轉。Trail Link Road 全圖只有這一段官方段，整條由本線取代，所以本線帶官方原名 name＝\"Trail Link Road\"、searchable＝true 接手街名搜尋（2026-10-06 使用者裁定：整條被取代的官方街以原名接手搜尋）。"
     },
     {
       "id": "m:muldraugh-ky841-south-lane-west",
@@ -649,6 +648,46 @@
       "surface": "dirt",
       "searchable": false,
       "reason": "Flower Road 南段草地小徑（見 m:muldraugh-flower-road-gravel）：(14145.5,5342)→(14145.5,5383.5) 記 dirt（84 個取樣全 natural），尾點與官方段1 起點共用頂點；官方段1、2（同為 trail，原判 unknown）另以 surface 覆寫為 dirt，保留供搜尋。線上的樹是路面上的世界障礙，交 AutoDrive 臨機繞行，不改幾何。"
+    },
+    {
+      "id": "m:muldraugh-fiddlers-trail",
+      "operation": "add",
+      "points": [
+        8343, 12325,
+        10570, 12325,
+        10585, 12324.5
+      ],
+      "width": 10,
+      "surface": "paved",
+      "name": "Fiddler's Trail",
+      "searchable": true,
+      "reason": "Fiddler's Trail 中線偏北、路寬寫成 15（2026-10-06，AutoDrive 復盤 scan #7／#21／#22：3 名玩家 7 趟，GGGMAMEER clip-05 照 15 寬靠右，車身越過鋪面北緣擦撞路緣樹 (8546.6,12319.6)、(8381.6,12319.6)）：官方 streetIndex 259 只有一段 (8343,12323.5)→(10585,12324.5)、width＝15。pinned raster 全長逐 25 格量測，82／90 個橫截面鋪面帶都是 y12320–12329（寬 10、中線 12325.0），官方線偏北 0.5–1.5 格。移除唯一官方段 259:0，以 (8343,12325)→(10570,12325)→(10585,12324.5) w10 取代：西端與 Angel Road 起點 (8343,12325) 同點，東端照官方東端 (10585,12324.5) 接 Dixie Highway（與對面 KY-163 起點同軸），中段走 raster 中線；4486 個取樣全 paved。整條官方街被取代，所以帶官方原名 name＝\"Fiddler's Trail\"、searchable＝true 接手街名搜尋（2026-10-06 使用者裁定，取代上一版只改寬度的作法）。"
+    },
+    {
+      "id": "m:muldraugh-ky841-north-lane-east",
+      "operation": "add",
+      "points": [
+        12940, 3445,
+        15000, 3445,
+        15144.5, 3444,
+        15162, 3436
+      ],
+      "width": 6,
+      "surface": "paved",
+      "searchable": false,
+      "reason": "KY-841 北線轉彎頂點被吸到南線、畫出跨分隔帶接線（2026-10-06，AutoDrive 復盤 scan #2 質心 (15144.5,3449)，與南線多餘頂點同一路段）：官方北線段0 (12940,3445)→(15144.5,3445) 與段1 (15144.5,3445)→(15162,3436) 的轉彎頂點離南線 10 格 ≤ 兩半寬和＋ATTACH_SLACK＝10.5，建圖 T 投影到南線、markKeep 留下 (15144.5,3445)→(15144.5,3455) 接線，穿過分隔帶土＋樹。雙線平行段上任何 y3445 的頂點都會這樣，所以移除段0、1，以 (12940,3445)→(15000,3445)→(15144.5,3444)→(15162,3436) 取代：轉彎頂點移到 y3444（離南線 11 格，超出吸附距離；pinned raster 北車道鋪面帶 y3442–3447、轉彎處向北展寬，3444 仍在帶內），(15000,3445) 正好是 Masons Lane 分隔帶缺口的路口（見 m:muldraugh-masons-lane-ky841-crossover），最後 144.5 格才斜 1 格。4450 個取樣全 paved；段2–4 保留供搜尋。"
+    },
+    {
+      "id": "m:muldraugh-masons-lane-ky841-crossover",
+      "operation": "add",
+      "points": [
+        15000, 3445,
+        15000, 3455
+      ],
+      "width": 6,
+      "surface": "gravel",
+      "searchable": false,
+      "reason": "KY-841 × Masons Lane 分隔帶缺口（2026-10-06，配合 m:muldraugh-ky841-north-lane-east 拿掉 (15144.5,3445) 的錯誤跨接後，這一帶兩條車道唯一的真實連通）：Masons Lane 北端 (15000,3459) T 接南線；pinned raster 分隔帶 y3448–3451 在 x14996–15003 是 8 格礫石缺口（兩側土＋樹），worldmap.xml 的 tertiary 多邊形從 Masons Lane 一路穿過缺口到北線。接線 (15000,3445)→(15000,3455) 寬 6（全落在缺口內），21 個取樣 13 paved、8 gravel。修前南線東行要掉頭走 x15137／15140.5／15144.5 的錯誤跨接（穿樹列）；修後在這裡掉頭，(15000,3455)→北線 (15100,3445) 110 格。不同於 0930 的「兩條支路同軸對望」接線：這是 T 字路口正對的分隔帶缺口，worldmap 與 raster 同時證實。北線在 (15000,3445) 的頂點離南線 10 格，沒有本接線時建圖也會把它 T 投影到南線、自動補一段沿用車道 paved／寬 6 的短接線；本接線把這條連通明確成缺口實測的 gravel。"
     }
   ]
 }

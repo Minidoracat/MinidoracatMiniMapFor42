@@ -1871,13 +1871,17 @@ do
             assert(not hasPoint(r, 4171, 5833), "Long Branch Road：路線不再經過舊角點 (4171,5833)")
         end)
         kept("Long Branch Road", findStreet(60, 5711, 5400), { 37, 38 }, 59)
-        -- ④ Fiddler's Trail：streets.xml 寫 width=15，實際鋪面 y12320–12329 全程 10 格。
-        local fiddler = findStreet(2, 8343, 12323.5)
-        assert(fiddler and fiddler.segWidth[1] == 10, "Fiddler's Trail：路寬覆寫為 10")
-        kept("Fiddler's Trail", fiddler, {}, 1)
+        -- ④ Fiddler's Trail：官方唯一段 (8343,12323.5)→(10585,12324.5) 寫 width=15、中線偏北 0.5–1.5 格；
+        -- 實際鋪面 y12320–12329 全程 10 格、中線 12325。整條換成人工線並以原名接手搜尋（見下方「帶名接手」）。
+        local fiddlerOld = findStreet(2, 8343, 12323.5)
+        assert(fiddlerOld and fiddlerOld.segRemoved[1] and not mod.streetSearchable(fiddlerOld),
+            "Fiddler's Trail：官方唯一段由人工線取代")
         both("Fiddler's Trail", 8400, 12324, 10500, 12324, function(r)
             for i = 1, #r.segWidth do
                 assert(r.segWidth[i] == 10, "Fiddler's Trail：路線段寬 10，實得 " .. tostring(r.segWidth[i]))
+            end
+            for i = 2, #r.pts, 2 do
+                assert(r.pts[i] == 12325, "Fiddler's Trail：沿鋪面中線 y12325，實得 " .. r.pts[i])
             end
         end)
         -- ⑤ Old Logging Road 直角 (7679.5,8883.5) 穿林；實際是 R≈25 的碎石斜切彎。
@@ -1905,7 +1909,7 @@ do
         kept("KY-79 東線", findStreet(5, 1975, 6888), { 1 }, 4)
         local trailLink = findStreet(2, 1430, 6891.5)
         assert(trailLink and trailLink.segRemoved[1] and not mod.streetSearchable(trailLink),
-            "Trail Link Road：唯一官方段由人工折線取代（使用者裁定接受搜尋消失）")
+            "Trail Link Road：唯一官方段由人工折線取代（搜尋由同名人工線接手）")
         kept("Old State Road 西", findStreet(2, 1967, 6480), {}, 1)
         kept("Old State Road 東", findStreet(2, 1975, 6480), {}, 1)
         -- ⑦ KY-1394↔KY-841 兩線在 x12932–12940 斷開，四個端點被併到 (12932,3445)，建圖接線貼著分隔帶邊
@@ -1921,15 +1925,49 @@ do
             assert(math.abs(r.len - 100) < 0.5, "Mainslick↔Dove：直穿 100 格，實得 " .. r.len)
             for i = 1, #r.pts, 2 do assert(r.pts[i] == 12936, "Mainslick↔Dove：在 x12936 鋪面缺口直穿") end
         end)
-        -- ⑧ KY-841 南線多餘頂點 (15137,3455) 被 T 投影到北線、跨分隔帶樹列；修前 x15137／15140.5 各一條跨接。
+        -- ⑧ KY-841 南線多餘頂點 (15137,3455)、(15140.5,3455) 與北線轉彎頂點 (15144.5,3445) 都離對向車道 10 格，
+        -- 被 T 投影過去、畫出穿分隔帶樹列的接線（修前 x15137／15140.5／15144.5 三條）。北線轉彎頂點移到 y3444
+        -- （離南線 11 格），兩車道在這一帶只剩 Masons Lane 正對的分隔帶礫石缺口 x15000 一處連通。
+        local crossings = {}
         for node = 1, g.nodeCount do
-            local x, y = g.nx[node], g.ny[node]
-            assert(not (x > 15100 and x < 15144 and y > 3440 and y < 3460),
-                ("KY-841：x15100–15144 不得有頂點或跨分隔帶接線 (%.1f,%.1f)"):format(x, y))
+            local e = g.adjHead[node]
+            while e ~= 0 do
+                local m = g.adjTo[e]
+                local x0, y0, x1, y1 = g.nx[node], g.ny[node], g.nx[m], g.ny[m]
+                -- 一端在北線（y3444–3445）、另一端在南線（y3455）的近垂直邊＝兩車道之間的連通
+                local lo, hi = math.min(y0, y1), math.max(y0, y1)
+                if m > node and lo >= 3443.5 and lo <= 3445.5 and math.abs(hi - 3455) < 1
+                    and math.abs(x1 - x0) < 2 then
+                    local x = (x0 + x1) / 2
+                    if x > 14600 and x < 15300 then crossings[#crossings + 1] = x end
+                end
+                e = g.adjNext[e]
+            end
         end
+        assert(#crossings == 1 and crossings[1] == 15000,
+            "KY-841：x14600–15300 兩車道只在 Masons Lane 缺口 x15000 連通，實得 " .. table.concat(crossings, ","))
+        do
+            local r = mod.findRoute(g, 15000, 3500, 14900, 3444.5, nil, nil, nil, 12)
+            assertRouteMetadata(r, "Masons Lane→KY-841 北線")
+            assert(hasPoint(r, 15000, 3445) and math.abs(r.len - 155) < 1,
+                "KY-841：Masons Lane 經分隔帶缺口接北線西行（45＋10＋100），實得 " .. r.len)
+            -- 缺口段是人工接線（raster 礫石、寬 6），不是建圖吸附自動補的短接線（會沿用車道的 paved）
+            local crossed
+            for i = 1, #r.pts - 2, 2 do
+                if r.pts[i] == 15000 and r.pts[i + 1] == 3455 and r.pts[i + 3] == 3445 then
+                    crossed = r.segSurface[(i + 1) / 2]
+                end
+            end
+            assert(crossed == "gravel", "KY-841：分隔帶缺口段記 gravel，實得 " .. tostring(crossed))
+        end
+        both("KY-841 北線轉彎", 14900, 3444.5, 15200, 3398, function(r)
+            assert(hasPoint(r, 15144.5, 3444) and hasPoint(r, 15162, 3436),
+                "KY-841 北線：轉彎沿北線，不經南線")
+            for i = 2, #r.pts, 2 do assert(r.pts[i] <= 3445, "KY-841 北線：轉彎不跨到南線") end
+        end)
         kept("KY-1394 北線", findStreet(7, 12067, 3173, 12072), {}, 6)
         kept("KY-1394 南線", findStreet(7, 12067, 3173, 12062), {}, 6)
-        kept("KY-841 北線", findStreet(6, 12940, 3445), {}, 5)
+        kept("KY-841 北線", findStreet(6, 12940, 3445), { 1, 2 }, 5)
         kept("KY-841 南線", findStreet(8, 12940.5, 3455), { 1, 2, 3 }, 7)
         -- ⑨ Lakeshore Pkwy 一條中線穿過 y6675–6687 的分隔島（島心 x5812–5816）；拆成兩條繞島車道線。
         both("Lakeshore Pkwy 分隔島", 5814, 6600, 5790, 6714.5, function(r)
@@ -1960,6 +1998,63 @@ do
             assert(trail >= 2, "Flower Road：路線經過草地小徑段")
         end)
         kept("Flower Road", findStreet(4, 14145.5, 5005.5), { 1 }, 3)
+        -- 帶名接手：整條被取代的官方街（Fiddler's Trail、Trail Link Road 全圖都只有一段官方段）由人工線以
+        -- 官方原名接手搜尋。索引走 production streetIndexAnchor（與遊戲內同一 winnerOf），錨點落在人工線起點。
+        local function patchStreetNamed(list, original)
+            local hit
+            for i = patch.geometryCount + 1, #list do
+                local st = list[i]
+                if (st.originalName or st.name) == original then
+                    assert(not hit, original .. "：只有一條人工線帶這個名字")
+                    hit = st
+                end
+            end
+            return hit
+        end
+        local wof = function(_, _, src) return src end
+        for _, c in ipairs({ { "Fiddler's Trail", 8343, 12325 }, { "Trail Link Road", 1430, 6891.5 } }) do
+            local st = patchStreetNamed(streets, c[1])
+            assert(st and st.searchable == true and mod.streetSearchable(st), c[1] .. "：人工線可搜尋")
+            local ax, ay = mod.streetIndexAnchor(st, wof, {})
+            assert(ax == c[2] and ay == c[3],
+                ("%s：索引錨點落在人工線起點 (%s,%s)，實得 (%s,%s)"):format(c[1], c[2], c[3], tostring(ax), tostring(ay)))
+        end
+        -- 翻譯：與抽取同一規則——displayName(原名, 官方目錄) 給顯示名、原名留 originalName（英文查得到）；
+        -- 字典沒有這條（回 nil／空字串）就照原名顯示。用同一份生成檔重套一次驗證。
+        local function officialCopy()
+            local list = {}
+            for member in pairs(patch.geometrySet) do
+                local geometry, widthQ = member:match("^(.-)|w:(%-?%d+)$")
+                local pts, field = {}, 0
+                for token in geometry:gmatch("[^:]+") do
+                    field = field + 1
+                    if field > 1 then pts[#pts + 1] = tonumber(token) / 2 end
+                end
+                list[#list + 1] = { name = "x", src = patch.targetSrc, width = tonumber(widthQ) / 2, pts = pts }
+            end
+            return list
+        end
+        local dirs = {}
+        local translated = officialCopy()
+        local okT, stateT = mod.applyRoadPatches(translated, patch, nil, function(original, dir)
+            dirs[#dirs + 1] = dir
+            if original == "Trail Link Road" then return nil end
+            return "譯·" .. original
+        end)
+        assert(okT and stateT == "applied", "帶名接手：附翻譯重套成功")
+        assert(#dirs == 2 and dirs[1] == patch.targetSrc and dirs[2] == patch.targetSrc,
+            "帶名接手：只對帶名人工線查翻譯、目錄是官方容器")
+        local fid = patchStreetNamed(translated, "Fiddler's Trail")
+        assert(fid.name == "譯·Fiddler's Trail" and fid.originalName == "Fiddler's Trail",
+            "帶名接手：顯示譯名、原名留 originalName")
+        local link = patchStreetNamed(translated, "Trail Link Road")
+        assert(link.name == "Trail Link Road" and link.originalName == nil,
+            "帶名接手：字典沒有就照原名顯示")
+        for i = patch.geometryCount + 1, #translated do
+            local st = translated[i]
+            assert(st == fid or st == link or (st.name == "" and not mod.streetSearchable(st)),
+                "帶名接手：其他人工線維持無名、不可搜尋")
+        end
     end
     -- Bank Road (10662,9696) L 角修正（2026-09-02）：官方 polyline 把 y 9686→9698 的
     -- 斜向過渡畫成 L 角，頂點 (10662.5,9695.5) 落在真路面西緣外 2.3 格（worldmap.xml

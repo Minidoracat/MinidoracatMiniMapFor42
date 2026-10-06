@@ -9,11 +9,17 @@ or rejected; omission is an error.
 
 Usage:
     python scripts/gen_road_patches.py [--audit PATH] [--approvals PATH] [--out PATH]
-        [--legacy-audit PATH ...]
+        [--legacy-audit PATH ...] [--streets PATH]
 
 ``--legacy-audit`` takes the audit of a previous official streets.xml pinned in
 ``approvals.legacyAudits``. Streets TIS redrew since then are emitted as ``legacy``
 aliases so translation carriers still bundling that build can certify.
+
+``--streets`` takes the official streets.xml the audit was built from (its SHA-256
+must equal ``audit.source.xmlSha256``). It is required only when a manual road
+carries ``name``: the name must be an official street name verbatim, and every
+official street with that name must be fully removed (the manual road takes over
+its street search; partial replacements keep an official segment searchable).
 """
 from __future__ import annotations
 
@@ -23,6 +29,7 @@ import json
 import math
 import os
 import tempfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -743,7 +750,9 @@ def _manual_operations(
     視覺可見但 class 層無訊號的路（如與周圍曠野同 dirt 材質的土徑）稽核
     row-span 找不到——訊號不存在於表面類別資料。此入口允許人工提供折線，
     id 必須 `m:` 前綴與 candidate 證據空間分離；寬度從 2 到既有道路資料上限 MAX_WIDTH；
-    searchable 強制 false；points 過同一套幾何驗證與 DP 簡化。
+    searchable 預設強制 false；只有帶 name（官方原街名，build_payload 對官方 streets.xml
+    驗證）時才允許 true，用來接手「整條官方街都被取代」的街名搜尋。points 過同一套幾何
+    驗證與 DP 簡化。
     """
     manual_values = _array(approvals["manualRoads"], "approvals.manualRoads")
     adds: list[dict[str, Any]] = []
@@ -753,7 +762,10 @@ def _manual_operations(
     for pos, raw_entry in enumerate(manual_values):
         where = f"approvals.manualRoads[{pos}]"
         entry = _object(raw_entry, where)
-        _exact_keys(entry, keys, where)
+        if "name" in entry:
+            _exact_keys(entry, keys | {"name"}, where)
+        else:
+            _exact_keys(entry, keys, where)
         identity = _bounded_string(entry["id"], f"{where}.id", MAX_IDENTITY_STRING)
         if not identity.startswith("m:"):
             _fail(f"{where}.id must use the m: manual prefix")
@@ -774,26 +786,88 @@ def _manual_operations(
         width = _road_width(entry["width"], f"{where}.width")
         if width < 2:
             _fail(f"{where}.width must be at least 2")
-        if entry["searchable"] is not False:
-            _fail(f"{where}.searchable must be false")
+        name = None
+        if "name" in entry:
+            name = _bounded_string(entry["name"], f"{where}.name", MAX_IDENTITY_STRING)
+            if entry["searchable"] is not True:
+                _fail(f"{where}.name requires searchable true (name only serves street search)")
+        elif entry["searchable"] is not False:
+            _fail(f"{where}.searchable must be false unless an official street name is given")
         reason = _bounded_string(entry["reason"], f"{where}.reason", MAX_REASON_STRING)
         operation = {
             "id": identity,
             "src": target_src,
             "width": width,
             "surface": surface,
-            "searchable": False,
+            "searchable": name is not None,
             "reason": reason,
             "points": _simplify_polyline(points, OPERATION_SIMPLIFY_EPSILON),
         }
+        if name is not None:
+            operation["name"] = name
         (adds if operation_kind == "add" else bridges).append(operation)
     return adds, bridges
+
+
+def _validate_manual_names(
+    named: list[dict[str, Any]], streets_raw: bytes | None, xml_sha: str,
+    street_count: int, streets: list[dict[str, Any]], removes: set[str],
+) -> None:
+    """帶名人工道路只能接手「整條被取代」的官方街名，名稱逐字取自官方 streets.xml。
+
+    官方街只要還有一段保留，那段就照常提供搜尋——人工線再帶同名會在索引裡重複；
+    名稱不在官方 XML＝造名。兩者都拒收。
+    """
+    if not named:
+        return
+    if streets_raw is None:
+        _fail("named manualRoads require --streets <official streets.xml>")
+    if hashlib.sha256(streets_raw).hexdigest() != xml_sha:
+        _fail("--streets SHA-256 does not match audit.source.xmlSha256")
+    try:
+        root = ET.fromstring(streets_raw)
+    except ET.ParseError as exc:
+        _fail(f"--streets XML parse failed: {exc}")
+    elements = [child for child in root if child.tag == "street"]
+    if len(elements) != street_count:
+        _fail(f"--streets street count {len(elements)} != audit streetCount {street_count}")
+    by_name: dict[str, list[dict[str, Any]]] = {}
+    for street in streets:
+        element = elements[street["streetIndex"]]
+        point = element.find("./points/point")
+        if point is None or (
+            quantize(float(point.get("x", "nan")), "--streets x") != quantize(street["points"][0], "x")
+            or quantize(float(point.get("y", "nan")), "--streets y") != quantize(street["points"][1], "y")
+        ):
+            _fail(f"--streets street {street['streetIndex']} does not match the audit geometry")
+        by_name.setdefault(element.get("name", ""), []).append(street)
+    seen: set[str] = set()
+    for operation in named:
+        name = operation["name"]
+        where = f"manual road {operation['id']} name {name!r}"
+        if name in seen:
+            _fail(f"{where}: another searchable manual road already carries this name")
+        seen.add(name)
+        official = by_name.get(name)
+        if not official:
+            _fail(f"{where} is not an official (non-railroad) street name")
+        for street in official:
+            kept = [
+                index for index in range(len(street["surfaces"]))
+                if segment_id(street["compact"], index) not in removes
+            ]
+            if kept:
+                _fail(
+                    f"{where}: official streetIndex {street['streetIndex']} keeps segments "
+                    f"{kept[:5]} searchable; only fully replaced streets may pass their name on"
+                )
 
 
 def build_payload(
     audit: dict[str, Any], approvals: dict[str, Any], audit_raw: bytes,
     approvals_raw: bytes, generator_raw: bytes,
     legacy_inputs: list[tuple[dict[str, Any], bytes]] | None = None,
+    streets_raw: bytes | None = None,
 ) -> dict[str, Any]:
     if audit.get("schemaVersion") != 1:
         _fail("audit.schemaVersion must be road-audit-v1 (1)")
@@ -883,6 +957,12 @@ def build_payload(
         remove_seen.add(identity)
         removes.append(identity)
     removes.sort()
+    _validate_manual_names(
+        [op for op in manual_adds + manual_bridges if "name" in op], streets_raw, xml_sha,
+        _integer(_object(audit.get("baseline"), "audit.baseline").get("streetCount"),
+                 "audit.baseline.streetCount", 1),
+        streets, remove_seen,
+    )
 
     width_values = _array(approvals["width"], "approvals.width")
     widths: dict[str, float] = {}
@@ -967,6 +1047,7 @@ def _render_street_operation(operation: dict[str, Any]) -> str:
         + ", src = " + _lua_string(operation["src"])
         + ", width = " + _lua_number(operation["width"])
         + ", surface = " + _lua_string(operation["surface"])
+        + (", name = " + _lua_string(operation["name"]) if "name" in operation else "")
         + ", searchable = " + searchable
         + ", reason = " + _lua_string(operation["reason"])
         + ", pts = { " + points + " } },"
@@ -978,7 +1059,8 @@ def render_lua(payload: dict[str, Any]) -> str:
         "-- MinidoracatMiniMapRoadPatches.lua",
         "-- 由 scripts/gen_road_patches.py 從 road-audit-v1 與人工批准清單產生；請勿手改。",
         "-- 重生：python scripts/gen_road_patches.py --audit target/road-audit-v2.json"
-        " --legacy-audit target/road-audit-v2-42.20.4.json",
+        " --legacy-audit target/road-audit-v2-42.20.4.json"
+        " --streets \"<PZ>/media/maps/Muldraugh, KY/streets.xml\"",
         "-- runtime 驗官方來源或已認證載體的 full-q2-geometry+width set；不讀 XML、不計算 SHA。",
         "",
         "MinidoracatMiniMapRoadPatches = {",
@@ -1076,7 +1158,8 @@ def atomic_write(path: Path, text: str) -> None:
         raise
 
 def generate(
-    audit_path: Path, approvals_path: Path, out_path: Path, legacy_paths: tuple[Path, ...] = ()
+    audit_path: Path, approvals_path: Path, out_path: Path, legacy_paths: tuple[Path, ...] = (),
+    streets_path: Path | None = None,
 ) -> dict[str, Any]:
     reject_path_aliases(audit_path, approvals_path, out_path, legacy_paths)
     audit, audit_raw = _load_json(audit_path, "audit", MAX_AUDIT_BYTES)
@@ -1087,8 +1170,14 @@ def generate(
         _load_json(path, f"legacy audit {pos}", MAX_AUDIT_BYTES)
         for pos, path in enumerate(legacy_paths)
     ]
+    streets_raw = None
+    if streets_path is not None:
+        if streets_path.stat().st_size > MAX_AUDIT_BYTES:
+            _fail(f"--streets exceeds {MAX_AUDIT_BYTES} bytes")
+        streets_raw = streets_path.read_bytes()
     payload = build_payload(
-        audit, approvals, audit_raw, approvals_raw, Path(__file__).read_bytes(), legacy_inputs
+        audit, approvals, audit_raw, approvals_raw, Path(__file__).read_bytes(), legacy_inputs,
+        streets_raw,
     )
     atomic_write(out_path, render_lua(payload))
     return payload
@@ -1101,9 +1190,13 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--legacy-audit", type=Path, action="append", default=[],
                         help="previous official audit pinned in approvals.legacyAudits")
+    parser.add_argument("--streets", type=Path, default=None,
+                        help="official streets.xml (SHA pinned by the audit); "
+                             "required when a manual road carries name")
     args = parser.parse_args()
     try:
-        payload = generate(args.audit, args.approvals, args.out, tuple(args.legacy_audit))
+        payload = generate(args.audit, args.approvals, args.out, tuple(args.legacy_audit),
+                           args.streets)
     except GenerationError as exc:
         parser.error(str(exc))
     print(f"source build: {payload['sourceBuild']}")

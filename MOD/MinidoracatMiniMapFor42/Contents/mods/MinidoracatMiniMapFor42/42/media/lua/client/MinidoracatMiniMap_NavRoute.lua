@@ -344,7 +344,9 @@ local function exactArray(values, count)
     return true
 end
 
-local function stagePatchStreet(staged, lookup, op, operationIds, targetLow, officialDir)
+-- 帶 name 的 add/bridge＝接手整條被取代官方街的搜尋（generator 保證 name 是官方原街名）：
+-- 與抽取同一規則，displayName(原名, 官方目錄) 給顯示名，原名留 originalName 供英文查詢。
+local function stagePatchStreet(staged, lookup, op, operationIds, targetLow, officialDir, displayName)
     if type(op) ~= "table" or type(op.id) ~= "string" or op.id == ""
         or operationIds[op.id]
     then
@@ -362,8 +364,14 @@ local function stagePatchStreet(staged, lookup, op, operationIds, targetLow, off
     if op.name ~= nil and (type(op.name) ~= "string" or #op.name > MAX_STREET_NAME_LENGTH) then
         return false, "invalid add/bridge name"
     end
+    local originalName = type(op.name) == "string" and op.name or ""
+    local name = originalName
+    if name ~= "" and displayName then
+        local shown = displayName(originalName, officialDir)
+        if type(shown) == "string" and shown ~= "" then name = shown end
+    end
     local street = {
-        name = type(op.name) == "string" and op.name or "",
+        name = name, originalName = name ~= originalName and originalName or nil,
         src = op.src, width = op.width, pts = op.pts, searchable = searchable,
         canonicalSrc = op.src:lower() == targetLow and officialDir or nil,
         segRemoved = {}, segWidth = {}, segSurface = {},
@@ -382,7 +390,8 @@ end
 -- 完整 preflight 後才替換 streets 的數字槽：fingerprint、所有 operation 引用、
 -- remove→width/surface overrides→add→bridge；任一衝突時原 ex.out 一格都不動。
 -- 相同 tag 重入直接成功且不重複 append；不同 patch 疊套 fail closed。
-function NavCore.applyRoadPatches(streets, patch, officialDir)
+-- displayName（選用）：fn(原街名, 官方目錄) → 顯示名；給帶 name 的 add/bridge 翻譯用。
+function NavCore.applyRoadPatches(streets, patch, officialDir, displayName)
     if type(streets) ~= "table" or type(patch) ~= "table"
         or patch.schemaVersion ~= 1 or type(patch.tag) ~= "string"
         or type(patch.targetSrc) ~= "string" or type(patch.geometrySet) ~= "table"
@@ -490,11 +499,13 @@ function NavCore.applyRoadPatches(streets, patch, officialDir)
     end
     local operationIds = {}
     for i = 1, addCount do
-        local ok, err = stagePatchStreet(staged, lookup, patch.add[i], operationIds, targetLow, officialDir)
+        local ok, err = stagePatchStreet(staged, lookup, patch.add[i], operationIds, targetLow, officialDir,
+            displayName)
         if not ok then return false, err end
     end
     for i = 1, bridgeCount do
-        local ok, err = stagePatchStreet(staged, lookup, patch.bridge[i], operationIds, targetLow, officialDir)
+        local ok, err = stagePatchStreet(staged, lookup, patch.bridge[i], operationIds, targetLow, officialDir,
+            displayName)
         if not ok then return false, err end
     end
 
@@ -2089,7 +2100,8 @@ Events.OnTickEvenPaused.Add(function()
                 -- 仍是完全未修改的 raw 表。
                 -- pcall 第二回傳：成功時＝applied 布林，拋錯時＝例外訊息
                 local patchOk, applied, patchErr = pcall(
-                    NavCore.applyRoadPatches, ex.out, ex.patch or MinidoracatMiniMapRoadPatches, ex.officialDir)
+                    NavCore.applyRoadPatches, ex.out, ex.patch or MinidoracatMiniMapRoadPatches, ex.officialDir,
+                    Core.streetDisplayName)
                 if not patchOk then
                     engine.patchState = "raw"
                     logf("roadpatch", "patch exception; using raw streets: "

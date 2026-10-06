@@ -502,3 +502,92 @@ def test_legacy_audit_rejects_ambiguous_alignment(tmp_path):
     audit_path, approval_path, out_path, legacy_path = write_legacy(tmp_path, collide)
     with pytest.raises(GEN.GenerationError, match="equals a current street"):
         GEN.generate(audit_path, approval_path, out_path, (legacy_path,))
+
+
+NAMED_XML = (
+    '<?xml version="1.0" encoding="utf-8"?>\n<streets version="1">\n'
+    '<street name="Main Road" width="6"><points><point x="0" y="0"/><point x="10" y="0"/>'
+    '<point x="20" y="0"/></points></street>\n'
+    '<street name="Old Railroad" width="5"><points><point x="0" y="50"/><point x="20" y="50"/>'
+    '</points></street>\n'
+    '<street name="Dirt Lane" width="4"><points><point x="0" y="100"/><point x="20" y="100"/>'
+    '</points></street>\n</streets>\n'
+).encode()
+
+
+def write_named_fixture(tmp_path, name="Dirt Lane", searchable=True, remove=(2,)):
+    """官方 streets.xml＋audit 釘同一 XML SHA；人工線帶 name 接手被整條取代的官方街搜尋。"""
+    audit = audit_fixture()
+    xml_sha = hashlib.sha256(NAMED_XML).hexdigest()
+    audit["source"]["xmlSha256"] = xml_sha
+    audit["candidates"] = []
+    audit["candidateAnalysis"] = {"status": "ok", "acceptedCount": 0}
+    audit_bytes = (json.dumps(audit, ensure_ascii=False, sort_keys=True) + "\n").encode()
+    approval = approval_fixture(audit_bytes, audit_fixture(), decide=False)
+    approval["auditXmlSha256"] = xml_sha
+    geometry = {0: [0, 0, 10, 0, 20, 0], 2: [0, 100, 20, 100]}
+    for street in remove:
+        compact = GEN.compact_geometry_key("Muldraugh, KY", GEN.geometry_key(geometry[street]))
+        approval["remove"].extend(
+            GEN.segment_id(compact, index) for index in range(len(geometry[street]) // 2 - 1))
+    entry = {
+        "id": "m:named", "operation": "add", "points": [0, 101, 20, 101], "width": 4,
+        "surface": "dirt", "searchable": searchable, "reason": "整條官方街由人工線取代",
+    }
+    if name is not None:
+        entry["name"] = name
+    approval["manualRoads"] = [entry]
+    paths = tmp_path / "audit.json", tmp_path / "approval.json", tmp_path / "out.lua", tmp_path / "streets.xml"
+    paths[0].write_bytes(audit_bytes)
+    paths[1].write_text(json.dumps(approval, ensure_ascii=False), encoding="utf-8")
+    paths[3].write_bytes(NAMED_XML)
+    return approval, paths
+
+
+def test_named_manual_road_takes_over_fully_replaced_official_street(tmp_path):
+    _, (audit_path, approval_path, out_path, streets_path) = write_named_fixture(tmp_path)
+    payload = GEN.generate(audit_path, approval_path, out_path, (), streets_path)
+    operation = payload["add"][0]
+    assert operation["name"] == "Dirt Lane" and operation["searchable"] is True
+    assert 'name = "Dirt Lane", searchable = true' in out_path.read_text(encoding="utf-8")
+    # 不帶 name 的人工線照舊 searchable=false、不寫 name（舊生成檔逐字不變）
+    approval, (audit_path, approval_path, out_path, _) = write_named_fixture(
+        tmp_path, name=None, searchable=False)
+    payload = GEN.generate(audit_path, approval_path, out_path)
+    assert "name" not in payload["add"][0] and payload["add"][0]["searchable"] is False
+
+
+@pytest.mark.parametrize(
+    ("name", "searchable", "remove", "with_streets", "message"),
+    [
+        ("Ghost Road", True, (2,), True, "not an official"),
+        ("Old Railroad", True, (2,), True, "not an official"),
+        ("dirt lane", True, (2,), True, "not an official"),
+        (None, True, (2,), True, "searchable must be false unless"),
+        ("Dirt Lane", False, (2,), True, "name requires searchable true"),
+        ("Main Road", True, (2,), True, "keeps segments"),
+        ("Dirt Lane", True, (), True, "keeps segments"),
+        ("Dirt Lane", True, (2,), False, "require --streets"),
+    ],
+)
+def test_named_manual_road_rejects_invented_partial_or_unverified_names(
+        tmp_path, name, searchable, remove, with_streets, message):
+    _, (audit_path, approval_path, out_path, streets_path) = write_named_fixture(
+        tmp_path, name=name, searchable=searchable, remove=remove)
+    out_path.write_bytes(b"previous verified output")
+    with pytest.raises(GEN.GenerationError, match=message):
+        GEN.generate(audit_path, approval_path, out_path, (), streets_path if with_streets else None)
+    assert out_path.read_bytes() == b"previous verified output"
+
+
+def test_named_manual_road_streets_xml_must_match_audit_sha_and_be_unique(tmp_path):
+    approval, (audit_path, approval_path, out_path, streets_path) = write_named_fixture(tmp_path)
+    streets_path.write_bytes(NAMED_XML.replace(b"Dirt Lane", b"Dirt Lanf"))
+    with pytest.raises(GEN.GenerationError, match="SHA-256 does not match"):
+        GEN.generate(audit_path, approval_path, out_path, (), streets_path)
+    streets_path.write_bytes(NAMED_XML)
+    duplicate = dict(approval["manualRoads"][0], id="m:named-2", points=[0, 102, 20, 102])
+    approval["manualRoads"].append(duplicate)
+    approval_path.write_text(json.dumps(approval, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(GEN.GenerationError, match="already carries this name"):
+        GEN.generate(audit_path, approval_path, out_path, (), streets_path)
