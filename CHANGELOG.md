@@ -8,6 +8,7 @@
 - 為之後的「地圖腕錶」附加 MOD 預先加裝功能限制接口。沒有安裝會用到它的 MOD 時，小地圖、資源點、導航、陣營分享與各種圖標都和現在完全一樣。
 - 附加 MOD 的設定分類可以放滑桿（例如音量）：拖曳、點軌道、左右的 -／+ 鈕都能調整；滑鼠點過滑桿後也能用鍵盤左右鍵一格一格調。內建的滑條不受影響。
 - 附加 MOD 可以在小地圖標題列右側顯示一小段狀態文字（例如腕錶電量），警示時以紅底顯示；小地圖太窄時自動截短或不顯示。沒有安裝會用到它的 MOD 時，標題列和現在完全一樣。
+- 附加 MOD 可以在伺服器設定的定時掃描更新點位時收到通知（例如腕錶在掃描更新時播放提示音）。沒有安裝會用到它的 MOD 時，點位的掃描與顯示和現在完全一樣。
 
 ### 修正
 
@@ -15,7 +16,7 @@
 - 英文介面搜尋路名時，部分修正過的路（例如 Bank Road、Station Road、Fiddler's Trail）不再重複出現兩列。
 - 家族 MOD 的右上角通知（例如地圖錶的提示）不再蓋住開著的小地圖：通知會改排到小地圖下方，放不下就排到它左邊；小地圖移動、縮放、切換穿透模式時通知跟著讓開，關掉小地圖後回到原位。需要 Minidoracat UI Library 同步更新才完整生效：舊版在通知被家族工具列往下推時仍可能疊到小地圖。
 
-> 技術要點：client 新增 `featureApiVersion` 1＋`registerFeatureGate`（feature：minimap／arrow／poi／nav／share／scan／zombie；只有明確回 false 才擋，零註冊時行為不變；gate 拋錯＝放行、只 log 一次並停用到同 owner 再註冊）；伺服器新增全域 `MinidoracatMiniMapServerAPI`（`shareApiVersion` 1＋`registerShareFilter`，逐收件者過濾陣營分享）；`settingsApiVersion` 4：`registerSettingsSection` 的 spec 新增選用 `visible(pn)`（v3）與 `sliders`（v4，min／max／step／default／fmt，值對齊 step 才 `set`）。client 新增 `titleStatusApiVersion` 1＋`registerTitleStatus(owner, fn)`（`fn(playerNum) → text[, "warn"]`，250ms 快取、第一個警示勝出、零註冊不 hook、拋錯停用到再註冊）。沙盒新增 `ZombieScanInterval`、`VehicleAnimalScanInterval`（秒，0＝即時，預設 0）。`navApiVersion` 不變，`requestRoute` 回傳狀態不變。RoadPatch：整條被取代的官方街可由帶官方原街名的人工線接手街名搜尋（`gen_road_patches.py --streets` 對官方 streets.xml 驗原名、要求同名官方段全數移除；runtime 依原名查翻譯）。UI 框架 `CAPABILITIES.toastAvoid`（rev≥12）在場時，`_FloatIcon.lua` 載入期以 owner `MinidoracatMiniMap0`～`3` 登記 `UI.Toast.setAvoid`，fn 每次現查 `getPlayerMiniMap(pn)`，可見時回螢幕矩形、未建或隱藏回 nil，不配置 table；框架缺席或版本不足時不登記。
+> 技術要點：client 新增 `featureApiVersion` 1＋`registerFeatureGate`（feature：minimap／arrow／poi／nav／share／scan／zombie；只有明確回 false 才擋，零註冊時行為不變；gate 拋錯＝放行、只 log 一次並停用到同 owner 再註冊）；伺服器新增全域 `MinidoracatMiniMapServerAPI`（`shareApiVersion` 1＋`registerShareFilter`，逐收件者過濾陣營分享）；`settingsApiVersion` 4：`registerSettingsSection` 的 spec 新增選用 `visible(pn)`（v3）與 `sliders`（v4，min／max／step／default／fmt，值對齊 step 才 `set`）。client 新增 `titleStatusApiVersion` 1＋`registerTitleStatus(owner, fn)`（`fn(playerNum) → text[, "warn"]`，250ms 快取、第一個警示勝出、零註冊不 hook、拋錯停用到再註冊）。沙盒新增 `ZombieScanInterval`、`VehicleAnimalScanInterval`（秒，0＝即時，預設 0）。client 新增 `scanApiVersion` 1＋`registerScanListener(owner, fn)`（`fn(playerNum, kind)`，kind＝zombie／vehicleAnimal；只在定時模式重新取樣後呼叫，即時模式與戰術檢視不呼叫；以 (kind, playerNum) 去重，開關世界地圖時兩個表面交接的取樣在同一間隔內只通知一次；`fn=nil` 取消、拋錯停用到再註冊、零註冊時取樣器不呼叫）。`navApiVersion` 不變，`requestRoute` 回傳狀態不變。RoadPatch：整條被取代的官方街可由帶官方原街名的人工線接手街名搜尋（`gen_road_patches.py --streets` 對官方 streets.xml 驗原名、要求同名官方段全數移除；runtime 依原名查翻譯）。UI 框架 `CAPABILITIES.toastAvoid`（rev≥12）在場時，`_FloatIcon.lua` 載入期以 owner `MinidoracatMiniMap0`～`3` 登記 `UI.Toast.setAvoid`，fn 每次現查 `getPlayerMiniMap(pn)`，可見時回螢幕矩形、未建或隱藏回 nil，不配置 table；框架缺席或版本不足時不登記。
 
 ## [42.21.0-0.36.0] - 2026-10-05
 

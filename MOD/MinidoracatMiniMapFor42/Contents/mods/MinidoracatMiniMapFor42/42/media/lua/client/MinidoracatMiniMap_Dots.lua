@@ -105,6 +105,7 @@ end
 -- 一律即時；Policy 缺席（舊共用檔）＝即時。取樣在客戶端，伺服器負擔不受此值影響。
 -- 只由取樣器在即時節流節奏呼叫（每 ZDOTS/ADOTS_INTERVAL_MS 至多一次）：Policy 讀值含
 -- refreshPolicy＋pcall(getTimestampMs)，每幀每表面呼叫會讓預設 0 也多付成本
+-- test:scan-listener:start
 local function scanIntervalMs(name, pn)
     local Policy = Core.policy
     if not Policy then return nil end
@@ -112,6 +113,54 @@ local function scanIntervalMs(name, pn)
     if not sec or sec <= 0 or Policy.tacticalActive(pn) then return nil end
     return sec * 1000
 end
+
+-- 掃描更新通知（scanApiVersion 1，docs/addon-api.md §3.18）：定時模式真的重新取樣、更新點位池後
+-- 呼叫 fn(playerNum, kind)，kind＝"zombie"／"vehicleAnimal"。即時模式與戰術檢視 scanMs 為 nil＝不通知。
+-- 取樣狀態掛在表面上（小地圖、世界地圖各自計時），故以 (kind, pn) 記「下次可通知時刻」：
+-- 同一玩家一個間隔內只通知一次。零註冊時取樣器在 scanListeners[1] 判斷後跳過，不呼叫、不建表。
+-- fn 拋錯＝依 owner log 一次並停用到同 owner 再註冊（同 registerFeatureGate 理由：pcall 接住的錯誤照樣洗版）
+local scanListeners = {} -- { { owner=, fn=, errLogged= }, ... }
+local scanNextAt = {} -- [kind][pn] = 下次可通知的 getTimestampMs
+MinidoracatMiniMapAPI.scanApiVersion = 1
+function MinidoracatMiniMapAPI.registerScanListener(ownerModId, fn)
+    if type(ownerModId) ~= "string" or ownerModId == "" or (fn ~= nil and type(fn) ~= "function") then
+        log("registerScanListener bad arguments (need ownerModId string, fn function or nil)")
+        return false
+    end
+    for i = 1, #scanListeners do
+        local l = scanListeners[i]
+        if l.owner == ownerModId then
+            if fn then
+                l.fn = fn
+                l.errLogged = nil
+            else
+                table.remove(scanListeners, i)
+            end
+            return true
+        end
+    end
+    if fn then scanListeners[#scanListeners + 1] = { owner = ownerModId, fn = fn } end
+    return true
+end
+
+local function notifyScan(pn, kind, now, scanMs)
+    local byKind = scanNextAt[kind]
+    if not byKind then byKind = {}; scanNextAt[kind] = byKind end
+    local at = byKind[pn]
+    if at and now < at then return end -- 同玩家另一個表面這個間隔已通知過
+    byKind[pn] = now + scanMs
+    for i = 1, #scanListeners do
+        local l = scanListeners[i] -- fn 內取消註冊會縮表：l 可為 nil
+        if l and not l.errLogged then
+            local ok, err = pcall(l.fn, pn, kind)
+            if not ok then
+                l.errLogged = true
+                log("scan listener error (" .. l.owner .. "), disabled until re-registered: " .. tostring(err))
+            end
+        end
+    end
+end
+-- test:scan-listener:end
 
 -- 定時模式以玩家為中心取樣：不套視窗框（平移／縮放不會在兩次掃描之間出現空白），
 -- 以玩家為仿射錨點。上下界取遠大於任何地圖的常數（Kahlua 不保證 math.huge）
@@ -232,6 +281,8 @@ local function sampleZombieDots(inner, gateMax, scanKey)
             st.failOnce = true
             log("zombie sampling failed (logged once per surface): " .. tostring(err))
         end
+    elseif scanMs and playerObj and scanListeners[1] then
+        notifyScan(pn, "zombie", now, scanMs)
     end
     return st
 end
@@ -617,6 +668,10 @@ local function sampleAnimalDots(inner, wantWild, wantLive, wantVeh, wantNames, g
             end
         end)
         if not ok then failOnce(err) end
+    end
+    -- 動物、載具各自 failure boundary，部分結果也已更新點池＝照樣通知
+    if scanMs and playerObj and scanListeners[1] then
+        notifyScan(pn, "vehicleAnimal", now, scanMs)
     end
     return st
 end

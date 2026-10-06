@@ -170,6 +170,7 @@ local ADOTS_INTERVAL_MS, ADOTS_MAX, ADOTS_SCAN_MAX, SCAN_ALL = 500, 500, 1000, 1
 -- 掃描間隔（沙盒）樁：回毫秒或 nil（即時）；reads 數取樣器實際讀了幾次（守「每幀不讀 policy」）
 local scanSettings, scanReads = {}, 0
 local function scanIntervalMs(name) scanReads = scanReads + 1; return scanSettings[name] end
+local scanListeners = {} -- 掃描通知（零註冊；通知行為在 test_scan_listener）
 local function adotsSafehouseRects(user) return rectsByUser[user] end
 local function adotsLivestockVisible(ax, ay, currentMode, rects)
     if currentMode == 1 then return true end
@@ -244,6 +245,7 @@ local zombies = {}
 local ZDOTS_INTERVAL_MS, ZDOTS_MAX, ZDOTS_SCAN_MAX, SCAN_ALL = 300, 10, 100, 1e9
 local scanSettings, scanReads = {}, 0
 local function scanIntervalMs(name) scanReads = scanReads + 1; return scanSettings[name] end
+local scanListeners = {} -- 掃描通知（零註冊；通知行為在 test_scan_listener）
 local ZDOTS_NEAR, ZDOTS_MID, ZDOTS_MAXES = 20, 50, { 10 }
 local function getTimestampMs() return now end
 local function displayDist() return distance end

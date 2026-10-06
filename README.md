@@ -507,6 +507,25 @@ end
 - 每 250ms 以該小地圖的 `playerNum` 呼叫一次（分割畫面各自呼叫）；多個 addon 時第一個警示勝出，否則取先註冊者。
 - 只用標題列右半；放不下時截短加 `...`，小地圖太窄時不顯示。callback 拋錯時記錄一次並停用，直到同 ID 再註冊。
 
+## 第三方定時掃描通知 API
+
+伺服器沙盒設了殭屍點位或載具與動物圖標的掃描間隔（> 0）時，每次定時掃描更新點位後通知 addon（例如播放提示音）：
+
+```lua
+local api = MinidoracatMiniMapAPI
+if api and type(api.scanApiVersion) == "number" and api.scanApiVersion >= 1
+        and type(api.registerScanListener) == "function" then
+    api.registerScanListener("AddonModId", function(playerNum, kind)
+        -- kind："zombie"（殭屍點位）或 "vehicleAnimal"（載具與動物圖標）
+        playPing(playerNum)
+    end)
+end
+```
+
+- 即時模式（間隔 0，預設）與管理員戰術檢視不通知；圖層沒開、地圖沒在畫時不掃描也不通知。
+- 同一位玩家每種點位每個間隔最多通知一次（開關世界地圖時，小地圖與世界地圖交接的取樣不會多響一次）；分割畫面各玩家各自通知。
+- 傳 `nil` 取消註冊；同 ID 再註冊會覆蓋。callback 拋錯時記錄一次並停用，直到同 ID 再註冊。
+
 ## 第三方動物相容 API
 
 獨立相容包可在 client Lua 載入時登記已確認的 `IsoAnimal` group：
