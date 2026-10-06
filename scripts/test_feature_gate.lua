@@ -1,7 +1,7 @@
 -- 功能閘門（_FeatureGate.lua：registerFeatureGate／Core.featureAllowed）離線回歸。
 -- 載入真檔，只把 PZ 全域換成假物件。核心不變量：
 --   * 零註冊＝直接放行，不讀時鐘、不建快取（掛點行為與加 API 前逐位元相同）
---   * 只有明確回 false 才擋；拋錯＝放行且每個 owner 只 log 一次
+--   * 只有明確回 false 才擋；拋錯＝放行、每個 owner 只 log 一次並停用到同 owner 再註冊
 --   * (pn, feature, surface) 快取 250ms；註冊變動立即生效
 --   * 戰術檢視只旁路 scan／zombie（且不帶 maxDist），share／minimap 不旁路
 --   * 多 gate 取 AND（reasonKey 取第一個擋阻者）、maxDist 取最小；同 owner 再註冊＝覆蓋
@@ -120,11 +120,12 @@ do
     checkEq(reason, "UI_Watch_NoBattery", "R3 字串 reasonKey 原樣回傳")
 end
 
--- 三、拋錯放行、每 owner 只 log 一次；不吃掉其他 gate 的擋阻
+-- 三、拋錯放行、只 log 一次並停用到再註冊；不吃掉其他 gate 的擋阻
 do
     local t = fixture()
     local Core, API = t.core, t.api
-    API.registerFeatureGate("Boom", function() error("injected") end)
+    local boomCalls = 0
+    API.registerFeatureGate("Boom", function() boomCalls = boomCalls + 1; error("injected") end)
     check(Core.featureAllowed(0, "nav") == true, "E1 拋錯＝放行")
     t.now = t.now + 1000
     Core.featureAllowed(0, "nav")
@@ -134,15 +135,21 @@ do
         if t.printed[i]:find("feature gate error (Boom)", 1, true) then logs = logs + 1 end
     end
     checkEq(logs, 1, "E1 同 owner 錯誤只 log 一次")
-    API.registerFeatureGate("Blocker", function() return false end)
-    check(Core.featureAllowed(0, "nav") == false, "E2 壞 gate 不得吃掉其他 gate 的擋阻")
-    API.registerFeatureGate("Boom", function() error("again") end)
+    checkEq(boomCalls, 1, "E1b 拋錯後停用：其他 pn／feature／surface 與過期後都不再呼叫")
+    local blockCalls = 0
+    API.registerFeatureGate("Blocker", function() blockCalls = blockCalls + 1; return false end)
+    check(Core.featureAllowed(0, "nav") == false and blockCalls == 1 and boomCalls == 1,
+        "E2 壞 gate 停用不影響其他 owner 的擋阻")
+    API.registerFeatureGate("Boom", function() boomCalls = boomCalls + 1; error("again") end)
     Core.featureAllowed(0, "nav")
     logs = 0
     for i = 1, #t.printed do
         if t.printed[i]:find("feature gate error (Boom)", 1, true) then logs = logs + 1 end
     end
-    checkEq(logs, 2, "E3 同 owner 再註冊重置錯誤旗標，新錯誤再記一次")
+    check(logs == 2 and boomCalls == 2, "E3 同 owner 再註冊恢復呼叫，新錯誤再記一次")
+    API.registerFeatureGate("Boom", function() return false, "UI_Boom" end)
+    local ok, rk = Core.featureAllowed(0, "nav")
+    check(ok == false and rk == "UI_Boom", "E4 再註冊成正常 gate 後恢復擋阻")
 end
 
 -- 四、250ms 快取：鍵＝(pn, feature, surface)

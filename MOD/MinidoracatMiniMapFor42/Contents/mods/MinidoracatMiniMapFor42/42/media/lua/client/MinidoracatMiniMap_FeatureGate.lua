@@ -71,18 +71,21 @@ Core.featureAllowed = function(pn, feature, surface)
     local ok, reason, dist = true, nil, nil
     for i = 1, n do
         local g = gates[i]
-        local called, allowed, rk, md = pcall(g.fn, pn, feature, surface)
-        if not called then
-            if not g.errLogged then
+        -- 拋錯過的 gate 停用（視為放行）到同 owner 再註冊：引擎對 pcall 接住的錯誤也會印整段堆疊並計入
+        -- 錯誤數（家族 pitfalls），每 250ms 再問會洗版
+        if not g.errLogged then
+            local called, allowed, rk, md = pcall(g.fn, pn, feature, surface)
+            if not called then
                 g.errLogged = true
-                log("feature gate error (" .. tostring(g.owner) .. "): " .. tostring(allowed))
+                cache = {} -- 其他 (pn, feature, surface) 不必等 TTL 才不再問它
+                log("feature gate error (" .. tostring(g.owner) .. "), disabled until re-registered: " .. tostring(allowed))
+            elseif allowed == false then
+                ok, dist = false, nil
+                if type(rk) == "string" and rk ~= "" then reason = rk end
+                break
+            elseif type(md) == "number" and md > 0 and (not dist or md < dist) then
+                dist = md
             end
-        elseif allowed == false then
-            ok, dist = false, nil
-            if type(rk) == "string" and rk ~= "" then reason = rk end
-            break
-        elseif type(md) == "number" and md > 0 and (not dist or md < dist) then
-            dist = md
         end
     end
     e.at, e.ok, e.reason, e.dist = now, ok, reason, dist
