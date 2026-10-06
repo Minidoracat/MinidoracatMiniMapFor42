@@ -208,14 +208,23 @@ local function doSearch(text, px, py)
     if streets then
         local hits = {}
         local seen = nil -- 首點精確鍵（引擎命中的街，烘焙英文項去重用；lazy 建）
-        local liveOriginals -- 純文字翻譯已有即時原名錨點，不再追加烘焙舊座標。
+        -- 即時索引已有的官方原名（小寫）：烘焙表同名項不再追加。純文字翻譯取 originalLow；
+        -- 名稱沒翻譯（英文客戶端或字典缺這條）時顯示名就是原名、originalLow＝nil，取 low。
+        -- 不能只靠首點精確鍵：RoadPatch 移除首段或整條換成同名人工線後，即時錨點落在第一個
+        -- 保留段／人工線起點，離官方首點 2–2222 格（Fiddler's Trail 2、Walker Road 87、KY-841
+        -- 2212），舊首點會變成第二列。同名的每條官方街都有自己的即時項目，所以按名擋掉烘焙項
+        -- 不會漏街；即時索引不收的鐵路仍由烘焙表提供。
+        local liveOriginals
         for i = 1, #streets do
             local st = streets[i]
             if (st.low ~= "" and st.low:find(q, 1, true))
                 or (st.originalLow and st.originalLow:find(q, 1, true)) then
-                if st.originalLow and st.sourceDir and st.sourceDir:lower() == "muldraugh, ky" then
-                    liveOriginals = liveOriginals or {}
-                    liveOriginals[st.originalLow] = true
+                if st.sourceDir and st.sourceDir:lower() == "muldraugh, ky" then
+                    local original = st.originalLow or (st.low ~= "" and st.low or nil)
+                    if original then
+                        liveOriginals = liveOriginals or {}
+                        liveOriginals[original] = true
+                    end
                 end
                 local d = math.sqrt(dist2(px, py, st.x, st.y))
                 -- 剪枝早退：滿載且比末位遠→不配置 entry table（與 POI 分支對稱）
@@ -231,8 +240,8 @@ local function doSearch(text, px, py)
         -- 翻譯 MOD 整份取代官方 streets.xml → 引擎索引只剩譯名；官方英文原名
         -- 由 gen_street_names.py 烘焙進 MinidoracatMiniMapStreetNames（shared
         -- 資料檔，首點與引擎索引同源）。譯名/原名天然互補（中文查引擎、英文查
-        -- 本表）；無翻譯 MOD 環境兩邊同時命中同一條→首點精確鍵去重，引擎項
-        -- 優先。表缺席（生成器沒跑）＝純引擎行為
+        -- 本表）；即時索引已有同一官方原名→liveOriginals 擋掉（見上），首點精確鍵
+        -- 只剩非官方來源同首點的保底。表缺席（生成器沒跑）＝純引擎行為
         local en = MinidoracatMiniMapStreetNames
         if type(en) == "table" then
             for i = 1, #en do

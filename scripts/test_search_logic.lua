@@ -225,6 +225,42 @@ MinidoracatMiniMapPOIData = {
     setStreets(crowded)
     local limited = doSearch("road", 0, 0)
     eq(limited[#limited].x, 40, "即時原名被上限剪枝時，較近的過期烘焙座標仍不得插隊")
+    -- 英文客戶端（名稱沒翻譯：originalLow＝nil、low 就是原名）：RoadPatch 把整條官方街換成同名人工線、
+    -- 或移除首段後，即時錨點離官方首點 2–2222 格（Fiddler's Trail 8343,12325 對 8343,12323），
+    -- 烘焙表的舊首點不得再出現成第二列。
+    MinidoracatMiniMapStreetNames = {
+        { n = "Fiddler's Trail", l = "fiddler's trail", x = 8343, y = 12323 },
+        { n = "Walker Road", l = "walker road", x = 10674, y = 9438 },
+        { n = "Bank Road", l = "bank road", x = 10, y = 10 },
+        { n = "Bank Road", l = "bank road", x = 5000, y = 10 },
+        { n = "Northern Railroad (Muldraugh - Doe Valley)", l = "northern railroad (muldraugh - doe valley)",
+          x = 12664, y = 4476 },
+    }
+    setStreets({
+        { name = "Fiddler's Trail", low = "fiddler's trail", sourceDir = "Muldraugh, KY", x = 8343, y = 12325 },
+        { name = "Walker Road", low = "walker road", sourceDir = "Muldraugh, KY", x = 10761, y = 9438.5 },
+        { name = "Bank Road", low = "bank road", sourceDir = "Muldraugh, KY", x = 10, y = 10 },
+        { name = "Bank Road", low = "bank road", sourceDir = "Muldraugh, KY", x = 5000, y = 10 },
+    })
+    local fid = doSearch("fiddler", 0, 0)
+    eq(#fid, 1, "英文客戶端：同名人工線接手後，烘焙舊首點不重複列出")
+    eq(fid[1].y, 12325, "英文客戶端：留下的是即時錨點（新線起點）")
+    local walker = doSearch("walker", 0, 0)
+    eq(#walker, 1, "英文客戶端：首段移除、錨點移到 87 格外，烘焙舊首點不重複列出")
+    eq(walker[1].x, 10761, "英文客戶端：Walker Road 用即時錨點")
+    local banks = doSearch("bank road", 0, 0)
+    eq(#banks, 2, "英文客戶端：相隔 4990 格的兩條同名街各列一次")
+    eq(banks[1].x + banks[2].x, 5010, "英文客戶端：兩條同名街都用各自的即時錨點")
+    eq(#doSearch("northern railroad", 0, 0), 1, "即時索引不收的鐵路仍由烘焙表提供")
+    -- 非官方來源同名不擋（沿用上方舊式漢化的規則）；名稱有翻譯的客戶端仍以 originalLow 判斷。
+    setStreets({ { name = "Walker Road", low = "walker road", sourceDir = "Map A", x = 300, y = 100 } })
+    eq(#doSearch("walker", 0, 0), 2, "英文客戶端：其他地圖同名不得擋掉官方英文補充")
+    setStreets({ { name = "沃克路", low = "沃克路", originalLow = "walker road",
+        sourceDir = "Muldraugh, KY", x = 10761, y = 9438.5 } })
+    local zh = doSearch("walker", 0, 0)
+    eq(#zh, 1, "譯名客戶端：原名搜尋仍只列即時道路")
+    eq(zh[1].label, "沃克路", "譯名客戶端：顯示譯名、用即時錨點")
+    eq(#doSearch("沃克", 0, 0), 1, "譯名客戶端：譯名搜尋不受影響")
     MinidoracatMiniMapStreetNames = nil
 end
 
