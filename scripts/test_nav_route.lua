@@ -1769,6 +1769,198 @@ do
             end
         end
     end
+    -- 2026-10-06 AutoDrive 復盤（route_faults scan＋pinned raster）路網資料修補十處：每處雙向穿過
+    -- raster 橫截面、不經舊頂點／舊接線、保留段可搜尋。橫截面數值取自 pinned floor raster 逐列量測。
+    do
+        local g = officialBuilder.graph
+        local function crossAt(r, axis, at)
+            local hit, n = nil, 0
+            for i = 1, #r.pts - 2, 2 do
+                local x0, y0, x1, y1 = r.pts[i], r.pts[i + 1], r.pts[i + 2], r.pts[i + 3]
+                local a0, a1, b0, b1 = y0, y1, x0, x1
+                if axis == "x" then a0, a1, b0, b1 = x0, x1, y0, y1 end
+                if (a0 < at and a1 >= at) or (a1 < at and a0 >= at) then
+                    hit, n = b0 + (b1 - b0) * (at - a0) / (a1 - a0), n + 1
+                end
+            end
+            return hit, n
+        end
+        local function hasPoint(r, x, y)
+            for i = 1, #r.pts, 2 do
+                if math.abs(r.pts[i] - x) < 0.5 and math.abs(r.pts[i + 1] - y) < 0.5 then return true end
+            end
+            return false
+        end
+        -- 框內（不含路線兩端）頂點清單
+        local function innerPoints(r, x0, y0, x1, y1)
+            local out = {}
+            for i = 3, #r.pts - 2, 2 do
+                local x, y = r.pts[i], r.pts[i + 1]
+                if x >= x0 and x <= x1 and y >= y0 and y <= y1 then out[#out + 1] = { x, y } end
+            end
+            return out
+        end
+        local function both(label, sx, sy, tx, ty, check)
+            for _, rev in ipairs({ false, true }) do
+                local a, b, c, d = sx, sy, tx, ty
+                if rev then a, b, c, d = tx, ty, sx, sy end
+                local r = mod.findRoute(g, a, b, c, d, nil, nil, nil, 12)
+                assertRouteMetadata(r, label)
+                check(r)
+            end
+        end
+        local function findStreet(n, x, y, x2)
+            for i = 1, patch.geometryCount do
+                local pts = streets[i].pts
+                if #pts == n * 2 and pts[1] == x and pts[2] == y and (x2 == nil or pts[3] == x2) then
+                    return streets[i]
+                end
+            end
+        end
+        local function kept(label, street, removed, n)
+            assert(street, label .. "：找到官方街道")
+            local set = {}
+            for _, si in ipairs(removed) do set[si] = true end
+            for si = 1, n do
+                assert((street.segRemoved[si] == true) == (set[si] == true),
+                    ("%s：段%d 移除狀態不符"):format(label, si - 1))
+            end
+            assert(mod.streetSearchable(street), label .. "：保留段讓街道仍可搜尋")
+        end
+        -- ① KY-163／Olin Road／Long Needle Road 三端點 (5454,5836)／(5462,5836)／(5458,5840) 互不相接，
+        -- 舊版併在 (5454,5836) 並留 (5458,5840) 斜接線（折 135°、短臂 5.7）；真路口在 (5458,5836)。
+        for _, c in ipairs({ { 5458, 5900, 5600, 5836 }, { 5458, 5900, 5300, 5836 }, { 5300, 5836, 5600, 5836 } }) do
+            both("KY-163／Olin／Long Needle 路口", c[1], c[2], c[3], c[4], function(r)
+                local inner = innerPoints(r, 5440, 5826, 5476, 5850)
+                assert(#inner == 1 and inner[1][1] == 5458 and inner[1][2] == 5836,
+                    "KY-163／Olin／Long Needle：路口內唯一頂點是 (5458,5836)，不經舊端點與斜接線")
+            end)
+        end
+        kept("KY-163", findStreet(12, 4274, 6106), { 11 }, 11)
+        kept("Olin Road", findStreet(8, 5462, 5836), { 1 }, 7)
+        kept("Long Needle Road", findStreet(6, 5458, 5840), { 1 }, 5)
+        -- ② Walker Road 西端 (10674,9438.5) 離 N Main St 3.9 格，舊版 85°＋40° 夾 3.9 格的 Z 接線；
+        -- 改從 N Main 頂點 (10671,9436) 直接出發，鋪面 y9433–9440（x10680）。
+        for _, c in ipairs({ { 10647, 9460, 10800, 9438.5 }, { 10676, 9410, 10800, 9438.5 } }) do
+            both("Walker Road 西端", c[1], c[2], c[3], c[4], function(r)
+                assert(not hasPoint(r, 10674, 9438.5), "Walker Road：路線不再經過舊西端 (10674,9438.5)")
+                -- 框內折角 >10° 的頂點（(10675,9430) 投影到新線的共線切點不算轉角）
+                local turns = 0
+                for i = 3, #r.pts - 2, 2 do
+                    local x, y = r.pts[i], r.pts[i + 1]
+                    if x >= 10660 and x <= 10690 and y >= 9425 and y <= 9450 then
+                        local ax, ay = x - r.pts[i - 2], y - r.pts[i - 1]
+                        local bx, by = r.pts[i + 2] - x, r.pts[i + 3] - y
+                        local deg = math.abs(math.deg(math.atan2(ax * by - ay * bx, ax * bx + ay * by)))
+                        if deg > 10 then turns = turns + 1 end
+                    end
+                end
+                assert(c[1] ~= 10647 or turns == 1, "Walker Road：西南來車在路口只轉一次，實得 " .. turns)
+                local y, n = crossAt(r, "x", 10680.5)
+                assert(n == 1 and y >= 9433 and y < 9441, "Walker Road：x=10680.5 交點在鋪面，實得 " .. tostring(y))
+            end)
+        end
+        kept("Walker Road", findStreet(6, 10674, 9438.5), { 1 }, 5)
+        -- ③ Long Branch Road 斜段比碎石帶內切約 8 格、穿林；碎石斜帶中心 x＝4170.5＋2×(y−5820)。
+        both("Long Branch Road 斜段", 4100, 5817, 4250, 5833, function(r)
+            for _, band in ipairs({ { "y", 5824.5, 4172, 4185 }, { "y", 5828.5, 4180, 4193 }, { "x", 4155.5, 5814, 5820 } }) do
+                local v, n = crossAt(r, band[1], band[2])
+                assert(n == 1 and v >= band[3] and v < band[4],
+                    "Long Branch Road：" .. band[1] .. "=" .. band[2] .. " 交點需在碎石帶，實得 " .. tostring(v))
+            end
+            assert(not hasPoint(r, 4171, 5833), "Long Branch Road：路線不再經過舊角點 (4171,5833)")
+        end)
+        kept("Long Branch Road", findStreet(60, 5711, 5400), { 37, 38 }, 59)
+        -- ④ Fiddler's Trail：streets.xml 寫 width=15，實際鋪面 y12320–12329 全程 10 格。
+        local fiddler = findStreet(2, 8343, 12323.5)
+        assert(fiddler and fiddler.segWidth[1] == 10, "Fiddler's Trail：路寬覆寫為 10")
+        kept("Fiddler's Trail", fiddler, {}, 1)
+        both("Fiddler's Trail", 8400, 12324, 10500, 12324, function(r)
+            for i = 1, #r.segWidth do
+                assert(r.segWidth[i] == 10, "Fiddler's Trail：路線段寬 10，實得 " .. tostring(r.segWidth[i]))
+            end
+        end)
+        -- ⑤ Old Logging Road 直角 (7679.5,8883.5) 穿林；實際是 R≈25 的碎石斜切彎。
+        both("Old Logging Road 彎道", 7800, 8883.5, 7679.5, 9000, function(r)
+            for _, band in ipairs({ { "x", 7690.5, 8884, 8893 }, { "y", 8895.5, 7679, 7688 } }) do
+                local v, n = crossAt(r, band[1], band[2])
+                assert(n == 1 and v >= band[3] and v < band[4],
+                    "Old Logging Road：" .. band[1] .. "=" .. band[2] .. " 交點需在碎石帶，實得 " .. tostring(v))
+            end
+            assert(not hasPoint(r, 7679.5, 8883.5), "Old Logging Road：路線不再經過直角舊頂點")
+        end)
+        kept("Old Logging Road", findStreet(11, 7871.5, 8566), { 2, 3 }, 10)
+        -- ⑥ KY-79／Old State Road 東車道 y6888.5／6888.0 差 0.5 格，舊版東車道直行要過分隔帶再回來；
+        -- Trail Link 東端 y6891.5 與跨接 y6888.5 差 3 格（兩個 90° 夾 3 格）。
+        both("KY-79 東車道直行", 1975, 6830, 1975, 6950, function(r)
+            assert(math.abs(r.len - 120) < 0.5, "KY-79 東車道直行 120 格，實得 " .. r.len)
+            for i = 1, #r.pts, 2 do assert(r.pts[i] == 1975, "KY-79 東車道直行不過分隔帶") end
+        end)
+        for _, c in ipairs({ { 1940, 6891.5, 1975, 6830 }, { 1940, 6891.5, 1975, 6950 } }) do
+            both("Trail Link × KY-79 東車道", c[1], c[2], c[3], c[4], function(r)
+                assert(hasPoint(r, 1967, 6888.5) and hasPoint(r, 1975, 6888.5)
+                    and not hasPoint(r, 1967, 6891.5), "Trail Link：直線跨接 y6888.5，不再夾 3 格短段")
+            end)
+        end
+        kept("KY-79 東線", findStreet(5, 1975, 6888), { 1 }, 4)
+        local trailLink = findStreet(2, 1430, 6891.5)
+        assert(trailLink and trailLink.segRemoved[1] and not mod.streetSearchable(trailLink),
+            "Trail Link Road：唯一官方段由人工折線取代（使用者裁定接受搜尋消失）")
+        kept("Old State Road 西", findStreet(2, 1967, 6480), {}, 1)
+        kept("Old State Road 東", findStreet(2, 1975, 6480), {}, 1)
+        -- ⑦ KY-1394↔KY-841 兩線在 x12932–12940 斷開，四個端點被併到 (12932,3445)，建圖接線貼著分隔帶邊
+        -- 方塊 (12931.5,3448.5)、且有 140° 反折；補 Mainslick↔Dove 在 x12936 鋪面缺口的接線後，四個端點
+        -- 沿自身方向接上它，兩車道直行不換線、Mainslick↔Dove 直穿。
+        for _, y in ipairs({ 3445, 3455 }) do
+            both("KY-1394↔KY-841 直行", 12850, y, 13050, y, function(r)
+                assert(math.abs(r.len - 200) < 0.5, "KY-1394↔KY-841：直行 200 格，實得 " .. r.len)
+                for i = 2, #r.pts, 2 do assert(r.pts[i] == y, "KY-1394↔KY-841：直行不換車道") end
+            end)
+        end
+        both("Mainslick↔Dove", 12936, 3400, 12936, 3500, function(r)
+            assert(math.abs(r.len - 100) < 0.5, "Mainslick↔Dove：直穿 100 格，實得 " .. r.len)
+            for i = 1, #r.pts, 2 do assert(r.pts[i] == 12936, "Mainslick↔Dove：在 x12936 鋪面缺口直穿") end
+        end)
+        -- ⑧ KY-841 南線多餘頂點 (15137,3455) 被 T 投影到北線、跨分隔帶樹列；修前 x15137／15140.5 各一條跨接。
+        for node = 1, g.nodeCount do
+            local x, y = g.nx[node], g.ny[node]
+            assert(not (x > 15100 and x < 15144 and y > 3440 and y < 3460),
+                ("KY-841：x15100–15144 不得有頂點或跨分隔帶接線 (%.1f,%.1f)"):format(x, y))
+        end
+        kept("KY-1394 北線", findStreet(7, 12067, 3173, 12072), {}, 6)
+        kept("KY-1394 南線", findStreet(7, 12067, 3173, 12062), {}, 6)
+        kept("KY-841 北線", findStreet(6, 12940, 3445), {}, 5)
+        kept("KY-841 南線", findStreet(8, 12940.5, 3455), { 1, 2, 3 }, 7)
+        -- ⑨ Lakeshore Pkwy 一條中線穿過 y6675–6687 的分隔島（島心 x5812–5816）；拆成兩條繞島車道線。
+        both("Lakeshore Pkwy 分隔島", 5814, 6600, 5790, 6714.5, function(r)
+            local x, n = crossAt(r, "y", 6680.5)
+            assert(n == 1 and ((x >= 5807 and x < 5811) or (x >= 5818 and x < 5822)),
+                "Lakeshore Pkwy：y=6680.5 交點在車道、不穿分隔島，實得 " .. tostring(x))
+        end)
+        do
+            local r = mod.findRoute(g, 5814, 6600, 5790, 6714.5, 5809, 6680, 2, 12)
+            assertRouteMetadata(r, "Lakeshore Pkwy 東側車道")
+            local x = crossAt(r, "y", 6680.5)
+            assert(r.avoidPenalty == 0 and x >= 5818 and x < 5822,
+                "Lakeshore Pkwy：西側車道被避讓時改走東側車道，實得 " .. tostring(x))
+        end
+        kept("Lakeshore Pkwy", findStreet(20, 5659.5, 6764.5), { 8 }, 19)
+        -- ⑩ Flower Road 南段是 worldmap trail（草地走廊、幾何已在中線），只修段面：y5342 以南記 dirt。
+        both("Flower Road 南段", 14145.5, 5200, 14104, 5600, function(r)
+            local trail = 0
+            for i = 1, #r.segSurface do
+                local mx, my = (r.pts[i * 2 - 1] + r.pts[i * 2 + 1]) / 2, (r.pts[i * 2] + r.pts[i * 2 + 2]) / 2
+                if mx == 14145.5 and my > 5342 and my < 5383.5 or my == 5383.5 then
+                    assert(r.segSurface[i] == "dirt", "Flower Road：草地小徑段記 dirt")
+                    trail = trail + 1
+                elseif mx == 14145.5 and my < 5342 then
+                    assert(r.segSurface[i] == "gravel", "Flower Road：北段碎石仍記 gravel")
+                end
+            end
+            assert(trail >= 2, "Flower Road：路線經過草地小徑段")
+        end)
+        kept("Flower Road", findStreet(4, 14145.5, 5005.5), { 1 }, 3)
+    end
     -- Bank Road (10662,9696) L 角修正（2026-09-02）：官方 polyline 把 y 9686→9698 的
     -- 斜向過渡畫成 L 角，頂點 (10662.5,9695.5) 落在真路面西緣外 2.3 格（worldmap.xml
     -- highway 多邊形西緣 (10660,9686)→(10666,9698)），導航線斜穿院子、自駕三短臂角

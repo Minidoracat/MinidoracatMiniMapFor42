@@ -146,10 +146,39 @@
     "c1a7e1c63be9ce93c8c94e15b8df52b9fcbbefc31572b30009c41f0cfb2b3733:1",
     "c1a7e1c63be9ce93c8c94e15b8df52b9fcbbefc31572b30009c41f0cfb2b3733:2",
     "3b40cc29a9747edbdcc3ebb0acdfcd4d2ff3fea0f2a583ab504adfaccc5aaf20:0",
-    "3b40cc29a9747edbdcc3ebb0acdfcd4d2ff3fea0f2a583ab504adfaccc5aaf20:1"
+    "3b40cc29a9747edbdcc3ebb0acdfcd4d2ff3fea0f2a583ab504adfaccc5aaf20:1",
+    "36c4f7b56c64c53ed403a8374ba3a8c342938df46d73fb91a7e37c6a0b9a56e8:10",
+    "201b17b22a10d829c1ba851c262a5d964508cdbebd042f759425ce4a6cdebb22:0",
+    "06e748d191049ed0ece522054673fffc4fc568868402614168c61ae092726773:0",
+    "a0ae773e0f7083419d16876e37523fe8dc1308510892a3a57254f53ac53675d7:0",
+    "f958acf306935e957a5921f9e7d1216460c26768254063f1146bc97a59cf5a4c:36",
+    "f958acf306935e957a5921f9e7d1216460c26768254063f1146bc97a59cf5a4c:37",
+    "9296989769789fa079110f87042e0158b2cd07589ef79423f54f58bd2ca5078d:1",
+    "9296989769789fa079110f87042e0158b2cd07589ef79423f54f58bd2ca5078d:2",
+    "2e6f33ea805a054cec7c54eb2544634133c33698a1cae67626fc70073b3d51e7:0",
+    "b2aca7df93dd500feb7177f1feb73b35a6e0fec0db487b91053e6933b7b4f3ca:0",
+    "38939734d43a3085ec3eb2f5040765e01134fc1a9b3033f5b284716d1a36936d:0",
+    "38939734d43a3085ec3eb2f5040765e01134fc1a9b3033f5b284716d1a36936d:1",
+    "38939734d43a3085ec3eb2f5040765e01134fc1a9b3033f5b284716d1a36936d:2",
+    "cf839f294882979113d7c067b9079e5b6838ec2403156cc7a6eb991358df7fff:7",
+    "4969d9dbf2d2c8ed5821888f05ba0249f82476e2e5012e938eada66dd3f5342b:0"
   ],
-  "width": [],
-  "surface": [],
+  "width": [
+    {
+      "id": "3973f24df4b4882ebd008b6ba18532d6c2d0ca2f45b5f0e5d3897b5338290a9d:0",
+      "width": 10
+    }
+  ],
+  "surface": [
+    {
+      "id": "4969d9dbf2d2c8ed5821888f05ba0249f82476e2e5012e938eada66dd3f5342b:1",
+      "surface": "dirt"
+    },
+    {
+      "id": "4969d9dbf2d2c8ed5821888f05ba0249f82476e2e5012e938eada66dd3f5342b:2",
+      "surface": "dirt"
+    }
+  ],
   "manualRoads": [
     {
       "id": "m:muldraugh-old-loop-barn-corner",
@@ -437,6 +466,189 @@
       "surface": "gravel",
       "searchable": false,
       "reason": "Salt River Road 東北角的官方 L 角穿過樹林（2026-10-02，AutoDrive E2E 隨機路線同一角落 rc16／22／23／28／53／55 累計 8 次 StopStuck，車停在草地樹叢、礫石路就在旁邊）：官方 streetIndex 423（w6）只有 3 點 (12878.5,6900)→(13200,6900)→(13200,6469)，角點在 pinned raster 是 dirt-candidate、離最近路面格 12.7 格；實際礫石路從 y≈6867 就離開 x13200 往西南彎，到 x≈13167 才併回 y6900。兩段都碰到角點，0.5 格取樣 1506 個有 97 個 dirt-candidate（(13176,6900)→角點→(13200,6876)）。worldmap.xml 的 tertiary 多邊形畫同一個 L，屬同源資料、不背書。修法：移除段0、段1（同名的 streetIndex 424 Salt River Road 仍可搜尋，比照 Station Road 252 整條移除）；以 9 點折線取代，兩端用官方端點座標（照舊接 424 與 Bearcamp Road／Caroline Staunton Road）：直段沿路帶中線 y6900（路帶 y6897–6902）與 x13200（路帶 x13197–13202），彎道以 (13167,6867) 為心逐度取放射線上礫石路帶中點（半徑 33→30.3→33、帶寬 6–8 格、對 45° 對稱），平滑擬合後每 15° 取一頂點、四捨五入到 0.5 格。1476 個取樣全為 gravel／paved、到路帶邊 ≥2.46 格；寬度 6 同官方。"
+    },
+    {
+      "id": "m:muldraugh-ky163-olin-long-needle-junction",
+      "operation": "add",
+      "points": [
+        4997, 5836,
+        5458, 5836,
+        6006.5, 5836
+      ],
+      "width": 8,
+      "surface": "paved",
+      "searchable": false,
+      "reason": "KY-163／Olin Road／Long Needle Road 三叉路口端點互不相接（2026-10-06，AutoDrive 復盤 route_faults scan #35，9 條路線在此折 135°、短臂 5.7 格）：官方 KY-163 終點 (5454,5836)、Olin Road 起點 (5462,5836) 中間缺 8 格，Long Needle Road 北端 (5458,5840) 停在東西路南緣、差 4 格才到中線；建圖把三端點併成 (5454,5836)，Long Needle 端點橫拖 4 格＝半寬觸發 markKeep，畫出 (5458,5840)→(5454,5836) 斜接線。pinned raster：東西路鋪面 y5832–5839（中線 5836）、南北路鋪面 x5454–5461（中線 5458），真路口在 (5458,5836)。移除 KY-163 段10 與 Olin Road 段0，以一條 w8 直線 (4997,5836)→(6006.5,5836) 取代（兩端與保留段共用頂點；KY-163 段0–9、Olin Road 段1–6 保留供搜尋），Long Needle 另以下一筆從 (5458,5836) 起接。新線 0.5 格取樣全 paved。"
+    },
+    {
+      "id": "m:muldraugh-long-needle-road-north-end",
+      "operation": "add",
+      "points": [
+        5458, 5836,
+        5458, 6152
+      ],
+      "width": 8,
+      "surface": "paved",
+      "searchable": false,
+      "reason": "Long Needle Road 北端對到 KY-163／Olin Road 中線（2026-10-06，見 m:muldraugh-ky163-olin-long-needle-junction）：移除官方段0 (5458,5840)→(5458,6152)，以 (5458,5836)→(5458,6152) 取代，起點落在東西直線上（零橫拖、T 字直接切點），尾點與保留段1 起點共用頂點；段1–4 保留供搜尋。路線由 Long Needle 進東西路從兩折（45°＋135°、短臂 5.7）變成單一 90° 轉角。"
+    },
+    {
+      "id": "m:muldraugh-walker-road-west-end",
+      "operation": "add",
+      "points": [
+        10671, 9436,
+        10761, 9438.5
+      ],
+      "width": 5,
+      "surface": "paved",
+      "searchable": false,
+      "reason": "Walker Road 西端離 N Main St 3.9 格的 Z 接線（2026-10-06，AutoDrive E2E rc61 0017 現場 (10671,9436)→(10674,9438.5)）：官方段0 起點 (10674,9438.5) 沒碰到 N Main（垂足落在 N Main 兩段延長線外），建圖把它併到 N Main 頂點 (10671,9436)，橫拖 2.5 格＝半寬觸發 markKeep，留下 85° 右轉＋40° 左轉夾 3.9 格的 Z。pinned raster：Walker 鋪面 y9436–9440 一路往西接到 N Main 鋪面，真路口是單一轉角。移除段0，以 (10671,9436)→(10761,9438.5) 取代（起點＝N Main 頂點、尾點＝段1 起點，斜率 1.6°），段1–4 保留供搜尋。新線 181 個取樣全 paved；西南來車改為單一 47° 右轉。"
+    },
+    {
+      "id": "m:muldraugh-long-branch-road-gravel-bend",
+      "operation": "add",
+      "points": [
+        4153.5, 5817,
+        4163.5, 5817,
+        4195.5, 5833,
+        4291, 5833
+      ],
+      "width": 5,
+      "surface": "gravel",
+      "searchable": false,
+      "reason": "Long Branch Road 斜段穿林（2026-10-06，AutoDrive 復盤 scan #4／#10：raster 離路 19 格、主 MOD 自判段面 gravel→dirt→gravel，線上樹幹 (4158.6,5820.6)、(4166.6,5829.6)、(4184.6,5832.6)，#4 3 名玩家 3 趟、#10 2 名玩家 3 趟）：官方 (4171,5833)→(4153.5,5817) 約 42° 的斜段比實際碎石帶內切約 8 格。pinned raster 逐列量測：西段碎石帶 y5814–5819（中線 5817）、東段 y5830–5835（中線 5833），中間斜帶 y5820–5829 每列中心 x＝4170.5＋2×(y−5820)，即 26.6° 的直帶，交兩條中線於 x4163.5 與 x4195.5。移除段36、37，以 (4153.5,5817)→(4163.5,5817)→(4195.5,5833)→(4291,5833) 取代（兩端與保留段共用頂點），其他段保留供搜尋。舊線該路段 152 個取樣有 76 個 dirt-candidate，新線 147 個全 gravel。"
+    },
+    {
+      "id": "m:muldraugh-old-logging-road-bend",
+      "operation": "add",
+      "points": [
+        7871.5, 8883.5,
+        7705, 8883.5,
+        7698.5, 8884.5,
+        7692, 8887,
+        7687, 8891,
+        7683, 8896,
+        7680.5, 8902.5,
+        7679.5, 8909,
+        7679.5, 9297
+      ],
+      "width": 7,
+      "surface": "gravel",
+      "searchable": false,
+      "reason": "Old Logging Road 直角折線穿林（2026-10-06，AutoDrive 復盤 scan #19：線上樹 5 棵、判堵命中線上、raster 離路）：官方 (7871.5,8883.5)→(7679.5,8883.5)→(7679.5,9297) 在 (7679.5,8883.5) 直角轉彎，實際碎石路是大半徑斜切彎。pinned raster：東西碎石帶 y8880–8886（中線 8883.5）、南北 x7676–7682（中線 7679.5）；以彎心逐度取放射線上的路帶中點，擬合與兩直段相切的圓 R＝25.3（心 (7704.8,8908.8)，殘差 ±0.7 格），每 15° 取一頂點、四捨五入 0.5。移除段1、2，以 9 點折線取代（兩端與保留段0、3 共用頂點），其他段保留供搜尋。舊線轉角框內 155 個取樣有 45 個 dirt-candidate／dirt-edge，新線全 gravel，到路帶邊 ≥1.5 格。"
+    },
+    {
+      "id": "m:muldraugh-ky79-east-lane-junction",
+      "operation": "add",
+      "points": [
+        1975, 6888.5,
+        1975, 7425.5
+      ],
+      "width": 6,
+      "surface": "paved",
+      "searchable": false,
+      "reason": "KY-79 東車道與 Old State Road 東車道的 0.5 格錯位（2026-10-06，AutoDrive 復盤 Loni/clip-27 拖車 (1975,6888.5)→(1967,6888.5)→(1967,6891.5) 兩個 90° 夾 3 格）：官方 Old State Road 東線終點 (1975,6888.5)、KY-79 東線起點 (1975,6888.0) 差 0.5 格，兩個未宣告端點都被「共用路口優先」拉到西車道路口 (1967,6888.5)，東車道直行要先過分隔帶再回來（136.5 vs 120 格）。移除 KY-79 東線段0，以 (1975,6888.5)→(1975,7425.5) 取代，起點與 Old State Road 東線終點共用頂點，段1–3 保留供搜尋。東車道直行恢復 120 格、不出現跨分隔帶折返；兩車道之間只剩 y6888.5 一條直跨接線。"
+    },
+    {
+      "id": "m:muldraugh-trail-link-road-ky79-junction",
+      "operation": "add",
+      "points": [
+        1430, 6891.5,
+        1958, 6891.5,
+        1967, 6888.5
+      ],
+      "width": 5,
+      "surface": "gravel",
+      "searchable": false,
+      "reason": "Trail Link Road 東端對齊 KY-79／Old State Road 跨接（2026-10-06，見 m:muldraugh-ky79-east-lane-junction）：官方 Trail Link（單段）東端停在 (1964,6891.5)，比雙車道跨接 y6888.5 偏 3 格，路線 (1967,6888.5)→(1967,6891.5) 夾 3 格短段兩個 90°。pinned raster：Trail Link 碎石帶 y6889–6893，西車道鋪面 x1964–1969。以 (1430,6891.5)→(1958,6891.5)→(1967,6888.5) 取代官方段0，末 9.5 格以 18° 斜進路口（全在碎石帶／鋪面內，56 個取樣 49 gravel、7 paved），跨接成一條直線；內部頂點 (1958,6891.5) 另被 T 投影到西車道 (1967,6891.5)，留作南下右轉。代價：Trail Link Road 全圖只有這一段，移除後不再出現在街名搜尋（使用者 2026-10-06 裁定接受，保留 Old State Road 搜尋）。"
+    },
+    {
+      "id": "m:muldraugh-ky841-south-lane-west",
+      "operation": "add",
+      "points": [
+        12940.5, 3455,
+        15152.5, 3455
+      ],
+      "width": 6,
+      "surface": "paved",
+      "searchable": false,
+      "reason": "KY-841 南線多餘頂點 (15137,3455)、(15140.5,3455) 被吸到北線（2026-10-06，AutoDrive 復盤 scan #2：8 名玩家 9 趟，路線 (15137,3455)→(15137,3445) 橫穿分隔帶樹列，樹幹 (15136.6,3450.6) 離線 0.4 格）：兩個頂點在同一直線上、沒有轉折，(15137,3455) 離北線 10 格 ≤ 兩半寬和＋ATTACH_SLACK＝10.5，建圖 T 投影到北線、markKeep 留下跨分隔帶接線（修前 x15137、15140.5、15144.5 共三條）。移除段0–2，以 (12940.5,3455)→(15152.5,3455) 一條直線取代（尾點與段3 起點共用頂點，段3–6 保留供搜尋）；pinned raster 4425 個取樣全 paved。未處理：北線轉彎頂點 (15144.5,3445) 同理被吸到南線，雙線平行段任何頂點離對向線都是 10 格，資料修不了（另案，需改 NavRoute）。"
+    },
+    {
+      "id": "m:muldraugh-mainslick-dove-ky1394-link",
+      "operation": "add",
+      "points": [
+        12936, 3442,
+        12936, 3458
+      ],
+      "width": 8,
+      "surface": "paved",
+      "searchable": false,
+      "reason": "KY-1394 × KY-841 × Mainslick Road × Dove St 路口（2026-10-06，AutoDrive 復盤 scan #3：6 名玩家 7 趟、線上硬物 2 格、判堵命中，建圖接線貼著分隔帶邊方塊 (12931.5,3448.5)，並有 (12940.5,3455)→(12932,3445)→(12932,3455) 140° 反折）：官方 KY-1394 兩線終點 (12932,3445／3455)、KY-841 兩線起點 (12940,3445)／(12940.5,3455) 各差 8 格沒接上，Mainslick 南端 (12936,3442) 與 Dove St 北端 (12936,3458) 同軸對望；建圖把四個端點全併到 (12932,3445)，畫出跨分隔帶與斜接線。pinned raster 分隔帶 y3448–3451 在 x12932–12939 是 8 格鋪面缺口，worldmap.xml primary 多邊形貫穿。補 (12936,3442)→(12936,3458) 接線（33 個取樣全 paved）：KY-1394／KY-841 四個端點各沿自身方向延伸 4–4.5 格 T 接到接線（不橫拖、不留接線），兩車道直行 200 格不換線、Mainslick↔Dove 在 x12936 直穿（100 格南北查詢 102.6→100）。曾試只補兩條 8 格車道接線：KY-1394 兩終點仍互吸，x12932 方塊旁的跨接留著。"
+    },
+    {
+      "id": "m:muldraugh-lakeshore-pkwy-north",
+      "operation": "add",
+      "points": [
+        5814.5, 6553,
+        5814, 6666
+      ],
+      "width": 8,
+      "surface": "paved",
+      "searchable": false,
+      "reason": "Lakeshore Pkwy 分隔島路段（2026-10-06，AutoDrive 復盤 scan A#8：線上硬物 4 格、raster 離路）：官方段7 (5814,6694)→(5814.5,6553) 一條中線直穿 y6675–6687 的分隔島（pinned raster：島心 x5812–5816 unknown、外圈 x5811／5817 gravel，兩側車道 x5807–5810、x5818–5821 paved）。移除段7，以本筆 (5814.5,6553)→(5814,6666) 加上兩條繞島車道線取代；段0–6、8–18 保留供搜尋。本筆是島北的雙向主線（w8，0.5 格取樣全 paved）。"
+    },
+    {
+      "id": "m:muldraugh-lakeshore-pkwy-island-west",
+      "operation": "add",
+      "points": [
+        5814, 6666,
+        5809, 6674,
+        5809, 6686,
+        5814, 6694
+      ],
+      "width": 4,
+      "surface": "paved",
+      "searchable": false,
+      "reason": "Lakeshore Pkwy 分隔島西側車道（見 m:muldraugh-lakeshore-pkwy-north）：(5814,6666)→(5809,6674)→(5809,6686)→(5814,6694)，車道帶 x5807–5810 中線 x5809，分流／合流各 8 格；63 個取樣全 paved、到路帶邊 ≥1.5 格。內部頂點離東側車道線 ≥8.8 格，大於兩半寬和＋ATTACH_SLACK＝8.5，不會互吸。"
+    },
+    {
+      "id": "m:muldraugh-lakeshore-pkwy-island-east",
+      "operation": "add",
+      "points": [
+        5814, 6666,
+        5820, 6674,
+        5820, 6686,
+        5814, 6694
+      ],
+      "width": 4,
+      "surface": "paved",
+      "searchable": false,
+      "reason": "Lakeshore Pkwy 分隔島東側車道（見 m:muldraugh-lakeshore-pkwy-north）：(5814,6666)→(5820,6674)→(5820,6686)→(5814,6694)，車道帶 x5818–5821 中線 x5820；67 個取樣 64 paved、3 gravel。無向圖兩側等價時 A* 取較短的西側（30.9 vs 32.0），東側保留讓繞行／避讓仍有路。"
+    },
+    {
+      "id": "m:muldraugh-flower-road-gravel",
+      "operation": "add",
+      "points": [
+        14145.5, 5005.5,
+        14145.5, 5342
+      ],
+      "width": 5,
+      "surface": "gravel",
+      "searchable": false,
+      "reason": "Flower Road 南段分段標記（2026-10-06，AutoDrive 復盤 scan A#18：42 格落在 raster natural、線上樹 3 棵）：人工確認原版這段是路——worldmap.xml 在 y≈5336 以南把它從 tertiary 改畫成 trail 多邊形，pinned raster 是一條沿官方線、寬 5 格的草地走廊（x14143–14147 中線 14145.5、y5381–5384、x14099–14103），Blossom Lane 沿線住宅只靠這條小徑接上路網，所以不移除、幾何已在走廊中線。修的是段面：官方段0 (14145.5,5005.5)→(14145.5,5383.5) 被判 gravel，但 y5343 以南全是 natural。移除段0，以本筆 (14145.5,5005.5)→(14145.5,5342)（gravel，651 個取樣 gravel 651、paved 18、natural 5）與下一筆 trail 段取代。"
+    },
+    {
+      "id": "m:muldraugh-flower-road-trail",
+      "operation": "add",
+      "points": [
+        14145.5, 5342,
+        14145.5, 5383.5
+      ],
+      "width": 5,
+      "surface": "dirt",
+      "searchable": false,
+      "reason": "Flower Road 南段草地小徑（見 m:muldraugh-flower-road-gravel）：(14145.5,5342)→(14145.5,5383.5) 記 dirt（84 個取樣全 natural），尾點與官方段1 起點共用頂點；官方段1、2（同為 trail，原判 unknown）另以 surface 覆寫為 dirt，保留供搜尋。線上的樹是路面上的世界障礙，交 AutoDrive 臨機繞行，不改幾何。"
     }
   ]
 }
