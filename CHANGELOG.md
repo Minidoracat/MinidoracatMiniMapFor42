@@ -12,6 +12,7 @@
 ### 修正
 
 - 導航路線修正原版地圖 10 處路網資料錯誤：這些地方的路線會穿過分隔島、在路口走 Z 字接線、彎道偏到路外的泥土地，或把小徑當成碎石路，照線開的自動駕駛會擦撞路邊物或卡住。涉及 KY-163／Olin Road／Long Needle Road 路口、Walker Road、Long Branch Road、Old Logging Road、Fiddler's Trail（改沿實際路面中線、路寬改成實際的 10 格）、KY-79 與 Trail Link Road 路口、KY-1394 與 KY-841 交會處、KY-841 東段（兩側車道改在 Masons Lane 路口的分隔帶缺口連通，不再穿過分隔帶樹列）、Lakeshore Parkway 分隔島，以及 Flower Road 南段。修正過的路照樣可以用街名搜尋到。
+- 英文介面搜尋路名時，部分修正過的路（例如 Bank Road、Station Road、Fiddler's Trail）不再重複出現兩列。
 
 > 技術要點：client 新增 `featureApiVersion` 1＋`registerFeatureGate`（feature：minimap／arrow／poi／nav／share／scan／zombie；只有明確回 false 才擋，零註冊時行為不變；gate 拋錯＝放行、只 log 一次並停用到同 owner 再註冊）；伺服器新增全域 `MinidoracatMiniMapServerAPI`（`shareApiVersion` 1＋`registerShareFilter`，逐收件者過濾陣營分享）；`settingsApiVersion` 4：`registerSettingsSection` 的 spec 新增選用 `visible(pn)`（v3）與 `sliders`（v4，min／max／step／default／fmt，值對齊 step 才 `set`）。client 新增 `titleStatusApiVersion` 1＋`registerTitleStatus(owner, fn)`（`fn(playerNum) → text[, "warn"]`，250ms 快取、第一個警示勝出、零註冊不 hook、拋錯停用到再註冊）。沙盒新增 `ZombieScanInterval`、`VehicleAnimalScanInterval`（秒，0＝即時，預設 0）。`navApiVersion` 不變，`requestRoute` 回傳狀態不變。RoadPatch：整條被取代的官方街可由帶官方原街名的人工線接手街名搜尋（`gen_road_patches.py --streets` 對官方 streets.xml 驗原名、要求同名官方段全數移除；runtime 依原名查翻譯）。
 
