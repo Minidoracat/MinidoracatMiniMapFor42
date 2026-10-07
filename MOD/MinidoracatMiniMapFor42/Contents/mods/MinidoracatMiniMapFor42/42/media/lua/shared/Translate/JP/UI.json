@@ -11,7 +11,7 @@
     "UI_MinidoracatMiniMap_StudioClose": "ウィンドウを閉じる",
     "UI_MinidoracatMiniMap_StudioResetCategory": "このカテゴリをリセット",
     "UI_MinidoracatMiniMap_StudioResetCategory_tooltip": "この MOD のカテゴリ既定値に戻します。バニラのマップエンジン設定は変更しません",
-    "UI_MinidoracatMiniMap_NeedFramework": "設定ウィンドウには新しい Minidoracat UI Framework が必要です。すべての設定は ESC > オプション > MOD で変更できます。",
+    "UI_MinidoracatMiniMap_NeedFramework": "設定ウィンドウには新しい Minidoracat UI Framework が必要です。すべての設定は ESC ￫ オプション ￫ MOD で変更できます。",
     "UI_MinidoracatMiniMap_GroupLayers": "マップレイヤー",
     "UI_MinidoracatMiniMap_GroupWindow": "ウィンドウと操作",
     "UI_MinidoracatMiniMap_GroupAddons": "拡張機能",

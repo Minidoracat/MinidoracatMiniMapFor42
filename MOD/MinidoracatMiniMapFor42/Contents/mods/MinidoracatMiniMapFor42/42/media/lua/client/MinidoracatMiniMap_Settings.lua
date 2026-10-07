@@ -165,7 +165,8 @@ local SEC_ANIMALS = { id = "animals", label = "UI_MinidoracatMiniMap_SecAnimals"
         -- 動物圖標風格切換＝物種 chip 小圖跟著換（符號↔彩圖），重建讓玩家立刻看到
         { id = "AnimalIconStyle", label = "UI_MinidoracatMiniMap_AnimalIconStyle", default = 1, rebuild = true,
             items = { "UI_MinidoracatMiniMap_AIconStyle_Symbol", "UI_MinidoracatMiniMap_AIconStyle_Item" } },
-        { id = "AnimalWildColor", label = "UI_MinidoracatMiniMap_AnimalWildColor", default = 2,
+        -- 野生色＝野生物種 chip 的染色：跟著重建
+        { id = "AnimalWildColor", label = "UI_MinidoracatMiniMap_AnimalWildColor", default = 2, rebuild = true,
             items = ADOTS_COLOR_ITEMS },
         -- 牲畜色＝物種 chip 符號小圖的染色：跟著重建
         { id = "AnimalLivestockColor", label = "UI_MinidoracatMiniMap_AnimalLivestockColor", default = 1, rebuild = true,
@@ -456,14 +457,16 @@ local function csvChips(opt, items, icon, raw)
     end
     return chips
 end
+-- 物種 chip 同時管野生與牲畜；照該物種在地圖上通常的身分染色（預覽的野鹿是野生色，chip 也要一樣）
+local WILD_SPECIES = { deer = true, rabbit = true, raccoon = true, rodent = true }
 SEC_ANIMALS.chips = csvChips("AnimalSpeciesFilter", function() return ADOTS_SPECIES_UI end, function(def)
-    -- 物種小圖與地圖同源（Core.adotsStyleTexture）：物品風格＝彩圖原色；符號風格＝白 glyph 染色。
-    -- 物種 chip 同時管野生與牲畜，染牲畜色（地圖的基本色，預設白）
+    -- 物種小圖與地圖同源（Core.adotsStyleTexture）：物品風格＝彩圖原色；符號風格＝白 glyph 染色
     if not Core.adotsStyleTexture then return nil end
     local tex, asItem = Core.adotsStyleTexture(ADOTS_ART and ADOTS_ART[def.groups[1]],
         getComboIndex("AnimalIconStyle", 1) == 2)
     if asItem or not Core.adotsColor then return tex end
-    local c = Core.adotsColor("AnimalLivestockColor", 1)
+    local c = WILD_SPECIES[def.key] and Core.adotsColor("AnimalWildColor", 2)
+        or Core.adotsColor("AnimalLivestockColor", 1)
     return tex, { r = c[1], g = c[2], b = c[3] }
 end)
 SEC_VEHICLES.chips = csvChips("VehicleCategoryFilter", function() return ADOTS_VEHCAT_UI end)

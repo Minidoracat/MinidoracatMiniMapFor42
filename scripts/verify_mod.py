@@ -517,7 +517,7 @@ for _script, _label in (
 # CN 缺的漢字是原版字型本身的限制（原版簡中介面一樣缺），不計。出處與替代字見 pitfalls.md「原版字型缺很多常用符號」。
 PZ_PATH = os.environ.get("PZ_PATH", r"D:\SteamLibrary\steamapps\common\ProjectZomboid")
 GLYPH_UI_FONTS = ("Small", "Medium", "Large", "NewSmall", "NewMedium", "NewLarge")
-GLYPH_HINTS = {0x2192: "-> 、 > 或改寫", 0x2026: "...", 0x30FB: "·", 0x2022: "·", 0x2014: "改寫",
+GLYPH_HINTS = {0x2192: "CH／CN／JP 用 ￫（U+FFEB）、EN 用 ›（U+203A）或 ->", 0x2026: "...", 0x30FB: "·", 0x2022: "·", 0x2014: "改寫",
                0x2013: "～ 或 -", 0x2248: "~ 或「約」", 0x201C: "「", 0x201D: "」", 0x2018: "『", 0x2019: "』"}
 _fnt_cache = {}
 

@@ -276,7 +276,7 @@ do
     checkEq(env.values.AnimalSpeciesFilter, "-", "H4 select all writes the empty sentinel")
     s.selectSection("vehicles")
     check(byLabel(env, T("UI_MinidoracatMiniMap_SelectNone")) ~= nil, "H5 vehicle categories also get select all/none")
-    -- chip 小圖染色與地圖同一套：POI 單色＝類別色、彩色＝原色；物種符號風格＝牲畜色、物品風格＝原色
+    -- chip 小圖染色與地圖同一套：POI 單色＝類別色、彩色＝原色；物種符號風格＝野生物種用野生色、其餘用牲畜色；物品風格＝原色
     local cats = MinidoracatMiniMapPOICategories.CATEGORIES
     s.selectSection("poicat")
     local food = env.byKey("Cat:food")
@@ -290,19 +290,27 @@ do
     s.selectSection("animals")
     local deerChip = env.byKey("AnimalSpeciesFilter:deer")
     local dc = deerChip.iconColor
-    check(deerChip.icon and deerChip.icon.sym == "deer.png" and dc and dc.r == 1 and dc.g == 1 and dc.b == 1,
-        "H7 symbol-style species chip is tinted with the livestock colour (default white)")
+    check(deerChip.icon and deerChip.icon.sym == "deer.png" and dc and dc.r == 0.47 and dc.g == 0.88 and dc.b == 0.37,
+        "H7 symbol-style wild species chip (deer) is tinted with the wild colour (default green)")
+    local cc = env.byKey("AnimalSpeciesFilter:cow").iconColor
+    check(cc and cc.r == 1 and cc.g == 1 and cc.b == 1,
+        "H7 symbol-style farm species chip (cow) is tinted with the livestock colour (default white)")
     env.byKey("AnimalLivestockColor"):setSelected(3)
     env.frame()
-    dc = env.byKey("AnimalSpeciesFilter:deer").iconColor
-    check(env.values.AnimalLivestockColor == 3 and dc and dc.r == 0.9 and dc.g == 0.62 and dc.b == 0,
+    cc = env.byKey("AnimalSpeciesFilter:cow").iconColor
+    check(env.values.AnimalLivestockColor == 3 and cc and cc.r == 0.9 and cc.g == 0.62 and cc.b == 0,
         "H7 changing the livestock colour rebuilds the chips with the new tint")
+    env.byKey("AnimalWildColor"):setSelected(3)
+    env.frame()
+    dc = env.byKey("AnimalSpeciesFilter:deer").iconColor
+    check(env.values.AnimalWildColor == 3 and dc and dc.r == 0.9 and dc.g == 0.62 and dc.b == 0,
+        "H7 changing the wild colour rebuilds the chips with the new tint")
     env.values.AnimalIconStyle = 2
     s.rebuild()
     deerChip = env.byKey("AnimalSpeciesFilter:deer")
     check(deerChip.icon and deerChip.icon.item == "Item_Deer" and deerChip.iconColor == nil,
         "H8 item-style species chip keeps the original colour")
-    env.values.AnimalIconStyle, env.values.AnimalLivestockColor = nil, nil
+    env.values.AnimalIconStyle, env.values.AnimalLivestockColor, env.values.AnimalWildColor = nil, nil, nil
     local caps = MinidoracatUI.v1.CAPABILITIES
     caps.buttonIconColor = nil
     s.selectSection("poicat")

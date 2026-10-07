@@ -11,7 +11,7 @@
     "UI_MinidoracatMiniMap_StudioClose": "Close window",
     "UI_MinidoracatMiniMap_StudioResetCategory": "Reset this category",
     "UI_MinidoracatMiniMap_StudioResetCategory_tooltip": "Restore this MOD's defaults for this category; vanilla map-engine options stay unchanged",
-    "UI_MinidoracatMiniMap_NeedFramework": "The settings window needs a newer Minidoracat UI Framework. All settings can still be changed in ESC > Options > MOD.",
+    "UI_MinidoracatMiniMap_NeedFramework": "The settings window needs a newer Minidoracat UI Framework. All settings can still be changed in ESC › Options › MOD.",
     "UI_MinidoracatMiniMap_GroupLayers": "Map layers",
     "UI_MinidoracatMiniMap_GroupWindow": "Window & controls",
     "UI_MinidoracatMiniMap_GroupAddons": "Add-ons",

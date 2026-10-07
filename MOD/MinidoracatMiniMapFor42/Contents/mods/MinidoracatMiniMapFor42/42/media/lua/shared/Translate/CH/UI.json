@@ -11,7 +11,7 @@
     "UI_MinidoracatMiniMap_StudioClose": "關閉視窗",
     "UI_MinidoracatMiniMap_StudioResetCategory": "重設此分類",
     "UI_MinidoracatMiniMap_StudioResetCategory_tooltip": "恢復此 MOD 在本分類的預設值；原版地圖引擎選項維持不變",
-    "UI_MinidoracatMiniMap_NeedFramework": "設定視窗需要較新的 Minidoracat UI Framework。所有設定仍可在 ESC > 選項 > MOD 修改。",
+    "UI_MinidoracatMiniMap_NeedFramework": "設定視窗需要較新的 Minidoracat UI Framework。所有設定仍可在 ESC ￫ 選項 ￫ MOD 修改。",
     "UI_MinidoracatMiniMap_GroupLayers": "地圖圖層",
     "UI_MinidoracatMiniMap_GroupWindow": "視窗與操作",
     "UI_MinidoracatMiniMap_GroupAddons": "擴充功能",
