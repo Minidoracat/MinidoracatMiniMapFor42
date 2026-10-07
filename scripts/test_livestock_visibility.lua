@@ -123,24 +123,6 @@ end
 assert(displayChunk, displayErr)
 local mergeDist = displayChunk()
 
--- 距離滑條動態上限（Settings.lua）：cap 向下縮、既有存值向上讓位不截斷
-local rangeBody = assert(settingsSource:match(
-    "%-%- test:slider%-range:start\n(.-)\n%-%- test:slider%-range:end"),
-    "找不到 unifiedSliderRange 測試區段")
-local rangeChunk, rangeErr = compile(rangeBody .. "\nreturn unifiedSliderRange")
-assert(rangeChunk, rangeErr)
-local sliderRange = rangeChunk()
-
--- 距離滑條數值標（Settings.lua）：0＝zeroLabel、有伺服器上限時附「/上限」
-local textBody = assert(settingsSource:match(
-    "%-%- test:slider%-text:start\n(.-)\n%-%- test:slider%-text:end"),
-    "找不到 unifiedSliderText 測試區段")
-local textChunk, textErr = compile([[
-local function getText(key) return key == "ZERO" and "不限" or key end
-]] .. textBody .. "\nreturn unifiedSliderText")
-assert(textChunk, textErr)
-local sliderText = textChunk()
-
 local sampleBody = assert(dotsSource:match(
     "%-%- test:animal%-sampling:start\n(.-)\n%-%- test:animal%-sampling:end"),
     "找不到 sampleAnimalDots 測試區段")
@@ -521,46 +503,11 @@ assert(mergeDist(100, 100) == 100, "同值應保留")
 assert(mergeDist(nil, 99999) == 2000, "玩家值應被 CLIENT_DIST_MAX 夾住")
 assert(mergeDist(nil, "80") == nil, "非數字玩家值應視為不限制")
 
--- unifiedSliderRange：伺服器上限縮短滑條可拉範圍、既有存值讓位不截斷
-local rentry = { max = 2000 }
-assert(sliderRange(rentry, nil, 0) == 2000, "無伺服器上限應維持全值域")
-assert(sliderRange(rentry, 300, 0) == 300, "伺服器上限應縮短滑條上限")
-assert(sliderRange(rentry, 15, 0) == 15, "任意整數上限（非 step 倍數）應原樣採用")
-assert(sliderRange(rentry, 5000, 0) == 2000, "伺服器上限超過全值域應夾在 entry.max")
-assert(sliderRange(rentry, 300, 1500) == 1500, "存值超上限時滑條應讓位、不截斷偏好")
-assert(sliderRange(rentry, 300, 200) == 300, "存值在上限內應維持伺服器上限")
-assert(sliderRange(rentry, nil, 1500) == 2000, "無上限時存值不擴張全值域")
-assert(sliderRange(rentry, 300, "x") == 300, "非數字存值應忽略")
-
--- unifiedSliderText：伺服器上限必須現形（玩家要知道還能拉到多少），且無上限時
--- 不留多餘後綴；非距離滑條（無 zeroLabel）的既有格式不得受影響
-local dist0 = { fmt = "%d", zeroLabel = "ZERO" }
-assert(sliderText(dist0, 200, nil) == "200", "無伺服器上限應只顯示自己的值")
-assert(sliderText(dist0, 0, nil) == "不限", "0 應顯示 zeroLabel")
-assert(sliderText(dist0, 200, 300) == "200/300", "有上限應附「/上限」")
-assert(sliderText(dist0, 0, 300) == "不限/300", "0＋上限應為「不限/上限」")
-assert(sliderText(dist0, 500, 300) == "500/300", "存值超上限仍須顯示伺服器上限")
-local px = { fmt = "%dpx" }
-assert(sliderText(px, 0, nil) == "0px", "無 zeroLabel 的滑條 0 值應照 fmt")
-assert(sliderText(px, 18, nil) == "18px", "既有尺寸滑條格式不得受影響")
-
--- wiring 守衛：unifiedSliderText 每個呼叫點都必須帶第三參 cap。漏傳不會報錯、
--- 只是少顯示「/上限」（開窗顯示 200、動過滑條才變 200/300），helper 單測完全
--- 抓不到——codex review 實際在初始 setName 抓到這個缺口，故改以原始碼守衛釘住
-local callTotal = select(2, settingsSource:gsub("unifiedSliderText%(entry,", ""))
-local callWithCap = select(2, settingsSource:gsub("unifiedSliderText%(entry,[^\n]-, cap%)", ""))
-assert(callTotal > 0 and callTotal == callWithCap, string.format(
-    "unifiedSliderText 有呼叫點漏傳 cap（帶 cap %d／全部 %d）", callWithCap, callTotal))
-
--- 版面守衛：滑條軌道寬必須有下限。ISSliderPanel 的 sliderBarDim.w＝元件寬-30 且
--- 被 onMouseDown 當除數，而 laneW 的 420 上限是硬常數、不隨 PZ 字型大小縮放——
--- 大字型下 laneW-comboLabelW-valW 會逼近 0 甚至倒轉，nan 會被寫進選項並落盤 ini
--- （Claude review 以遊戲點陣字 xadvance 實算出臨界點：26px JP、33px EN 均已中招）
-assert(settingsSource:find("if sliderW < %d+ then sliderW = %d+ end"),
-    "滑條軌道寬下限守衛消失：大字型下寬度會倒轉，nan 會被寫進 ini")
+-- 設定視窗距離滑條的伺服器上限（只夾顯示、不截斷存值）與「值／上限」文字由 UI.SliderRow
+-- 的 cap 負責，回歸在 scripts/test_settings_studio.lua 的 F 段
 
 -- 命名契約守衛："Client"..沙盒名 三方對齊（displayDist 串接 ↔ ESC 註冊 step=1 ↔
--- 統一視窗 capBy/id）——日後新增距離沙盒選項漏註冊 Client 滑條時這裡會紅
+-- 設定視窗 capBy/id）——日後新增距離沙盒選項漏註冊 Client 滑條時這裡會紅
 local DIST_NAMES = { "ZombieDotDistance", "AnimalIconDistance", "VehicleIconDistance",
     "SafehouseDisplayDistance", "SafehouseNameDistance", "PoiDisplayDistance", "ZoneDisplayDistance" }
 for _, n in ipairs(DIST_NAMES) do

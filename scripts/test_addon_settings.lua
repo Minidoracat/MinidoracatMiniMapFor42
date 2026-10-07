@@ -1,4 +1,5 @@
--- MiniMap addon client-settings API / builder 離線回歸。
+-- MiniMap addon client-settings API（registerSettingsSection v1–v5）與設定視窗擴充分類的離線回歸：
+-- 前半抽 registry 區段驗正規化；後半以真框架＋真 _Settings 驗分組排序、圖層區塊、控制項與重設。
 local sourcePath = arg[1]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Settings.lua"
 
@@ -10,7 +11,7 @@ local compile = loadstring or load
 local assertions, failures = 0, 0
 local function check(value, label)
     assertions = assertions + 1
-    if not value then failures = failures + 1; print("FAIL " .. label) end
+    if not value then failures = failures + 1; io.write("FAIL " .. label .. "\n") end
 end
 local function checkEq(actual, expected, label)
     check(actual == expected, label .. " (expected=" .. tostring(expected)
@@ -25,13 +26,10 @@ local messages = {}
 local function print(message) messages[#messages + 1] = message end
 local addonSettingsById = {}
 local addonSectionOrder = {}
-local UNIFIED_SECTIONS = { { id = "layers" }, { id = "perf" } }
-local settingsUI = { visible = false }
+local settingsUI = { visible = false, _sig = "built" }
 function settingsUI:isVisible() return self.visible end
-local rebuildCalls = 0
-local function unifiedRebuild() rebuildCalls = rebuildCalls + 1 end
-local indexCalls = 0
-local function studioBuildIndex() indexCalls = indexCalls + 1; return {} end
+local dirtyCalls = 0
+local function studioMarkDirty() dirtyCalls = dirtyCalls + 1 end
 MinidoracatMiniMapAPI = {}
 local layerCalls = {}
 local Core = { registerMarkerLayers = function(owner, layers)
@@ -40,12 +38,10 @@ end }
 ]] .. registryBody .. "\n" .. [=[
 return {
     api = MinidoracatMiniMapAPI,
-    sections = UNIFIED_SECTIONS,
     registry = addonSettingsById,
     order = addonSectionOrder,
     ui = settingsUI,
-    rebuilds = function() return rebuildCalls end,
-    indexBuilds = function() return indexCalls end,
+    dirty = function() return dirtyCalls end,
     messages = messages,
     layerCalls = layerCalls,
 }
@@ -70,7 +66,7 @@ check(not api.registerSettingsSection("A", { label = "UI_A", combos = {
     { label = "UI_C", get = function() return 1 end, set = function() end,
         default = false, items = { "UI_1" } },
 } }), "non-number combo default rejected")
-checkEq(#registry.sections, 2, "invalid registrations do not append sections")
+checkEq(#registry.order, 0, "invalid registrations do not append sections")
 
 local visible = true
 local width = 2
@@ -84,9 +80,9 @@ local specA = {
         set = function(v) width = v end } },
 }
 check(api.registerSettingsSection("OwnerA", specA), "valid owner A registers")
-checkEq(#registry.sections, 3, "one valid section appended")
-checkEq(registry.sections[2].id, "addon_OwnerA", "addon inserted before perf")
-checkEq(registry.sections[3].id, "perf", "perf stays last")
+checkEq(registry.order[1], registry.registry.OwnerA, "valid section enters registration order")
+checkEq(registry.registry.OwnerA.id, "addon_OwnerA", "section id derived from owner")
+checkEq(registry.ui._sig, nil, "registration invalidates nav/search signature")
 checkEq(registry.registry.OwnerA.addon.lane, nil, "lane ignored and not stored")
 checkEq(registry.registry.OwnerA.addon.summary, nil, "summary ignored and not stored")
 check(registry.registry.OwnerA.addon ~= specA, "external spec copied")
@@ -101,9 +97,8 @@ check(api.registerSettingsSection("OwnerB", {
     label = "UI_A", ticks = { { label = "UI_B", get = function() return false end,
         set = function() end } },
 }), "different owner with same label registers independently")
-checkEq(#registry.sections, 4, "different owner gets its own section")
-checkEq(registry.sections[3].id, "addon_OwnerB", "second addon also before perf")
-checkEq(registry.sections[4].id, "perf", "perf remains last after two addons")
+checkEq(#registry.order, 2, "different owner gets its own section")
+checkEq(registry.order[2], registry.registry.OwnerB, "second addon follows in registration order")
 
 local oldSection = registry.registry.OwnerA
 check(api.registerSettingsSection("OwnerA", {
@@ -111,18 +106,18 @@ check(api.registerSettingsSection("OwnerA", {
         { label = "UI_Show2", get = function() return true end, set = function() end },
     },
 }), "same owner re-registers")
-checkEq(#registry.sections, 4, "same owner replacement is idempotent")
+checkEq(#registry.order, 2, "same owner replacement is idempotent")
 checkEq(registry.registry.OwnerA, oldSection, "same section identity retained")
 checkEq(oldSection.label, "UI_A2", "same owner updates label")
 checkEq(oldSection.addon.lane, nil, "re-registration still ignores lane")
 registry.ui.visible = true
-local beforeRebuild = registry.rebuilds()
+local beforeDirty = registry.dirty()
 check(api.registerSettingsSection("OwnerA", {
     label = "UI_A3", ticks = {
         { label = "UI_Show3", get = function() return true end, set = function() end },
     },
 }), "visible-window replacement succeeds")
-checkEq(registry.rebuilds(), beforeRebuild + 1, "visible window rebuilds on registration")
+checkEq(registry.dirty(), beforeDirty + 1, "visible window rebuilds on registration")
 check(#registry.messages >= 4, "invalid registrations leave diagnostics")
 
 check(not api.registerSettingsSection("A", { label = "UI_A", actions = "no" }),
@@ -151,7 +146,7 @@ for i = 1, 17 do
 end
 check(not api.registerSettingsSection("A", { label = "UI_A", actions = tooMany }),
     "17 actions rejected")
-checkEq(#registry.sections, 4, "invalid actions do not append sections")
+checkEq(#registry.order, 2, "invalid actions do not append sections")
 
 local specC = {
     label = "UI_C",
@@ -160,10 +155,9 @@ local specC = {
             run = function() end, enabled = function() return true end },
     },
 }
-local beforeIndex = registry.indexBuilds()
+registry.ui._sig = "built"
 check(api.registerSettingsSection("OwnerC", specC), "valid action registers")
-checkEq(registry.indexBuilds(), beforeIndex + 1,
-    "action registration rebuilds search index")
+checkEq(registry.ui._sig, nil, "action registration rebuilds search index")
 local act = registry.registry.OwnerC.addon.actions[1]
 checkEq(act.label, "UI_Copy", "action label stored")
 checkEq(act.tooltip, "UI_Copy_tip", "action tooltip stored")
@@ -312,229 +306,238 @@ api.registerSettingsSection("OwnerV", { label = "UI_V5", group = "other" })
 check(v5.group == "addon" and v5.icon == "plug" and #registry.layerCalls[#registry.layerCalls].layers == 0,
     "unknown group falls back to addon; re-registration clears icon and layers")
 
-local callbacksBody = assert(source:match(
-    "%-%- test:addon%-settings%-callbacks:start\n(.-)\n%-%- test:addon%-settings%-callbacks:end"),
-    "missing addon callbacks test block")
-local builderBody = assert(source:match(
-    "%-%- test:addon%-settings%-builder:start\n(.-)\n%-%- test:addon%-settings%-builder:end"),
-    "missing addon builder test block")
-local builderChunk, builderErr = compile([[
-local errors = {}
-local function print(message) errors[#errors + 1] = message end
-local function getText(key) return "T:" .. key end
-UIFont = { Small = 1 }
-ISLabel = {}
-function ISLabel:new(x, y, h, text) return { kind = "label", text = text } end
-local rows = {}
-local function unifiedAdd(ctx, element) rows[#rows + 1] = element; return element end
-local function unifiedAddTick(ctx, x, y, w, label, checked, callback, arg)
-    local tick = { kind = "tick", label = label, checked = checked,
-        callback = callback, arg = arg }
-    rows[#rows + 1] = tick
-    return tick
-end
-ISComboBox = {}
-function ISComboBox:new(x, y, w, h, target, callback, arg)
-    local combo = { kind = "combo", callback = callback, arg = arg, options = {} }
-    function combo:initialise() end
-    function combo:addOption(text) self.options[#self.options + 1] = text end
-    function combo:setToolTipMap(map) self.tooltip = map end
-    return combo
-end
-local function unifiedAddBtn(ctx, x, yy, w, labelText, fn, tooltip)
-    local b = { kind = "btn", label = labelText, callback = fn, tooltip = tooltip,
-        enable = true }
-    rows[#rows + 1] = b
-    return b
-end
-local function utw(text) return #text * 6 end
--- 同 production unifiedAddSlider 的契約：methods 先蓋上、setCurrentValue(value, true) 不觸發回呼、
--- 改值經 doOnValueChange → onChange；onJoypadDirLeft／Right 同原版（±stepValue）
-local function unifiedAddSlider(ctx, entry, maxV, value, valW, text, onChange, onCommit, methods)
-    local label = unifiedAdd(ctx, { kind = "slabel", text = getText(entry.label) })
-    local s = { kind = "slider", _entry = entry, maxValue = maxV, stepValue = entry.step,
-        valW = valW, onCommit = onCommit }
-    function s:doOnValueChange(v) self.shown = text(onChange(v, self)) end
-    function s:getCurrentValue() return self.currentValue end
-    function s:onJoypadDirRight() self:setCurrentValue(self.currentValue + self.stepValue) end
-    function s:onJoypadDirLeft() self:setCurrentValue(self.currentValue - self.stepValue) end
-    for k, fn in pairs(methods or {}) do s[k] = fn end
-    s:setCurrentValue(value, true)
-    s.shown = text(s:getCurrentValue())
-    unifiedAdd(ctx, s)
-    return s, label
-end
-]] .. callbacksBody .. "\nlocal ADDON_SLIDER_METHODS = { setCurrentValue = addonSliderSetValue }\n"
-    .. builderBody .. "\n" .. [=[
-return {
-    build = unifiedBuildAddon,
-    rows = rows,
-    errors = errors,
-    read = addonRead,
-}
-]=])
-assert(builderChunk, builderErr)
-local builder = builderChunk()
-local tickValue, comboValue = true, 3
-local spec = {
-    ticks = { { label = "UI_Show", tooltip = "UI_Show_tip", default = false,
-        get = function() return tickValue end,
-        set = function(v) tickValue = v end } },
-    combos = { { label = "UI_Width", tooltip = "UI_Width_tip", default = 2,
-        items = { "UI_Thin", "UI_Normal", "UI_Thick" },
-        get = function() return comboValue end,
-        set = function(v) comboValue = v end } },
-}
-local ctx = { sec = { addon = spec }, curX = 0, curY = 0, laneW = 300,
-    comboLabelW = 80, fontH = 12, rowH = 20, win = {} }
-builder.build(ctx)
-checkEq(#builder.rows, 3, "builder creates tick, label, combo")
-local tick, combo = builder.rows[1], builder.rows[3]
-check(tick.kind == "tick" and tick.checked == true, "tick getter initializes checked state")
-checkEq(tick.tooltip, "T:UI_Show_tip", "tick tooltip wired")
-check(combo.kind == "combo" and combo.selected == 3 and #combo.options == 3,
-    "combo getter and items initialize control")
-check(type(combo.tooltip) == "table" and combo.tooltip.defaultTooltip == "T:UI_Width_tip",
-    "combo tooltip is a defaultTooltip map (vanilla ISComboBox ignores a plain string)")
-comboValue = 0 / 0
-builder.build(ctx)
-checkEq(builder.rows[#builder.rows].selected, 2, "NaN combo getter falls back to default")
-comboValue = 3
-tick.callback(nil, 1, false, tick.arg)
-checkEq(tickValue, false, "tick callback writes addon setting")
-combo.selected = 1
-combo.callback(nil, combo, combo.arg)
-checkEq(comboValue, 1, "combo callback writes addon setting")
-checkEq(builder.read(function() error("bad getter") end, 7), 7,
-    "throwing getter falls back")
-tick.arg.set = function() error("bad setter") end
-local setterOk = pcall(tick.callback, nil, 1, true, tick.arg)
-check(setterOk and #builder.errors == 1, "throwing setter is isolated and diagnosed")
-
-local runPn, enabledPn, allow = nil, nil, true
-spec.actions = {
-    { label = "UI_Copy", tooltip = "UI_Copy_tip",
-        run = function(pn) runPn = pn end,
-        enabled = function(pn) enabledPn = pn; return allow end },
-}
-ctx.pn = 2
-ctx.win._playerNum = 2
-local rows = builder.rows
-local function rebuildAddon()
-    for i = #rows, 1, -1 do rows[i] = nil end
-    builder.build(ctx)
-end
-rebuildAddon()
-checkEq(#rows, 4, "builder adds action button after tick and combo")
-local btn = rows[4]
-check(btn.kind == "btn" and btn.label == "T:UI_Copy", "action button label")
-checkEq(btn.tooltip, "T:UI_Copy_tip", "action button tooltip")
-checkEq(btn.enable, true, "enabled true keeps button on")
-checkEq(enabledPn, 2, "enabled receives window playerNum")
-btn.callback(ctx.win, btn)
-checkEq(runPn, 2, "run receives window playerNum")
-allow = false
-rebuildAddon()
-btn = rows[4]
-checkEq(btn.enable, false, "enabled false disables button")
-runPn = "unset"
-btn.callback(ctx.win, btn)
-checkEq(runPn, "unset", "disabled action does not run")
-spec.actions[1].enabled = function() error("bad enabled") end
-rebuildAddon()
-btn = rows[4]
-checkEq(btn.enable, false, "throwing enabled fails closed")
-runPn = "unset"
-local enabledOk = pcall(btn.callback, ctx.win, btn)
-check(enabledOk and runPn == "unset", "throwing enabled cannot reach run")
-spec.actions[1].enabled = nil
-spec.actions[1].run = function()
-    error(setmetatable({}, { __tostring = function() error("bad tostring") end }))
-end
-rebuildAddon()
-local errCount = #builder.errors
-local runOk = pcall(rows[4].callback, ctx.win, rows[4])
-check(runOk and #builder.errors == errCount + 1,
-    "throwing run is isolated and diagnosed")
-
--- v4 滑條：初值對齊、拖曳／點擊／手把與鍵盤左右（皆經 setCurrentValue）只在換格時 set、夾在範圍、
--- 非 0 起點的格點、get／set 拋錯隔離
-local volume, volumeSets = 47, {}
-local volEntry = { label = "UI_Vol", tooltip = "UI_Vol_tip", min = 0, max = 100, step = 5,
-    default = 50, fmt = "%d%%",
-    get = function() return volume end,
-    set = function(v) volumeSets[#volumeSets + 1] = v; volume = v end }
-local oddEntry = { label = "UI_Odd", min = 1, max = 10, step = 2, default = 1, fmt = "%d",
-    get = function() return 1 end, set = function() end }
-ctx.sec = { addon = { sliders = { volEntry, oddEntry } } }
-rebuildAddon()
-local volLabel, vol, odd = rows[1], rows[2], rows[4]
-check(volLabel.kind == "slabel" and volLabel.tooltip == "T:UI_Vol_tip" and vol.kind == "slider",
-    "slider row has label with tooltip and slider")
-check(vol.currentValue == 45 and vol.shown == "45%" and #volumeSets == 0,
-    "getter value snapped to step without writing back")
-check(vol.valW >= #"100%" * 6 + 10, "value column fits the widest formatted value")
-vol:setCurrentValue(63)
-check(vol.currentValue == 65 and volumeSets[1] == 65 and vol.shown == "65%",
-    "drag value snaps to step and writes once")
-vol:setCurrentValue(64)
-checkEq(#volumeSets, 1, "same snapped cell does not write again")
-vol:setCurrentValue(1000)
-checkEq(volumeSets[#volumeSets], 100, "value above max clamps to max")
-vol:setCurrentValue(-7)
-checkEq(volumeSets[#volumeSets], 0, "value below min clamps to min")
-vol:onJoypadDirRight()
-checkEq(volumeSets[#volumeSets], 5, "right step writes next cell")
-vol:onJoypadDirLeft()
-checkEq(volumeSets[#volumeSets], 0, "left step writes previous cell")
-vol:setCurrentValue(0 / 0)
-checkEq(vol.currentValue, 50, "NaN value falls back to default")
-odd:onJoypadDirRight()
-checkEq(odd.currentValue, 3, "off-zero min keeps its own step grid")
-odd:setCurrentValue(10)
-checkEq(odd.currentValue, 10, "off-grid max stays reachable")
-vol.disabled = true
-local beforeDisabled = #volumeSets
-vol:setCurrentValue(20)
-checkEq(#volumeSets, beforeDisabled, "disabled slider ignores value changes")
-volEntry.get = function() error("bad slider getter") end
-volEntry.set = function() error("bad slider setter") end
-rebuildAddon()
-vol = rows[2]
-checkEq(vol.currentValue, 50, "throwing slider getter falls back to default")
-local sliderErrs = #builder.errors
-local sliderSetOk = pcall(vol.setCurrentValue, vol, 80)
-check(sliderSetOk and vol.currentValue == 80 and #builder.errors == sliderErrs + 1,
-    "throwing slider setter is isolated and diagnosed")
-
-local indexBody = assert(source:match(
-    "%-%- test:addon%-settings%-index:start\n(.-)\n%s*%-%- test:addon%-settings%-index:end"),
-    "missing addon settings index test block")
-local indexChunk, indexErr = compile([[
-local added = {}
-local function studioIndexList(index, sec, list, kind, mode)
-    added[#added + 1] = { n = #list, kind = kind, mode = mode, first = list[1] }
-end
-local index = {}
-local sec = { addon = {
-    ticks = { { label = "UI_T" } },
-    combos = { { label = "UI_C" } },
-    sliders = { { label = "UI_S" } },
-    actions = { { label = "UI_Copy" } },
-} }
-]] .. indexBody .. "\nreturn added")
-assert(indexChunk, indexErr)
-local added = indexChunk()
-checkEq(#added, 4, "addon index covers ticks, combos, sliders, actions")
-check(added[3].kind == "navigate" and added[3].first.label == "UI_S",
-    "sliders are searchable navigate hits")
-checkEq(added[4].kind, "navigate", "actions are searchable navigate hits")
-checkEq(added[4].first.label, "UI_Copy", "action label indexed")
-local EXPECTED_ASSERTIONS = 156
-if assertions ~= EXPECTED_ASSERTIONS then
-    print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
-        .. ", actual " .. assertions)
+-- ════════════════════════════════════════════════════════════════════════════
+-- 視窗端：真的 UI 框架＋真的 _Settings／_Markers（scripts/settings_harness.lua）
+-- ════════════════════════════════════════════════════════════════════════════
+local H = dofile("scripts/settings_harness.lua")
+if not H.frameworkPresent() then
+    io.write("FAIL test_addon_settings: UI framework not found (clone MinidoracatUIFor42 beside this repo or set MUI_LUA)\n")
     os.exit(1)
 end
-print("addon settings assertions " .. assertions .. ", failures " .. failures)
+local env = H.load{}
+env.boot()
+local API, Core = env.API, env.Core
+local T = function(key) return getText(key) end
+local function noop() end
+
+-- ── 分組與排序：擴充組依 (order, seq)、管理員組＝管理員檢視在前、visible(pn) ─────────
+local calls = {}
+local vmShowMini
+local autoTick, setBool = nil, {}
+check(API.registerSettingsSection("Plain", { label = "UI_Plain" }), "W1 v1-style section registers")
+check(API.registerSettingsSection("AutoDrive", { label = "UI_AD", icon = "gauge", order = 15,
+    ticks = {
+        { label = "UI_ADDefaultTrue", default = true, get = function() return setBool.a ~= false end,
+            set = function(v) setBool.a = v end, tooltip = "UI_ADTip" },
+        { label = "UI_ADNoDefault", get = function() return setBool.b == true end,
+            set = function(v) setBool.b = v end },
+    },
+    combos = { { label = "UI_ADCombo", items = { "UI_I1", "UI_I2", "UI_I3" }, default = 2,
+        get = function() return setBool.combo or 3 end, set = function(v) setBool.combo = v end, tooltip = "UI_ADComboTip" } },
+    sliders = { { label = "UI_ADVol", min = 3, max = 98, step = 5, default = 48, fmt = "%d%%",
+        get = function() return setBool.vol or 48 end, set = function(v) setBool.vol = v end } },
+    actions = {
+        { label = "UI_ADCopy", tooltip = "UI_ADCopyTip", run = function(pn) calls.run = pn end },
+        { label = "UI_ADOff", tooltip = "UI_ADOffTip", run = function() calls.off = true end,
+            enabled = function(pn) calls.enabledPn = pn; return false end },
+        { label = "UI_ADBoom", tooltip = "UI_ADBoomTip", run = function() error("boom") end },
+    },
+}), "W1 AutoDrive-like section registers")
+check(API.registerSettingsSection("Watch", { label = "UI_Watch", icon = "watch", order = 12 }), "W1 watch registers")
+check(API.registerSettingsSection("VM", { label = "UI_VM", icon = "carSedan", order = 40,
+    layers = { { id = "bound", label = "UI_VMBound", size = 16, names = { mini = true, world = true },
+        namesMiniLabel = "UI_VMNamesMini",
+        sample = { texture = { tex = "car" }, r = 1, g = 0.8, b = 0.2, label = "MyCar",
+            badge = { texture = { tex = "badge" } }, ring = { r = 1, g = 1, b = 1 }, state = "live" } } },
+    actions = { { label = "UI_VMOpen", tooltip = "UI_VMOpenTip", run = function(pn) calls.fleet = pn end } },
+}), "W1 VM-like section with a layer registers")
+check(API.registerSettingsSection("Econ", { label = "UI_Econ", icon = "coins", order = 30,
+    layers = { { id = "terminals", label = "UI_Term", size = 16 } } }), "W1 economy registers")
+check(API.registerSettingsSection("AD2", { label = "UI_AD2", order = 15 }), "W1 same order, later seq")
+check(API.registerSettingsSection("WatchAdmin", { label = "UI_WatchAdmin", icon = "settings", group = "admin", order = 12,
+    visible = function(pn) calls.visiblePn = pn; return pn == 0 end }), "W1 admin-group section registers")
+check(API.registerSettingsSection("Broken", { label = "UI_Broken", order = 50,
+    visible = function() error("visible boom") end }), "W1 throwing visible registers")
+check(API.registerSettingsSection("Hidden", { label = "UI_Hidden", order = 5,
+    visible = function() return false end }), "W1 hidden section registers")
+
+env.policy.can, env.policy.allowTactical = true, true
+local s = env.open(0)
+checkEq(table.concat(s.sections, ","),
+    "base,places,poicat,zombie,animals,vehicles,safehouse,window,perf,addon_Watch,addon_AutoDrive,addon_AD2,"
+    .. "addon_Econ,addon_VM,addon_Broken,addon_Plain,admin,addon_WatchAdmin",
+    "W2 add-ons by (order, seq); hidden dropped; admin view first in the admin group")
+checkEq(calls.visiblePn, 0, "W2 visible(pn) receives the owner slot")
+local logged = 0
+for _, m in ipairs(env.printed) do if m:find("visible() error", 1, true) then logged = logged + 1 end end
+checkEq(logged, 1, "W2 throwing visible keeps the section and logs once")
+s.rebuild()
+logged = 0
+for _, m in ipairs(env.printed) do if m:find("visible() error", 1, true) then logged = logged + 1 end end
+checkEq(logged, 1, "W2 visible error logged only once")
+do
+    local icons, headers = {}, {}
+    s.nav:prerender()
+    for _, row in ipairs(s.nav._rows) do
+        if row.header then headers[#headers + 1] = row.title
+        elseif row.id:find("^addon_") then icons[#icons + 1] = row.id .. "=" .. row.icon end
+    end
+    checkEq(table.concat(headers, "|"), T("UI_MinidoracatMiniMap_GroupLayers") .. "|" .. T("UI_MinidoracatMiniMap_GroupWindow")
+        .. "|" .. T("UI_MinidoracatMiniMap_GroupAddons") .. "|" .. T("UI_MinidoracatMiniMap_GroupAdmin"),
+        "W3 four group headers")
+    checkEq(table.concat(icons, ","), "addon_Watch=watch,addon_AutoDrive=gauge,addon_AD2=plug,addon_Econ=coins,"
+        .. "addon_VM=carSedan,addon_Broken=plug,addon_Plain=plug,addon_WatchAdmin=settings", "W3 nav uses sec.icon")
+end
+-- 另一位分割畫面玩家：visible(pn) 依擁有者
+env.Core.toggleSettingsWindow(env.minimap(1))
+s = env.studio()
+check(not table.concat(s.sections, ","):find("addon_WatchAdmin", 1, true), "W4 visible(pn)=false for P1 hides the section")
+env.Core.toggleSettingsWindow(env.minimap(1))
+s = env.open(0)
+
+-- ── v5 圖層區塊：開關／世界地圖／大小／名稱都寫 Core.setMarkerLayer（MarkerLayers）──────
+s.selectSection("addon_VM")
+do
+    local function box(label)
+        return env.controls(function(el) return el.label == label and el._field ~= nil end)[1]
+    end
+    local sw = env.byKey("layer:bound")
+    check(sw and sw._field == "showMini" and sw.checked == true and sw.label == "", "L1 layer header switch = show.mini")
+    check(env.controls(function(el) return el._lines and el._lines[1] == "UI_VMBound" end)[1] ~= nil,
+        "L1 layer header shows the layer label")
+    sw:forceClick()
+    checkEq(env.values.MarkerLayers, "VM/bound=0,1,16,1,1", "L2 header switch writes MarkerLayers via setMarkerLayer")
+    check(Core.markerLayer("VM", "bound").show.mini == false, "L2 marker layer prefs follow")
+    local world = box(T("UI_MinidoracatMiniMap_WorldAlso"))
+    check(world and world.checked == true, "L3 world-map checkbox bound to show.world")
+    world:forceClick()
+    checkEq(env.values.MarkerLayers, "VM/bound=0,0,16,1,1", "L3 world checkbox writes show.world")
+    local namesMini = box("UI_VMNamesMini")
+    local namesWorld = box(T("UI_MinidoracatMiniMap_LayerNamesWorld"))
+    check(namesMini and namesWorld, "L4 custom names-mini label and default names-world label")
+    namesWorld:forceClick()
+    checkEq(env.values.MarkerLayers, "VM/bound=0,0,16,1,0", "L4 names checkbox writes namesWorld")
+    local size = env.controls(function(el) return el._layerId == "bound" and env.type(el) == "MinidoracatUISliderRow" end)[1]
+    check(size and size.min == 8 and size.max == 48 and size:getValue() == 16, "L5 size slider 8-48 at the layer size")
+    env.mouseDown = true
+    size:setValue(30)
+    env.frame()
+    checkEq(env.values.MarkerLayers, "VM/bound=0,0,16,1,0", "L5 size not written while dragging")
+    -- 預覽讀滑條現值（拖曳中即時），表面關閉＝不畫
+    local pv = env.controls(function(el) return env.type(el) == "MinidoracatUIPreview" end)[1]
+    check(pv ~= nil, "L6 layer block has a preview")
+    sw:forceClick() -- 小地圖再開
+    pv.draws = {}
+    pv:prerender()
+    local texSizes, labels = {}, 0
+    for _, d in ipairs(pv.draws) do
+        if d.kind == "tex" and d[1] and d[1].tex == "car" then texSizes[#texSizes + 1] = d[4] end
+        if d.kind == "text" and d[1] == "MyCar" then labels = labels + 1 end
+    end
+    check(not pv._failed and #texSizes == 1, "L6 preview draws the sample via drawMarkerAt (mini only, world off)")
+    checkEq(texSizes[1], math.floor(12 * 30 / 16 + 0.5), "L6 preview follows the live size slider")
+    checkEq(labels, 2, "L6 mini names on: label (shadow + text)")
+    env.mouseDown = false
+    env.frame()
+    checkEq(env.values.MarkerLayers, "VM/bound=1,0,30,1,0", "L7 size written on release")
+    local fleet = env.controls(function(el) return el.title == "UI_VMOpen" end)[1]
+    fleet.onclick(fleet.target, fleet)
+    checkEq(calls.fleet, 0, "L8 action button runs with the owner pn")
+    local reset = env.controls(function(el) return el._sec and el.title == T("UI_MinidoracatMiniMap_StudioResetCategory") end)[1]
+    reset.onclick(reset.target, reset)
+    checkEq(env.values.MarkerLayers, "", "L9 reset restores layer defaults (resetMarkerLayers)")
+    env.frame()
+    check(env.byKey("layer:bound").checked == true, "L9 inspector rebuilt with default layer values")
+    s.selectSection("addon_Econ")
+    check(env.byKey("layer:terminals") ~= nil, "L10 layer without names: block has no name toggles")
+    check(env.controls(function(el) return el._field == "namesMini" end)[1] == nil, "L10 no names checkboxes")
+    check(env.controls(function(el) return env.type(el) == "MinidoracatUIPreview" end)[1] == nil, "L10 no sample = no preview")
+end
+
+-- ── ticks／combos／sliders／actions ───────────────────────────────────────────
+s.selectSection("addon_AutoDrive")
+do
+    local t1 = env.controls(function(el) return el.label == "UI_ADDefaultTrue" end)[1]
+    check(t1 and env.type(t1) == "MinidoracatUICheckbox" and t1.checked and t1.tooltip == "UI_ADTip",
+        "A1 tick = Checkbox from get() with tooltip")
+    t1:forceClick()
+    checkEq(setBool.a, false, "A1 tick writes through set")
+    local nd = env.controls(function(el) return el.label == "UI_ADNoDefault" end)[1]
+    nd:forceClick()
+    checkEq(setBool.b, true, "A2 no-default tick writes")
+    local dd = env.controls(function(el) return env.type(el) == "MinidoracatUIDropdown" end)[1]
+    check(dd and dd:getSelected() == 3 and dd.tooltip == "UI_ADComboTip", "A3 combo = Dropdown at get() with tooltip")
+    dd:setSelected(1)
+    checkEq(setBool.combo, 1, "A3 dropdown writes the index")
+    local row = env.controls(function(el) return el._entry and el._entry.label == "UI_ADVol" end)[1]
+    check(row and env.type(row) == "MinidoracatUISliderRow" and row:getValue() == 48, "A4 slider = SliderRow at get()")
+    row:setValue(50)
+    check(row:getValue() == 48 and setBool.vol == nil, "A4 min-based quantisation: 50 snaps to the 3+5k grid (48), no write")
+    row:onFocusKey(Keyboard.KEY_RIGHT)
+    checkEq(setBool.vol, 53, "A4 keyboard step moves one grid step from min")
+    row:setValue(1000)
+    checkEq(setBool.vol, 98, "A4 clamped to max")
+    row:prerender()
+    check(row._text == "98%", "A4 value text uses the spec fmt (" .. tostring(row._text) .. ")")
+    local off = env.controls(function(el) return el.title == "UI_ADOff" end)[1]
+    check(off and off:isEnabled() == false and calls.enabledPn == 0, "A5 enabled(pn)=false disables the action")
+    local copy = env.controls(function(el) return el.title == "UI_ADCopy" end)[1]
+    copy.onclick(copy.target, copy)
+    checkEq(calls.run, 0, "A5 run receives pn")
+    local boom = env.controls(function(el) return el.title == "UI_ADBoom" end)[1]
+    local n = #env.printed
+    local ok = pcall(boom.onclick, boom.target, boom)
+    check(ok and #env.printed == n + 1 and env.printed[#env.printed]:find("addon action failed", 1, true),
+        "A6 throwing action is isolated and logged")
+    -- 重設：有 default 的寫回、沒宣告 default 的不動、combo／slider 回 default
+    setBool.b = true
+    local reset = env.controls(function(el) return el._sec and el.title == T("UI_MinidoracatMiniMap_StudioResetCategory") end)[1]
+    reset.onclick(reset.target, reset)
+    check(setBool.a == true and setBool.b == true and setBool.combo == 2 and setBool.vol == 48,
+        "A7 reset writes defaults, skips the nil-default tick")
+    -- 控制項順序：圖層區塊 → ticks → combos → sliders → actions → 重設
+    s.selectSection("addon_AutoDrive")
+    local kinds = {}
+    for _, el in ipairs(env.studio().controls) do
+        local t = env.type(el)
+        if el._entry then
+            local k = t == "MinidoracatUICheckbox" and "tick" or t == "MinidoracatUIDropdown" and "combo"
+                or t == "MinidoracatUISliderRow" and "slider" or "action"
+            if kinds[#kinds] ~= k then kinds[#kinds + 1] = k end
+        elseif el._sec and t == "MinidoracatUIButton" then kinds[#kinds + 1] = "reset" end
+    end
+    checkEq(table.concat(kinds, ","), "tick,combo,slider,action,reset", "A8 addon control order")
+end
+
+-- ── 搜尋：addon tick＝可切的勾選、slider／action／圖層＝跳轉 ────────────────────────
+do
+    s.search._entry:setText("UI_ADNoDefault")
+    s.search:prerender()
+    env.frame()
+    local hit = env.controls(function(el) return el._hit ~= nil end)[1]
+    check(hit and env.type(hit) == "MinidoracatUICheckbox" and hit._hit.mode == "addon", "S1 addon tick search result")
+    hit:forceClick()
+    checkEq(setBool.b, false, "S1 search tick writes through set")
+    s.search._entry:setText("ui_vmbound")
+    s.search:prerender()
+    env.frame()
+    hit = env.controls(function(el) return el._hit ~= nil end)[1]
+    check(hit and hit._hit.kind == "navigate", "S2 layer label is searchable")
+    hit.onclick(hit.target, hit)
+    env.frame()
+    checkEq(env.studio().selected, "addon_VM", "S2 layer result jumps to the add-on section")
+end
+
+-- ── 熱更新：開著時重註冊＝下一幀重建導覽與內容 ────────────────────────────────
+do
+    API.registerSettingsSection("Plain", { label = "UI_PlainRenamed", icon = "star" })
+    env.frame()
+    s.nav:prerender()
+    local label
+    for _, row in ipairs(s.nav._rows) do if row.id == "addon_Plain" then label = row.label .. "/" .. row.icon end end
+    checkEq(label, "UI_PlainRenamed/star", "H1 re-registration while open refreshes the nav")
+end
+
+io.write(string.format("test_addon_settings: %d assertions, %d failures\n", assertions, failures))
 if failures > 0 then os.exit(1) end
+io.write("test_addon_settings: PASS (registry v1-v5, groups/order/visible, v5 layer blocks, controls, reset, search)\n")

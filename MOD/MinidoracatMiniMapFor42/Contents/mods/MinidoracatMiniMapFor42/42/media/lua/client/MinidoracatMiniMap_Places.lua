@@ -328,6 +328,29 @@ local function iconTexture(key, fallback)
     if tex then return tex end
     return Core.adotsTexture and Core.adotsTexture(fallback) or getTexture(fallback)
 end
+-- 一個家／收藏標記（圖示＋下方名稱；地圖與設定視窗預覽共用）：(ux, uy)＝UI 中心，
+-- text／textW＝名稱與未縮放字寬，lblH＝已乘倍率的字高
+local function drawPlaceAt(inner, home, ux, uy, iconSize, text, textW, tz, lblH)
+    local drawGlyph = Core.adotsDrawGlyph
+    if not drawGlyph then return end
+    local w, h = inner.width, inner.height
+    local half = iconSize / 2
+    local tex = home and iconTexture("house", HOUSE_SYM) or iconTexture("pin", PIN_SYM)
+    if tex then
+        if home then
+            drawGlyph(inner, tex, ux - half, uy - half, iconSize, 1, 1, 1)
+        else
+            drawGlyph(inner, tex, ux - half, uy - half, iconSize, 1, 0.9, 0.55)
+        end
+    end
+    local lw = textW * tz
+    local lx, ly = ux - lw / 2, uy + half + 2
+    if lx < 2 then lx = 2 elseif lx > w - lw - 2 then lx = w - lw - 2 end
+    if ly > h - lblH - 2 then ly = uy - half - lblH - 2 end
+    inner:drawRect(lx - 3, ly, lw + 6, lblH, 0.55, 0, 0, 0)
+    Core.drawMapText(inner, text, lx, ly, 1, 1, 1, 0.95, UIFont.Small, tz)
+end
+
 local function drawPlaces(inner)
     -- 「顯示家與收藏點」關＝地圖不畫；回家、收藏清單與右鍵選單照常（只是顯示開關）
     if Core.getBoolOption and not Core.getBoolOption("Places", true) then return end
@@ -335,8 +358,7 @@ local function drawPlaces(inner)
     local slot = ensure(pn)
     local state = slot and slot.state
     if not state or state.count == 0 then return end
-    local drawGlyph = Core.adotsDrawGlyph
-    if not drawGlyph then return end
+    if not Core.adotsDrawGlyph then return end
     local tm = getTextManager()
     local fontH = tm:getFontHeight(UIFont.Small)
     local cache = labelCache[pn]
@@ -359,22 +381,8 @@ local function drawPlaces(inner)
         local p = state.places[i]
         local ux, uy = mapAPI:worldToUIX(p.x, p.y), mapAPI:worldToUIY(p.x, p.y)
         if ux >= half and uy >= half and ux <= w - half and uy <= h - half then
-            local home = p.id == state.homeId
-            local tex = home and iconTexture("house", HOUSE_SYM) or iconTexture("pin", PIN_SYM)
-            if tex then
-                if home then
-                    drawGlyph(inner, tex, ux - half, uy - half, iconSize, 1, 1, 1)
-                else
-                    drawGlyph(inner, tex, ux - half, uy - half, iconSize, 1, 0.9, 0.55)
-                end
-            end
             local lbl = cache[i]
-            local lw = lbl.w * tz
-            local lx, ly = ux - lw / 2, uy + half + 2
-            if lx < 2 then lx = 2 elseif lx > w - lw - 2 then lx = w - lw - 2 end
-            if ly > h - lblH - 2 then ly = uy - half - lblH - 2 end
-            inner:drawRect(lx - 3, ly, lw + 6, lblH, 0.55, 0, 0, 0)
-            Core.drawMapText(inner, lbl.text, lx, ly, 1, 1, 1, 0.95, UIFont.Small, tz)
+            drawPlaceAt(inner, p.id == state.homeId, ux, uy, iconSize, lbl.text, lbl.w, tz, lblH)
         end
     end
 end
@@ -396,6 +404,7 @@ Core.placesSetHome = setHome
 Core.placesSetHomeAt = setHomeAt
 Core.placesErrorText = errorText
 Core.drawPlaces = drawPlaces
+Core.drawPlaceAt = drawPlaceAt -- 設定視窗效果預覽
 Core.placesGoHome = function(pn)
     local ok, reason, detailKey = goHome(pn)
     if not ok then notify(pn, errorText(reason, detailKey), false) end

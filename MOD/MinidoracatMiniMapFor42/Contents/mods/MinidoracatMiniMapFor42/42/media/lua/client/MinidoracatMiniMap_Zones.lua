@@ -626,6 +626,12 @@ local function drawZoneFill(inner)
     if not ok then error(err, 0) end
 end
 
+-- 區塊名稱標籤（深底白字；(x, y)＝字的左上角，tw／th＝已乘文字倍率的字寬高）：地圖與設定預覽共用
+local function drawZoneName(inner, name, x, y, tw, th, tz)
+    inner:drawRect(x - 3, y - 1, tw + 6, th + 2, 0.6, 0, 0, 0)
+    drawMapText(inner, name, x, y, 1, 1, 1, 0.95, UIFont.Small, tz)
+end
+
 -- 框線＋名稱：複用 drawClippedEdge（Liang-Barsky Lua 裁切）畫每 rect 四邊；
 -- 名稱仿 drawMapBounds 置中畫法（畫在第一個 rect 中心；⚠ drawRect 參數序 a,r,g,b）
 local function drawZoneLines(inner)
@@ -764,8 +770,7 @@ local function drawZoneLines(inner)
                         local cx = p0x + (cxw - acx) * sxx + (cyw - acy) * syx - tw / 2
                         local cy = p0y + (cxw - acx) * sxy + (cyw - acy) * syy - th / 2
                         if cx >= 2 and cy >= 2 and cx + tw <= inner.width - 2 and cy + th <= inner.height - 2 then
-                            inner:drawRect(cx - 3, cy - 1, tw + 6, th + 2, 0.6, 0, 0, 0)
-                            drawMapText(inner, name, cx, cy, 1, 1, 1, 0.95, UIFont.Small, tz)
+                            drawZoneName(inner, name, cx, cy, tw, th, tz)
                         end
                     end
                 end
@@ -1011,3 +1016,5 @@ Core.drawZoneFill = drawZoneFill
 Core.drawZoneLines = drawZoneLines
 Core.drawZoneIcons = drawZoneIcons
 Core.drawBasementBadge = drawBasementBadge -- _Legend.lua：圖例的地下設施列
+Core.drawZoneIcon = drawZoneIcon -- _Settings.lua：效果預覽與地圖同一套圖標畫法
+Core.drawZoneName = drawZoneName

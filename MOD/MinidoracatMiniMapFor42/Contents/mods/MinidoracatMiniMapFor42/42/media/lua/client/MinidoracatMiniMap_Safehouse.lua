@@ -150,6 +150,56 @@ local function shCandidates(inner, rows, vMinX, vMaxX, vMinY, vMaxY, px, py, rea
     return list, n
 end
 
+-- 一間安全屋的框、圖標與名稱（地圖與設定視窗預覽共用）：四角＝UI 座標（等軸測下是菱形），
+-- r/g/b＝身分色；name＝已解析的標籤（nil／""＝不畫），名稱寬度依字串快取
+local function drawSafehouseAt(inner, ux1, uy1, ux2, uy2, ux3, uy3, ux4, uy4, r, g, b,
+        showRect, showIcon, name, iconSize, tz)
+    local W, H = inner.width, inner.height
+    if showRect then
+        drawClippedEdge(inner, ux1, uy1, ux2, uy2, r, g, b)
+        drawClippedEdge(inner, ux2, uy2, ux3, uy3, r, g, b)
+        drawClippedEdge(inner, ux3, uy3, ux4, uy4, r, g, b)
+        drawClippedEdge(inner, ux4, uy4, ux1, uy1, r, g, b)
+    end
+    if not (showIcon or (name and name ~= "")) then return end
+    local cx = (ux1 + ux3) / 2 -- 菱形中心＝對角中點
+    local cy = (uy1 + uy3) / 2
+    local iconDrawn = false
+    if showIcon then
+        -- 白 glyph 染色畫法與動物／載具符號共用（_Dots.lua adotsDrawGlyph；
+        -- 模組缺席＝不畫圖標，其餘照常）；只在整顆落在視窗內時畫
+        -- UI 框架 rev 4 art 圖示優先（呼叫時查 Core.Skin），缺則退原版 map_house
+        local Skin = Core.Skin
+        local tex = Skin and Skin.iconTexture and Skin.iconTexture("house")
+            or (adotsTexture and adotsTexture(SH_ICON))
+        local drawGlyph = Core.adotsDrawGlyph
+        local ix, iy = cx - iconSize / 2, cy - iconSize / 2
+        if tex and drawGlyph and ix >= 0 and iy >= 0
+            and ix + iconSize <= W and iy + iconSize <= H then
+            drawGlyph(inner, tex, ix, iy, iconSize, r, g, b)
+            iconDrawn = true
+        end
+    end
+    if name and name ~= "" then
+        local tw = shNameW[name]
+        if not tw then
+            local tm = getTextManager()
+            tw = tm:MeasureStringX(UIFont.Small, name) -- 用例 ISFactionUI.lua:238
+            shNameW[name] = tw
+            if not shFontH then shFontH = tm:getFontHeight(UIFont.Small) end
+        end
+        tw = tw * tz
+        local th = shFontH * tz
+        local tx = cx - tw / 2
+        -- 有圖標時名稱掛圖標正下方，否則置中（同 MapBounds 名稱底墊畫法）
+        local ty = iconDrawn and (cy + iconSize / 2 + 1) or (cy - th / 2)
+        if tx >= 2 and ty >= 2 and tx + tw <= W - 2 and ty + th <= H - 2 then
+            inner:drawRect(tx - 3, ty - 1, tw + 6, th + 2, 0.6, 0, 0, 0)
+            drawMapText(inner, name, tx, ty, r, g, b, 0.95, UIFont.Small, tz)
+        end
+    end
+end
+
 local function drawSafehouses(inner)
     if not (SafeHouse and SafeHouse.getSafehouseList) then return end
     local wantRect = getBoolOption("Safehouses", true)
@@ -193,7 +243,6 @@ local function drawSafehouses(inner)
         vMinX, vMaxX, vMinY, vMaxY = Core.visibleWorldAABB(inner)
     end
     local mapAPI = inner.mapAPI
-    local W, H = inner.width, inner.height
     -- 圖標大小（px，滑條 SafehouseIconSize）與地圖文字倍率：每幀讀值，拖動即時生效
     local iconSize = getSliderValue("SafehouseIconSize", 16, 8, 48)
     local tz = mapTextZoom()
@@ -256,58 +305,17 @@ local function drawSafehouses(inner)
                 local r, g, b = 1.0, 0.25, 0.2             -- 他人＝紅
                 if mine then r, g, b = 0.25, 0.95, 0.35     -- 自己＝綠
                 elseif ally then r, g, b = 0.35, 0.8, 1.0 end -- 同陣營＝青
-                if showRect then
-                    drawClippedEdge(inner, ux1, uy1, ux2, uy2, r, g, b)
-                    drawClippedEdge(inner, ux2, uy2, ux3, uy3, r, g, b)
-                    drawClippedEdge(inner, ux3, uy3, ux4, uy4, r, g, b)
-                    drawClippedEdge(inner, ux4, uy4, ux1, uy1, r, g, b)
-                end
-                if showIcon or showName then
-                    local cx = (ux1 + ux3) / 2 -- 菱形中心＝對角中點
-                    local cy = (uy1 + uy3) / 2
-                    local iconDrawn = false
-                    if showIcon then
-                        -- 白 glyph 染色畫法與動物／載具符號共用（_Dots.lua adotsDrawGlyph；
-                        -- 模組缺席＝不畫圖標，其餘照常）；只在整顆落在視窗內時畫
-                        -- UI 框架 rev 4 art 圖示優先（呼叫時查 Core.Skin），缺則退原版 map_house
-                        local Skin = Core.Skin
-                        local tex = Skin and Skin.iconTexture and Skin.iconTexture("house")
-                            or (adotsTexture and adotsTexture(SH_ICON))
-                        local drawGlyph = Core.adotsDrawGlyph
-                        local ix, iy = cx - iconSize / 2, cy - iconSize / 2
-                        if tex and drawGlyph and ix >= 0 and iy >= 0
-                            and ix + iconSize <= W and iy + iconSize <= H then
-                            drawGlyph(inner, tex, ix, iy, iconSize, r, g, b)
-                            iconDrawn = true
-                        end
-                    end
-                    if showName then
-                        -- 標籤隨列快取（1 秒重建）：省每幀 getTitle／getOwner 跨界與字串串接
-                        local name = row.label
-                        if name == nil then
-                            name = safehouseLabel(sh:getTitle(), sh:getOwner())
-                            row.label = name
-                        end
-                        if name ~= "" then
-                            local tw = shNameW[name]
-                            if not tw then
-                                local tm = getTextManager()
-                                tw = tm:MeasureStringX(UIFont.Small, name) -- 用例 ISFactionUI.lua:238
-                                shNameW[name] = tw
-                                if not shFontH then shFontH = tm:getFontHeight(UIFont.Small) end
-                            end
-                            tw = tw * tz
-                            local th = shFontH * tz
-                            local tx = cx - tw / 2
-                            -- 有圖標時名稱掛圖標正下方，否則置中（同 MapBounds 名稱底墊畫法）
-                            local ty = iconDrawn and (cy + iconSize / 2 + 1) or (cy - th / 2)
-                            if tx >= 2 and ty >= 2 and tx + tw <= W - 2 and ty + th <= H - 2 then
-                                inner:drawRect(tx - 3, ty - 1, tw + 6, th + 2, 0.6, 0, 0, 0)
-                                drawMapText(inner, name, tx, ty, r, g, b, 0.95, UIFont.Small, tz)
-                            end
-                        end
+                -- 標籤隨列快取（1 秒重建）：省每幀 getTitle／getOwner 跨界與字串串接
+                local name = nil
+                if showName then
+                    name = row.label
+                    if name == nil then
+                        name = safehouseLabel(sh:getTitle(), sh:getOwner())
+                        row.label = name
                     end
                 end
+                drawSafehouseAt(inner, ux1, uy1, ux2, uy2, ux3, uy3, ux4, uy4, r, g, b,
+                    showRect, showIcon, name, iconSize, tz)
             end
         end
     end
@@ -319,3 +327,4 @@ end
 Core.drawSafehouses = drawSafehouses
 Core.safehouseDisplayMode = safehouseDisplayMode
 Core.safehouseNameMode = safehouseNameMode
+Core.drawSafehouseAt = drawSafehouseAt -- 設定視窗效果預覽與地圖同一份畫法

@@ -7,10 +7,15 @@
 - 「家與收藏點」與「陣營分享的目標」可以分別關掉：關掉後地圖上不再畫它們（陣營分享連同路線一起不畫），回家、收藏清單與收到的分享照常保留，重新開啟就再出現。預設都開著，和現在一樣。
 - 自訂區域（地圖區域附加 MOD）的圖標有自己的大小設定，不再跟著資源點圖標大小一起變；預設 18 px，和現在一樣大。
 - 附加 MOD 在地圖上畫的標記可以分層：每一層有自己的開關、大小（8–48 px）與兩張地圖各自的名稱開關，不再全部跟著「標記大小」。需要對應的附加 MOD 一起更新；尚未更新的附加 MOD 照舊顯示。
+- 設定視窗的殭屍、動物、載具、資源點、安全屋、玩家與導航、自訂區域分類頂端有效果預覽：拉大小、換顏色、透明度、風格或開關名稱時，預覽立刻用和地圖相同的畫法顯示結果，附近沒有那種東西也看得到效果。附加 MOD 的圖層也有預覽。
+- 設定視窗可以用手把和鍵盤操作：用手把從小地圖的齒輪鈕開窗後，方向鍵在搜尋、分類與各個設定之間移動，A 切換、B 關窗回到小地圖；鍵盤用 Tab 與方向鍵移動，焦點在設定上時方向鍵不會讓角色走動。
+- 設定視窗裡每個開關都附上和 ESC 頁相同的說明；「小地圖視窗」分類補上「恢復預設尺寸」按鈕。
 
 ### 變更
 
 - ESC → 選項 → MOD 的小地圖頁改照齒輪設定的分類排列並加上標題（底圖與文字、玩家與導航、資源點、殭屍、動物、載具、安全屋、小地圖視窗、進階）；世界地圖圖標開關與顯示距離移到各自的分類裡，文字欄集中到最後的「進階」。設定值全部保留，不需要重設。
+- 齒輪的「地圖顯示設定」視窗改版：左側分成「地圖圖層」「視窗與操作」「擴充功能」「管理員」四組，每個分類有自己的圖標，有總開關的分類直接在左側切換；每個附加 MOD 一個分類，照固定順序排，不再看載入先後。世界地圖的顯示開關、顯示距離（寫成「你的值／伺服器上限」）與殭屍熱度都搬進各自的圖層分類，「顯示距離」與「世界地圖圖標」兩個分類拿掉；篩選改成可點的標籤按鈕。視窗標題列只剩關閉鈕（取消釘選與自動收合）。所有設定值保留，ESC → 選項 → MOD 頁仍能改全部設定。
+- 新的設定視窗需要 Minidoracat UI Library 同步更新；尚未更新時按齒輪會提示更新，設定仍可在 ESC → 選項 → MOD 修改，小地圖本身照常運作。
 - 「標記大小」的名稱改為「標記大小（家、收藏、導航、搜尋）」，寫明它管哪些標記。
 - 伺服器沙盒的兩個分頁改名為「Minidoracat 小地圖 - 殭屍、動物與載具」與「Minidoracat 小地圖 - 資源點與自訂區域」，內容不變；「全部資訊顯示距離上限」的說明改指向各圖層分類裡的顯示距離。
 
@@ -18,7 +23,7 @@
 
 - 附加 MOD 的設定分類按「重設此分類」時，沒有寫明預設值的勾選不再被一律關掉（例如自動駕駛幾個預設開啟的選項）。
 
-> 技術要點：`settingsApiVersion` 5：`registerSettingsSection` 的 spec 新增選用 `icon`（框架圖標鍵，缺＝`plug`）、`group`（`"addon"`｜`"admin"`）、`order`（有限數，缺＝100）與 `layers`（最多 8 層，每層 id／label／show／size 8–48／names／自訂名稱標籤／預覽範例），壞值整個 spec 拒收；tick 缺 `default` 時「重設此分類」不動它。`markerApiVersion` 3：marker 選用 `layer`，對到該 owner 在 settings v5 登記的圖層；圖層值只存在本 MOD 的 ModOptions 文字欄 `MarkerLayers`（只記改過的層），未登記的層照 v2 畫。新增 ModOptions `Places`、`SharedTargets`、`ZoneIconSize`、`MarkerLayers`；所有既有選項鍵與沙盒鍵不變。附加 MOD 一律以 `>=` 判版本，主 MOD 較舊時維持舊行為。
+> 技術要點：`settingsApiVersion` 5：`registerSettingsSection` 的 spec 新增選用 `icon`（框架圖標鍵，缺＝`plug`）、`group`（`"addon"`｜`"admin"`）、`order`（有限數，缺＝100）與 `layers`（最多 8 層，每層 id／label／show／size 8–48／names／自訂名稱標籤／預覽範例），壞值整個 spec 拒收；tick 缺 `default` 時「重設此分類」不動它。`markerApiVersion` 3：marker 選用 `layer`，對到該 owner 在 settings v5 登記的圖層；圖層值只存在本 MOD 的 ModOptions 文字欄 `MarkerLayers`（只記改過的層），未登記的層照 v2 畫。新增 ModOptions `Places`、`SharedTargets`、`ZoneIconSize`、`MarkerLayers`；所有既有選項鍵與沙盒鍵不變。附加 MOD 一律以 `>=` 判版本，主 MOD 較舊時維持舊行為。 設定視窗改用 MinidoracatUIFor42 API rev 17 元件（UI.Window／NavList／ScrollPanel／Checkbox／Dropdown／SliderRow／Button／Preview／TextField，需 `CAPABILITIES` 的 navList／sliderRow／preview／controlTooltips 等旗標；不足時齒輪與世界地圖爪印鈕只以 Toast 或頭上提示字通知、不開窗），舊 ISUI 視窗、私有斷行與滑條補丁刪除；擴充組依 (`order`, 註冊序) 排序、管理員組管理員檢視在前；效果預覽呼叫地圖的同一組畫法（新抽出 `drawZombieDot`／`adotsDrawIcon`／`adotsDrawName`／`drawZoneName`／`drawSafehouseAt`／`drawPlaceAt`，地圖改呼叫它們，畫面不變）；ESC「套用」後設定視窗自動同步；手把擁有者開窗即接手焦點（分割畫面只接自己的手把）。
 
 ## [42.21.0-0.37.1] - 2026-10-07
 

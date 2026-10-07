@@ -207,8 +207,8 @@ function MinidoracatMiniMapAPI.registerZoneProvider(ownerModId, providerFn, opti
     table.insert(registeredZoneProviders, entry)
 end
 
--- Zone 動作 API（通用小 API，供 zone-layer addon 在統一視窗「圖層顯示」區追加一列動作）：
--- 主 MOD 於自訂區域 tick 之後渲染 [combo]+[按鈕]（options 有給才有 combo）；按鈕點擊呼叫
+-- Zone 動作 API（通用小 API，供 zone-layer addon 在設定視窗「自訂區域」分類追加一列動作）：
+-- 主 MOD 於該分類末端渲染 [下拉]+[按鈕]（options 有給才有下拉）；按鈕點擊呼叫
 -- onTrigger(選中的 value)。無註冊＝零列（dormant）。spec 契約：
 --   { labelKey=string(按鈕文字鍵), tooltipKey=string|nil,
 --     options={ { value=any, labelKey=string }, ... }|nil(nil＝純按鈕),
@@ -875,7 +875,7 @@ end
 
 -- 顯示距離合成（取樣/繪製端一律經此取距離）：伺服器個別值（sandboxDist 內已
 -- 併全域上限 AllInfoDistance，並套管理員戰術旁路）與玩家自訂值（Client<沙盒
--- 選項名>，ESC 頁與統一視窗「顯示距離」區同一滑條）取較小正值——玩家只能
+-- 選項名>，ESC 頁與設定視窗各圖層分類的「顯示距離」同一滑條）取較小正值——玩家只能
 -- 收緊、不能放寬伺服器閘；0/缺值＝該層不限制。
 -- pn＝顯示對象（分割畫面各自判定）；管理員旁路把 server 端拿掉後，玩家自己
 -- 的 Client* 滑條照舊生效（旁路不解自己的偏好）
@@ -1353,6 +1353,8 @@ if PZAPI and PZAPI.ModOptions then
         -- 不帶參數＝套所有現存小地圖：事件 gate 是 class 層全玩家生效，
         -- 非事件面也要全玩家收斂（分割畫面 P2+ 才不會旗標/視覺半套）
         if Core.applyGhost then pcall(Core.applyGhost) end
+        -- 地圖顯示設定視窗開著時跟上新值（ESC 頁「套用」也走這裡；_Settings.lua）
+        if Core.settingsAfterApply then pcall(Core.settingsAfterApply) end
     end
 end
 
@@ -1877,9 +1879,8 @@ end
 
 --------------------------------------------------------------------------------
 -- 按鈕列擴充（定位玩家／複製座標改用共用 icon；缺框架退回 C／XY）
--- 統一設定視窗整節（UNIFIED_* 資料表、unifiedRebuild、buildSettingsWindow、
--- toggleSettingsWindow 等）已拆至 MinidoracatMiniMap_Settings.lua（Kahlua 每原型
--- locvar 上限 200 對策）；主檔僅留按鈕列與開窗入口，呼叫時查
+-- 地圖顯示設定視窗整節（分類資料表、重建、toggleSettingsWindow 等）已拆至
+-- MinidoracatMiniMap_Settings.lua（Kahlua 每原型 locvar 上限 200 對策）；主檔僅留按鈕列與開窗入口，呼叫時查
 -- Core.toggleSettingsWindow＋nil 防呆（模組檔載入序在本檔之後）。
 --------------------------------------------------------------------------------
 -- test:minimap-toolbar-icons:start
@@ -2006,8 +2007,8 @@ installMinidoracatButtons = function(mm)
     -- 視角切換（等軸測↔俯視）：同世界地圖 perspectiveBtn（ISWorldMap.lua:329-332、
     -- onChangePerspective :1042-1044、setIsometric＝mapAPI:setBoolean("Isometric")
     -- :1127-1130）；材質同原版（:1480-1481，48px，forceImageSize 縮進鈕面——
-    -- ISButton.lua:187-190/221-222）。與統一視窗「圖層顯示」的等軸測勾選
-    -- （_Settings UNIFIED_LAYER_TICKS engine=true）同一顆小地圖引擎布林＝同源：
+    -- ISButton.lua:187-190/221-222）。與設定視窗「底圖與文字」的等軸測勾選
+    -- （_Settings SEC_BASE 的 engine=true 項）同一顆小地圖引擎布林＝同源：
     -- 按鈕圖每幀值變才換（原版 WM prerender 讀值同步先例 :394-397），視窗/ESC
     -- 改動不脫鉤；toggle 後同玩家的設定視窗開著即重建（Core.refreshSettingsWindow，
     -- 同 PlaceNames tick 重建先例），勾選框立即反映。持久化＝原版既有流程
@@ -2077,7 +2078,7 @@ installMinidoracatButtons = function(mm)
     end
     mm.bottomPanel:addChild(homeBtn)
     mm._minidoracatHomeBtn = homeBtn
-    -- 「=」圖層面板鈕已退役：引擎原生三項移入統一視窗「圖層顯示」區。
+    -- 「=」圖層面板鈕已退役：引擎原生三項移入設定視窗「底圖與文字」分類。
     -- 原版面板機制（getVisibleOptions/onTickBox wrap 等）保留不拆——
     -- 面板已無入口，但第三方 MOD 若開啟它，注入與回寫仍正確
     mm.button4.tooltip = getText("UI_MinidoracatMiniMap_BtnSettings")
@@ -2086,10 +2087,9 @@ installMinidoracatButtons = function(mm)
     if mm.button2 then mm.button2.tooltip = getText("UI_MinidoracatMiniMap_BtnZoomOut") end
     if mm.button3 then mm.button3.tooltip = getText("UI_MinidoracatMiniMap_BtnZoomIn") end
     if mm.button6 then mm.button6.tooltip = getText("UI_MinidoracatMiniMap_BtnClose") end
-    -- 按鈕列皮膚化：10 顆（原版 5＋本 MOD 5）統一淡框淡底＋hover 亮階——同
-    -- _Settings unifiedAddBtn 樣式（fade 混色 ISButton:prerender :117-133、
-    -- 守衛 shouldDrawBackground/shouldDrawBorder :91-100）。鈕底半透明化後
-    -- 露出 outer 黑 0.8 底（ISMiniMap.lua:675），與統一設定視窗同基調。
+    -- 按鈕列皮膚化：10 顆（原版 5＋本 MOD 5）統一淡框淡底＋hover 亮階（fade 混色
+    -- ISButton:prerender :117-133、守衛 shouldDrawBackground/shouldDrawBorder :91-100）。
+    -- 鈕底半透明化後露出 outer 黑 0.8 底（ISMiniMap.lua:675）。
     -- 逐鈕呼叫、不經中間表：perspBtn 材質缺失時為 nil，表構造子中間 nil
     -- 會讓 # 截斷（家規「Kahlua # 不可信」，同 POIExport count/rn 慣例）
     local function skinBtn(b)

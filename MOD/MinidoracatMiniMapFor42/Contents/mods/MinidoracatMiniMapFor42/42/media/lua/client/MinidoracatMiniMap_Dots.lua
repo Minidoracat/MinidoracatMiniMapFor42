@@ -288,6 +288,15 @@ local function sampleZombieDots(inner, gateMax, scanKey)
 end
 -- test:zombie-sampling:end
 
+-- 一顆殭屍點（黑描邊＋本體；地圖與設定視窗預覽共用）。c＝ZDOTS_COLORS 項、af＝透明度係數
+local function drawZombieDot(el, ux, uy, size, c, af)
+    el:drawRect(ux - 2, uy - 2, size + 2, size + 2, ZDOTS_EDGE_A * af, 0, 0, 0)
+    el:drawRect(ux - 1, uy - 1, size, size, af, c[1], c[2], c[3])
+end
+local function zdotsColor()
+    return ZDOTS_COLORS[getComboIndex("ZombieDotColor", 1)] or ZDOTS_COLORS[1]
+end
+
 -- 殭屍點繪製（小地圖與世界地圖共用；el 需有 mapAPI/width/height/playerNum）。
 -- optId＝該表面的開關（小地圖 ZombieDots／世界地圖 WMZombieDots）；surface＝"mini"／"world"
 -- （功能閘門 zombie 用）；顏色/大小/上限與伺服器沙盒閘兩表面共用
@@ -306,7 +315,7 @@ local function drawZombieDotsOn(el, optId, surface)
         gateMax = max
     end
     local st = sampleZombieDots(el, gateMax, "ZombieScanInterval")
-    local c = ZDOTS_COLORS[getComboIndex("ZombieDotColor", 1)] or ZDOTS_COLORS[1]
+    local c = zdotsColor()
     local size = getSliderValue("ZombieDotSize", 3, 1, 16)
     local af = getSliderValue("ZombieDotAlpha", 100, 10, 100) / 100 -- 透明度係數（描邊/本體等比）
     local mapAPI = el.mapAPI
@@ -328,8 +337,7 @@ local function drawZombieDotsOn(el, optId, surface)
             -- 手動裁到視窗內（Lua drawRect 不吃元件裁切）；含描邊起繪於 ux-2。
             -- drawRect＝ISUIElement.lua:1191（引數 x,y,w,h,a,r,g,b）
             if ux >= 2 and uy >= 2 and ux <= el.width - size and uy <= el.height - size then
-                el:drawRect(ux - 2, uy - 2, size + 2, size + 2, ZDOTS_EDGE_A * af, 0, 0, 0)
-                el:drawRect(ux - 1, uy - 1, size, size, af, c[1], c[2], c[3])
+                drawZombieDot(el, ux, uy, size, c, af)
             end
         end
     end
@@ -726,6 +734,38 @@ local function adotsStyleTexture(art, styleItem)
     return adotsSymTexture(art), false
 end
 
+-- 以下三個 helper 由地圖迴圈與設定視窗預覽共用（同一份畫法）
+-- 載具符號：框架 art 優先，缺則原版方向盤
+local function adotsVehTexture()
+    local Skin = Core.Skin
+    return Skin and Skin.iconTexture and Skin.iconTexture("steeringwheel")
+        or adotsTexture(ADOTS_VEH_SYM)
+end
+-- 一顆動物圖標：彩圖原色、不墊底（物品圖本身透明背景；2026-09-03 使用者裁決），野生加角標
+-- （彩圖不可染色，用角標區分；色跟野生下拉）；符號風格走白 glyph 染色 c
+local function adotsDrawIcon(inner, tex, asItem, ux, uy, size, c, wild, wildC, af)
+    if asItem then
+        inner:drawTextureScaled(tex, ux, uy, size, size, af, 1, 1, 1)
+        if wild then
+            -- 邊長隨圖標大小（16px→4，同原固定值）；右上角外凸 1px
+            local bs = size >= 16 and (size - size % 4) / 4 or 4
+            inner:drawRect(ux + size - bs + 1, uy - 1, bs, bs, af, wildC[1], wildC[2], wildC[3])
+        end
+    else
+        adotsDrawGlyph(inner, tex, ux, uy, size, c[1], c[2], c[3], af)
+    end
+end
+-- 動物名稱：圖標正下方置中，深底＋白字（同安全屋名稱畫法）；超出視窗不畫
+local function adotsDrawName(inner, name, ux, uy, half, size, tz, nameTh, af)
+    local tw = getTextManager():MeasureStringX(UIFont.Small, name) * tz
+    local tx = ux + half - tw / 2
+    local ty = uy + size + 1
+    if tx >= 2 and ty + nameTh <= inner.height - 2 and tx + tw <= inner.width - 2 then
+        inner:drawRect(tx - 3, ty - 1, tw + 6, nameTh + 2, 0.6 * af, 0, 0, 0)
+        drawMapText(inner, name, tx, ty, 1, 1, 1, 0.95 * af, UIFont.Small, tz)
+    end
+end
+
 -- wildOpt/liveOpt/vehOpt＝該表面的開關選項（小地圖 AnimalWild…／世界地圖 WM 前綴）；
 -- surface＝"mini"／"world"（功能閘門 scan 用）；
 -- 風格/大小/顏色/物種與類別篩選、伺服器沙盒閘皆兩表面共用
@@ -789,46 +829,24 @@ local function drawAnimalDots(inner, wildOpt, liveOpt, vehOpt, surface)
         -- 手動裁切同殭屍點位（Lua 繪製不吃元件裁切）；留 1px 邊給影子/描邊
         if ux >= 1 and uy >= 1 and ux + size <= inner.width - 1 and uy + size <= inner.height - 1 then
             if d.veh then -- 載具：恆用符號（無對應物品圖），顏色可自訂
-                local Skin = Core.Skin -- 框架 art 優先，缺則原版方向盤
-                local tex = Skin and Skin.iconTexture and Skin.iconTexture("steeringwheel")
-                    or adotsTexture(ADOTS_VEH_SYM)
+                local tex = adotsVehTexture()
                 if tex then
                     adotsDrawGlyph(inner, tex, ux, uy, size, vehC[1], vehC[2], vehC[3], vAlpha)
                 end
             else
-                local art = ADOTS_ART[d.group]
-                local tex, asItem = adotsStyleTexture(art, styleItem)
+                local tex, asItem = adotsStyleTexture(ADOTS_ART[d.group], styleItem)
                 if tex then
-                    if asItem then -- 彩圖原色、不墊底（物品圖本身透明背景；2026-09-03 使用者裁決）
-                        inner:drawTextureScaled(tex, ux, uy, size, size, aAlpha, 1, 1, 1)
-                        if d.wild then -- 角標＝野生（彩圖不可染色，用角標區分；色跟野生下拉）
-                            -- 邊長隨圖標大小（16px→4，同原固定值）；右上角外凸 1px
-                            local bs = size >= 16 and (size - size % 4) / 4 or 4
-                            inner:drawRect(ux + size - bs + 1, uy - 1, bs, bs, aAlpha,
-                                wildC[1], wildC[2], wildC[3])
-                        end
-                    else
-                        local c = d.wild and wildC or liveC
-                        adotsDrawGlyph(inner, tex, ux, uy, size, c[1], c[2], c[3], aAlpha)
-                    end
+                    adotsDrawIcon(inner, tex, asItem, ux, uy, size, d.wild and wildC or liveC,
+                        d.wild, wildC, aAlpha)
                 end
             end
-            -- 名稱標籤：圖標正下方置中，深底＋白字（同安全屋名稱畫法）；超出視窗不畫
             if wantNames and d.name and not d.veh then
                 local within = true
                 if nameDist2 then
                     local ndx, ndy = d.x - npx, d.y - npy
                     within = ndx * ndx + ndy * ndy <= nameDist2
                 end
-                if within then
-                    local tw = getTextManager():MeasureStringX(UIFont.Small, d.name) * tz
-                    local tx = ux + half - tw / 2
-                    local ty = uy + size + 1
-                    if tx >= 2 and ty + nameTh <= inner.height - 2 and tx + tw <= inner.width - 2 then
-                        inner:drawRect(tx - 3, ty - 1, tw + 6, nameTh + 2, 0.6 * aAlpha, 0, 0, 0)
-                        drawMapText(inner, d.name, tx, ty, 1, 1, 1, 0.95 * aAlpha, UIFont.Small, tz)
-                    end
-                end
+                if within then adotsDrawName(inner, d.name, ux, uy, half, size, tz, nameTh, aAlpha) end
             end
         end
     end
@@ -839,3 +857,10 @@ Core.drawZombieDotsOn = drawZombieDotsOn
 Core.drawAnimalDots = drawAnimalDots
 Core.adotsStyleTexture = adotsStyleTexture -- _Settings.lua：物種小圖依風格取圖（與地圖同源）
 Core.adotsDrawGlyph = adotsDrawGlyph -- _Safehouse.lua：安全屋圖標沿用白 glyph 染色畫法
+-- 設定視窗效果預覽（_Settings.lua）與地圖共用的畫法
+Core.drawZombieDot = drawZombieDot
+Core.zdotsColor = zdotsColor
+Core.adotsColor = adotsColor
+Core.adotsVehTexture = adotsVehTexture
+Core.adotsDrawIcon = adotsDrawIcon
+Core.adotsDrawName = adotsDrawName
