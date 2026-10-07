@@ -2,7 +2,7 @@
 -- 地圖畫法 helper 從各模組原始碼抽出（見 scripts/settings_harness.lua）。缺同層框架 repo＝FAIL（不是 SKIP）。
 -- 範圍：框架缺席／過舊只提示不開窗；四組側欄與群組內順序；自訂區域／MOD 地圖有條件出現；管理員組；
 -- 沙盒閘停用開關＋提示；顯示距離上限；搜尋布林與跳轉；被世界地圖蓋住置頂；分割畫面換擁有者；
--- 開窗重讀現值；重設；效果預覽用地圖畫法畫得出來；手把接手與 B 回小地圖；版面在 viewport 內。
+-- 開窗重讀現值；重設；字型模式（大畫面 Medium）與版面放大；小地圖上半往下開、避開快捷列；效果預覽用地圖畫法畫得出來；手把接手與 B 回小地圖；版面在 viewport 內。
 local H = dofile("scripts/settings_harness.lua")
 local assertions, failures = 0, 0
 local function check(value, label)
@@ -614,7 +614,8 @@ do
     check(s3.win.wantKeyEvents == true, "O5 window receives key events")
 end
 
--- ── R 位置：從小地圖開＝視窗底與小地圖外框底齊平（原版快捷列在它下面）；世界地圖開照舊 ─────
+-- ── R 位置：從小地圖開，小地圖在 viewport 下半＝視窗底與小地圖外框底齊平（原版快捷列在它下面）；
+--    上半＝視窗頂與小地圖頂齊平往下長；都不壓到看得見的快捷列；世界地圖開照舊 ─────────────
 do
     local e = H.load{}
     e.boot()
@@ -622,29 +623,51 @@ do
     local st = e.open(0)
     local fullH = st.inspector.height
     checkEq(st.win.y + st.win.height, 1000, "R1 window bottom is level with the minimap bottom")
-    checkEq(fullH, 540, "R1 enough room above: body keeps its full height")
+    checkEq(fullH, (18 + 8) * 24, "R1 enough room above: body keeps its full height (Medium rows)")
     st.win:close()
-    mm.absY, mm.height = 200, 800 -- 小地圖比視窗高：照樣底對底，不是頂對頂
+    mm.absY, mm.height = 200, 800 -- 小地圖比視窗高、中心在下半：照樣底對底
     st = e.open(0)
-    checkEq(st.win.y + st.win.height, 1000, "R1 minimap taller than the window: still bottom-aligned")
+    checkEq(st.win.y + st.win.height, 1000, "R1 lower-half minimap taller than the window: still bottom-aligned")
     st.win:close()
-    mm.absY, mm.height = 40, 300 -- 小地圖在上方：上面只剩 340px
+    mm.absY, mm.height = 500, 150 -- 中心 575 在下半，底 650：上面放不下整個視窗
     st = e.open(0)
     checkEq(st.win.y, 0, "R2 short space: window starts at the viewport top")
-    checkEq(st.win.y + st.win.height, 340, "R2 short space: bottom still level with the minimap bottom")
-    check(st.inspector.height < fullH and st.inspector.height >= 22 * 8 and st.navScroll.height == st.inspector.height,
+    checkEq(st.win.y + st.win.height, 650, "R2 short space: bottom still level with the minimap bottom")
+    check(st.inspector.height < fullH and st.inspector.height >= 26 * 8 and st.navScroll.height == st.inspector.height,
         "R2 body shrinks (not below the 8-row minimum)")
-    st.selectSection("animals")
+    st.selectSection("perf")
     st.inspector:setYScroll(-60)
     check(st.inspector:getScrollHeight() > st.inspector.height and st.inspector:getYScroll() == -60,
         "R2 shrunk inspector still scrolls")
     st.win:close()
-    mm.height = 110 -- 底 150：比最小高度還矮
+    -- 上半：右上角的小地圖（頂 40、高 300）＝頂對頂，往下長到完整高度（以前被擠成底 340、8 列）
+    mm.absY, mm.height = 40, 300
     st = e.open(0)
-    check(st.inspector.height == 22 * 8 and st.win.y == 0 and st.win.y + st.win.height <= 1080,
+    checkEq(st.win.y, 40, "R3 upper-half minimap: window top level with the minimap top")
+    checkEq(st.inspector.height, fullH, "R3 upper-half minimap: window grows downward to its full height")
+    st.win:close()
+    -- 快捷列：上半時視窗底不壓到看得見的快捷列，放不下才縮
+    e.hotbar = { visible = true, y = 600 }
+    st = e.open(0)
+    check(st.win.y == 40 and st.win.y + st.win.height <= 600 and st.inspector.height < fullH,
+        "R3 visible hotbar: the downward window stops above it and shrinks the body")
+    st.win:close()
+    e.hotbar.visible = false
+    st = e.open(0)
+    checkEq(st.inspector.height, fullH, "R3 hidden hotbar is ignored")
+    st.win:close()
+    e.hotbar = { visible = true, y = 200 } -- 空間比最小高度還小：最小高度贏、留在 viewport 內
+    st = e.open(0)
+    check(st.inspector.height == 26 * 8 and st.win.y == 0 and st.win.y + st.win.height <= 1080,
         "R3 minimum body height wins; the window stays inside the viewport")
     st.win:close()
+    -- 下半＋快捷列頂比小地圖底高：視窗底停在快捷列頂
     mm.absY, mm.height = 700, 300
+    e.hotbar = { visible = true, y = 980 }
+    st = e.open(0)
+    checkEq(st.win.y + st.win.height, 980, "R3 lower-half minimap: bottom stays above the hotbar")
+    st.win:close()
+    e.hotbar = nil
     mm.bottomPanel = { visible = false, height = 30, isVisible = function(self) return self.visible end,
         getHeight = function(self) return self.height end }
     st = e.open(0)
@@ -657,6 +680,13 @@ do
     st.rebuild()
     checkEq(st.win.y, 100, "R5 rebuild leaves a window that is already above the floor where it is")
     st.win:close()
+    mm.absY, mm.height = 40, 300
+    st = e.open(0)
+    e.hotbar = { visible = true, y = 700 }
+    st.rebuild()
+    check(st.win.y + st.win.height <= 700, "R5 rebuild clamp uses the same rule (upper half: above the hotbar)")
+    st.win:close()
+    e.hotbar = nil
     local worldMap = { playerNum = 0, getAbsoluteX = function() return 1200 end, getAbsoluteY = function() return 100 end }
     e.Core.toggleSettingsWindow(worldMap)
     st = e.studio()
@@ -664,6 +694,64 @@ do
     st.win:setY(900)
     st.rebuild()
     checkEq(st.win.y + st.win.height, 1080, "R6 world map: rebuild clamps to the viewport bottom only")
+end
+
+-- ── F 字型：viewport 夠高（≥900）且 Small 字不大（≤18）＝Medium，內文元件全跟著；版面隨字高放大 ───
+do
+    local function openWith(h, smallH)
+        local e = H.load{}
+        e.viewports[0] = { 0, 0, 1920, h }
+        e.fontH.Small = smallH
+        e.boot()
+        return e, e.open(0)
+    end
+    local e, st = openWith(1080, 14)
+    checkEq(st.win.font, UIFont.Medium, "F1 tall viewport + small game font = Medium window")
+    checkEq(select(2, openWith(900, 18)).win.font, UIFont.Medium, "F1 thresholds are inclusive (900 px, 18 px)")
+    checkEq(select(2, openWith(899, 14)).win.font, UIFont.Small, "F2 viewport under 900 px keeps Small")
+    checkEq(select(2, openWith(1080, 19)).win.font, UIFont.Small, "F2 large game font (Small > 18 px) keeps Small")
+    -- 內文元件與文字塊：每個分類逐一看
+    local function fonts(env, s, want)
+        local bad = {}
+        if s.nav.font ~= want then bad[#bad + 1] = "nav" end
+        if s.search.font ~= want then bad[#bad + 1] = "search" end
+        for _, id in ipairs(s.sections) do
+            s.selectSection(id)
+            for _, el in ipairs(env.studio().controls) do
+                local f = el._lines and el._font or el.font
+                local header = el._lines and el._font == UIFont.Medium -- 分類標題固定 Medium
+                if f ~= nil and f ~= want and not header then bad[#bad + 1] = id .. ":" .. tostring(env.type(el)) end
+            end
+        end
+        return table.concat(bad, ",")
+    end
+    checkEq(fonts(e, st, UIFont.Medium), "", "F3 large mode: nav, search, every control and text block use Medium")
+    local es, ss = openWith(899, 14)
+    checkEq(fonts(es, ss, UIFont.Small), "", "F3 small mode: everything stays Small")
+    -- 版面：導覽寬＝字高×11 起、車道夾 [字高×21, 字高×30]（此處標籤夠長＝頂到上限）
+    e, st = openWith(1080, 14)
+    es, ss = openWith(899, 14)
+    checkEq(st.inspector.width, 18 * 30 + 28, "F4 Medium lane cap = font height x 30")
+    checkEq(ss.inspector.width, 14 * 30 + 28, "F4 Small lane cap = font height x 30")
+    -- 下限：字很大（遊戲字級調大＝Small 30px）時標籤撐不到下限，車道＝字高×21
+    checkEq(select(2, openWith(1080, 30)).inspector.width, 30 * 21 + 28, "F4 lane floor = font height x 21")
+    -- 說明段落用視窗字型斷行：每行以該字型量都不超出文字塊寬
+    local over
+    st.selectSection("perf")
+    for _, el in ipairs(e.studio().controls) do
+        for _, line in ipairs(el._lines or {}) do
+            if getTextManager():MeasureStringX(el._font, line) > el.width then over = line end
+        end
+    end
+    check(over == nil, "F4 notes wrap with the window font (" .. tostring(over) .. ")")
+    check(st.win.width > ss.win.width and st.navScroll.width > ss.navScroll.width, "F4 window and nav grow with the font")
+    -- 執行中換了 viewport（換解析度）：下一幀換成新字型的視窗、沿用分類
+    st.selectSection("zombie")
+    e.viewports[0] = { 0, 0, 1920, 800 }
+    e.frame()
+    local now = e.studio()
+    check(now.win ~= st.win and now.win:isVisible() and now.win.font == UIFont.Small and now.selected == "zombie",
+        "F5 viewport change: the window reopens with the new font on the same category")
 end
 
 io.write(string.format("test_settings_studio: %d assertions, %d failures\n", assertions, failures))

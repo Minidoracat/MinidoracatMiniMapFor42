@@ -223,10 +223,12 @@ function H.load(opts)
     end
     getTextOrNull = function(key) return TRANSLATIONS[key] end
     UIFont = { Small = "Small", Medium = "Medium", NewSmall = "NewSmall", Large = "Large" }
+    -- 字高可改（env.fontH）；字寬 Small 8px／Medium 10px 一字（量字要跟視窗字型走）
+    env.fontH = { Small = 14, Medium = 18 }
     getTextManager = function()
         return {
-            MeasureStringX = function(_, _, text) return #tostring(text or "") * 8 end,
-            getFontHeight = function(_, font) return font == "Medium" and 18 or 14 end,
+            MeasureStringX = function(_, font, text) return #tostring(text or "") * (font == "Medium" and 10 or 8) end,
+            getFontHeight = function(_, font) return env.fontH[font] or 14 end,
         }
     end
     getCore = function()
@@ -265,6 +267,11 @@ function H.load(opts)
     getPlayerScreenTop = function(pn) return env.viewports[pn][2] end
     getPlayerScreenWidth = function(pn) return env.viewports[pn][3] end
     getPlayerScreenHeight = function(pn) return env.viewports[pn][4] end
+    -- 原版快捷列（env.hotbar＝{ visible, y }；nil＝沒有）
+    getPlayerHotbar = function()
+        local hb = env.hotbar
+        return hb and { isVisible = function() return hb.visible end, getY = function() return hb.y end }
+    end
     local engine = {}
     local minimaps = {}
     getPlayerMiniMap = function(pn)

@@ -1053,6 +1053,7 @@ local PREVIEWS = {
 -- 版面元件：框架元件（Checkbox／Dropdown／SliderRow／Button／Preview）＋一個純繪字的
 -- TextBlock（標題、說明段落、分隔線、圖層區塊外框；不可聚焦）。ctx＝單次 inspector 建構
 -- 的游標（x／y／w 為 ScrollPanel 內容座標），put() 同時記錄元件供下次重建移除。
+-- ctx.font＝視窗字型（studioFont：大畫面用 Medium），所有內文元件與量字都用它
 --------------------------------------------------------------------------------
 local GAP = 6
 local LAYER_SIZE = { min = 8, max = 48, step = 1, fmt = "%dpx" } -- addon 圖層大小（MarkerLayers 夾同範圍）
@@ -1105,16 +1106,16 @@ end
 -- 說明段落（UI.Text.wrap 斷行：CJK 禁則與 UTF-16 安全由框架負責）
 local function addNote(ctx, text, color, indent)
     indent = indent or 0
-    local lines = ctx.UI.Text.wrap(text, ctx.w - indent, UIFont.Small)
+    local lines = ctx.UI.Text.wrap(text, ctx.w - indent, ctx.font)
     local tb = newTextBlock(ctx.x + indent, ctx.y, ctx.w - indent, math.max(1, #lines) * ctx.lineH)
-    tb._lines, tb._font, tb._lineH = lines, UIFont.Small, ctx.lineH
+    tb._lines, tb._font, tb._lineH = lines, ctx.font, ctx.lineH
     tb._color = color or ctx.colors.textMuted
     return advance(ctx, put(ctx, tb))
 end
 
 -- 一行文字（截字）；回 TextBlock，不推進游標
 local function textLine(ctx, x, y, w, text, font, color)
-    font = font or UIFont.Small
+    font = font or ctx.font
     local fh = getTextManager():getFontHeight(font)
     local tb = newTextBlock(x, y, w, fh)
     tb._lines, tb._font, tb._lineH = { ctx.UI.Text.fit(text, w, font) }, font, fh
@@ -1137,13 +1138,13 @@ end
 local function addCheckbox(ctx, label, checked, onChange, tooltip, indent)
     indent = indent or 0
     local box = ctx.UI.Checkbox.new{ x = ctx.x + indent, y = ctx.y, width = ctx.w - indent, label = label,
-        checked = checked == true, target = ctx.win, onChange = onChange, tooltip = tooltip }
+        checked = checked == true, target = ctx.win, onChange = onChange, tooltip = tooltip, font = ctx.font }
     return advance(ctx, put(ctx, box))
 end
 
 local function addButton(ctx, title, onClick, tooltip, width, x)
     local btn = ctx.UI.Button.new{ x = x or ctx.x, y = ctx.y, width = width, title = title,
-        target = ctx.win, onClick = onClick, tooltip = tooltip }
+        target = ctx.win, onClick = onClick, tooltip = tooltip, font = ctx.font }
     return put(ctx, btn)
 end
 
@@ -1155,7 +1156,7 @@ local function addDropdown(ctx, labelText, items, selected, onChange, tooltip)
     for j = 1, #items do options[j] = { id = j, label = getText(items[j]) } end
     local dd = ctx.UI.Dropdown.new{ x = ctx.x + ctx.labelW + 8, y = ctx.y, width = ctx.w - ctx.labelW - 8,
         height = h, options = options, selected = selected, target = ctx.win, onChange = onChange,
-        tooltip = tooltip }
+        tooltip = tooltip, font = ctx.font }
     return advance(ctx, put(ctx, dd))
 end
 
@@ -1163,7 +1164,7 @@ local function addSliderRow(ctx, labelText, entry, value, format, onChange, cap,
     local row = ctx.UI.SliderRow.new{ x = ctx.x, y = ctx.y, width = ctx.w, label = labelText,
         labelWidth = ctx.labelW, min = entry.min, max = entry.max, step = entry.step, value = value,
         format = format, zeroLabel = entry.zeroLabel and getText(entry.zeroLabel) or nil, cap = cap,
-        tooltip = tooltip, target = ctx.win, onChange = onChange }
+        tooltip = tooltip, target = ctx.win, onChange = onChange, font = ctx.font }
     return advance(ctx, put(ctx, row))
 end
 
@@ -1307,7 +1308,7 @@ local function addHeader(ctx, sec)
     if master then
         local box = ctx.UI.Checkbox.new{ x = ctx.x + ctx.w - 40, y = ctx.y + math.floor((h - 20) / 2),
             width = 40, height = 20, label = "", checked = studioMasterValue(master), target = ctx.win,
-            onChange = onMasterBox, tooltip = getText(master.label) }
+            onChange = onMasterBox, tooltip = getText(master.label), font = ctx.font }
         box._sec = sec
         box:setEnabled(sectionEnabled(sec, ctx.pn) and (master.members ~= nil or entryEnabled(master, ctx.pn)))
         put(ctx, box)
@@ -1357,7 +1358,7 @@ local function addChips(ctx, chips)
         if chips.icon then tex, tint = chips.icon(it) end
         local btn = ctx.UI.Button.new{ x = x, y = y, height = h, title = chips.raw and it.label or getText(it.label),
             icon = tex, iconColor = canTint and tint or nil, style = "chip", active = chips.get(it),
-            target = ctx.win, onClick = onChip }
+            target = ctx.win, onClick = onChip, font = ctx.font }
         if x > ctx.x and x + btn.width > ctx.x + ctx.w then
             x, y = ctx.x, y + h + 4
             btn:setX(x)
@@ -1415,7 +1416,7 @@ end
 local function addResetButton(ctx, sec)
     ctx.y = ctx.y + 4
     local text = getText("UI_MinidoracatMiniMap_StudioResetCategory")
-    local w = math.min(ctx.w, math.max(120, getTextManager():MeasureStringX(UIFont.Small, text) + 24))
+    local w = math.min(ctx.w, math.max(120, getTextManager():MeasureStringX(ctx.font, text) + 24))
     local btn = addButton(ctx, text, onResetSection,
         getText("UI_MinidoracatMiniMap_StudioResetCategory_tooltip"), w, ctx.x + ctx.w - w)
     btn._sec = sec
@@ -1431,11 +1432,12 @@ local function addZoneActions(ctx)
         local dd
         local btnW = ctx.w
         if action.options then
-            btnW = math.max(80, math.min(getTextManager():MeasureStringX(UIFont.Small, title) + 24, ctx.w - 130))
+            btnW = math.max(80, math.min(getTextManager():MeasureStringX(ctx.font, title) + 24, ctx.w - 130))
             local options = {}
             for j = 1, #action.options do options[j] = { id = j, label = getText(action.options[j].labelKey) } end
             dd = ctx.UI.Dropdown.new{ x = ctx.x, y = ctx.y, width = ctx.w - btnW - 4, height = ctx.fontH + 10,
-                options = options, selected = action._selected or 1, target = ctx.win, onChange = onZoneActionPick }
+                options = options, selected = action._selected or 1, target = ctx.win, onChange = onZoneActionPick,
+                font = ctx.font }
             dd._action = action
             put(ctx, dd)
         end
@@ -1501,7 +1503,7 @@ local function addLayerBlock(ctx, sec, layer)
     local label = getText(layer.label)
     textLine(ctx, ctx.x, ctx.y + math.floor((h - ctx.fontH) / 2), ctx.w - 48, label)
     local sw = ctx.UI.Checkbox.new{ x = ctx.x + ctx.w - 40, y = ctx.y + 2, width = 40, height = 20, label = "",
-        checked = prefs.show.mini, target = ctx.win, onChange = onLayerBox, tooltip = label }
+        checked = prefs.show.mini, target = ctx.win, onChange = onLayerBox, tooltip = label, font = ctx.font }
     sw._findKey = "layer:" .. layer.id
     put(ctx, layerBox(sw, "showMini"))
     ctx.y = ctx.y + h + GAP
@@ -1629,7 +1631,7 @@ local function buildPerf(ctx, sec)
         local lv = PERF_LEVELS[item.lvl]
         local title = textLine(ctx, ctx.x, ctx.y, ctx.w, getText(item.name))
         title._right, title._rightColor = getText(lv.key), lv
-        title._rightW = tm:MeasureStringX(UIFont.Small, title._right)
+        title._rightW = tm:MeasureStringX(ctx.font, title._right)
         title._findKey = item.name
         advance(ctx, title)
         addNote(ctx, getText(item.desc), nil, 12)
@@ -1706,7 +1708,9 @@ end
 
 --------------------------------------------------------------------------------
 -- 版面量測與 pane：導覽寬＝最長分類名＋圖示＋開關；inspector 車道寬＝各語系標籤實測
---（夾 [340, 480]）；放不下兩欄就單頁（導覽或 inspector 二選一，inspector 帶「返回分類」）
+--（夾 [字高×21, 字高×30]：Small 約 340–480、Medium 約 440–630）；放不下兩欄就單頁
+--（導覽或 inspector 二選一，inspector 帶「返回分類」）
+-- 字型：viewport 夠高（≥900）且 Small 字不大（≤18px，玩家沒把遊戲字級調大）＝Medium，否則 Small
 --------------------------------------------------------------------------------
 -- test:settings-studio-layout:start
 local function studioPaneLayout(viewportW, inspectorW, navW)
@@ -1719,9 +1723,16 @@ local function studioPaneLayout(viewportW, inspectorW, navW)
 end
 -- test:settings-studio-layout:end
 
-local function studioMeasure(list, fontH)
+local function studioFont(pn)
+    if getPlayerScreenHeight(pn) >= 900 and getTextManager():getFontHeight(UIFont.Small) <= 18 then
+        return UIFont.Medium
+    end
+    return UIFont.Small
+end
+
+local function studioMeasure(list, fontH, font)
     local tm = getTextManager()
-    local function tw(key) return tm:MeasureStringX(UIFont.Small, getTextOrNull(key) or key) end
+    local function tw(key) return tm:MeasureStringX(font, getTextOrNull(key) or key) end
     local navW = fontH * 11
     local tickW, labelW = 0, 0
     local function ticks(l)
@@ -1743,8 +1754,8 @@ local function studioMeasure(list, fontH)
         labels(spec.nameSliders)
         labels(spec.distance)
     end
-    local laneW = math.max(340, tickW + 44 + 8, labelW + 180)
-    if laneW > 480 then laneW = 480 end
+    local laneW = math.max(fontH * 21, tickW + 44 + 8, labelW + 180)
+    if laneW > fontH * 30 then laneW = fontH * 30 end
     return navW + 12, laneW, math.min(labelW, math.floor(laneW * 0.45))
 end
 
@@ -1796,10 +1807,13 @@ local function studioFillInspector(win, sec, hits, showBack)
     for i = 1, #els do panel:removeChild(els[i]) end
     win._inspectorEls = {}
     win._headerBox = nil
-    local fontH = getTextManager():getFontHeight(UIFont.Small)
+    local font = win._font or UIFont.Small
+    local fontH = getTextManager():getFontHeight(font)
+    -- 效果預覽照地圖畫（地圖文字倍率），高度不跟視窗字型走
+    local mapH = getTextManager():getFontHeight(UIFont.Small)
     local ctx = { win = win, UI = UI, panel = panel, pn = win._playerNum or 0,
         x = 8, y = 8, w = math.max(1, panel:contentWidth() - 16), labelW = win._labelW,
-        fontH = fontH, lineH = fontH + 2, previewH = math.max(64, fontH * 2 + 40),
+        font = font, fontH = fontH, lineH = fontH + 2, previewH = math.max(64, mapH * 2 + 40),
         colors = win.theme.colors }
     if showBack then
         advance(ctx, addButton(ctx, getText("UI_MinidoracatMiniMap_StudioBack"), onBack))
@@ -1850,8 +1864,9 @@ local function studioRebuild(win)
     win._selectedSec = sec.id
     win._nav:refresh()
     -- 版面
-    local fontH = getTextManager():getFontHeight(UIFont.Small)
-    local navW, laneW, labelW = studioMeasure(list, fontH)
+    local font = win._font or UIFont.Small
+    local fontH = getTextManager():getFontHeight(font)
+    local navW, laneW, labelW = studioMeasure(list, fontH, font)
     win._labelW = labelW
     local viewportW, viewportH = getPlayerScreenWidth(pn), getPlayerScreenHeight(pn)
     local sx, sy = getPlayerScreenLeft(pn), getPlayerScreenTop(pn)
@@ -1859,21 +1874,31 @@ local function studioRebuild(win)
     local titleH = win:titleBarHeight()
     local searchH = fontH + 10
     local bodyY = titleH + 8 + searchH + 8
-    -- 視窗底的下限：從小地圖開＝小地圖外框底（原版快捷列就在它下面，視窗底與它齊平），
-    -- 世界地圖開＝viewport 底（留 8px）。放不下就縮內容區（兩欄各自捲動），但至少留 8 列高
-    -- （viewport 本身更矮時以 viewport 為準）——這時視窗會低過小地圖底
-    local floorY, gap = sy + viewportH, 8
+    -- 垂直位置（從小地圖開）：小地圖中心在 viewport 下半＝視窗底與小地圖外框底齊平（原版快捷列
+    -- 在它下面）；在上半＝視窗頂與小地圖頂齊平往下長（右上角的小地圖不會把視窗擠成 8 列）。
+    -- 兩種都不低於看得見的原版快捷列頂、不出 viewport；世界地圖開＝viewport 底（留 8px）。
+    -- 放不下才縮內容區（兩欄各自捲動），但至少留 8 列高（viewport 本身更矮時以 viewport 為準）
+    local floorY, gap, topY = sy + viewportH, 8, sy
+    win._topY = nil
     local mini = win._fromMini and getPlayerMiniMap(pn)
     if mini then
+        local hotbar = getPlayerHotbar and getPlayerHotbar(pn)
+        if hotbar and hotbar:isVisible() then floorY = math.min(floorY, hotbar:getY()) end
         -- 按鈕列「滑鼠懸停時」模式收合時外框不含按鈕列：補回它的高（原版收合也替它留位，
         -- ISMiniMap.lua:539-540），重建時視窗才不會跟著上下跳
-        local bottom = mini:getAbsoluteY() + mini:getHeight()
+        local top = mini:getAbsoluteY()
+        local bottom = top + mini:getHeight()
         local bp = mini.bottomPanel
         if bp and not bp:isVisible() then bottom = bottom + bp:getHeight() + 1 end
-        floorY, gap = math.min(floorY, bottom), 0
+        if top + bottom < 2 * sy + viewportH then
+            topY = math.max(sy, top)
+            win._topY = topY
+        else
+            floorY, gap = math.min(floorY, bottom), 0
+        end
     end
     win._floorY = floorY
-    local bodyH = math.max(80, math.min(math.max(540, (fontH + 8) * 24), floorY - gap - sy - bodyY - 8),
+    local bodyH = math.max(80, math.min(math.max(540, (fontH + 8) * 24), floorY - gap - topY - bodyY - 8),
         math.min((fontH + 8) * 8, viewportH - bodyY - 16))
     win._pane = pane.mode
     win:setWidth(pane.windowW)
@@ -1964,6 +1989,15 @@ local function studioSave(win)
 end
 
 local function studioPrerender(self)
+    -- 字型模式依擁有者 viewport 與遊戲字級決定：變了（換解析度、分割畫面加人）＝關掉、
+    -- 以新字型重開（框架元件的字型在建構時定）
+    local pn = self._playerNum or 0
+    if studioFont(pn) ~= self._font then
+        local outer = self._fromMini and getPlayerMiniMap(pn) or self._outer
+        self:close()
+        Core.toggleSettingsWindow(outer)
+        return
+    end
     if unifiedZoneRefsDirty(self) then
         self._sig = nil -- 區域類別也在搜尋索引裡
         self._dirty = true
@@ -2033,9 +2067,10 @@ local function onNavSelect(win, id)
     studioSelect(win, id)
 end
 
-local function studioCreate(UI)
-    local win = UI.Window.new{ x = 0, y = 0, width = 600, height = 400, icon = "sliders",
+local function studioCreate(UI, font)
+    local win = UI.Window.new{ x = 0, y = 0, width = 600, height = 400, icon = "sliders", font = font,
         title = getText("UI_MinidoracatMiniMap_StudioTitle"), onClose = studioOnClose }
+    win._font = font
     win._UI = UI
     win.setVisible = studioSetVisible
     win.prerender = studioPrerender
@@ -2043,15 +2078,15 @@ local function studioCreate(UI)
     win._selectedSec, win._page, win._query, win._playerNum = SEC_BASE.id, "nav", "", 0
     win:setVisible(false)
     win:addToUIManager()
-    local search = UI.TextField.new{ x = 8, y = win:titleBarHeight() + 8, width = 300,
+    local search = UI.TextField.new{ x = 8, y = win:titleBarHeight() + 8, width = 300, font = font,
         placeholder = getText("UI_MinidoracatMiniMap_StudioSearchHint"), clearButton = true,
         onChange = onSearchChange }
     search._win = win
     win._search = search
     win:addChild(search)
-    win._navScroll = UI.ScrollPanel.new{ width = 200, height = 200 }
+    win._navScroll = UI.ScrollPanel.new{ width = 200, height = 200, font = font }
     win:addChild(win._navScroll)
-    win._nav = UI.NavList.new{ width = 180, groups = {}, target = win, onSelect = onNavSelect }
+    win._nav = UI.NavList.new{ width = 180, groups = {}, target = win, onSelect = onNavSelect, font = font }
     win._navScroll:addChild(win._nav)
     win._inspector = UI.ScrollPanel.new{ width = 300, height = 200 }
     win:addChild(win._inspector)
@@ -2095,9 +2130,8 @@ local function toggleSettingsWindow(outer)
         studioNeedFramework(pn)
         return
     end
-    if not settingsUI then settingsUI = studioCreate(UI) end
     local win = settingsUI
-    local wasVisible = win:isVisible()
+    local wasVisible = win ~= nil and win:isVisible()
     if wasVisible then
         -- 同一位玩家再按＝關閉，但視窗被世界地圖蓋住時看不見：改走下方重建重定位＋置頂，一按就出現
         -- （Core.isBehindWorldMap 在 _Search.lua）。不同玩家按（分割畫面：世界地圖單例／各自小地圖
@@ -2109,17 +2143,33 @@ local function toggleSettingsWindow(outer)
         end
         if win._playerNum ~= pn and UI.Focus then UI.Focus.releaseJoypad(win) end
     end
+    -- 字型模式依新擁有者決定；和現有視窗不同＝換一個（沿用目前分類）
+    local font = studioFont(pn)
+    if win and win._font ~= font then
+        local selected = win._selectedSec
+        if win:isVisible() then win:close() end
+        win._UI.Dropdown.close(win)
+        win:removeFromUIManager()
+        win, wasVisible = nil, false
+        settingsUI = studioCreate(UI, font)
+        settingsUI._selectedSec = selected
+    end
+    if not win then
+        if not settingsUI then settingsUI = studioCreate(UI, font) end
+        win = settingsUI
+    end
     win._playerNum = pn -- 視窗擁有者（分割畫面各自讀寫自己的小地圖）
+    win._outer = outer
     win._fromMini = outer ~= nil and outer.inner ~= nil -- 小地圖外框（ISMiniMapOuter）才有 inner；世界地圖沒有
     win._sig = nil      -- 分類成員依擁有者判定（管理員資格、addon visible(pn)）
     studioLiveSettingsDirty(win)
     studioRebuild(win) -- 開窗即重建＝同步現值（可能在 ESC 選項頁被改過）
-    -- 靠小地圖（或世界地圖）左側：小地圖＝底與小地圖外框底齊平，世界地圖＝頂與地圖頂齊平；夾進該玩家 viewport
+    -- 靠小地圖（或世界地圖）左側：小地圖＝依上下半對齊外框頂或底（見 studioRebuild），世界地圖＝頂與地圖頂齊平；夾進該玩家 viewport
     local sx, sy = getPlayerScreenLeft(pn), getPlayerScreenTop(pn)
     local sw = getPlayerScreenWidth(pn)
     local x = (outer and outer.getAbsoluteX and outer:getAbsoluteX() or sx) - win.width - 8
     local y = outer and outer.getAbsoluteY and outer:getAbsoluteY() or sy
-    if win._fromMini then y = win._floorY - win.height end
+    if win._fromMini then y = win._topY or (win._floorY - win.height) end
     if x < sx then x = sx end
     if x + win.width > sx + sw then x = sx + sw - win.width end
     if y + win.height > win._floorY then y = win._floorY - win.height end
