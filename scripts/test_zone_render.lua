@@ -115,11 +115,13 @@ end
 local drawClippedEdgeCount = 0
 local function drawClippedEdge() drawClippedEdgeCount = drawClippedEdgeCount + 1 end
 -- drawZoneIcons 的兩個標記區段外相依（抽段後是全域）：滑條與可視外接框 stub
-local iconSize = 18
+local iconSize = 18      -- PoiIconSize 滑條（px）
+local zoneIconSize = nil -- ZoneIconSize 滑條（px）；nil＝跟 iconSize（舊測試的外部 provider 沿用）
 local iconAlpha = 100 -- PoiIconAlpha 滑條（%）
 local textScale = 100 -- 地圖文字大小（%）
 local function getSliderValue(id)
     if id == "MapTextScale" then return textScale end
+    if id == "ZoneIconSize" and zoneIconSize then return zoneIconSize end
     return id == "PoiIconAlpha" and iconAlpha or iconSize
 end
 -- 圖標名稱提示的指標（區段外相依 iconPointer）：nil＝滑鼠不在地圖上
@@ -167,6 +169,7 @@ return {
     safe = safeDrawZone,
     setAABB = function(a, b, c, d) zoneAABB = { a, b, c, d } end,
     setIconSize = function(s) iconSize = s end,
+    setZoneIconSize = function(s) zoneIconSize = s end,
     setIconAlpha = function(a) iconAlpha = a end,
     setTextScale = function(v) textScale = v end,
     setPointer = function(x, y) pointer = x and { x, y } or nil end,
@@ -2391,4 +2394,27 @@ do
     zone.setTextScale(100)
     zone.clearProviders()
     print("map text zoom T cases passed")
+end
+
+-- Z：圖標大小分工——內建 POI 跟 PoiIconSize、外部自訂區域跟 ZoneIconSize（同一 pass 各讀一次）
+do
+    zone.clearProviders()
+    local function iconAt(x1, y1)
+        return { { icon = { tex = "T", r = 1, g = 1, b = 1 }, iconOnce = true,
+            rects = { { x1 = x1, y1 = y1, x2 = x1 + 4, y2 = y1 + 4 } } } }
+    end
+    zone.addProvider("poi", function() return iconAt(20, 20) end, true)
+    zone.addProvider("ext", function() return iconAt(60, 60) end)
+    local inner = makeInner(10)
+    local widths = {}
+    inner.drawTextureScaled = function(_, _, _, _, w) widths[#widths + 1] = w end
+    zone.setIconSize(12)
+    zone.setZoneIconSize(30)
+    zone.icons(inner)
+    assert(#widths == 2 and widths[1] == 12 and widths[2] == 30,
+        "Z 內建 POI 用 PoiIconSize、外部 provider 用 ZoneIconSize")
+    zone.setIconSize(18)
+    zone.setZoneIconSize(nil)
+    zone.clearProviders()
+    print("icon size split Z cases passed")
 end

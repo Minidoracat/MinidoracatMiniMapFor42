@@ -59,7 +59,7 @@ local function inner(pn)
     return d
 end
 
-check(API.markerApiVersion == 2, "markerApiVersion is 2")
+check(API.markerApiVersion == 3, "markerApiVersion is 3")
 API.registerMarkerProvider("", function() end)
 API.registerMarkerProvider("X", "not a function")
 check(#printed == 2, "bad arguments are rejected with a log line")
@@ -169,5 +169,61 @@ check(big.text[2].zoom == 2 and big.text[2].x == 78 + 44 + 2 and big.text[2].y =
 local bigw = draw2("world", { { id = "w2", x = 100, y = 100, texture = "car", state = "live", scale = 1.3 } })
 check(bigw.tex[1].w == 42, "world base doubles too and scale still applies (32 * 1.3 = 41.6 -> 42)")
 sliders.MarkerIconSize, sliders.MapTextScale = nil, nil
+
+-- v3：marker.layer 以 (provider owner, id) 查圖層偏好；MarkerLayers 文字欄只存改過的層
+local layerRaw, applied, saved = "", 0, 0
+Core.modOptions = {
+    getOption = function(_, id)
+        if id ~= "MarkerLayers" then return nil end
+        return { getValue = function() return layerRaw end, setValue = function(_, v) layerRaw = v end }
+    end,
+    apply = function() applied = applied + 1 end,
+}
+PZAPI = { ModOptions = { save = function() saved = saved + 1 end } }
+Core.registerMarkerLayers("VM", {
+    { id = "bound", label = "L", size = 16, show = { mini = true, world = true }, names = { mini = true, world = true } },
+    { id = "plain", label = "P", size = 24, show = { mini = true, world = false } },
+})
+check(Core.markerLayer("VM", "nope") == nil and Core.markerLayer("Other", "bound") == nil,
+    "unregistered layer id or owner has no prefs")
+local prefs = Core.markerLayer("VM", "bound")
+check(prefs.size == 16 and prefs.show.mini and prefs.show.world and prefs.names.world,
+    "registered layer starts from its declared defaults")
+
+sliders.MarkerIconSize = 32
+local function mk(id, layer, label) return { id = id, x = 100, y = 100, texture = "car", state = "live", layer = layer, label = label } end
+local lm = draw2("mini", { mk("a", "bound"), mk("b", nil), mk("c", "nope"), mk("d", "plain") })
+check(lm.tex[1].w == 12, "layered marker ignores MarkerIconSize (layer size 16 -> 12px minimap)")
+check(lm.tex[2].w == 24 and lm.tex[3].w == 24, "untagged and unregistered-layer markers keep the v2 MarkerIconSize path")
+check(lm.tex[4].w == 18, "layer size 24 scales the minimap base (12 * 24 / 16)")
+local lw = draw2("world", { mk("d", "plain"), mk("a", "bound") })
+check(#lw.tex == 1 and lw.tex[1].w == 16, "layer hidden on the world map is skipped; visible layer drawn at its size")
+
+layerRaw = "VM/bound=1,1,32,0,1"
+check(Core.markerLayer("VM", "bound") == prefs and prefs.size == 32 and prefs.names.mini == false,
+    "raw MarkerLayers change re-parses into the same cached prefs table")
+local nm = draw2("mini", { mk("a", "bound", "Mine"), mk("d", "plain", "Plain") })
+check(nm.tex[1].w == 24 and #nm.text == 2 and nm.text[2].s == "Plain",
+    "names off on the minimap drops the label; a layer without names keeps its label")
+local nw = draw2("world", { mk("a", "bound", "Mine") })
+check(nw.tex[1].w == 32 and nw.text[2].s == "Mine", "world names stay on; world base uses the layer size")
+layerRaw = "VM/bound=0,1,16,1,1"
+check(#draw2("mini", { mk("a", "bound") }).tex == 0, "player-hidden layer is not drawn on that surface")
+
+layerRaw = "Other/x=1,1,20,1,1;VM/bound=0,1,16,1,1;junk;VM/plain=1,1,99,1,1"
+check(Core.setMarkerLayer("VM", "bound", "showMini", true), "setMarkerLayer writes")
+check(layerRaw == "Other/x=1,1,20,1,1" and applied == 1 and saved == 1,
+    "a layer equal to its defaults is removed; unknown owners kept; malformed/out-of-range entries dropped; apply+save")
+Core.setMarkerLayer("VM", "bound", "size", 100)
+check(layerRaw == "Other/x=1,1,20,1,1;VM/bound=1,1,48,1,1", "size clamps to 48 and appends in insertion order")
+check(not Core.setMarkerLayer("VM", "plain", "namesMini", false) and not Core.setMarkerLayer("VM", "nope", "size", 20)
+    and not Core.setMarkerLayer("VM", "bound", "colour", 1), "names on a nameless layer, unknown layer or field rejected")
+check(Core.resetMarkerLayers("VM") and layerRaw == "Other/x=1,1,20,1,1", "reset drops only this owner's layers")
+check(not Core.resetMarkerLayers("VM"), "reset with nothing to drop does not write")
+
+local dm = inner(0)
+check(Core.drawMarkerAt(dm.el, mk("p"), 100, 100, "world", 16, "P") and dm.tex[1].w == 16 and dm.text[2].s == "P",
+    "drawMarkerAt draws one marker for previews (16px base, label)")
+check(not Core.drawMarkerAt(dm.el, mk("q"), 2, 100, "world", 16), "drawMarkerAt reports a clipped marker")
 io.stdout:write(fails == 0 and "PASS test_markers\n" or ("FAIL test_markers (" .. fails .. ")\n"))
 os.exit(fails == 0 and 0 or 1)

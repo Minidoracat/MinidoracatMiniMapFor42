@@ -59,6 +59,9 @@ local UNIFIED_LAYER_TICKS = {
     { id = "StreetNames", label = "UI_MinidoracatMiniMap_StreetNames", default = true },
     { id = "NavRoute", label = "UI_MinidoracatMiniMap_NavRoute", default = true },
     { id = "KeepFinishedTrip", label = "UI_MinidoracatMiniMap_KeepFinishedTrip", default = false },
+    -- 家／收藏點標記與陣營分享的目標（旗標＋路線）：地圖上的顯示開關，不影響回家與分享功能
+    { id = "Places", label = "UI_MinidoracatMiniMap_Places", default = true },
+    { id = "SharedTargets", label = "UI_MinidoracatMiniMap_SharedTargets", default = true, mpOnly = true },
     { id = "ChunkGrid", label = "UI_MinidoracatMiniMap_ChunkGrid", default = false },
     { id = "ChunkGridLabels", label = "UI_MinidoracatMiniMap_ChunkGridLabels", default = true },
     -- Safehouses 移入獨立「安全屋」區塊（safehouse）；PoiIcons/PoiBlocks 移入獨立
@@ -160,6 +163,12 @@ local UNIFIED_SLIDERS = {
         { id = "ClientSafehouseNameDistance", label = "UI_MinidoracatMiniMap_DistSafehouseName",
             default = 0, min = 0, max = 2000, step = 1, fmt = "%d",
             zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited", capBy = "SafehouseNameDistance" },
+    },
+    -- 自訂區域（外部 zone provider）圖標大小：分類有外部 provider 才存在（OnGameBoot 插入）；
+    -- 內建 POI 圖標仍跟 PoiIconSize
+    zones = {
+        { id = "ZoneIconSize", label = "UI_MinidoracatMiniMap_ZoneIconSize",
+            default = 18, min = 8, max = 48, step = 1, fmt = "%dpx" },
     },
 }
 local UNIFIED_APPEAR_COMBOS = {
@@ -340,7 +349,9 @@ end
 -- 晚追加的選項一樣載得到 ini 存檔值。設定視窗 lazy 建立於遊戲內，同樣晚於此。
 Events.OnGameBoot.Add(function()
     if #registeredPacks == 0 or not modOptions then return end
-    -- ESC 選項頁
+    -- ESC 選項頁：接在主檔「進階」之後，自成「MOD 地圖」一組
+    modOptions:addSeparator()
+    modOptions:addTitle("UI_MinidoracatMiniMap_SecMapPack")
     modOptions:addTickBox("MapPackLayers", "UI_MinidoracatMiniMap_MapPackLayers", true,
         "UI_MinidoracatMiniMap_MapPackLayers_tooltip")
     modOptions:addTickBox("MapBounds", "UI_MinidoracatMiniMap_MapBounds", true,
@@ -372,6 +383,9 @@ end)
 -- 三面共用同一 ZoneLayer 選項。
 Events.OnGameBoot.Add(function()
     if not hasExternalZoneProvider() or not modOptions then return end
+    -- ESC 選項頁：接在最後，自成「自訂區域」一組（PZAPI 無中插 API）
+    modOptions:addSeparator()
+    modOptions:addTitle("UI_MinidoracatMiniMap_SecZones")
     modOptions:addTickBox("ZoneLayer", "UI_MinidoracatMiniMap_ZoneLayer", true,
         "UI_MinidoracatMiniMap_ZoneLayer_tooltip")
     table.insert(UNIFIED_LAYER_TICKS, { id = "ZoneLayer",
@@ -396,20 +410,15 @@ Events.OnGameBoot.Add(function()
         "UI_MinidoracatMiniMap_ZoneNames_tooltip")
     modOptions:addTickBox("ZoneNamesFar", "UI_MinidoracatMiniMap_ZoneNamesFar", true,
         "UI_MinidoracatMiniMap_ZoneNamesFar_tooltip")
+    -- 外部自訂區域圖標大小（px，預設 18＝舊版借用 PoiIconSize 時的預設）：_Zones.lua 圖標
+    -- pass 對外部 provider 讀此值、內建 POI 仍讀 PoiIconSize
+    modOptions:addSlider("ZoneIconSize", "UI_MinidoracatMiniMap_ZoneIconSize", 8, 48, 1, 18)
+    -- 自訂區域顯示距離（僅裁外部 provider；渲染端消費見主檔 distGateParams）：統一視窗走
+    -- UNIFIED_SLIDERS.distance 第 6 條（capBy＝沙盒 ZoneDisplayDistance，含全域上限
+    -- AllInfoDistance；zeroLabel＝不限）
+    modOptions:addSlider("ClientZoneDisplayDistance", "UI_MinidoracatMiniMap_DistZone", 0, 2000, 1, 0)
     modOptions:addTextEntry("ZoneCategoryFilter", "UI_MinidoracatMiniMap_ZoneCategoryFilter", "",
         "UI_MinidoracatMiniMap_ZoneCategoryFilter_tooltip")
-    -- 自訂區域顯示距離（僅裁外部 provider；渲染端消費見主檔 distGateParams）：
-    -- ESC 頁滑條尾端追加（家規：addon 條件選項一律 OnGameBoot 尾端，同 MapPackLayers
-    -- ——PZAPI 無中插 API），前置 addTitle 復用「顯示距離」標題鍵帶出「0＝不限」
-    -- 語意（slider 型別 MainOptions 不渲染 tooltip，MainOptions.lua:3024-3027 無
-    -- tooltip 讀取——tickbox 才有）；統一視窗走 UNIFIED_SLIDERS.distance 第 6 條
-    -- （capBy＝沙盒 ZoneDisplayDistance，含全域上限 AllInfoDistance；zeroLabel＝不限）
-    modOptions:addTitle("UI_MinidoracatMiniMap_SecDistanceEsc")
-    modOptions:addSlider("ClientZoneDisplayDistance", "UI_MinidoracatMiniMap_DistZone", 0, 2000, 1, 0)
-    -- 收尾分隔線（主檔 ESC 距離群組同款規範）：addTitle 只畫標題不畫群組結束，
-    -- 本 handler 目前是最後註冊的 OnGameBoot，但再加第三個 addon 條件 handler 時
-    -- 其選項會被視覺歸進「顯示距離」標題底下（claude lane review）
-    modOptions:addSeparator()
     table.insert(UNIFIED_SLIDERS.distance, { id = "ClientZoneDisplayDistance",
         label = "UI_MinidoracatMiniMap_DistZone", default = 0, min = 0, max = 2000,
         step = 1, fmt = "%d", zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited",
@@ -1317,6 +1326,7 @@ local function unifiedBuildZones(ctx)
         getTextOrNull("UI_MinidoracatMiniMap_ZoneNamesFar") or "ZoneNamesFar",
         getBoolOption("ZoneNamesFar", true), unifiedOnModTick, { id = "ZoneNamesFar" })
     ctx.curY = ctx.curY + ctx.rowH
+    unifiedAddSliderRows(ctx, UNIFIED_SLIDERS.zones)
     local cats = Core.zoneExternalCategories and Core.zoneExternalCategories() or {}
     if #cats == 0 then
         unifiedAddWrappedNote(ctx, getText("UI_MinidoracatMiniMap_ZoneNoCats"))
@@ -1537,7 +1547,7 @@ local function unifiedMeasureLayout()
         UNIFIED_SLIDERS.zombie, UNIFIED_SLIDERS.animals,
         UNIFIED_SLIDERS.vehicles, UNIFIED_SLIDERS.poi,
         UNIFIED_SLIDERS.appearance, UNIFIED_SLIDERS.safehouse,
-        UNIFIED_SLIDERS.distance } -- 漏列＝CJK 標籤被滑條軌道壓住（欄寬量測）
+        UNIFIED_SLIDERS.distance, UNIFIED_SLIDERS.zones } -- 漏列＝CJK 標籤被滑條軌道壓住（欄寬量測）
     for g = 1, #comboGroups do
         for i = 1, #comboGroups[g] do
             comboLabelW = math.max(comboLabelW, tw(getText(comboGroups[g][i].label)))
@@ -1689,6 +1699,7 @@ local function studioBuildIndex()
                 { id = "ZoneNames", default = true })
             studioIndexAdd(index, sec, "UI_MinidoracatMiniMap_ZoneNamesFar", "boolean", "mod",
                 { id = "ZoneNamesFar", default = true })
+            studioIndexList(index, sec, UNIFIED_SLIDERS.zones, "navigate")
             local cats = Core.zoneExternalCategories and Core.zoneExternalCategories() or {}
             for j = 1, #cats do
                 index[#index + 1] = { sec = sec, label = cats[j], low = cats[j]:lower(),
@@ -1871,7 +1882,8 @@ local function studioResetSection(target, button)
     if sec.addon then
         for i = 1, #sec.addon.ticks do
             local entry = sec.addon.ticks[i]
-            addonWrite(entry, entry.default == true)
+            -- default nil＝addon 沒宣告預設：不知道該還原成什麼，就不動（v5）
+            if entry.default ~= nil then addonWrite(entry, entry.default) end
         end
         for i = 1, #sec.addon.combos do
             local entry = sec.addon.combos[i]
@@ -1880,6 +1892,10 @@ local function studioResetSection(target, button)
         for i = 1, #sec.addon.sliders do
             local entry = sec.addon.sliders[i]
             addonWrite(entry, entry.default)
+        end
+        -- 圖層值由本 MOD 存 MarkerLayers（_Markers 自行 setValue＋apply＋save）
+        if sec.addon.layers and #sec.addon.layers > 0 and Core.resetMarkerLayers then
+            Core.resetMarkerLayers(sec.owner)
         end
     elseif sec.id == "layers" then
         changed = studioResetList(UNIFIED_LAYER_TICKS, false)
@@ -1926,6 +1942,7 @@ local function studioResetSection(target, button)
         if studioResetId("ZoneNames", true) then changed = true end
         if studioResetId("ZoneNamesFar", true) then changed = true end
         if studioResetId("ZoneCategoryFilter", "-") then changed = true end
+        if studioResetList(UNIFIED_SLIDERS.zones, 0) then changed = true end
     elseif sec.id == "admin" then
         -- 只清本機旗標（依 facade 契約連帶清隱私）。刻意不碰沙盒、也不進
         -- changed／modOptions:apply 路徑：這兩個值不在 ModOptions，
@@ -2568,11 +2585,19 @@ local function normalizeAddonSettings(ownerModId, spec)
             or type(spec) ~= "table" or type(spec.label) ~= "string"
             or spec.label == "" then return nil end
     -- API v1 相容：舊呼叫端可繼續傳 spec.lane，但地圖顯示設定不讀、不正規化、
-    -- 不複製也不保存它；分類順序只由註冊順序決定。v2 另複製 actions（最多 16）；
-    -- v3 另收選用 visible(pn)（見 addonSectionSync）；v4 另複製 sliders（最多 32）。
+    -- 不複製也不保存它。v2 另複製 actions（最多 16）；v3 另收選用 visible(pn)
+    -- （見 addonSectionSync）；v4 另複製 sliders（最多 32）；v5 另收 icon／group／order
+    -- （側欄圖標與分組排序）與 layers（marker 圖層，值由本 MOD 存 MarkerLayers）。
     if spec.visible ~= nil and type(spec.visible) ~= "function" then return nil end
+    local icon, group, order = spec.icon, spec.group, spec.order
+    if icon == nil then icon = "plug" elseif type(icon) ~= "string" or icon == "" then return nil end
+    if group == nil then group = "addon" elseif type(group) ~= "string" then return nil end
+    if group ~= "admin" then group = "addon" end
+    if order == nil then order = 100
+    elseif type(order) ~= "number" or order ~= order or order == math.huge
+            or order == -math.huge then return nil end
     local out = { label = spec.label, ticks = {}, combos = {}, sliders = {}, actions = {},
-        visible = spec.visible }
+        layers = {}, visible = spec.visible, icon = icon, group = group, order = order }
     local ticks = spec.ticks
     if ticks ~= nil and type(ticks) ~= "table" then return nil end
     local tickN = ticks and #ticks or 0
@@ -2583,8 +2608,9 @@ local function normalizeAddonSettings(ownerModId, spec)
                 or type(e.get) ~= "function" or type(e.set) ~= "function"
                 or (e.tooltip ~= nil and type(e.tooltip) ~= "string")
                 or (e.default ~= nil and type(e.default) ~= "boolean") then return nil end
+        -- default 缺＝nil（v5）：「重設此分類」略過，不再把未宣告預設的勾選寫成 false
         out.ticks[i] = { label = e.label, tooltip = e.tooltip,
-            default = e.default == true, get = e.get, set = e.set }
+            default = e.default, get = e.get, set = e.set }
     end
     local combos = spec.combos
     if combos ~= nil and type(combos) ~= "table" then return nil end
@@ -2658,10 +2684,50 @@ local function normalizeAddonSettings(ownerModId, spec)
         out.actions[i] = { label = e.label, tooltip = e.tooltip,
             run = e.run, enabled = e.enabled }
     end
+    -- v5 layers：最多 8 層、id 在 spec 內唯一；壞值整個 spec 拒收。owner 不得含 MarkerLayers
+    -- 序列化的分隔字元（; = ,），否則存值會被讀錯成別層
+    local layers = spec.layers
+    if layers ~= nil and type(layers) ~= "table" then return nil end
+    local layerN = layers and #layers or 0
+    if layerN > 8 or (layerN > 0 and ownerModId:find("[;=,]")) then return nil end
+    local seen = {}
+    for i = 1, layerN do
+        local e = layers[i]
+        if type(e) ~= "table" or type(e.id) ~= "string" or not e.id:match("^[%w_%-]+$")
+                or seen[e.id] or type(e.label) ~= "string" or e.label == ""
+                or (e.show ~= nil and type(e.show) ~= "table")
+                or (e.names ~= nil and type(e.names) ~= "table")
+                or (e.sample ~= nil and type(e.sample) ~= "table") then return nil end
+        local size = e.size
+        if size == nil then size = 16 end
+        if type(size) ~= "number" or size % 1 ~= 0 or size < 8 or size > 48 then return nil end
+        local labels = { e.namesMiniLabel, e.namesWorldLabel }
+        for j = 1, 2 do
+            if labels[j] ~= nil and (type(labels[j]) ~= "string" or labels[j] == "") then return nil end
+        end
+        -- show／names 的 mini、world：缺＝true，非布林拒收
+        local flags = { true, true, true, true }
+        local src = { e.show and e.show.mini, e.show and e.show.world,
+            e.names and e.names.mini, e.names and e.names.world }
+        for j = 1, 4 do
+            if src[j] ~= nil then
+                if type(src[j]) ~= "boolean" then return nil end
+                flags[j] = src[j]
+            end
+        end
+        seen[e.id] = true
+        out.layers[i] = { id = e.id, label = e.label, size = size,
+            show = { mini = flags[1], world = flags[2] },
+            names = e.names and { mini = flags[3], world = flags[4] } or nil,
+            namesMiniLabel = e.namesMiniLabel, namesWorldLabel = e.namesWorldLabel,
+            sample = e.sample }
+    end
     return out
 end
 
-MinidoracatMiniMapAPI.settingsApiVersion = 4 -- v4：sliders；v3：spec.visible(pn)；v2：actions
+-- v5：settingsApiVersion 5＝icon／group／order／layers、tick default 缺＝nil；
+-- v4：sliders；v3：spec.visible(pn)；v2：actions
+MinidoracatMiniMapAPI.settingsApiVersion = 5
 function MinidoracatMiniMapAPI.registerSettingsSection(ownerModId, spec)
     local normalized = normalizeAddonSettings(ownerModId, spec)
     if not normalized then
@@ -2676,7 +2742,9 @@ function MinidoracatMiniMapAPI.registerSettingsSection(ownerModId, spec)
         sec.addon = normalized
         sec.visibleErrLogged = nil -- 新 visible 的錯誤值得記一次新 log
     else
-        sec = { id = sectionId, label = normalized.label, addon = normalized, icon = "layers" }
+        -- seq＝註冊序（addonSectionOrder 的位置；同 order 時的排序鍵，再註冊沿用）
+        sec = { id = sectionId, label = normalized.label, addon = normalized,
+            owner = ownerModId, seq = #addonSectionOrder + 1 }
         addonSettingsById[ownerModId] = sec
         addonSectionOrder[#addonSectionOrder + 1] = sec
         local insertAt = #UNIFIED_SECTIONS + 1
@@ -2685,6 +2753,9 @@ function MinidoracatMiniMapAPI.registerSettingsSection(ownerModId, spec)
         end
         table.insert(UNIFIED_SECTIONS, insertAt, sec)
     end
+    sec.icon, sec.group, sec.order = normalized.icon, normalized.group, normalized.order
+    -- marker 圖層預設值交給 _Markers（載入序在本檔之前；缺＝圖層照 v2 畫）
+    if Core and Core.registerMarkerLayers then Core.registerMarkerLayers(ownerModId, normalized.layers) end
     if settingsUI then settingsUI._searchIndex = studioBuildIndex() end
     if settingsUI and settingsUI:isVisible() then unifiedRebuild(settingsUI) end
     return true

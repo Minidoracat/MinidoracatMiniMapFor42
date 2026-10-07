@@ -866,11 +866,12 @@ end
 local function drawZoneIcons(inner)
     if #registeredZoneProviders == 0 then return end
     local w, h = inner.width, inner.height
-    -- 大小/透明度滑條每幀讀值（0.9.0；作用於所有 zone 圖標，POI 為主）；
-    -- 18＝滑條預設（同 ESC 頁 addSlider 預設值）
-    local s = getSliderValue("PoiIconSize", 18, 8, 48)
+    -- 大小/透明度滑條每 pass 讀一次（0.9.0）：內建 POI 跟 PoiIconSize、外部自訂區域跟
+    -- ZoneIconSize（兩者預設 18＝同 ESC 頁 addSlider 預設）；透明度兩者共用 PoiIconAlpha
+    local sPoi = getSliderValue("PoiIconSize", 18, 8, 48)
+    local sZone = getSliderValue("ZoneIconSize", 18, 8, 48)
     local ia = getSliderValue("PoiIconAlpha", 100, 10, 100) / 100
-    local half = s / 2
+    local s, half, hitS
     -- 視野預裁與共用量見 zoneFrame（POI 擴至 ~1700 筆後，逐 rect 先投影再裁會付 ~3.4k 次/幀的
     -- Kahlua→Java worldToUI 呼叫）：rect 與可視外接框不相交者直接跳過。框是視窗四邊形的超集，
     -- 被裁者其 rect 中心必在窗外，而下方螢幕裁切要求中心深入視窗 half+1px 才畫——預裁純省投影、
@@ -894,6 +895,8 @@ local function drawZoneIcons(inner)
     local hitText, hitX, hitY
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
+        s = provider.internal and sPoi or sZone
+        half = s / 2
         -- 閘門（同 drawZoneFill）：外部受 ZoneLayer 總閘＋per-provider 母開關＋自訂
         -- 區域距離閘；internal 不受，但另受 POI 顯示距離閘（皆含全域上限＋玩家
         -- 滑條；該類距離啟用但缺玩家＝fail closed）
@@ -936,7 +939,7 @@ local function drawZoneIcons(inner)
                             local icon = z.icon
                             if icon then
                                 local text = drawZoneIcon(inner, z, icon, ix, iy, s, ia, hx, hy, true)
-                                if text then hitText, hitX, hitY = text, ix, iy end
+                                if text then hitText, hitX, hitY, hitS = text, ix, iy, s end
                             end
                         end
                     end
@@ -989,7 +992,7 @@ local function drawZoneIcons(inner)
                                 end
                                 if ok then
                                     local text = drawZoneIcon(inner, z, icon, ix, iy, s, ia, hx, hy, provider.internal)
-                                    if text then hitText, hitX, hitY = text, ix, iy end
+                                    if text then hitText, hitX, hitY, hitS = text, ix, iy, s end
                                 end
                             end
                         end
@@ -998,7 +1001,7 @@ local function drawZoneIcons(inner)
             end
         end
     end
-    if hitText then drawIconTip(inner, hitText, hitX, hitY, s) end
+    if hitText then drawIconTip(inner, hitText, hitX, hitY, hitS) end
 end
 -- test:zone-render:end
 

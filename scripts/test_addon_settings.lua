@@ -33,6 +33,10 @@ local function unifiedRebuild() rebuildCalls = rebuildCalls + 1 end
 local indexCalls = 0
 local function studioBuildIndex() indexCalls = indexCalls + 1; return {} end
 MinidoracatMiniMapAPI = {}
+local layerCalls = {}
+local Core = { registerMarkerLayers = function(owner, layers)
+    layerCalls[#layerCalls + 1] = { owner = owner, layers = layers }
+end }
 ]] .. registryBody .. "\n" .. [=[
 return {
     api = MinidoracatMiniMapAPI,
@@ -43,13 +47,14 @@ return {
     rebuilds = function() return rebuildCalls end,
     indexBuilds = function() return indexCalls end,
     messages = messages,
+    layerCalls = layerCalls,
 }
 ]=])
 assert(registryChunk, registryErr)
 local registry = registryChunk()
 local api = registry.api
 
-checkEq(api.settingsApiVersion, 4, "settings API version")
+checkEq(api.settingsApiVersion, 5, "settings API version")
 check(not api.registerSettingsSection(nil, {}), "nil owner rejected")
 check(not api.registerSettingsSection("A", {}), "missing label rejected")
 check(not api.registerSettingsSection("A", { label = "UI_A", ticks = {
@@ -247,6 +252,65 @@ check(registry.registry.OwnerS.addon.sliders[1].fmt == "%.2f"
     and registry.registry.OwnerS.addon.sliders[1].default == 1,
     "fractional step defaults to %.2f and keeps max default")
 checkEq(#registry.registry.OwnerC.addon.sliders, 0, "spec without sliders stores empty sliders")
+
+-- v5：icon／group／order／layers；壞值整個 spec 拒收，缺值有預設；tick default 缺＝nil
+local v4 = registry.registry.OwnerA
+check(v4.icon == "plug" and v4.group == "addon" and v4.order == 100 and v4.seq == 1
+    and v4.owner == "OwnerA" and #v4.addon.layers == 0,
+    "v4 spec gets plug icon, addon group, order 100, registration seq")
+checkEq(registry.registry.OwnerB.seq, 2, "registration seq follows first registration")
+local badV5 = {
+    { { icon = 3 }, "non-string icon" },
+    { { group = true }, "non-string group" },
+    { { order = "1" }, "non-number order" },
+    { { order = 0 / 0 }, "NaN order" },
+    { { order = math.huge }, "infinite order" },
+    { { layers = "x" }, "non-table layers" },
+    { { layers = { 1 } }, "non-table layer" },
+    { { layers = { { id = "a b", label = "L" } } }, "id outside [%w_-]" },
+    { { layers = { { id = "a", label = "L" }, { id = "a", label = "M" } } }, "duplicate layer id" },
+    { { layers = { { id = "a" } } }, "layer without label" },
+    { { layers = { { id = "a", label = "L", size = 7 } } }, "size below 8" },
+    { { layers = { { id = "a", label = "L", size = 49 } } }, "size above 48" },
+    { { layers = { { id = "a", label = "L", size = 16.5 } } }, "fractional size" },
+    { { layers = { { id = "a", label = "L", show = { mini = 1 } } } }, "non-boolean show flag" },
+    { { layers = { { id = "a", label = "L", names = true } } }, "non-table names" },
+    { { layers = { { id = "a", label = "L", namesMiniLabel = "" } } }, "empty names label" },
+    { { layers = { { id = "a", label = "L", sample = "car" } } }, "non-table sample" },
+}
+for i = 1, #badV5 do
+    local spec5 = badV5[i][1]
+    spec5.label = "UI_V5"
+    check(not api.registerSettingsSection("OwnerV", spec5), "v5 " .. badV5[i][2] .. " rejected")
+end
+local nineLayers = {}
+for i = 1, 9 do nineLayers[i] = { id = "l" .. i, label = "L" } end
+check(not api.registerSettingsSection("OwnerV", { label = "UI_V5", layers = nineLayers }), "9 layers rejected")
+check(not api.registerSettingsSection("Own;er", { label = "UI_V5", layers = { { id = "a", label = "L" } } }),
+    "owner with a MarkerLayers separator cannot declare layers")
+checkEq(registry.registry.OwnerV, nil, "rejected v5 specs never register")
+local sample = { texture = "car" }
+local v5src = { label = "UI_V5", icon = "coins", group = "admin", order = 30,
+    ticks = { { label = "UI_T", get = function() return true end, set = function() end } },
+    layers = { { id = "terminals", label = "UI_Term", sample = sample },
+        { id = "bound", label = "UI_Bound", size = 20, show = { world = false },
+            names = { mini = false }, namesMiniLabel = "UI_NM" } } }
+check(api.registerSettingsSection("OwnerV", v5src), "valid v5 spec registers")
+local v5 = registry.registry.OwnerV
+check(v5.icon == "coins" and v5.group == "admin" and v5.order == 30 and v5.addon.icon == "coins",
+    "icon, group and order kept on the section record")
+checkEq(v5.addon.ticks[1].default, nil, "tick without default stays nil")
+local la, lb = v5.addon.layers[1], v5.addon.layers[2]
+check(la.size == 16 and la.show.mini and la.show.world and la.names == nil and la.sample == sample,
+    "layer defaults: size 16, shown on both maps, no names, sample kept")
+check(lb.size == 20 and lb.show.mini and not lb.show.world and lb.names.mini == false
+    and lb.names.world == true and lb.namesMiniLabel == "UI_NM" and lb.show ~= v5src.layers[2].show,
+    "layer flags copied with missing flags defaulting to true")
+local lc = registry.layerCalls[#registry.layerCalls]
+check(lc.owner == "OwnerV" and lc.layers == v5.addon.layers, "layers handed to the marker layer registry")
+api.registerSettingsSection("OwnerV", { label = "UI_V5", group = "other" })
+check(v5.group == "addon" and v5.icon == "plug" and #registry.layerCalls[#registry.layerCalls].layers == 0,
+    "unknown group falls back to addon; re-registration clears icon and layers")
 
 local callbacksBody = assert(source:match(
     "%-%- test:addon%-settings%-callbacks:start\n(.-)\n%-%- test:addon%-settings%-callbacks:end"),
@@ -466,7 +530,7 @@ check(added[3].kind == "navigate" and added[3].first.label == "UI_S",
     "sliders are searchable navigate hits")
 checkEq(added[4].kind, "navigate", "actions are searchable navigate hits")
 checkEq(added[4].first.label, "UI_Copy", "action label indexed")
-local EXPECTED_ASSERTIONS = 127
+local EXPECTED_ASSERTIONS = 156
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
         .. ", actual " .. assertions)

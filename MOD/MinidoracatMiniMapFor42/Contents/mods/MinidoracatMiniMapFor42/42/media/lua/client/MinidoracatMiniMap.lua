@@ -1038,44 +1038,21 @@ local ADOTS_COLOR_ITEMS = {
 if PZAPI and PZAPI.ModOptions then
     modOptions = PZAPI.ModOptions:create("MinidoracatMiniMap", "UI_MinidoracatMiniMap_Options")
 
-    -- 注意：combobox 的 tooltip 在 MainOptions.lua（2942-2965）沒有被顯示，故不設
-    local sizeCombo = modOptions:addComboBox("MapSize", "UI_MinidoracatMiniMap_Size")
-    sizeCombo:addItem("UI_MinidoracatMiniMap_Size_Small", false)
-    sizeCombo:addItem("UI_MinidoracatMiniMap_Size_Medium", true) -- 預設「中」
-    sizeCombo:addItem("UI_MinidoracatMiniMap_Size_Large", false)
-    sizeCombo:addItem("UI_MinidoracatMiniMap_Size_Huge", false)
+    -- ESC 頁順序與標題照齒輪設定的分類（2026-10-07 設定重整）：鍵名不變，存好的值照樣讀得到。
+    -- 分組＝addSeparator＋addTitle（addTitle 渲染時才 getText，無翻譯時機問題；addDescription
+    -- 是註冊時 getText，本檔載入期翻譯未必就緒，不用）。文字欄集中到最後的「進階」。
+    -- 地圖包／自訂區域的條件選項在 _Settings.lua 的 OnGameBoot 接在最後（PZAPI 不能中插）。
+    -- 注意：combobox 的 tooltip 在 MainOptions.lua（2942-2965）沒有被顯示，故不設；slider 分支
+    -- 也不渲染 tooltip（MainOptions.lua:3024-3031）。
+    local combo
 
-    -- 按鈕列顯示模式（問題 A）：原版 hover 展開/收合會改變外框高度、把地圖核心
-    -- 往上推（詳見下方 setAdornmentsVisible wrap 一節）。不做「永遠隱藏」——
-    -- 齒輪與縮放按鈕會不可達。
-    local adornCombo = modOptions:addComboBox("AdornMode", "UI_MinidoracatMiniMap_AdornMode")
-    adornCombo:addItem("UI_MinidoracatMiniMap_AdornMode_Hover", false)
-    adornCombo:addItem("UI_MinidoracatMiniMap_AdornMode_Always", true) -- 預設「永遠顯示」
-
-    modOptions:addTickBox("Players", "UI_MinidoracatMiniMap_Players", true,
-        "UI_MinidoracatMiniMap_Players_tooltip")
-    modOptions:addTickBox("RemotePlayers", "UI_MinidoracatMiniMap_RemotePlayers", true,
-        "UI_MinidoracatMiniMap_RemotePlayers_tooltip")
+    -- 底圖與文字 ------------------------------------------------------------------
+    modOptions:addTitle("UI_MinidoracatMiniMap_SecBase")
     -- 圖片化地圖總開關（預設開）：關閉＝不掛任何 pyramid 圖層，小地圖/世界地圖
     -- 回到原版向量樣式；圖標/資源點等其他功能不受影響。MOD 地圖無渲染圖者本就
     -- 顯示原版樣式（多數地圖 MOD 自帶向量 worldmap 資料），關閉後同理
     modOptions:addTickBox("MapImagery", "UI_MinidoracatMiniMap_MapImagery", true,
         "UI_MinidoracatMiniMap_MapImagery_tooltip")
-    -- 安全屋圖層（範圍框／圖標／名稱；本 MOD 純 Lua 自繪，_Safehouse.lua）：
-    -- 繪製端每幀讀值即時生效。伺服器沙盒 SafehouseDisplay／SafehouseNameDisplay
-    -- 為天花板，這三顆只能再收緊
-    modOptions:addTickBox("Safehouses", "UI_MinidoracatMiniMap_Safehouses", true,
-        "UI_MinidoracatMiniMap_Safehouses_tooltip")
-    modOptions:addTickBox("SafehouseIcons", "UI_MinidoracatMiniMap_SafehouseIcons", true,
-        "UI_MinidoracatMiniMap_SafehouseIcons_tooltip")
-    modOptions:addTickBox("SafehouseNames", "UI_MinidoracatMiniMap_SafehouseNames", true,
-        "UI_MinidoracatMiniMap_SafehouseNames_tooltip")
-    -- 安全屋圖標大小（px；原固定 16，_Safehouse.lua 每幀讀值）
-    modOptions:addSlider("SafehouseIconSize", "UI_MinidoracatMiniMap_SafehouseIconSize", 8, 48, 1, 16)
-    -- 地圖包（MapPackLayers/MapBounds/MapBoundsColor）選項為 addon-conditional，
-    -- 於下方 OnGameBoot 區塊「有地圖包註冊」時才追加——沒裝地圖包不出現
-    modOptions:addTickBox("ZombieIntensity", "UI_MinidoracatMiniMap_ZombieIntensity", false,
-        "UI_MinidoracatMiniMap_ZombieIntensity_tooltip")
     modOptions:addTickBox("PlaceNames", "UI_MinidoracatMiniMap_PlaceNames", true,
         "UI_MinidoracatMiniMap_PlaceNames_tooltip")
     -- 街名：原版只有世界地圖載入街道資料（ISWorldMap.lua:1450→
@@ -1084,6 +1061,33 @@ if PZAPI and PZAPI.ModOptions then
     -- InitPlayer wrapper），此開關控制顯示（引擎選項 ShowStreetNames）。
     modOptions:addTickBox("StreetNames", "UI_MinidoracatMiniMap_StreetNames", true,
         "UI_MinidoracatMiniMap_StreetNames_tooltip")
+    -- 實驗性：小地圖完整符號模式。原版小地圖固定 MiniMapSymbols=true
+    -- （ISMiniMap.lua:733），該模式下文字符號一律不畫（WorldMapTextSymbol.java:168）
+    -- ——「顯示地名」在角落小地圖因此看不到字，只有世界地圖（M）有效。
+    modOptions:addTickBox("TextAnnotations", "UI_MinidoracatMiniMap_TextAnnotations", false,
+        "UI_MinidoracatMiniMap_TextAnnotations_tooltip")
+    -- chunk 格線（預設關）：8×8 格 chunk 的棋盤格底色／格線／所在 chunk 編號與範圍，
+    -- 小地圖與世界地圖共用（_ChunkGrid.lua）；繪製端每幀讀值即時生效
+    modOptions:addTickBox("ChunkGrid", "UI_MinidoracatMiniMap_ChunkGrid", false,
+        "UI_MinidoracatMiniMap_ChunkGrid_tooltip")
+    modOptions:addTickBox("ChunkGridLabels", "UI_MinidoracatMiniMap_ChunkGridLabels", true,
+        "UI_MinidoracatMiniMap_ChunkGridLabels_tooltip")
+    -- 地圖文字大小（%）：繪製端每幀讀值（Core.mapTextZoom）
+    modOptions:addSlider("MapTextScale", "UI_MinidoracatMiniMap_MapTextScale", 50, 300, 10, 100)
+
+    -- 玩家與導航 ------------------------------------------------------------------
+    modOptions:addSeparator()
+    modOptions:addTitle("UI_MinidoracatMiniMap_SecPlaces")
+    modOptions:addTickBox("Players", "UI_MinidoracatMiniMap_Players", true,
+        "UI_MinidoracatMiniMap_Players_tooltip")
+    modOptions:addTickBox("RemotePlayers", "UI_MinidoracatMiniMap_RemotePlayers", true,
+        "UI_MinidoracatMiniMap_RemotePlayers_tooltip")
+    -- 家與收藏點標記（預設開）：關＝地圖不畫，回家與收藏清單照常（_Places.lua drawPlaces）
+    modOptions:addTickBox("Places", "UI_MinidoracatMiniMap_Places", true,
+        "UI_MinidoracatMiniMap_Places_tooltip")
+    -- 陣營分享的目標（預設開）：關＝分享旗與分享路線都不畫（_Nav.lua／_NavRoute.lua）
+    modOptions:addTickBox("SharedTargets", "UI_MinidoracatMiniMap_SharedTargets", true,
+        "UI_MinidoracatMiniMap_SharedTargets_tooltip")
     -- 導航路線（0.17.0，預設開）：右鍵目標後沿道路畫路線（_NavRoute.lua 全套
     -- 引擎）。純顯示功能不設沙盒 gate；關閉＝退回直線旗標、設目標不觸發建圖。
     -- 例外：開啟搜尋視窗（_Search.lua）仍會 kick 引擎——街名搜尋需要索引，
@@ -1094,121 +1098,18 @@ if PZAPI and PZAPI.ModOptions then
     -- 消失（_Nav.lua drawTripTargets）；行程頁仍列出結果，下一次加點或設目標就開新行程
     modOptions:addTickBox("KeepFinishedTrip", "UI_MinidoracatMiniMap_KeepFinishedTrip", false,
         "UI_MinidoracatMiniMap_KeepFinishedTrip_tooltip")
-    -- chunk 格線（預設關）：8×8 格 chunk 的棋盤格底色／格線／所在 chunk 編號與範圍，
-    -- 小地圖與世界地圖共用（_ChunkGrid.lua）；繪製端每幀讀值即時生效
-    modOptions:addTickBox("ChunkGrid", "UI_MinidoracatMiniMap_ChunkGrid", false,
-        "UI_MinidoracatMiniMap_ChunkGrid_tooltip")
-    modOptions:addTickBox("ChunkGridLabels", "UI_MinidoracatMiniMap_ChunkGridLabels", true,
-        "UI_MinidoracatMiniMap_ChunkGridLabels_tooltip")
-    -- 實驗性：小地圖完整符號模式。原版小地圖固定 MiniMapSymbols=true
-    -- （ISMiniMap.lua:733），該模式下文字符號一律不畫（WorldMapTextSymbol.java:168）
-    -- ——「顯示地名」在角落小地圖因此看不到字，只有世界地圖（M）有效。
-    modOptions:addTickBox("TextAnnotations", "UI_MinidoracatMiniMap_TextAnnotations", false,
-        "UI_MinidoracatMiniMap_TextAnnotations_tooltip")
-    -- 點擊小地圖開啟世界地圖（原版行為＝onMouseUp 無拖曳即 ToggleWorldMap，
-    -- ISMiniMap.lua:239-245）。預設關：把點擊留給未來的小地圖互動；
-    -- M 鍵與按鈕列的 M 鈕不受影響。
-    modOptions:addTickBox("ClickOpenWorldMap", "UI_MinidoracatMiniMap_ClickOpenWorldMap", false,
-        "UI_MinidoracatMiniMap_ClickOpenWorldMap_tooltip")
-    -- 拖曳自由查看：拖動後停留該處、點擊回到玩家（原版是放開就回中，
-    -- ISMiniMap.lua:214-225 prerenderHack 每幀回中）
-    modOptions:addTickBox("FreeLook", "UI_MinidoracatMiniMap_FreeLook", true,
-        "UI_MinidoracatMiniMap_FreeLook_tooltip")
-    -- 玩家座標列（預設開）：小地圖底部置中顯示 x, y, z；繪製端每幀讀值即時生效。
-    -- 複製功能（XY 鈕/右鍵選單）不受此開關影響
-    modOptions:addTickBox("ShowPlayerCoords", "UI_MinidoracatMiniMap_ShowPlayerCoords", true,
-        "UI_MinidoracatMiniMap_ShowPlayerCoords_tooltip")
-    -- 精準殭屍點位（預設關）；齒輪面板另以自訂 ISTickBox 注入同步開關
-    -- （它原生只列引擎選項物件，這是純 Lua 自繪——見下方「齒輪面板」一節）
-    modOptions:addTickBox("ZombieDots", "UI_MinidoracatMiniMap_ZombieDots", false,
-        "UI_MinidoracatMiniMap_ZombieDots_tooltip")
-    -- 殭屍點樣式：顏色與大小（繪製端每幀讀值，存檔即生效，無需重建）
-    local zColorCombo = modOptions:addComboBox("ZombieDotColor", "UI_MinidoracatMiniMap_ZombieDotColor")
-    zColorCombo:addItem("UI_MinidoracatMiniMap_ZDotColor_Orange", true) -- 預設橘
-    zColorCombo:addItem("UI_MinidoracatMiniMap_ZDotColor_Yellow", false)
-    zColorCombo:addItem("UI_MinidoracatMiniMap_ZDotColor_Purple", false)
-    zColorCombo:addItem("UI_MinidoracatMiniMap_ZDotColor_White", false)
-    zColorCombo:addItem("UI_MinidoracatMiniMap_ZDotColor_Red", false)
-    -- 大小/透明度＝滑條（0.9.0，原三檔 combobox）：舊存值由 migrateSliderOptions
-    -- 一次性換算（PZAPI addSlider＝ModOptions.lua:206；ESC 頁自帶數值標）
-    modOptions:addSlider("ZombieDotSize", "UI_MinidoracatMiniMap_ZombieDotSize", 1, 16, 1, 3)
-    modOptions:addSlider("ZombieDotAlpha", "UI_MinidoracatMiniMap_ZombieDotAlphaOpt", 10, 100, 5, 100)
-    -- 殭屍點上限（可視範圍內同時顯示的最大數量；取樣端每輪讀值即時生效）
-    local zMaxCombo = modOptions:addComboBox("ZombieDotMax", "UI_MinidoracatMiniMap_ZombieDotMax")
-    zMaxCombo:addItem("UI_MinidoracatMiniMap_ZDotMax_100", false)
-    zMaxCombo:addItem("UI_MinidoracatMiniMap_ZDotMax_200", true) -- 預設 200
-    zMaxCombo:addItem("UI_MinidoracatMiniMap_ZDotMax_400", false)
-    zMaxCombo:addItem("UI_MinidoracatMiniMap_ZDotMax_800", false)
-    -- 動物圖標（預設關）：野生/畜養獨立開關＋風格/尺寸（繪製端每幀讀值，存檔即生效）
-    modOptions:addTickBox("AnimalWild", "UI_MinidoracatMiniMap_AnimalWild", false,
-        "UI_MinidoracatMiniMap_AnimalWild_tooltip")
-    modOptions:addTickBox("AnimalLivestock", "UI_MinidoracatMiniMap_AnimalLivestock", false,
-        "UI_MinidoracatMiniMap_AnimalLivestock_tooltip")
-    local aStyleCombo = modOptions:addComboBox("AnimalIconStyle", "UI_MinidoracatMiniMap_AnimalIconStyle")
-    aStyleCombo:addItem("UI_MinidoracatMiniMap_AIconStyle_Symbol", true) -- 預設地圖符號
-    aStyleCombo:addItem("UI_MinidoracatMiniMap_AIconStyle_Item", false)
-    -- 大小/透明度滑條（0.9.0 起動物與載具各自獨立；舊共用 combobox 值一次性換算）
-    modOptions:addSlider("AnimalIconSize", "UI_MinidoracatMiniMap_AnimalIconSize", 8, 48, 1, 16)
-    modOptions:addSlider("AnimalIconAlpha", "UI_MinidoracatMiniMap_AnimalIconAlphaOpt", 10, 100, 5, 100)
-    -- 動物名稱（預設關）：圖標下方標「種類（公/母）」；距離 0＝不限（純客戶端偏好，
-    -- 不設沙盒——名稱不比圖標多揭露位置資訊）
-    modOptions:addTickBox("AnimalNames", "UI_MinidoracatMiniMap_AnimalNames", false,
-        "UI_MinidoracatMiniMap_AnimalNames_tooltip")
-    modOptions:addSlider("AnimalNameDistance", "UI_MinidoracatMiniMap_AnimalNameDistance", 0, CLIENT_DIST_MAX, 1, 0)
-    -- 載具圖標（預設關）：無內建車形地圖圖示，以方向盤符號顯示（見 ADOTS_VEH_SYM）
-    modOptions:addTickBox("VehicleDots", "UI_MinidoracatMiniMap_VehicleDots", false,
-        "UI_MinidoracatMiniMap_VehicleDots_tooltip")
-    -- 篩選停用清單（統一視窗的物種/載具類別勾選自動寫入；CSV、空＝全開）。
-    -- PZAPI 無多選元件，做成可見進階欄位（同 CustomSize 先例）——一般玩家用視窗操作
-    modOptions:addTextEntry("AnimalSpeciesFilter", "UI_MinidoracatMiniMap_AnimalSpeciesFilter", "",
-        "UI_MinidoracatMiniMap_AnimalSpeciesFilter_tooltip")
-    modOptions:addTextEntry("VehicleCategoryFilter", "UI_MinidoracatMiniMap_VehicleCategoryFilter", "",
-        "UI_MinidoracatMiniMap_VehicleCategoryFilter_tooltip")
-    -- 圖標染色三下拉（玩家偏好/色盲需求；繪製端每幀讀值即時生效）
-    local function addColorCombo(id, labelKey, defaultIdx)
-        local c = modOptions:addComboBox(id, labelKey)
-        for i = 1, #ADOTS_COLOR_ITEMS do c:addItem(ADOTS_COLOR_ITEMS[i], i == defaultIdx) end
-    end
-    addColorCombo("AnimalWildColor", "UI_MinidoracatMiniMap_AnimalWildColor", 2)      -- 預設綠
-    addColorCombo("AnimalLivestockColor", "UI_MinidoracatMiniMap_AnimalLivestockColor", 1) -- 預設白
-    addColorCombo("VehicleIconColor", "UI_MinidoracatMiniMap_VehicleIconColor", 4)    -- 預設天藍
-    -- 載具大小/透明度滑條（0.9.0 前與動物共用 AnimalIconSize；遷移時以舊值播種）
-    modOptions:addSlider("VehicleIconSize", "UI_MinidoracatMiniMap_VehicleIconSize", 8, 48, 1, 16)
-    modOptions:addSlider("VehicleIconAlpha", "UI_MinidoracatMiniMap_VehicleIconAlphaOpt", 10, 100, 5, 100)
-    -- 世界地圖（M）獨立圖標開關（預設關）：風格/顏色/物種與類別篩選共用小地圖設定
-    modOptions:addTickBox("WMZombieDots", "UI_MinidoracatMiniMap_WMZombieDots", false,
-        "UI_MinidoracatMiniMap_WM_tooltip")
-    modOptions:addTickBox("WMAnimalWild", "UI_MinidoracatMiniMap_WMAnimalWild", false,
-        "UI_MinidoracatMiniMap_WM_tooltip")
-    modOptions:addTickBox("WMAnimalLivestock", "UI_MinidoracatMiniMap_WMAnimalLivestock", false,
-        "UI_MinidoracatMiniMap_WM_tooltip")
-    modOptions:addTickBox("WMVehicleDots", "UI_MinidoracatMiniMap_WMVehicleDots", false,
-        "UI_MinidoracatMiniMap_WM_tooltip")
+    -- 標記大小（px）：家／收藏、導航旗與行程站、搜尋落點、未分層的 addon marker（Core.markerIconSize）
+    modOptions:addSlider("MarkerIconSize", "UI_MinidoracatMiniMap_MarkerIconSize", 8, 48, 1, 16)
+
+    -- 資源點 ----------------------------------------------------------------------
     -- 內建 POI（原版地圖資源點，20 類）：圖標為主（預設開）、區塊選配（預設關）。
     -- 繪製與 provider 都在 MinidoracatMiniMapPOI.lua（讀本命名空間的 PoiIcons/PoiBlocks/Cat_*）。
-    -- 獨立群組（分隔線＋標題，同下方「顯示距離」慣例）：五顆開關＋兩條滑條＋20 類
-    -- 勾選共 27 列，混在扁平清單裡玩家找不到邊界。收尾分隔線由「顯示距離」群組的
-    -- addSeparator 兼任（addTitle 只畫標題、不畫群組結束）
     modOptions:addSeparator()
-    modOptions:addTitle("UI_MinidoracatMiniMap_SecPoiEsc")
+    modOptions:addTitle("UI_MinidoracatMiniMap_SecPOI")
     modOptions:addTickBox("PoiIcons", "UI_MinidoracatMiniMap_PoiIcons", true,
         "UI_MinidoracatMiniMap_PoiIcons_tooltip")
     modOptions:addTickBox("PoiBlocks", "UI_MinidoracatMiniMap_PoiBlocks", false,
         "UI_MinidoracatMiniMap_PoiBlocks_tooltip")
-    -- 區塊形狀（預設開＝整棟一框，0.14.2 起；關＝逐房間）。只作用於區塊模式的
-    -- 填色/框線/名稱，圖標錨點不變（POI provider 於整棟模式帶 iconRect 釘住最大
-    -- 房間）。⚠ 預設值四點同步：此處、POI.lua 讀取與簽章 fallback、統一視窗
-    -- 初始值——不一致的風險在降級/晚註冊路徑（fallback 實際被讀到時）：讀取與
-    -- 簽章分歧會漏掉必要重建或多做一次重建，統一視窗則顯示與實際不符
-    modOptions:addTickBox("PoiWholeBuilding", "UI_MinidoracatMiniMap_PoiWholeBuilding", true,
-        "UI_MinidoracatMiniMap_PoiWholeBuilding_tooltip")
-    -- 圖標樣式（預設關＝單色類別色剪影；開＝彩色全彩圖標）。POI provider 依此選材質集。
-    modOptions:addTickBox("PoiColorIcons", "UI_MinidoracatMiniMap_PoiColorIcons", false,
-        "UI_MinidoracatMiniMap_PoiColorIcons_tooltip")
-    -- 大小/透明度滑條（0.9.0 新增；原固定 18px/不透明）——作用於所有 zone 圖標
-    -- （POI 為主；Zones addon 帶圖標的區域一併受控）
-    modOptions:addSlider("PoiIconSize", "UI_MinidoracatMiniMap_PoiIconSize", 8, 48, 1, 18)
-    modOptions:addSlider("PoiIconAlpha", "UI_MinidoracatMiniMap_PoiIconAlphaOpt", 10, 100, 5, 100)
     -- 20 類別勾選（預設全開）：ORDER 定順序，逐鍵到 CATEGORIES 取 nameKey，缺鍵略過。
     local poiCats = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.CATEGORIES
     local poiOrder = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.ORDER
@@ -1219,37 +1120,157 @@ if PZAPI and PZAPI.ModOptions then
             if def then modOptions:addTickBox("Cat_" .. key, def.nameKey, true) end
         end
     end
+    -- 區塊形狀（預設開＝整棟一框，0.14.2 起；關＝逐房間）。只作用於區塊模式的
+    -- 填色/框線/名稱，圖標錨點不變（POI provider 於整棟模式帶 iconRect 釘住最大
+    -- 房間）。⚠ 預設值四點同步：此處、POI.lua 讀取與簽章 fallback、統一視窗
+    -- 初始值——不一致的風險在降級/晚註冊路徑（fallback 實際被讀到時）：讀取與
+    -- 簽章分歧會漏掉必要重建或多做一次重建，統一視窗則顯示與實際不符
+    modOptions:addTickBox("PoiWholeBuilding", "UI_MinidoracatMiniMap_PoiWholeBuilding", true,
+        "UI_MinidoracatMiniMap_PoiWholeBuilding_tooltip")
+    -- 圖標樣式（預設關＝單色類別色剪影；開＝彩色全彩圖標）。POI provider 依此選材質集。
+    modOptions:addTickBox("PoiColorIcons", "UI_MinidoracatMiniMap_PoiColorIcons", false,
+        "UI_MinidoracatMiniMap_PoiColorIcons_tooltip")
+    -- 大小（內建 POI 圖標；外部自訂區域另有 ZoneIconSize）／透明度（所有 zone 圖標）
+    modOptions:addSlider("PoiIconSize", "UI_MinidoracatMiniMap_PoiIconSize", 8, 48, 1, 18)
+    modOptions:addSlider("PoiIconAlpha", "UI_MinidoracatMiniMap_PoiIconAlphaOpt", 10, 100, 5, 100)
     -- 玩家自訂顯示距離（格；0＝不限制）：與伺服器沙盒距離經 displayDist 取較小者
-    -- 生效（只能收緊、不能放寬）。獨立群組放 POI 類別勾選之後（分隔線＋標題走
-    -- addTitle，渲染時才 getText，無翻譯時機問題；addDescription 是「註冊時」
-    -- getText，本檔載入期翻譯未必就緒，不用）。「0＝不限」提示掛在群組標題而非
-    -- 逐列標籤——ESC 的 slider 分支不渲染 tooltip（MainOptions.lua:3024-3031 從未
-    -- setTooltip），而逐列加後綴會撐寬統一視窗共用的標籤欄、擠掉滑條軌道。
-    -- step=1：沙盒上限是任意整數（如 15），step>1 會讓存值被 ISSliderPanel 先
-    -- 進位再夾限，UI/存值/實效三方漂移（codex review 抓出）。統一視窗「顯示
-    -- 距離」區有同步滑條；ESC 頁維持全值域，超出部分由合成層夾住。
+    -- 生效（只能收緊、不能放寬）。step=1：沙盒上限是任意整數（如 15），step>1 會讓
+    -- 存值被 ISSliderPanel 先進位再夾限，UI/存值/實效三方漂移（codex review 抓出）。
+    -- ESC 頁維持全值域，超出部分由合成層夾住。以下各分類的距離滑條同此
+    modOptions:addSlider("ClientPoiDisplayDistance", "UI_MinidoracatMiniMap_DistPoi", 0, CLIENT_DIST_MAX, 1, 0)
+
+    -- 殭屍 ------------------------------------------------------------------------
     modOptions:addSeparator()
-    modOptions:addTitle("UI_MinidoracatMiniMap_SecDistanceEsc")
+    modOptions:addTitle("UI_MinidoracatMiniMap_SecZombie")
+    -- 精準殭屍點位（預設關）；齒輪面板另以自訂 ISTickBox 注入同步開關
+    -- （它原生只列引擎選項物件，這是純 Lua 自繪——見下方「齒輪面板」一節）
+    modOptions:addTickBox("ZombieDots", "UI_MinidoracatMiniMap_ZombieDots", false,
+        "UI_MinidoracatMiniMap_ZombieDots_tooltip")
+    -- 世界地圖（M）獨立圖標開關（預設關）：風格/顏色/物種與類別篩選共用小地圖設定
+    modOptions:addTickBox("WMZombieDots", "UI_MinidoracatMiniMap_WMZombieDots", false,
+        "UI_MinidoracatMiniMap_WM_tooltip")
+    modOptions:addTickBox("ZombieIntensity", "UI_MinidoracatMiniMap_ZombieIntensity", false,
+        "UI_MinidoracatMiniMap_ZombieIntensity_tooltip")
+    -- 殭屍點樣式：顏色與大小（繪製端每幀讀值，存檔即生效，無需重建）
+    combo = modOptions:addComboBox("ZombieDotColor", "UI_MinidoracatMiniMap_ZombieDotColor")
+    combo:addItem("UI_MinidoracatMiniMap_ZDotColor_Orange", true) -- 預設橘
+    combo:addItem("UI_MinidoracatMiniMap_ZDotColor_Yellow", false)
+    combo:addItem("UI_MinidoracatMiniMap_ZDotColor_Purple", false)
+    combo:addItem("UI_MinidoracatMiniMap_ZDotColor_White", false)
+    combo:addItem("UI_MinidoracatMiniMap_ZDotColor_Red", false)
+    -- 殭屍點上限（可視範圍內同時顯示的最大數量；取樣端每輪讀值即時生效）
+    combo = modOptions:addComboBox("ZombieDotMax", "UI_MinidoracatMiniMap_ZombieDotMax")
+    combo:addItem("UI_MinidoracatMiniMap_ZDotMax_100", false)
+    combo:addItem("UI_MinidoracatMiniMap_ZDotMax_200", true) -- 預設 200
+    combo:addItem("UI_MinidoracatMiniMap_ZDotMax_400", false)
+    combo:addItem("UI_MinidoracatMiniMap_ZDotMax_800", false)
+    -- 大小/透明度＝滑條（0.9.0，原三檔 combobox）：舊存值由 migrateSliderOptions
+    -- 一次性換算（PZAPI addSlider＝ModOptions.lua:206；ESC 頁自帶數值標）
+    modOptions:addSlider("ZombieDotSize", "UI_MinidoracatMiniMap_ZombieDotSize", 1, 16, 1, 3)
+    modOptions:addSlider("ZombieDotAlpha", "UI_MinidoracatMiniMap_ZombieDotAlphaOpt", 10, 100, 5, 100)
     modOptions:addSlider("ClientZombieDotDistance", "UI_MinidoracatMiniMap_DistZombie", 0, CLIENT_DIST_MAX, 1, 0)
+
+    -- 動物 ------------------------------------------------------------------------
+    -- 圖標染色下拉（玩家偏好/色盲需求；繪製端每幀讀值即時生效）
+    local function addColorCombo(id, labelKey, defaultIdx)
+        local c = modOptions:addComboBox(id, labelKey)
+        for i = 1, #ADOTS_COLOR_ITEMS do c:addItem(ADOTS_COLOR_ITEMS[i], i == defaultIdx) end
+    end
+    modOptions:addSeparator()
+    modOptions:addTitle("UI_MinidoracatMiniMap_SecAnimals")
+    -- 動物圖標（預設關）：野生/畜養獨立開關＋風格/尺寸（繪製端每幀讀值，存檔即生效）
+    modOptions:addTickBox("AnimalWild", "UI_MinidoracatMiniMap_AnimalWild", false,
+        "UI_MinidoracatMiniMap_AnimalWild_tooltip")
+    modOptions:addTickBox("AnimalLivestock", "UI_MinidoracatMiniMap_AnimalLivestock", false,
+        "UI_MinidoracatMiniMap_AnimalLivestock_tooltip")
+    modOptions:addTickBox("WMAnimalWild", "UI_MinidoracatMiniMap_WMAnimalWild", false,
+        "UI_MinidoracatMiniMap_WM_tooltip")
+    modOptions:addTickBox("WMAnimalLivestock", "UI_MinidoracatMiniMap_WMAnimalLivestock", false,
+        "UI_MinidoracatMiniMap_WM_tooltip")
+    combo = modOptions:addComboBox("AnimalIconStyle", "UI_MinidoracatMiniMap_AnimalIconStyle")
+    combo:addItem("UI_MinidoracatMiniMap_AIconStyle_Symbol", true) -- 預設地圖符號
+    combo:addItem("UI_MinidoracatMiniMap_AIconStyle_Item", false)
+    addColorCombo("AnimalWildColor", "UI_MinidoracatMiniMap_AnimalWildColor", 2)      -- 預設綠
+    addColorCombo("AnimalLivestockColor", "UI_MinidoracatMiniMap_AnimalLivestockColor", 1) -- 預設白
+    -- 大小/透明度滑條（0.9.0 起動物與載具各自獨立；舊共用 combobox 值一次性換算）
+    modOptions:addSlider("AnimalIconSize", "UI_MinidoracatMiniMap_AnimalIconSize", 8, 48, 1, 16)
+    modOptions:addSlider("AnimalIconAlpha", "UI_MinidoracatMiniMap_AnimalIconAlphaOpt", 10, 100, 5, 100)
+    -- 動物名稱（預設關）：圖標下方標「種類（公/母）」；距離 0＝不限（純客戶端偏好，
+    -- 不設沙盒——名稱不比圖標多揭露位置資訊）
+    modOptions:addTickBox("AnimalNames", "UI_MinidoracatMiniMap_AnimalNames", false,
+        "UI_MinidoracatMiniMap_AnimalNames_tooltip")
+    modOptions:addSlider("AnimalNameDistance", "UI_MinidoracatMiniMap_AnimalNameDistance", 0, CLIENT_DIST_MAX, 1, 0)
     modOptions:addSlider("ClientAnimalIconDistance", "UI_MinidoracatMiniMap_DistAnimal", 0, CLIENT_DIST_MAX, 1, 0)
+
+    -- 載具 ------------------------------------------------------------------------
+    modOptions:addSeparator()
+    modOptions:addTitle("UI_MinidoracatMiniMap_SecVehicles")
+    -- 載具圖標（預設關）：無內建車形地圖圖示，以方向盤符號顯示（見 ADOTS_VEH_SYM）
+    modOptions:addTickBox("VehicleDots", "UI_MinidoracatMiniMap_VehicleDots", false,
+        "UI_MinidoracatMiniMap_VehicleDots_tooltip")
+    modOptions:addTickBox("WMVehicleDots", "UI_MinidoracatMiniMap_WMVehicleDots", false,
+        "UI_MinidoracatMiniMap_WM_tooltip")
+    addColorCombo("VehicleIconColor", "UI_MinidoracatMiniMap_VehicleIconColor", 4)    -- 預設天藍
+    -- 載具大小/透明度滑條（0.9.0 前與動物共用 AnimalIconSize；遷移時以舊值播種）
+    modOptions:addSlider("VehicleIconSize", "UI_MinidoracatMiniMap_VehicleIconSize", 8, 48, 1, 16)
+    modOptions:addSlider("VehicleIconAlpha", "UI_MinidoracatMiniMap_VehicleIconAlphaOpt", 10, 100, 5, 100)
     modOptions:addSlider("ClientVehicleIconDistance", "UI_MinidoracatMiniMap_DistVehicle", 0, CLIENT_DIST_MAX, 1, 0)
+
+    -- 安全屋 ----------------------------------------------------------------------
+    -- 安全屋圖層（範圍框／圖標／名稱；本 MOD 純 Lua 自繪，_Safehouse.lua）：
+    -- 繪製端每幀讀值即時生效。伺服器沙盒 SafehouseDisplay／SafehouseNameDisplay
+    -- 為天花板，這三顆只能再收緊
+    modOptions:addSeparator()
+    modOptions:addTitle("UI_MinidoracatMiniMap_SecSafehouse")
+    modOptions:addTickBox("Safehouses", "UI_MinidoracatMiniMap_Safehouses", true,
+        "UI_MinidoracatMiniMap_Safehouses_tooltip")
+    modOptions:addTickBox("SafehouseIcons", "UI_MinidoracatMiniMap_SafehouseIcons", true,
+        "UI_MinidoracatMiniMap_SafehouseIcons_tooltip")
+    modOptions:addTickBox("SafehouseNames", "UI_MinidoracatMiniMap_SafehouseNames", true,
+        "UI_MinidoracatMiniMap_SafehouseNames_tooltip")
+    -- 安全屋圖標大小（px；原固定 16，_Safehouse.lua 每幀讀值）
+    modOptions:addSlider("SafehouseIconSize", "UI_MinidoracatMiniMap_SafehouseIconSize", 8, 48, 1, 16)
     modOptions:addSlider("ClientSafehouseDisplayDistance", "UI_MinidoracatMiniMap_DistSafehouse", 0, CLIENT_DIST_MAX, 1, 0)
     modOptions:addSlider("ClientSafehouseNameDistance", "UI_MinidoracatMiniMap_DistSafehouseName", 0, CLIENT_DIST_MAX, 1, 0)
-    modOptions:addSlider("ClientPoiDisplayDistance", "UI_MinidoracatMiniMap_DistPoi", 0, CLIENT_DIST_MAX, 1, 0)
-    -- 收尾分隔線：addTitle 只畫標題、不畫群組結束，少了這行後面的外觀選項
-    -- （不透明度/鎖定位置/穿透模式…）在視覺上會被歸進「顯示距離」標題底下
+
+    -- 小地圖視窗 ------------------------------------------------------------------
     modOptions:addSeparator()
+    modOptions:addTitle("UI_MinidoracatMiniMap_SecWindow")
+    combo = modOptions:addComboBox("MapSize", "UI_MinidoracatMiniMap_Size")
+    combo:addItem("UI_MinidoracatMiniMap_Size_Small", false)
+    combo:addItem("UI_MinidoracatMiniMap_Size_Medium", true) -- 預設「中」
+    combo:addItem("UI_MinidoracatMiniMap_Size_Large", false)
+    combo:addItem("UI_MinidoracatMiniMap_Size_Huge", false)
+    -- 按鈕列顯示模式（問題 A）：原版 hover 展開/收合會改變外框高度、把地圖核心
+    -- 往上推（詳見下方 setAdornmentsVisible wrap 一節）。不做「永遠隱藏」——
+    -- 齒輪與縮放按鈕會不可達。
+    combo = modOptions:addComboBox("AdornMode", "UI_MinidoracatMiniMap_AdornMode")
+    combo:addItem("UI_MinidoracatMiniMap_AdornMode_Hover", false)
+    combo:addItem("UI_MinidoracatMiniMap_AdornMode_Always", true) -- 預設「永遠顯示」
     -- 外框底色不透明度：只影響外框/按鈕列的黑底與其上的視覺重量。
     -- 地圖本體無「整體 element alpha」，但 style layer fill alpha＋背景 quad 可調
     -- ——該機制已由 _Ghost.lua 的 dimMapBody 完整實作並實機驗證（穿透模式限定）；
     -- 此處若要做「非穿透常駐半透明檔位」可複用同一套，目前未出貨
-    local opacityCombo = modOptions:addComboBox("Opacity", "UI_MinidoracatMiniMap_Opacity")
-    opacityCombo:addItem("UI_MinidoracatMiniMap_Opacity_Full", true) -- 預設原版
-    opacityCombo:addItem("UI_MinidoracatMiniMap_Opacity_Half", false)
-    opacityCombo:addItem("UI_MinidoracatMiniMap_Opacity_Faint", false)
+    combo = modOptions:addComboBox("Opacity", "UI_MinidoracatMiniMap_Opacity")
+    combo:addItem("UI_MinidoracatMiniMap_Opacity_Full", true) -- 預設原版
+    combo:addItem("UI_MinidoracatMiniMap_Opacity_Half", false)
+    combo:addItem("UI_MinidoracatMiniMap_Opacity_Faint", false)
     -- 鎖定位置：擋標題列拖曳與邊緣縮放（hitResizeEdge 與 titleBar wrap 各自讀值）
     modOptions:addTickBox("LockPosition", "UI_MinidoracatMiniMap_LockPosition", false,
         "UI_MinidoracatMiniMap_LockPosition_tooltip")
+    -- 拖曳自由查看：拖動後停留該處、點擊回到玩家（原版是放開就回中，
+    -- ISMiniMap.lua:214-225 prerenderHack 每幀回中）
+    modOptions:addTickBox("FreeLook", "UI_MinidoracatMiniMap_FreeLook", true,
+        "UI_MinidoracatMiniMap_FreeLook_tooltip")
+    -- 點擊小地圖開啟世界地圖（原版行為＝onMouseUp 無拖曳即 ToggleWorldMap，
+    -- ISMiniMap.lua:239-245）。預設關：把點擊留給未來的小地圖互動；
+    -- M 鍵與按鈕列的 M 鈕不受影響。
+    modOptions:addTickBox("ClickOpenWorldMap", "UI_MinidoracatMiniMap_ClickOpenWorldMap", false,
+        "UI_MinidoracatMiniMap_ClickOpenWorldMap_tooltip")
+    -- 玩家座標列（預設開）：小地圖底部置中顯示 x, y, z；繪製端每幀讀值即時生效。
+    -- 複製功能（XY 鈕/右鍵選單）不受此開關影響
+    modOptions:addTickBox("ShowPlayerCoords", "UI_MinidoracatMiniMap_ShowPlayerCoords", true,
+        "UI_MinidoracatMiniMap_ShowPlayerCoords_tooltip")
     -- 穿透模式（預設關）：點擊/滾輪/右鍵穿透到遊戲世界＋外框強制變淡＋琥珀邊框。
     -- 事件 gate 與套用本體在 MinidoracatMiniMap_Ghost.lua；熱鍵 ' 與 FloatIcon
     -- 右鍵亦可切換（三處設定面＋熱鍵讀寫同一選項值）
@@ -1257,18 +1278,29 @@ if PZAPI and PZAPI.ModOptions then
         "UI_MinidoracatMiniMap_GhostMode_tooltip")
     -- 穿透模式地圖不透明度（%）：_Ghost.lua dimMapBody 依值壓暗；改動經 apply 即時重壓
     modOptions:addSlider("GhostAlpha", "UI_MinidoracatMiniMap_GhostAlpha", 10, 90, 5, 40)
-    -- 標記大小（px）與地圖文字大小（%）：繪製端每幀讀值（Core.markerIconSize／Core.mapTextZoom）
-    modOptions:addSlider("MarkerIconSize", "UI_MinidoracatMiniMap_MarkerIconSize", 8, 48, 1, 16)
-    modOptions:addSlider("MapTextScale", "UI_MinidoracatMiniMap_MapTextScale", 50, 300, 10, 100)
     -- 浮動開關圖標（預設開）：常駐畫面小圖標，點擊開關小地圖、拖曳移動（見檔尾一節）
     modOptions:addTickBox("FloatIcon", "UI_MinidoracatMiniMap_FloatIcon", true,
         "UI_MinidoracatMiniMap_FloatIcon_tooltip")
+
+    -- 進階（文字欄） --------------------------------------------------------------
+    modOptions:addSeparator()
+    modOptions:addTitle("UI_MinidoracatMiniMap_SecAdvanced")
+    -- 篩選停用清單（統一視窗的物種/載具類別勾選自動寫入；CSV、空＝全開）。
+    -- PZAPI 無多選元件，做成可見進階欄位——一般玩家用視窗操作
+    modOptions:addTextEntry("AnimalSpeciesFilter", "UI_MinidoracatMiniMap_AnimalSpeciesFilter", "",
+        "UI_MinidoracatMiniMap_AnimalSpeciesFilter_tooltip")
+    modOptions:addTextEntry("VehicleCategoryFilter", "UI_MinidoracatMiniMap_VehicleCategoryFilter", "",
+        "UI_MinidoracatMiniMap_VehicleCategoryFilter_tooltip")
     -- 自訂尺寸（textentry，PZAPI/ModOptions.lua:40）：拖曳小地圖邊緣縮放時自動寫入。
     -- 不存 WorldMapSettings：它非泛用 key-value——setDouble 只認建構時註冊的
     -- ConfigOption，未知鍵靜默 no-op（WorldMapSettings.java:73-77、32-42），
     -- 故改用 ModOptions；做成可見欄位讓玩家能手動清空還原。
     modOptions:addTextEntry("CustomSize", "UI_MinidoracatMiniMap_CustomSize", "",
         "UI_MinidoracatMiniMap_CustomSize_tooltip")
+    -- 擴充圖層（marker API v3）：只存玩家改過的層，格式與讀寫在 _Markers.lua
+    -- （Core.markerLayer／setMarkerLayer／resetMarkerLayers）；齒輪設定的擴充分類自動寫入
+    modOptions:addTextEntry("MarkerLayers", "UI_MinidoracatMiniMap_MarkerLayers", "",
+        "UI_MinidoracatMiniMap_MarkerLayers_tooltip")
 
     -- 按「接受/套用」時由 MainOptions:apply 呼叫（3789）。該函式先跑 gameOptions:apply()
     -- （3787）把 UI 值寫回 option，所以此處 getValue() 已是新值。

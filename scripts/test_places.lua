@@ -11,7 +11,7 @@ local sources = { readFile(itineraryPath), readFile(placesPath) }
 -- 主檔地圖文字／標記大小 helper：抽 test:map-text 真實作，滑條值由 placeSliders 控制
 local mapTextSource = assert(readFile(dir .. "MinidoracatMiniMap.lua"):gsub("\r\n", "\n"):match(
     "%-%- test:map%-text:start\n(.-)\n%-%- test:map%-text:end"), "找不到主檔 map-text 測試區段")
-local placeSliders = {}
+local placeSliders, placeOpts = {}, {}
 
 local function fixture()
     local handlers, players, client = {}, {}, false
@@ -21,7 +21,11 @@ local function fixture()
         events[name] = { Add = function(fn) handlers[name][#handlers[name] + 1] = fn end }
     end
     local log = { messages = {}, prompts = {}, dialogs = {} }
-    local core = { ready = true, navGateAllows = function() return true end }
+    local core = { ready = true, navGateAllows = function() return true end,
+        getBoolOption = function(id, default)
+            if placeOpts[id] == nil then return default end
+            return placeOpts[id]
+        end }
     assert(load(mapTextSource, "map-text", "t", setmetatable({ Core = core,
         getSliderValue = function(id, default)
             if placeSliders[id] == nil then return default end
@@ -349,6 +353,12 @@ do
     -- 字寬 #"UI_MinidoracatMiniMap_PlaceHome"*5*2 置中於 x=500
     eq(s2.texts[1].x, 500 - #"UI_MinidoracatMiniMap_PlaceHome" * 5, "兩倍名稱置中")
     placeSliders.MarkerIconSize, placeSliders.MapTextScale = nil, nil
+    -- 「顯示家與收藏點」關＝地圖不畫標記與名稱；收藏資料不動
+    placeOpts.Places = false
+    local s3 = surface(); t.core.drawPlaces(s3)
+    eq(#s3.glyphs + #s3.texts, 0, "Places 關＝不畫家與收藏點")
+    eq(t.core.placesState(0).count, 1, "Places 關不動收藏資料")
+    placeOpts.Places = nil
 end
 
 print("test_places: ok")

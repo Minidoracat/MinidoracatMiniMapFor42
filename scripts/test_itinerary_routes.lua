@@ -89,9 +89,10 @@ local players = {}
 local function getSpecificPlayer(pn) return players[pn] end
 local trips, results, kicks = {}, {}, {}
 local activeTarget = nil
-local navRouteOption, gateAllows = true, true
+local navRouteOption, gateAllows, sharedTargetsOption = true, true, nil
 local function getBoolOption(name, default)
     if name == "NavRoute" then return navRouteOption end
+    if name == "SharedTargets" and sharedTargetsOption ~= nil then return sharedTargetsOption end
     return default
 end
 local sharedBucket = nil
@@ -138,6 +139,7 @@ return {
     players = players, trips = trips,
     draws = draws, drawPreview = drawPreview, drawNavRoute = drawNavRoute,
     setShared = function(v) sharedBucket = v end,
+    setSharedTargets = function(v) sharedTargetsOption = v end,
     resetDraws = function() for i = #draws, 1, -1 do draws[i] = nil end end,
     tick = function()
         for i = 1, #pausedTicks do pausedTicks[i]() end
@@ -681,6 +683,13 @@ do
     own, shared, preview = summary()
     assert(own == 0 and preview == 0, "P37: own=false 不畫自己的路線與預覽")
     assert(shared == 1, "P37: own=false 分享路線照畫")
+    -- P38：玩家關「顯示陣營分享的目標」＝分享路線不畫，自己的路線照畫
+    T.setSharedTargets(false)
+    T.resetDraws()
+    T.drawNavRoute(inner)
+    own, shared, preview = summary()
+    assert(own == 1 and shared == 0 and preview > 0, "P38: SharedTargets 關＝只藏分享路線")
+    T.setSharedTargets(nil)
     T.setShared(nil)
     T.setTarget(nil)
 end
@@ -689,4 +698,4 @@ print("test_itinerary_routes: OK（預覽分段/真路網距離 P1-P3、快取�
     .. "失效條件 P5-P7、引擎/選項/gate P8-P10b、預覽例外 P11、零殘留 P12-P13、"
     .. "16 站上限 P14、回報邊界 P15-P17、非繪製維護 P18-P23、"
     .. "多站預設自動＋雙表面繪製 P24-P26、單站/追加/明確關閉 P27-P29、"
-    .. "換角色隔離與清空 P30-P32、活動段終錨 P33-P36、功能閘門 own 分流 P37）")
+    .. "換角色隔離與清空 P30-P32、活動段終錨 P33-P36、功能閘門 own 分流 P37、分享顯示開關 P38）")

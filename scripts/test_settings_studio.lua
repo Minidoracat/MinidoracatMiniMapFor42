@@ -331,6 +331,7 @@ local function unifiedEngineSet(name, value, pn)
     engine[pn][name] = value
     stats.engineSets = stats.engineSets + 1
 end
+local Core = { resetMarkerLayers = function(owner) stats.layerReset = owner end }
 ]] .. extract("settings%-studio%-reset") .. "\n" .. [[
 return studioResetSection, values, addonValues, stats, engine
 ]])
@@ -356,6 +357,16 @@ check(addonValues.show == true and addonValues.width == 2 and addonValues.volume
     "addon category reset delegates declared defaults")
 check(resetStats.apply == 1 and resetStats.save == 1 and resetStats.rebuild == 2,
     "addon reset leaves host ModOptions untouched and rebuilds once")
+check(resetStats.layerReset == nil,
+    "addon reset without layers leaves MarkerLayers untouched")
+addonValues.show, addonValues.trail = nil, "kept"
+resetSection({}, { _studioSec = { id = "addon_y", owner = "OwnerY", addon = {
+    ticks = { { label = "show", default = false }, { label = "trail" } },
+    combos = {}, sliders = {}, layers = { { id = "bound" } },
+} } })
+check(addonValues.show == false and addonValues.trail == "kept",
+    "addon reset writes declared tick defaults and skips ticks without one")
+checkEq(resetStats.layerReset, "OwnerY", "addon reset also resets that owner's marker layers")
 check(source:find('studioResetId("ClientZoneDisplayDistance"', 1, true) == nil,
     "zones reset never changes the Distance category slider")
 
@@ -597,7 +608,7 @@ check(hardLine ~= "" and hardRest ~= "" and hardLine .. hardRest == "abcdefghijk
     "an overlong Latin word is hard-cut and still makes progress")
 local tinyLine, tinyRest = wrapCut("中文", 5, "Small")
 check(tinyLine == "中" and tinyRest == "文", "a width narrower than one character still places one character")
-local EXPECTED_ASSERTIONS = 124
+local EXPECTED_ASSERTIONS = 127
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
         .. ", actual " .. assertions)

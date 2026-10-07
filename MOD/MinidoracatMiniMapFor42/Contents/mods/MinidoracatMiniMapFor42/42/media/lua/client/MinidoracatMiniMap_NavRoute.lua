@@ -2823,8 +2823,10 @@ local function drawNavRoute(inner, own)
     if own ~= false then drawPreview(inner, mapAPI, pn) end
     local target = Core.navGetTarget and Core.navGetTarget(pn) or nil
     -- 陣營分享目標的路線（接收方本地各自算路，零網路增量；沙盒閘門在
-    -- navGetShared 內）。key 掃除：桶裡消失的作者，其殘留 route 一併清
-    local shared = Core.navGetShared and Core.navGetShared(pn) or nil
+    -- navGetShared 內；玩家關 SharedTargets＝不畫，同 _Nav 分享旗）。key 掃除：
+    -- 桶裡消失的作者，其殘留 route 一併清
+    local shared = getBoolOption("SharedTargets", true)
+        and Core.navGetShared and Core.navGetShared(pn) or nil
     local prefix = pn .. ":"
     for k in pairs(navRoutes) do
         if type(k) == "string" and k:sub(1, #prefix) == prefix then

@@ -430,6 +430,17 @@ do
     assert(hasText(t, "1") and hasText(t, "2"), "D6 開啟保留時照畫站號")
     t.opts.KeepFinishedTrip = nil
 
+    -- D7: 玩家關「顯示陣營分享的目標」＝分享旗不畫；收到的分享不丟，重開即再畫
+    t.opts.SharedTargets = false
+    t.resetDraws()
+    Core.drawNavTargets(inner)
+    assert(not hasText(t, "Bob"), "D7 SharedTargets 關＝不畫分享旗")
+    assert(Core.navGetShared(0) and Core.navGetShared(0).Bob, "D7 關掉只是不畫，收到的分享照留")
+    t.opts.SharedTargets = nil
+    t.resetDraws()
+    Core.drawNavTargets(inner)
+    assert(hasText(t, "Bob"), "D7 重新開啟即再顯示")
+
     -- D5: 行程清空＝站點層不畫，分享旗與搜尋 ping 仍照畫（無行程不得吃掉其他層）
     t.draws.routeFail = false
     assert(edit(t, "clear"), "D5 清空行程")
@@ -587,4 +598,4 @@ do
 end
 
 print("test_nav_gate: OK（註冊/判定 G1-G9＋set 閘門 S1-S6＋分享撤回 H1-H3"
-    .. "＋繪製閘門與繪製唯讀 D1-D6＋getNavTarget Q1-Q4＋功能閘門與行程撤銷 F1-F7）")
+    .. "＋繪製閘門與繪製唯讀 D1-D7＋getNavTarget Q1-Q4＋功能閘門與行程撤銷 F1-F7）")

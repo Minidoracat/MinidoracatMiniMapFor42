@@ -383,8 +383,10 @@ local function drawNavTargets(inner)
     local tz = Core.mapTextZoom()
     -- 陣營分享來的：只畫「給這位玩家」的桶（青旗＋名字＋距離）；getUsername
     -- 原版用例 ISScoreboard.lua:108。已收到的目標仍受目前 AllowNavShare 閘門
-    -- 與功能閘門 share 即時控制（navGetShared 同源）
-    local bucket = addonOk and Core.navGetShared and Core.navGetShared(pn) or nil
+    -- 與功能閘門 share 即時控制（navGetShared 同源）；玩家關「顯示陣營分享的目標」
+    -- （SharedTargets）只是不畫，收到的分享照留（路線層 _NavRoute 讀同一開關）
+    local bucket = addonOk and getBoolOption("SharedTargets", true)
+        and Core.navGetShared and Core.navGetShared(pn) or nil
     if bucket and playerObj then
         for author, t in pairs(bucket) do
             local sdx, sdy = t.x - playerObj:getX(), t.y - playerObj:getY()
