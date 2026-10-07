@@ -1039,12 +1039,13 @@ if PZAPI and PZAPI.ModOptions then
     modOptions = PZAPI.ModOptions:create("MinidoracatMiniMap", "UI_MinidoracatMiniMap_Options")
 
     -- ESC 頁順序與標題照齒輪設定的分類（2026-10-07 設定重整）：鍵名不變，存好的值照樣讀得到。
-    -- 分組＝addSeparator＋addTitle（addTitle 渲染時才 getText，無翻譯時機問題；addDescription
-    -- 是註冊時 getText，本檔載入期翻譯未必就緒，不用）。文字欄集中到最後的「進階」。
+    -- 分組＝addSeparator＋addTitle。文字欄集中到最後的「進階」。
     -- 地圖包／自訂區域的條件選項在 _Settings.lua 的 OnGameBoot 接在最後（PZAPI 不能中插）。
     -- 注意：combobox 的 tooltip 在 MainOptions.lua（2942-2965）沒有被顯示，故不設；slider 分支
-    -- 也不渲染 tooltip（MainOptions.lua:3024-3031）。
+    -- 也不渲染 tooltip（MainOptions.lua:3024-3031），所以「0＝不限」寫成頁首說明（addDescription
+    -- 註冊時 getText；翻譯在 Lua 之前載入：GameWindow.java:988-993、ResetLua＝Core.java:3925／3949）。
     local combo
+    modOptions:addDescription("UI_MinidoracatMiniMap_EscDistanceNote")
 
     -- 底圖與文字 ------------------------------------------------------------------
     modOptions:addTitle("UI_MinidoracatMiniMap_SecBase")
