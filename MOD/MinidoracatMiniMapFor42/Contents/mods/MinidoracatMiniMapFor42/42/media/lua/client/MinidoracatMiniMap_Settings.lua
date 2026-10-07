@@ -167,7 +167,8 @@ local SEC_ANIMALS = { id = "animals", label = "UI_MinidoracatMiniMap_SecAnimals"
             items = { "UI_MinidoracatMiniMap_AIconStyle_Symbol", "UI_MinidoracatMiniMap_AIconStyle_Item" } },
         { id = "AnimalWildColor", label = "UI_MinidoracatMiniMap_AnimalWildColor", default = 2,
             items = ADOTS_COLOR_ITEMS },
-        { id = "AnimalLivestockColor", label = "UI_MinidoracatMiniMap_AnimalLivestockColor", default = 1,
+        -- 牲畜色＝物種 chip 符號小圖的染色：跟著重建
+        { id = "AnimalLivestockColor", label = "UI_MinidoracatMiniMap_AnimalLivestockColor", default = 1, rebuild = true,
             items = ADOTS_COLOR_ITEMS },
     },
     sliders = {
@@ -437,8 +438,8 @@ local function unifiedEngineSet(name, v, pn)
 end
 
 -- 篩選 chip 的資料源：items()→{ key, label }；raw＝label 不翻譯（伺服器 zones.json 類別）；
--- get/set 單項、setAll 全選全不選、reset 回預設；icon(it)→Texture|nil（chip 左側小圖，
--- 與地圖同一套貼圖選擇）。opt＝搜尋與「跳到控制項」的鍵前綴
+-- get/set 單項、setAll 全選全不選、reset 回預設；icon(it)→Texture|nil, 染色 {r,g,b}|nil（chip 左側
+-- 小圖，與地圖同一套貼圖與染色選擇；nil 染色＝原色）。opt＝搜尋與「跳到控制項」的鍵前綴
 local function csvChips(opt, items, icon, raw)
     local chips = { opt = opt, items = items, icon = icon, raw = raw }
     function chips.get(it)
@@ -456,9 +457,14 @@ local function csvChips(opt, items, icon, raw)
     return chips
 end
 SEC_ANIMALS.chips = csvChips("AnimalSpeciesFilter", function() return ADOTS_SPECIES_UI end, function(def)
-    -- 物種小圖與地圖同源（Core.adotsStyleTexture）：符號風格＝框架 art／原版符號，物品風格＝彩圖
-    return Core.adotsStyleTexture and (Core.adotsStyleTexture(ADOTS_ART and ADOTS_ART[def.groups[1]],
-        getComboIndex("AnimalIconStyle", 1) == 2)) or nil
+    -- 物種小圖與地圖同源（Core.adotsStyleTexture）：物品風格＝彩圖原色；符號風格＝白 glyph 染色。
+    -- 物種 chip 同時管野生與牲畜，染牲畜色（地圖的基本色，預設白）
+    if not Core.adotsStyleTexture then return nil end
+    local tex, asItem = Core.adotsStyleTexture(ADOTS_ART and ADOTS_ART[def.groups[1]],
+        getComboIndex("AnimalIconStyle", 1) == 2)
+    if asItem or not Core.adotsColor then return tex end
+    local c = Core.adotsColor("AnimalLivestockColor", 1)
+    return tex, { r = c[1], g = c[2], b = c[3] }
 end)
 SEC_VEHICLES.chips = csvChips("VehicleCategoryFilter", function() return ADOTS_VEHCAT_UI end)
 -- 自訂區域類別是 zones.json 選配欄位——伺服器定義什麼列什麼；MP 區域非同步到貨，資料到了
@@ -503,9 +509,14 @@ SEC_POI.chips = { opt = "Cat",
         end
         return true
     end,
-    -- 列首類別小圖＝面板即圖例：與地圖同一套貼圖選擇（彩色模式全彩；單色時白剪影）
+    -- 列首類別小圖＝面板即圖例：與地圖同一套貼圖與染色（彩色模式全彩原色；單色或彩圖缺檔時染類別色）
     icon = function(it)
-        return Core.poiIconTexture and (Core.poiIconTexture(it.key, getBoolOption("PoiColorIcons", false))) or nil
+        if not Core.poiIconTexture then return nil end
+        local tex, isColor = Core.poiIconTexture(it.key, getBoolOption("PoiColorIcons", false))
+        if isColor then return tex end
+        local cats = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.CATEGORIES
+        local def = type(cats) == "table" and cats[it.key]
+        return tex, def and def.color or { r = 0.7, g = 0.7, b = 0.7 }
     end,
 }
 
@@ -1335,10 +1346,14 @@ local function addChips(ctx, chips)
     end
     local h = ctx.fontH + 8
     local x, y = ctx.x, ctx.y
+    -- 框架 rev 17 buttonIconColor：chip 小圖照地圖染色；較早的 rev 17 build 沒有這個旗標＝原色
+    local canTint = ctx.UI.CAPABILITIES.buttonIconColor == true
     for i = 1, #items do
         local it = items[i]
+        local tex, tint
+        if chips.icon then tex, tint = chips.icon(it) end
         local btn = ctx.UI.Button.new{ x = x, y = y, height = h, title = chips.raw and it.label or getText(it.label),
-            icon = chips.icon and chips.icon(it) or nil, style = "chip", active = chips.get(it),
+            icon = tex, iconColor = canTint and tint or nil, style = "chip", active = chips.get(it),
             target = ctx.win, onClick = onChip }
         if x > ctx.x and x + btn.width > ctx.x + ctx.w then
             x, y = ctx.x, y + h + 4
@@ -1836,11 +1851,27 @@ local function studioRebuild(win)
     local navW, laneW, labelW = studioMeasure(list, fontH)
     win._labelW = labelW
     local viewportW, viewportH = getPlayerScreenWidth(pn), getPlayerScreenHeight(pn)
+    local sx, sy = getPlayerScreenLeft(pn), getPlayerScreenTop(pn)
     local pane = studioPaneLayout(viewportW, laneW + 28, navW)
     local titleH = win:titleBarHeight()
     local searchH = fontH + 10
     local bodyY = titleH + 8 + searchH + 8
-    local bodyH = math.max(80, math.min(math.max(540, (fontH + 8) * 24), viewportH - bodyY - 16))
+    -- 視窗底的下限：從小地圖開＝小地圖外框底（原版快捷列就在它下面，視窗底與它齊平），
+    -- 世界地圖開＝viewport 底（留 8px）。放不下就縮內容區（兩欄各自捲動），但至少留 8 列高
+    -- （viewport 本身更矮時以 viewport 為準）——這時視窗會低過小地圖底
+    local floorY, gap = sy + viewportH, 8
+    local mini = win._fromMini and getPlayerMiniMap(pn)
+    if mini then
+        -- 按鈕列「滑鼠懸停時」模式收合時外框不含按鈕列：補回它的高（原版收合也替它留位，
+        -- ISMiniMap.lua:539-540），重建時視窗才不會跟著上下跳
+        local bottom = mini:getAbsoluteY() + mini:getHeight()
+        local bp = mini.bottomPanel
+        if bp and not bp:isVisible() then bottom = bottom + bp:getHeight() + 1 end
+        floorY, gap = math.min(floorY, bottom), 0
+    end
+    win._floorY = floorY
+    local bodyH = math.max(80, math.min(math.max(540, (fontH + 8) * 24), floorY - gap - sy - bodyY - 8),
+        math.min((fontH + 8) * 8, viewportH - bodyY - 16))
     win._pane = pane.mode
     win:setWidth(pane.windowW)
     win:setHeight(bodyY + bodyH + 8)
@@ -1869,13 +1900,12 @@ local function studioRebuild(win)
         inspector:setHeight(bodyH)
         studioFillInspector(win, sec, hits, pane.mode == "narrow")
     end
-    -- 開著時重建後夾回該玩家 viewport
+    -- 開著時重建後夾回：不低於視窗底下限、不出該玩家 viewport
     if win:isVisible() then
-        local sx, sy = getPlayerScreenLeft(pn), getPlayerScreenTop(pn)
         local x, y = win:getX(), win:getY()
         if x + win.width > sx + viewportW then x = sx + viewportW - win.width end
         if x < sx then x = sx end
-        if y + win.height > sy + viewportH then y = sy + viewportH - win.height end
+        if y + win.height > floorY then y = floorY - win.height end
         if y < sy then y = sy end
         win:setX(x)
         win:setY(y)
@@ -2077,17 +2107,19 @@ local function toggleSettingsWindow(outer)
         if win._playerNum ~= pn and UI.Focus then UI.Focus.releaseJoypad(win) end
     end
     win._playerNum = pn -- 視窗擁有者（分割畫面各自讀寫自己的小地圖）
+    win._fromMini = outer ~= nil and outer.inner ~= nil -- 小地圖外框（ISMiniMapOuter）才有 inner；世界地圖沒有
     win._sig = nil      -- 分類成員依擁有者判定（管理員資格、addon visible(pn)）
     studioLiveSettingsDirty(win)
     studioRebuild(win) -- 開窗即重建＝同步現值（可能在 ESC 選項頁被改過）
-    -- 靠小地圖（或世界地圖）左側、夾進該玩家 viewport
+    -- 靠小地圖（或世界地圖）左側：小地圖＝底與小地圖外框底齊平，世界地圖＝頂與地圖頂齊平；夾進該玩家 viewport
     local sx, sy = getPlayerScreenLeft(pn), getPlayerScreenTop(pn)
-    local sw, sh = getPlayerScreenWidth(pn), getPlayerScreenHeight(pn)
+    local sw = getPlayerScreenWidth(pn)
     local x = (outer and outer.getAbsoluteX and outer:getAbsoluteX() or sx) - win.width - 8
     local y = outer and outer.getAbsoluteY and outer:getAbsoluteY() or sy
+    if win._fromMini then y = win._floorY - win.height end
     if x < sx then x = sx end
     if x + win.width > sx + sw then x = sx + sw - win.width end
-    if y + win.height > sy + sh then y = sy + sh - win.height end
+    if y + win.height > win._floorY then y = win._floorY - win.height end
     if y < sy then y = sy end
     win:setX(x)
     win:setY(y)

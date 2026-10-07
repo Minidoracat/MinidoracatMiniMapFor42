@@ -276,6 +276,39 @@ do
     checkEq(env.values.AnimalSpeciesFilter, "-", "H4 select all writes the empty sentinel")
     s.selectSection("vehicles")
     check(byLabel(env, T("UI_MinidoracatMiniMap_SelectNone")) ~= nil, "H5 vehicle categories also get select all/none")
+    -- chip 小圖染色與地圖同一套：POI 單色＝類別色、彩色＝原色；物種符號風格＝牲畜色、物品風格＝原色
+    local cats = MinidoracatMiniMapPOICategories.CATEGORIES
+    s.selectSection("poicat")
+    local food = env.byKey("Cat:food")
+    check(food.icon and food.icon.poi == "food" and food.iconColor == cats.food.color,
+        "H6 mono POI chip icon is tinted with the category colour")
+    env.values.PoiColorIcons = true
+    s.rebuild()
+    food = env.byKey("Cat:food")
+    check(food.icon and food.icon.poi == "food" and food.iconColor == nil, "H6 colour POI icons keep their original colour")
+    env.values.PoiColorIcons = nil
+    s.selectSection("animals")
+    local deerChip = env.byKey("AnimalSpeciesFilter:deer")
+    local dc = deerChip.iconColor
+    check(deerChip.icon and deerChip.icon.sym == "deer.png" and dc and dc.r == 1 and dc.g == 1 and dc.b == 1,
+        "H7 symbol-style species chip is tinted with the livestock colour (default white)")
+    env.byKey("AnimalLivestockColor"):setSelected(3)
+    env.frame()
+    dc = env.byKey("AnimalSpeciesFilter:deer").iconColor
+    check(env.values.AnimalLivestockColor == 3 and dc and dc.r == 0.9 and dc.g == 0.62 and dc.b == 0,
+        "H7 changing the livestock colour rebuilds the chips with the new tint")
+    env.values.AnimalIconStyle = 2
+    s.rebuild()
+    deerChip = env.byKey("AnimalSpeciesFilter:deer")
+    check(deerChip.icon and deerChip.icon.item == "Item_Deer" and deerChip.iconColor == nil,
+        "H8 item-style species chip keeps the original colour")
+    env.values.AnimalIconStyle, env.values.AnimalLivestockColor = nil, nil
+    local caps = MinidoracatUI.v1.CAPABILITIES
+    caps.buttonIconColor = nil
+    s.selectSection("poicat")
+    food = env.byKey("Cat:food")
+    check(food.icon ~= nil and food.iconColor == nil, "H9 rev 17 build without buttonIconColor: chip icon untinted")
+    caps.buttonIconColor = true
 end
 
 -- ── I 牲畜模式 4、安全屋沙盒模式 1 ─────────────────────────────────────────────
@@ -571,6 +604,58 @@ do
     F.onKeyPress(s3.win, Keyboard.KEY_DOWN)
     check(F.isKeyConsumed(s3.win, Keyboard.KEY_DOWN), "O5 arrow keys are consumed while a control is focused")
     check(s3.win.wantKeyEvents == true, "O5 window receives key events")
+end
+
+-- ── R 位置：從小地圖開＝視窗底與小地圖外框底齊平（原版快捷列在它下面）；世界地圖開照舊 ─────
+do
+    local e = H.load{}
+    e.boot()
+    local mm = e.minimap(0)
+    local st = e.open(0)
+    local fullH = st.inspector.height
+    checkEq(st.win.y + st.win.height, 1000, "R1 window bottom is level with the minimap bottom")
+    checkEq(fullH, 540, "R1 enough room above: body keeps its full height")
+    st.win:close()
+    mm.absY, mm.height = 200, 800 -- 小地圖比視窗高：照樣底對底，不是頂對頂
+    st = e.open(0)
+    checkEq(st.win.y + st.win.height, 1000, "R1 minimap taller than the window: still bottom-aligned")
+    st.win:close()
+    mm.absY, mm.height = 40, 300 -- 小地圖在上方：上面只剩 340px
+    st = e.open(0)
+    checkEq(st.win.y, 0, "R2 short space: window starts at the viewport top")
+    checkEq(st.win.y + st.win.height, 340, "R2 short space: bottom still level with the minimap bottom")
+    check(st.inspector.height < fullH and st.inspector.height >= 22 * 8 and st.navScroll.height == st.inspector.height,
+        "R2 body shrinks (not below the 8-row minimum)")
+    st.selectSection("animals")
+    st.inspector:setYScroll(-60)
+    check(st.inspector:getScrollHeight() > st.inspector.height and st.inspector:getYScroll() == -60,
+        "R2 shrunk inspector still scrolls")
+    st.win:close()
+    mm.height = 110 -- 底 150：比最小高度還矮
+    st = e.open(0)
+    check(st.inspector.height == 22 * 8 and st.win.y == 0 and st.win.y + st.win.height <= 1080,
+        "R3 minimum body height wins; the window stays inside the viewport")
+    st.win:close()
+    mm.absY, mm.height = 700, 300
+    mm.bottomPanel = { visible = false, height = 30, isVisible = function(self) return self.visible end,
+        getHeight = function(self) return self.height end }
+    st = e.open(0)
+    checkEq(st.win.y + st.win.height, 1031, "R4 collapsed button bar (hover mode): its height is added back")
+    mm.bottomPanel.visible = true
+    st.win:setY(900)
+    st.rebuild()
+    checkEq(st.win.y + st.win.height, 1000, "R5 rebuild clamps a dragged window back above the minimap bottom")
+    st.win:setY(100)
+    st.rebuild()
+    checkEq(st.win.y, 100, "R5 rebuild leaves a window that is already above the floor where it is")
+    st.win:close()
+    local worldMap = { playerNum = 0, getAbsoluteX = function() return 1200 end, getAbsoluteY = function() return 100 end }
+    e.Core.toggleSettingsWindow(worldMap)
+    st = e.studio()
+    check(st.win.y == 100 and st.inspector.height == fullH, "R6 world map: top aligned with the map, full body")
+    st.win:setY(900)
+    st.rebuild()
+    checkEq(st.win.y + st.win.height, 1080, "R6 world map: rebuild clamps to the viewport bottom only")
 end
 
 io.write(string.format("test_settings_studio: %d assertions, %d failures\n", assertions, failures))

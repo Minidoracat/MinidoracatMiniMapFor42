@@ -273,8 +273,10 @@ function H.load(opts)
             engine[pn] = {}
             local api = { getBoolean = function(_, n) return engine[pn][n] == true end,
                 setBoolean = function(_, n, v) engine[pn][n] = v end }
-            minimaps[pn] = { playerNum = pn, inner = { mapAPI = api }, visible = true,
-                getAbsoluteX = function() return 1500 end, getAbsoluteY = function() return 40 end,
+            -- 右下角的小地圖（同遊戲預設位置）：外框 y 700、高 300 → 底 1000
+            minimaps[pn] = { playerNum = pn, inner = { mapAPI = api }, visible = true, absY = 700, height = 300,
+                getAbsoluteX = function() return 1500 end, getAbsoluteY = function(self) return self.absY end,
+                getHeight = function(self) return self.height end,
                 isReallyVisible = function(self) return self.visible end }
         end
         return minimaps[pn]
