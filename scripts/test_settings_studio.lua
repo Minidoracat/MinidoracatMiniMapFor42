@@ -67,6 +67,18 @@ do
     check(old.Core.settingsWindow() == nil, "A4 rev 16 framework opens nothing")
     -- 地圖本身 fail-soft：載入不拋錯、公開 API 仍在
     checkEq(old.API.settingsApiVersion, 5, "A5 registry still loads without the new window")
+    -- 真的框架 Toast（rev 17 框架只是少了某個旗標）：整句都要看得到，含最後的「ESC ￫ 選項 ￫ MOD」，
+    -- 不能被單行截掉（Toast 預設 maxLines 1）
+    local real = H.load{}
+    real.boot()
+    real.UI.CAPABILITIES.navList = false
+    real.Core.toggleSettingsWindow(real.minimap(0))
+    local toast = real.UI.Toast.active[#real.UI.Toast.active]
+    local shown = toast and table.concat(toast.lines, "") or ""
+    checkEq(shown:gsub("%s", ""), T("UI_MinidoracatMiniMap_NeedFramework"):gsub("%s", ""),
+        "A6 real Toast shows the whole NeedFramework text over several lines")
+    check(toast and toast.holdMs >= 6000, "A6 long notice stays long enough to read")
+    check(real.Core.settingsWindow() == nil, "A6 missing capability opens nothing")
 end
 
 -- ── B 視窗外框、四組側欄、群組內順序 ───────────────────────────────────────────

@@ -2110,12 +2110,14 @@ local function studioFramework()
     return nil
 end
 
--- 每按一次提示一次：框架有 Toast 用 Toast，否則玩家頭上的提示字
+-- 每按一次提示一次：框架有 Toast 用 Toast，否則玩家頭上的提示字。Toast 預設單行截字、停 3 秒，
+-- 整句（含最後的 ESC 路徑）要換行顯示並停久一點：maxLines 是 rev 5 起的欄位，更舊的框架忽略
 local function studioNeedFramework(pn)
     local text = getText("UI_MinidoracatMiniMap_NeedFramework")
     local UI = MinidoracatUI and MinidoracatUI.v1
     if UI and UI.CAPABILITIES and UI.CAPABILITIES.toast and UI.Toast
-            and pcall(UI.Toast.show, { title = getText("UI_MinidoracatMiniMap_Options"), message = text }) then
+            and pcall(UI.Toast.show, { title = getText("UI_MinidoracatMiniMap_Options"), message = text,
+                maxLines = 4, holdMs = 8000 }) then
         return
     end
     local player = getSpecificPlayer(pn)
