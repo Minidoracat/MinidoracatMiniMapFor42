@@ -5,7 +5,7 @@
 [b]繁體中文版：[/b][url=https://steamcommunity.com/workshop/filedetails/discussion/3763913359/569297034317714443/]小地圖完整說明：功能、導航與道路資料[/url]
 
 [h2]🚀 Quick start[/h2]
-Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url]; in multiplayer the server must enable it. Keep series mods updated; restart after updating. UI languages: Traditional/Simplified Chinese, English, Japanese.
+Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url]; in multiplayer the server must enable it. Keep series mods updated; restart after updating. The gear's Map Display Settings window needs the updated UI Library; with an older one the gear only shows an update notice, and every setting is still in ESC → Options → MOD. UI languages: Traditional/Simplified Chinese, English, Japanese.
 [olist]
 [*] Press [b]/[/b] to toggle the mini-map (rebind: Options → Key Bindings → [MinidoracatMiniMap]). Or use the Minimap button in the family toolbar (right edge of the screen, left of the moodles): left-click toggles the mini-map, right-click ghost mode.
 [*] Press [b]M[/b] for the world map.
@@ -43,9 +43,9 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [list]
 [*] Up to 16 targets: add to the end, insert before a stop or "Go here first"; reorder, remove/undo, skip and preview the remaining route.
 [*] New trips continue automatically; step mode or stopover targets wait for you. Existing trips stay step-by-step. In a vehicle, stop first. For a target on the road, stopping in the lane beside it counts as arrived; for an off-road target, you are told to walk the rest.
-[*] After the last stop, the numbered stop markers disappear from the maps (the trip page still lists the results); to keep them, turn on "Keep finished trip on map" under Layers in Map Display Settings. Adding a stop or setting a navigation target after a trip has finished starts a new trip numbered from 1, no clearing needed.
+[*] After the last stop, the numbered stop markers disappear from the maps (the trip page still lists the results); to keep them, turn on "Keep finished trip on map" in the "Players & navigation" category of Map Display Settings. Adding a stop or setting a navigation target after a trip has finished starts a new trip numbered from 1, no clearing needed.
 [*] Routes follow roads, preferring paved ones, and replan when you go off course.
-[*] In MP you can share your current stop with your faction; servers can disable this.
+[*] In MP you can share your current stop with your faction; servers can disable this. To hide targets others share with you, turn off "Show faction-shared targets" in "Players & navigation" (received shares are kept).
 [*] Hands-free driving: [url=https://steamcommunity.com/workshop/filedetails/discussion/3792675881/586187095760051144/]AutoDrive Guide[/url].
 [/list]
 
@@ -54,6 +54,7 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [*] Right-click the map: "Set as home" or "Add to favorites…" (named, unlimited).
 [*] "Go home" replaces the trip with home and starts navigating (house button, right-click menu or trip page).
 [*] An empty search box lists favorites to rename, remove or set as home. Saved per character; not inherited after death.
+[*] To hide home and favorite icons on the maps, turn off "Show home & favorites" in "Players & navigation"; Go Home, the favorites list and the right-click menu still work.
 [/list]
 
 [h3]🖱️ Mini-map controls[/h3]
@@ -67,20 +68,36 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 
 [h3]👁️ Icons & display[/h3]
 [list]
-[*] [b]Zombie dots[/b] (off by default): live positions in loaded areas; color, size, opacity and cap adjustable; vanilla heatmap toggle.
+[*] [b]Zombie dots[/b] (off by default): live positions in loaded areas; color, size, opacity and cap adjustable; vanilla heatmap toggle ("Show zombie heatmap").
 [*] [b]Animal icons[/b] (off by default): wild/livestock toggles and species filters; MOD Compatibility adds dogs, horses and more.
 [*] [b]Vehicle icons[/b] (off by default): standard / heavy / performance / emergency filters. Two icon styles, colorblind-friendly palette.
-[*] [b]World map (M)[/b]: the same zombie/animal/vehicle icons, four toggles.
+[*] [b]Also show on the world map[/b]: the zombie, animal (wild/livestock) and vehicle categories each have this toggle for the world map (M); style, colors and filters are shared with the mini-map.
 [*] [b]Street names & safehouses[/b]: street names on the mini-map (hidden when zoomed far out); safehouse outline/icon/name toggles; custom names add the owner.
-[*] [b]Chunk grid[/b] (off by default): marks each 8x8-tile chunk and your chunk's number and range.
-[*] [b]Sizes[/b]: icon size sliders per type, plus "Marker size" (home, nav, pings, other mods' markers) and "Map text size" (50–300%). Game-drawn street/place names don't scale.
-[*] [b]Map Display Settings[/b] (gear): searchable categories; saves instantly; per-feature performance notes.
+[*] [b]Chunk grid[/b] (off by default, in "Base map & text"): marks each 8x8-tile chunk and your chunk's number and range.
+[*] [b]Sizes[/b]: icon size sliders for resource points, zombies, animals, vehicles, safehouses and custom zones, plus "Marker size (home, favorites, nav, search)" (also other mods' markers that have no layer yet) and "Map text size" (50–300%). Game-drawn street/place names don't scale. Search "size" in the settings window to find them all.
+[*] [b]Display distance[/b]: the zombie, animal, vehicle, resource point and safehouse categories each have one, shown as "your value / server cap"; the lower applies, 0 = no limit.
+[/list]
+
+[h2]⚙️ Settings[/h2]
+
+[h3]🎛️ Map Display Settings (gear)[/h3]
+[list]
+[*] [b]Open[/b]: the gear on the mini-map, or the paw-print button in the world map (M) button row. Changes apply and save instantly.
+[*] [b]Four groups[/b] in the side list: "Map layers" (Base map & text, Players & navigation, Resource points, Zombies, Animals, Vehicles, Safehouses), "Window & controls" (Mini-map window, Performance notes), "Add-ons" and "Admin" (only when the server allows Tactical view and you have the permission). Each category has an icon; categories with a master switch toggle right in the list. The search box finds settings across categories.
+[*] [b]Live previews[/b] at the top of the zombie, animal, vehicle, resource point, safehouse, players & navigation and custom zone categories show size, color, opacity, style and name changes the way the map draws them, even with nothing nearby.
+[*] [b]Filter chips[/b]: resource point categories, animal species and vehicle categories are clickable chips, with icons colored as on the map.
+[*] [b]Tooltips & reset[/b]: every toggle has the same help text as the ESC page (hover it). "Reset this category" restores this mod's defaults only; vanilla map-engine options stay. "Mini-map window" has "Reset to default size" to clear edge-drag resizing.
+[*] [b]Add-on categories[/b]: Custom zones (Zones), Mod maps (MOD Maps) and series mods such as Vehicle Manager, Economy and AutoDrive each get one category, in a fixed order; an add-on shows its category once it is updated. Add-on map markers can come in layers, each with its own on/off, size and separate mini-map / world-map name toggles.
+[*] [b]Gamepad & keyboard[/b]: open it with the gamepad from the mini-map gear, then the D-pad moves between search, categories and settings, A toggles, B closes back to the mini-map. Keyboard: Tab and arrow keys; arrows don't move your character while a setting has focus.
+[*] [b]Layout[/b]: opened from the mini-map it lines up with it (opening downward when the mini-map is in the top half) and stays clear of the hotbar, scrolling when space is short. Large screens (900 px tall or more, game font not enlarged) get bigger text; when two columns don't fit (e.g. split screen) it shows one page at a time with "Back to categories".
+[*] [b]Performance notes[/b]: the cost of each layer and what to do about it.
+[*] [b]ESC → Options → MOD[/b]: the mini-map page follows the same categories with titles (Base map & text, Players & navigation, Resource points, Zombies, Animals, Vehicles, Safehouses, Mini-map window, Advanced) and holds every setting; both stay in sync.
 [/list]
 
 [h3]🛡️ Server settings (sandbox)[/h3]
 [list]
-[*] Disable zombie dots, heatmap, animal and vehicle icons; cap display distances; four livestock-visibility levels; safehouse display scope; faction sharing toggle. Changes apply live.
-[*] [b]Scan intervals[/b]: "Zombie dot scan interval" and "Vehicle and animal icon scan interval" (seconds) on the icons page. 0 (default) = real time; N = refresh only every N seconds, scanned around the player, so panning or zooming leaves no gaps. Admins in Tactical view always see real time; scanning runs on each client, so server load is unchanged.
+[*] Pages "Minidoracat Mini-map - General", "Zombies, Animals & Vehicles", "Resource Points & Custom Zones", "Safehouses" and "Export": disable zombie dots, heatmap, animal and vehicle icons; cap display distances; four livestock-visibility levels; safehouse display scope; faction sharing toggle. Changes apply live.
+[*] [b]Scan intervals[/b]: "Zombie dot scan interval" and "Vehicle and animal icon scan interval" (seconds) on the "Minidoracat Mini-map - Zombies, Animals & Vehicles" page. 0 (default) = real time; N = refresh only every N seconds, scanned around the player, so panning or zooming leaves no gaps. Admins in Tactical view always see real time; scanning runs on each client, so server load is unchanged.
 [*] Players can only tighten distances. Only data the client already receives is drawn.
 [*] Custom server zones: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones[/url] (zones.json), with its own display distance.
 [/list]
@@ -106,6 +123,9 @@ MiniMap doesn't auto-correct roads; it only fixes a few vanilla ones.
 [h2]❓ FAQ[/h2]
 [b]Q: The mod won't load / a dependency is missing?[/b]
 A: Subscribe to and enable Minidoracat UI Library for B42, then restart.
+
+[b]Q: The gear only says "The settings window needs a newer Minidoracat UI Framework"?[/b]
+A: Your Minidoracat UI Library is outdated. Update it and restart; until then every setting is in ESC → Options → MOD and the mini-map works as usual.
 
 [b]Q: No street names or navigation in a mod map area?[/b]
 A: Usually no author road data, or a higher-priority map covers the area. See "Mod maps & road data".
