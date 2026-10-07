@@ -228,7 +228,12 @@ end
 -- provider.fn 每幀照呼（identity 鍵需要當前表引用）；每幀回新表的 addon 自然
 -- 退化為每幀重建——即原全量掃描成本，外加每 zone 一次 zcZoneBBox 呼叫與
 -- list 寫入（對該類 provider 是淨增；addon 回報 0.16.0 後變慢先查此），不錯繪。
-local ZC_PAD = 64      -- 候選外擴（世界格）：站立零重建，移動每 ~PAD/4 格一次
+-- 兩層候選（2026-10-07 DevProfiler：預設縮放下 ±ZC_PAD 外擴框比視窗大一個數量級，
+-- 三 pass 每幀大多在空掃窗外的候選）：大候選＝全量掃描結果（外擴 ZC_PAD，重建頻率不變）；
+-- 近候選＝大候選裡與「視窗 ±ZC_NEAR_PAD」相交者，只掃大候選、保持原順序，三 pass 逐幀走它。
+-- 兩層的超集論證相同（containment 框＋halo 餘裕），繪製呼叫序列逐筆不變。
+local ZC_PAD = 64      -- 大候選外擴（世界格）：站立零重建，移動每 ~PAD/4 格一次
+local ZC_NEAR_PAD = 16 -- 近候選外擴（世界格）：移動每 ~16 格從大候選重篩一次
 local ZC_TTL_MS = 1000
 local ZC_MOVE2 = 256   -- 距離閘生效時玩家移動平方閾值（16 格）
 
@@ -277,6 +282,84 @@ end
 -- 跳過，不得拋錯——否則 safeDrawZone 中止＝整層圖層當幀消失（codex review）
 local ZC_EMPTY = {}
 
+-- 近候選：大候選（e.list，bbox 存在 e.bx1..e.by2）裡與「視窗 ±ZC_NEAR_PAD」相交者，順序不變。
+-- 失效鍵＝大候選版本 e.ver＋近 containment 框；篩選框同樣多留 halo 餘裕（理由同大候選）。
+-- 內部 provider（內建 POI：原子換表、不原地改，identity 鍵即足以失效）另建衍生清單，
+-- 讓遠距縮放不必每幀掃過畫不出東西的候選（2026-09-30 E2E fps-sp，非 debug、389×380 小地圖、
+-- zoom 12 整張地圖入鏡 1319-1669 候選：fill 1.1-1.3ms、lines 1.0-1.1ms 幾乎全空掃，icons 3.4-4.0ms）：
+--   noLod：無 lodRect 的候選（地標）。lodRect zone 在 fill（scale<HIDE）與 lines（scale<DETAIL；
+--     內部無 nameFar）的逐 zone 條件恆不成立，只掃 noLod＝同樣的繪製、同樣的順序；
+--   圖標平行陣列：iconOnce zone 的錨點中心與 lod 旗標。icons pass 逐候選的表查找、iconRect 判斷
+--     與中心計算改在這裡做一次，繪製公式不變＝逐位元相同。有非 iconOnce 的圖標 zone 就不走（icFast）。
+-- 外部 addon 允許原地改表（TTL 兜底），各 pass 仍逐幀照讀，不用衍生清單
+local function zcNear(e, internal, zones, vMinX, vMaxX, vMinY, vMaxY)
+    if e.nearVer == e.ver and vMinX >= e.nqMinX and vMaxX <= e.nqMaxX
+        and vMinY >= e.nqMinY and vMaxY <= e.nqMaxY then
+        return e.near, e
+    end
+    e.nearVer = e.ver
+    e.nqMinX, e.nqMaxX = vMinX - ZC_NEAR_PAD, vMaxX + ZC_NEAR_PAD
+    e.nqMinY, e.nqMaxY = vMinY - ZC_NEAR_PAD, vMaxY + ZC_NEAR_PAD
+    local haloPad = e.haloPad
+    local bMinX, bMaxX = e.nqMinX - haloPad, e.nqMaxX + haloPad
+    local bMinY, bMaxY = e.nqMinY - haloPad, e.nqMaxY + haloPad
+    local near = e.near
+    if near then
+        for i = #near, 1, -1 do near[i] = nil end
+    else
+        near = {}; e.near = near
+    end
+    local noLod, nl, icZ, icX, icY, icLod, ni, fast
+    if internal then
+        noLod = e.noLod
+        if noLod then
+            for i = #noLod, 1, -1 do noLod[i] = nil end
+        else
+            noLod = {}; e.noLod = noLod
+        end
+        icZ, icX, icY, icLod = e.icZ or {}, e.icX or {}, e.icY or {}, e.icLod or {}
+        e.icZ, e.icX, e.icY, e.icLod = icZ, icX, icY, icLod
+        nl, ni, fast = 0, 0, true
+    end
+    local list, bx1, by1, bx2, by2 = e.list, e.bx1, e.by1, e.bx2, e.by2
+    local m = 0
+    for i = 1, e.n do
+        local x1 = bx1[i]
+        if x1 == false or (bx2[i] >= bMinX and x1 <= bMaxX and by2[i] >= bMinY and by1[i] <= bMaxY) then
+            local zi = list[i]
+            m = m + 1
+            near[m] = zi
+            local z = internal and zones[zi]
+            if z then
+                local lod = z.lodRect
+                if lod == nil then
+                    nl = nl + 1
+                    noLod[nl] = zi
+                end
+                local icon, rects = z.icon, z.rects
+                if icon and icon.tex and rects then
+                    if z.iconOnce then
+                        -- 錨點同 icons pass：iconRect 四欄齊備才採用，否則 rects[1]
+                        local rc = rects[1]
+                        local ir = z.iconRect
+                        if ir and ir.x1 and ir.y1 and ir.x2 and ir.y2 then rc = ir end
+                        if rc then
+                            ni = ni + 1
+                            icZ[ni] = zi
+                            icX[ni], icY[ni] = (rc.x1 + rc.x2) / 2, (rc.y1 + rc.y2) / 2
+                            icLod[ni] = lod ~= nil
+                        end
+                    else
+                        fast = false
+                    end
+                end
+            end
+        end
+    end
+    if internal then e.icN, e.icFast = ni, fast end
+    return near, e
+end
+
 local function zcCandidates(inner, provider, zones, disCats, scale,
                             vMinX, vMaxX, vMinY, vMaxY, ppx, ppy, gate2)
     local zc = inner._minidoracatZC
@@ -291,7 +374,7 @@ local function zcCandidates(inner, provider, zones, disCats, scale,
     -- 失效鍵：zones 表引用／disCats 集引用／距離閘參數 gate2（per-provider，
     -- 呼叫端選定：internal＝POI 距離、外部＝自訂區域距離）／scale
     -- （zoom 檔位；halo 世界尺寸依它）／TTL／containment 框／玩家移動（閘生效時）
-    if e and rawequal(e.zones, zones) and e.disCats == disCats and e.gate2 == gate2
+    local hit = e and rawequal(e.zones, zones) and e.disCats == disCats and e.gate2 == gate2
         and e.scale == scale -- zoom 檔位未必伴隨視窗溢出：獨立失效鍵（A14-11 鎖）
         -- TTL 只為「外部 addon 原地 mutate」兜底；internal POI provider 一律原子換表
         -- （MinidoracatMiniMapPOI.lua buildPoiConverted：poiZones = built），identity 鍵
@@ -299,13 +382,14 @@ local function zcCandidates(inner, provider, zones, disCats, scale,
         -- zcZoneBBox 0.22-0.25%）。時鐘回撥仍重建（now < builtMs）
         and now >= e.builtMs and (provider.internal or now - e.builtMs < ZC_TTL_MS)
         and vMinX >= e.qMinX and vMaxX <= e.qMaxX
-        and vMinY >= e.qMinY and vMaxY <= e.qMaxY then
-        if not gate2 then return e.list, e end
+        and vMinY >= e.qMinY and vMaxY <= e.qMaxY
+    if hit and gate2 then
         local dx, dy = ppx - e.ppx, ppy - e.ppy
-        if dx * dx + dy * dy <= ZC_MOVE2 then return e.list, e end
+        hit = dx * dx + dy * dy <= ZC_MOVE2
     end
+    if hit then return zcNear(e, provider.internal, zones, vMinX, vMaxX, vMinY, vMaxY) end
     if not e then
-        e = {}
+        e = { ver = 0, bx1 = {}, by1 = {}, bx2 = {}, by2 = {} }
         zc[provider] = e
     end
     e.zones = zones
@@ -320,6 +404,7 @@ local function zcCandidates(inner, provider, zones, disCats, scale,
     --   測試用。如此「篩選框外的 zone」距任何允許的視窗恆 > halo，其 halo
     --   繪製外擴（ZONE_HALO_PX/scale）伸不進窗——超集在平移滿 PAD 時仍成立
     local haloPad = ZONE_HALO_PX / scale
+    e.haloPad = haloPad
     e.qMinX, e.qMaxX = vMinX - ZC_PAD, vMaxX + ZC_PAD
     e.qMinY, e.qMaxY = vMinY - ZC_PAD, vMaxY + ZC_PAD
     local bMinX, bMaxX = e.qMinX - haloPad, e.qMaxX + haloPad
@@ -339,28 +424,9 @@ local function zcCandidates(inner, provider, zones, disCats, scale,
         list = {}; e.list = list
     end
     -- bbox 每次現算：重建本就全清語意（TTL 兜 in-place mutate），跨呼叫 memo
-    -- 是死路——留表只會每次重建配置 ~1670 個垃圾小表（claude review）
-    -- 內部 provider（內建 POI：原子換表、不原地改，identity 鍵即足以失效）另建衍生清單，
-    -- 讓遠距縮放不必每幀掃過畫不出東西的候選（2026-09-30 E2E fps-sp，非 debug、389×380 小地圖、
-    -- zoom 12 整張地圖入鏡 1319-1669 候選：fill 1.1-1.3ms、lines 1.0-1.1ms 幾乎全空掃，icons 3.4-4.0ms）：
-    --   noLod：無 lodRect 的候選（地標）。lodRect zone 在 fill（scale<HIDE）與 lines（scale<DETAIL；
-    --     內部無 nameFar）的逐 zone 條件恆不成立，只掃 noLod＝同樣的繪製、同樣的順序；
-    --   圖標平行陣列：iconOnce zone 的錨點中心與 lod 旗標。icons pass 逐候選的表查找、iconRect 判斷
-    --     與中心計算改在這裡做一次，繪製公式不變＝逐位元相同。有非 iconOnce 的圖標 zone 就不走（icFast）。
-    -- 外部 addon 允許原地改表（TTL 兜底），各 pass 仍逐幀照讀，不用衍生清單
-    local internal = provider.internal
-    local noLod, nl, icZ, icX, icY, icLod, ni, fast
-    if internal then
-        noLod = e.noLod
-        if noLod then
-            for i = #noLod, 1, -1 do noLod[i] = nil end
-        else
-            noLod = {}; e.noLod = noLod
-        end
-        icZ, icX, icY, icLod = e.icZ or {}, e.icX or {}, e.icY or {}, e.icLod or {}
-        e.icZ, e.icX, e.icY, e.icLod = icZ, icX, icY, icLod
-        nl, ni, fast = 0, 0, true
-    end
+    -- 是死路——留表只會每次重建配置 ~1670 個垃圾小表（claude review）。
+    -- 候選的 bbox 存平行陣列（無幾何＝false，恆入近候選），近候選重篩不再回頭算
+    local bx1, by1, bx2, by2 = e.bx1, e.by1, e.bx2, e.by2
     local n = 0
     for zi = 1, #zones do
         -- z 可為 nil：`zones[i]=nil` 挖洞屬違約輸入（契約 C2 要求連續陣列）。
@@ -375,51 +441,53 @@ local function zcCandidates(inner, provider, zones, disCats, scale,
                     and y2 >= bMinY and y1 <= bMaxY)) then
                 n = n + 1
                 list[n] = zi
-                if internal then
-                    local lod = z.lodRect
-                    if lod == nil then
-                        nl = nl + 1
-                        noLod[nl] = zi
-                    end
-                    local icon, rects = z.icon, z.rects
-                    if icon and icon.tex and rects then
-                        if z.iconOnce then
-                            -- 錨點同 icons pass：iconRect 四欄齊備才採用，否則 rects[1]
-                            local rc = rects[1]
-                            local ir = z.iconRect
-                            if ir and ir.x1 and ir.y1 and ir.x2 and ir.y2 then rc = ir end
-                            if rc then
-                                ni = ni + 1
-                                icZ[ni] = zi
-                                icX[ni], icY[ni] = (rc.x1 + rc.x2) / 2, (rc.y1 + rc.y2) / 2
-                                icLod[ni] = lod ~= nil
-                            end
-                        else
-                            fast = false
-                        end
-                    end
-                end
+                bx1[n], by1[n], bx2[n], by2[n] = x1 or false, y1, x2, y2
             end
         end
     end
-    if internal then e.icN, e.icFast = ni, fast end
-    return list, e
+    e.n = n
+    e.ver = e.ver + 1
+    return zcNear(e, provider.internal, zones, vMinX, vMaxX, vMinY, vMaxY)
+end
+
+-- 三 pass 的逐幀共用量：縮放檔、可視框、仿射係數、距離閘參數。同一次 prerender 內視野
+-- 與選項不變，主檔兩個 prerender wrap 在呼叫 pass 前遞增 inner._minidoracatFrame，同一幀的
+-- 第二、三個 pass 直接沿用（2026-10-07 DevProfiler：每 pass 各算一次＝每幀 3×約 22µs）。
+-- 沒有幀號（離線測試、其他呼叫端）＝每次現算，與分開算的結果相同。
+-- 視野預裁（v3 後區塊模式數千矩形×8 次投影/幀會壓垮 FPS）：世界座標 AABB 不相交者直接
+-- 跳過，連投影都不做——外接框是視窗超集，被裁者投影後必在窗外、原本的螢幕裁切也不會畫，
+-- 逐像素不變。退化行為：uiToWorld 未就緒回 0.0F 時外接框塌縮＝三 pass 整幀全裁
+-- （舊碼該情況同樣什麼都畫不出，見 icons pass 論證）
+local function zoneFrame(inner)
+    local f = inner._minidoracatZoneFrame
+    local tok = inner._minidoracatFrame
+    if f and tok ~= nil and f.tok == tok then return f end
+    if not f then
+        f = {}
+        inner._minidoracatZoneFrame = f
+    end
+    local mapAPI = inner.mapAPI
+    f.scale = mapAPI:getWorldScale()
+    local vMinX, vMaxX, vMinY, vMaxY = visibleWorldAABB(inner)
+    f.vMinX, f.vMaxX, f.vMinY, f.vMaxY = vMinX, vMaxX, vMinY, vMaxY
+    local acx = math.floor((vMinX + vMaxX) / 2)
+    local acy = math.floor((vMinY + vMaxY) / 2)
+    f.acx, f.acy = acx, acy
+    f.p0x, f.p0y, f.sxx, f.sxy, f.syx, f.syy = deriveAffine(mapAPI, acx, acy)
+    f.ppx, f.ppy, f.pdist2, f.zdist2, f.poiBlocked, f.zoneBlocked = distGateParams(inner)
+    f.tok = tok -- 最後才標記：中途拋錯的半套不會被同幀其他 pass 沿用
+    return f
 end
 
 local function drawZoneFillBody(inner)
-    local mapAPI = inner.mapAPI
     local w, h = inner.width, inner.height
-    local scale = mapAPI:getWorldScale()
-    -- 視野預裁（同 drawZoneIcons，v3 後區塊模式數千矩形×8 次投影/幀會壓垮
-    -- FPS）：世界座標 AABB 不相交者直接跳過，連投影都不做——外接框是視窗
-    -- 超集，被裁者投影後必在窗外、原本的螢幕裁切也不會畫，逐像素不變。
-    -- 退化行為：uiToWorld 未就緒回 0.0F 時外接框塌縮＝fill/line 也整幀全裁，
-    -- 與圖標 pass 同退化（舊碼該情況同樣什麼都畫不出，見 icons pass 論證）
-    local vMinX, vMaxX, vMinY, vMaxY = visibleWorldAABB(inner)
-    local acx = math.floor((vMinX + vMaxX) / 2)
-    local acy = math.floor((vMinY + vMaxY) / 2)
-    local p0x, p0y, sxx, sxy, syx, syy = deriveAffine(mapAPI, acx, acy)
-    local ppx, ppy, pdist2, zdist2, poiBlocked, zoneBlocked = distGateParams(inner)
+    local fr = zoneFrame(inner)
+    local scale = fr.scale
+    local vMinX, vMaxX, vMinY, vMaxY = fr.vMinX, fr.vMaxX, fr.vMinY, fr.vMaxY
+    local acx, acy = fr.acx, fr.acy
+    local p0x, p0y, sxx, sxy, syx, syy = fr.p0x, fr.p0y, fr.sxx, fr.sxy, fr.syx, fr.syy
+    local ppx, ppy, pdist2, zdist2, poiBlocked, zoneBlocked =
+        fr.ppx, fr.ppy, fr.pdist2, fr.zdist2, fr.poiBlocked, fr.zoneBlocked
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
         -- 閘門：外部 provider 受 ZoneLayer 總閘（internal 不受）＋ per-provider 母開關
@@ -562,18 +630,18 @@ end
 -- 名稱仿 drawMapBounds 置中畫法（畫在第一個 rect 中心；⚠ drawRect 參數序 a,r,g,b）
 local function drawZoneLines(inner)
     if #registeredZoneProviders == 0 then return end
-    local mapAPI = inner.mapAPI
     local w, h = inner.width, inner.height
     local tm = getTextManager()
     local tz = mapTextZoom()
     local th = tm:getFontHeight(UIFont.Small) * tz
-    local scale = mapAPI:getWorldScale()
-    -- 視野預裁（同 drawZoneFillBody）：世界座標不相交者跳過投影
-    local vMinX, vMaxX, vMinY, vMaxY = visibleWorldAABB(inner)
-    local acx = math.floor((vMinX + vMaxX) / 2)
-    local acy = math.floor((vMinY + vMaxY) / 2)
-    local p0x, p0y, sxx, sxy, syx, syy = deriveAffine(mapAPI, acx, acy)
-    local ppx, ppy, pdist2, zdist2, poiBlocked, zoneBlocked = distGateParams(inner)
+    -- 視野預裁與共用量同 drawZoneFillBody（zoneFrame）
+    local fr = zoneFrame(inner)
+    local scale = fr.scale
+    local vMinX, vMaxX, vMinY, vMaxY = fr.vMinX, fr.vMaxX, fr.vMinY, fr.vMaxY
+    local acx, acy = fr.acx, fr.acy
+    local p0x, p0y, sxx, sxy, syx, syy = fr.p0x, fr.p0y, fr.sxx, fr.sxy, fr.syx, fr.syy
+    local ppx, ppy, pdist2, zdist2, poiBlocked, zoneBlocked =
+        fr.ppx, fr.ppy, fr.pdist2, fr.zdist2, fr.poiBlocked, fr.zoneBlocked
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
         -- 閘門（同 drawZoneFill）：外部受 ZoneLayer 總閘＋per-provider 母開關＋自訂
@@ -797,31 +865,30 @@ end
 -- 母開關的閘門一致。
 local function drawZoneIcons(inner)
     if #registeredZoneProviders == 0 then return end
-    local mapAPI = inner.mapAPI
     local w, h = inner.width, inner.height
     -- 大小/透明度滑條每幀讀值（0.9.0；作用於所有 zone 圖標，POI 為主）；
     -- 18＝滑條預設（同 ESC 頁 addSlider 預設值）
     local s = getSliderValue("PoiIconSize", 18, 8, 48)
     local ia = getSliderValue("PoiIconAlpha", 100, 10, 100) / 100
     local half = s / 2
-    -- 中/遠距（<細節檔）對 lodRect zone 啟用圖標去重疊；細節檔全畫
-    local scale = mapAPI:getWorldScale()
-    local declutter = scale < ZONE_LOD_DETAIL
-    iconGridGen = iconGridGen + 1
-    -- 視野預裁（POI 擴至 ~1700 筆後，逐 rect 先投影再裁會付 ~3.4k 次/幀的
-    -- Kahlua→Java worldToUI 呼叫）：先取一次可視世界外接框，rect 與框不相交者
-    -- 直接跳過。框是視窗四邊形的超集，被裁者其 rect 中心必在窗外，而下方螢幕
-    -- 裁切要求中心深入視窗 half+1px 才畫——預裁純省投影、不改變畫面；此論證
-    -- 依賴「繪製 ⇒ 中心在窗內」，若日後放寬成「圖標矩形相交即畫」預裁即失效。
+    -- 視野預裁與共用量見 zoneFrame（POI 擴至 ~1700 筆後，逐 rect 先投影再裁會付 ~3.4k 次/幀的
+    -- Kahlua→Java worldToUI 呼叫）：rect 與可視外接框不相交者直接跳過。框是視窗四邊形的超集，
+    -- 被裁者其 rect 中心必在窗外，而下方螢幕裁切要求中心深入視窗 half+1px 才畫——預裁純省投影、
+    -- 不改變畫面；此論證依賴「繪製 ⇒ 中心在窗內」，若日後放寬成「圖標矩形相交即畫」預裁即失效。
     -- 兩表面相容依據：ISWorldMap.lua:268 與 ISMiniMap.lua:192 同走 getAPIv3()，
     -- V3⊂V2⊂V1，2 參 uiToWorldX/Y 是 UIWorldMapV1.java:286-296 同一份繼承實作；
     -- 資料未就緒時回 0.0F 不丟例外（與 worldToUI 同守衛），退化為全裁＝與舊碼
     -- 的全裁行為一致。回歸測試見 scripts/test_zone_render.lua A5。
-    local vMinX, vMaxX, vMinY, vMaxY = visibleWorldAABB(inner)
-    local acx = math.floor((vMinX + vMaxX) / 2)
-    local acy = math.floor((vMinY + vMaxY) / 2)
-    local p0x, p0y, sxx, sxy, syx, syy = deriveAffine(mapAPI, acx, acy)
-    local ppx, ppy, pdist2, zdist2, poiBlocked, zoneBlocked = distGateParams(inner)
+    local fr = zoneFrame(inner)
+    local scale = fr.scale
+    -- 中/遠距（<細節檔）對 lodRect zone 啟用圖標去重疊；細節檔全畫
+    local declutter = scale < ZONE_LOD_DETAIL
+    iconGridGen = iconGridGen + 1
+    local vMinX, vMaxX, vMinY, vMaxY = fr.vMinX, fr.vMaxX, fr.vMinY, fr.vMaxY
+    local acx, acy = fr.acx, fr.acy
+    local p0x, p0y, sxx, sxy, syx, syy = fr.p0x, fr.p0y, fr.sxx, fr.sxy, fr.syx, fr.syy
+    local ppx, ppy, pdist2, zdist2, poiBlocked, zoneBlocked =
+        fr.ppx, fr.ppy, fr.pdist2, fr.zdist2, fr.poiBlocked, fr.zoneBlocked
     -- 名稱提示：指標（滑鼠／手把準星）下最上層、也就是最後畫的那顆圖標
     local hx, hy = iconPointer(inner)
     local hitText, hitX, hitY

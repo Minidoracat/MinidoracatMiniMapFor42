@@ -2439,6 +2439,9 @@ end
 if ISWorldMap and ISWorldMap.prerender then
     local originalWorldMapPrerender = ISWorldMap.prerender
     function ISWorldMap:prerender()
+        -- 幀號：zone 三 pass 同幀共用可視框等量（_Zones.lua zoneFrame）。原版 prerender 夾在
+        -- fill 與 lines 之間，其後再遞增一次＝fill 與 lines/icons 各自看當下的視野，同改前
+        self._minidoracatFrame = (self._minidoracatFrame or 0) + 1
         -- 功能閘門 share 被擋：每幀壓掉引擎隊友圖層；放行後還原玩家期望值（_FeatureGate.lua，
         -- 世界地圖期望值追蹤原版選項面板勾選；缺檔＝不壓）
         if Core.gateRemotePlayers then Core.gateRemotePlayers(self, self.playerNum or 0, true) end
@@ -2471,6 +2474,7 @@ if ISWorldMap and ISWorldMap.prerender then
             log("world map zombie dots draw failed: " .. tostring(zdErr))
         end
         originalWorldMapPrerender(self)
+        self._minidoracatFrame = self._minidoracatFrame + 1
         pcall(drawMapBounds, self)
         Core.drawZonePass(self, "drawZoneLines", "_minidoracatWMZoneLineErrLogged") -- 與 MapBounds 同層
         Core.drawZonePass(self, "drawZoneIcons", "_minidoracatWMZoneIconErrLogged") -- POI 圖標，同層
@@ -2613,6 +2617,8 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
     local originalInnerPrerender = ISMiniMapInner.prerender
     function ISMiniMapInner:prerender()
         originalInnerPrerender(self)
+        -- 幀號：zone 三 pass 同幀共用可視框等量（_Zones.lua zoneFrame）；本 wrap 內其餘加繪都不動視野
+        self._minidoracatFrame = (self._minidoracatFrame or 0) + 1
         local pn = self.playerNum or 0
         local fa = Core.featureAllowed -- 功能閘門（_FeatureGate.lua）；缺檔＝放行
         -- 沙盒禁用殭屍熱度時每幀壓回；重新允許時恢復（雙向即時）。

@@ -343,7 +343,11 @@ local defaultPlayer = {
     getUsername = function() return username end,
 }
 local function getSpecificPlayer() return playerPresent and defaultPlayer or nil end
-local function drawClippedEdge() drawCount = drawCount + 1 end
+local edgeLog = {} -- 框線座標序列（候選列等價測試比對繪製順序用）
+local function drawClippedEdge(_, x1, y1, x2, y2)
+    drawCount = drawCount + 1
+    edgeLog[drawCount] = x1 .. "," .. y1 .. "," .. x2 .. "," .. y2
+end
 local function adotsTexture() return "tex" end
 -- 視野外接框（主檔 visibleWorldAABB）：view＝nil 時回全世界；viewCalls 數跨界次數
 local view, viewCalls = nil, 0
@@ -400,6 +404,9 @@ return {
         return drawCount, iconCount, nameCount
     end,
     names = function() return drawnNames end,
+    edges = function() return table.concat(edgeLog, ";", 1, drawCount) end,
+    resetCandidates = function() inner._minidoracatShCand = nil end,
+    candidateCount = function() return inner._minidoracatShCand and inner._minidoracatShCand.n end,
     lastIcon = function() return lastIcon end,
     lastName = function() return lastName end,
     setSlider = function(id, value) sliders[id] = value end,
@@ -1042,6 +1049,57 @@ do
     H.draw()
     assert(H.names()[1] == "Fort (Alice)", "改名後快取重建應顯示新名稱與屋主帳號")
     H.setOption("SafehouseNames", false); H.setOption("Safehouses", true)
+end
+
+-- 候選列（shCandidates，2026-10-07：數百間安全屋逐幀全掃）：沿用候選與每幀重篩的繪製逐筆相同
+-- （框線座標序列、圖標數、名稱序列）。視野裁切與純距離閘兩種模式，玩家／視窗沿路徑移動、半徑中途改變
+do
+    local H = safehouseHarness
+    H.setMode(3); H.setNameMode(3); H.setView(nil)
+    H.setOption("Safehouses", true); H.setOption("SafehouseIcons", true); H.setOption("SafehouseNames", true)
+    local seed = 7
+    local function rnd(n)
+        seed = (seed * 1103515245 + 12345) % 2147483648
+        return seed % n
+    end
+    local houses = {}
+    for i = 1, 300 do
+        local x, y = rnd(600), rnd(600)
+        houses[i] = H.safehouse(x, y, x + 3 + rnd(12), y + 3 + rnd(12), rnd(3) == 0, "O" .. (i % 9), "T" .. i)
+    end
+    H.setHouses(houses)
+    H.draw()
+    local function snapshot()
+        local d, ic, n = H.drawSame()
+        return d .. "/" .. ic .. "/" .. n .. "|" .. H.edges() .. "|" .. table.concat(H.names(), ",")
+    end
+    local drawn = 0
+    for _, mode in ipairs({ "view", "dist" }) do
+        for s = 0, 40 do
+            local px, py = 50 + s * 9, 80 + s * 7
+            H.setPlayerPosition(px, py)
+            if mode == "view" then
+                H.setDistance(nil); H.setNameDistance(nil)
+                H.setView(px - 50, px + 50, py - 50, py + 50)
+            else
+                H.setView(nil)
+                H.setDistance(s < 20 and 30 or 45); H.setNameDistance(20)
+            end
+            local cached = snapshot()
+            H.resetCandidates()
+            local fresh = snapshot()
+            if s == 0 then -- 重篩後的候選只剩附近的列（殺「候選＝全部列」）
+                assert(H.candidateCount() < #houses / 4,
+                    mode .. "：候選列應只剩附近的安全屋（得 " .. tostring(H.candidateCount()) .. "）")
+            end
+            assert(cached == fresh, string.format("%s 第 %d 步：沿用候選與重篩的繪製不同\n  沿用：%s\n  重篩：%s",
+                mode, s, cached:sub(1, 300), fresh:sub(1, 300)))
+            if not cached:find("^0/") then drawn = drawn + 1 end
+        end
+    end
+    assert(drawn > 40, "候選列等價測試的路徑太空（有繪製的步數 " .. drawn .. "）")
+    H.setView(nil); H.setDistance(nil); H.setNameDistance(nil); H.setPlayerPosition(0, 10)
+    H.setOption("SafehouseIcons", false); H.setOption("SafehouseNames", false)
 end
 
 assert(not navHarness.cacheEmpty(), "導航測試初始快取缺失")

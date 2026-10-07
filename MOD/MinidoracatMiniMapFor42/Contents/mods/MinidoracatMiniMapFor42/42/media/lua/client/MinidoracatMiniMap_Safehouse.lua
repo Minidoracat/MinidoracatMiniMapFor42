@@ -100,6 +100,56 @@ local function refreshSafehouseRows(list, size, username, faction)
     return rows
 end
 
+-- 候選列（2026-10-07 正式服複本 DevProfiler：數百間安全屋時，逐幀把每一列都判一次視窗／距離，
+-- 本身就是每幀 0.2-0.5ms）：只走可能通過下方逐列判定的列，順序照 rows＝繪製呼叫序列不變。
+--   有視野裁切（vMinX）：候選＝與「建構時視窗 ±SH_VIEW_PAD」相交的列，視窗仍在框內就沿用；
+--   全由距離閘決定（reach＝各已開圖層的距離取大）：候選＝與「建構時玩家 ±(reach＋SH_MOVE_PAD)」
+--     相交的列，玩家移動不超過 SH_MOVE_PAD、reach 不變就沿用——最近點距離 ≤ reach ⇒ 矩形與
+--     玩家 ±reach 方框相交，故候選是逐列判定通過者的超集。
+-- rows 每次重建（1 秒快取）都重篩。
+local SH_VIEW_PAD = 64
+local SH_MOVE_PAD = 16
+local function shCandidates(inner, rows, vMinX, vMaxX, vMinY, vMaxY, px, py, reach)
+    local c = inner._minidoracatShCand
+    if not c then
+        c = { list = {} }
+        inner._minidoracatShCand = c
+    end
+    if c.rows == rows then
+        if vMinX then
+            if c.reach == nil and vMinX >= c.minX and vMaxX <= c.maxX
+                and vMinY >= c.minY and vMaxY <= c.maxY then
+                return c.list, c.n
+            end
+        elseif c.reach == reach and px - c.px <= SH_MOVE_PAD and c.px - px <= SH_MOVE_PAD
+            and py - c.py <= SH_MOVE_PAD and c.py - py <= SH_MOVE_PAD then
+            return c.list, c.n
+        end
+    end
+    c.rows = rows
+    local minX, maxX, minY, maxY
+    if vMinX then
+        c.reach = nil
+        minX, maxX = vMinX - SH_VIEW_PAD, vMaxX + SH_VIEW_PAD
+        minY, maxY = vMinY - SH_VIEW_PAD, vMaxY + SH_VIEW_PAD
+    else
+        c.reach, c.px, c.py = reach, px, py
+        local r = reach + SH_MOVE_PAD
+        minX, maxX, minY, maxY = px - r, px + r, py - r, py + r
+    end
+    c.minX, c.maxX, c.minY, c.maxY = minX, maxX, minY, maxY
+    local list, n = c.list, 0
+    for i = 1, #rows do
+        local row = rows[i]
+        if row.x2 >= minX and row.x1 <= maxX and row.y2 >= minY and row.y1 <= maxY then
+            n = n + 1
+            list[n] = i
+        end
+    end
+    c.n = n -- list 尾端的舊索引不清：只讀到 n
+    return list, n
+end
+
 local function drawSafehouses(inner)
     if not (SafeHouse and SafeHouse.getSafehouseList) then return end
     local wantRect = getBoolOption("Safehouses", true)
@@ -147,8 +197,20 @@ local function drawSafehouses(inner)
     -- 圖標大小（px，滑條 SafehouseIconSize）與地圖文字倍率：每幀讀值，拖動即時生效
     local iconSize = getSliderValue("SafehouseIconSize", 16, 8, 48)
     local tz = mapTextZoom()
-    for idx = 1, #rows do
-        local row = rows[idx]
+    -- 候選列（shCandidates）：有視野裁切，或全部已開圖層都有距離閘時才篩；
+    -- 兩者皆無（缺 visibleWorldAABB）＝逐列全走
+    local reach
+    if not vMinX and not (((wantRect or wantIcon) and not dist2) or (wantName and not ndist2)) then
+        reach = 0
+        if (wantRect or wantIcon) and dist > reach then reach = dist end
+        if wantName and ndist > reach then reach = ndist end
+    end
+    local cand, cn
+    if vMinX or reach then
+        cand, cn = shCandidates(inner, rows, vMinX, vMaxX, vMinY, vMaxY, px, py, reach)
+    end
+    for ci = 1, cn or #rows do
+        local row = rows[cand and cand[ci] or ci]
         local x1, y1, x2, y2 = row.x1, row.y1, row.x2, row.y2
         -- 距離先行：超出兩個距離閘的列不做成員判定（最近點＝玩家夾進矩形）。
         -- 夾值用比較式而非 math.max/min：Kahlua 的 math.* 每次都是跨界 Java 呼叫，

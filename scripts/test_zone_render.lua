@@ -129,7 +129,11 @@ local function iconPointer()
 end
 local function getText(key) return "T:" .. key end
 local zoneAABB = { 0, 100, 0, 100 }
-local function visibleWorldAABB() return zoneAABB[1], zoneAABB[2], zoneAABB[3], zoneAABB[4] end
+local aabbCalls = 0 -- A16：同幀共用（zoneFrame）要讓三 pass 只取一次可視框
+local function visibleWorldAABB()
+    aabbCalls = aabbCalls + 1
+    return zoneAABB[1], zoneAABB[2], zoneAABB[3], zoneAABB[4]
+end
 -- 距離閘的區段外相依：displayDist（鎖定選項名；沙盒×玩家合成另在
 -- test_livestock_visibility.lua 的 display-distance 區段測）與玩家 stub
 -- （記錄收到的 playerNum——防 inner.playerNum 被硬編碼 0 的回歸）。
@@ -191,6 +195,7 @@ return {
     edgeCount = function() return drawClippedEdgeCount end,
     resetEdgeCount = function() drawClippedEdgeCount = 0 end,
     advanceClock = function(ms) fakeNowMs = fakeNowMs + ms end,
+    aabbCalls = function() return aabbCalls end,
 }
 ]=]
 local zoneChunk, zoneErr = compile(zonePrelude .. "\n" .. zoneBody .. "\n" .. zoneSuffix)
@@ -1908,6 +1913,23 @@ do
         .. "篩選框內的 zone（得 " .. i8.polyCount .. "）")
     zone.clearProviders()
     zone.setAABB(0, 100, 0, 100)
+    -- A14-13 近候選的 halo 餘裕（同 A14-10，殺近候選「篩選框折疊成 containment 框」變異）：
+    -- zone 落在近 containment 116 與篩選框 118 之間；平移滿 ZC_NEAR_PAD（16）不重篩，halo 仍要伸進窗
+    local nz = { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, haloAlpha = 0.5,
+        rects = { { x1 = 117, y1 = 40, x2 = 118, y2 = 41 } } } }
+    zone.addProvider("nearHaloProbe", function() return nz end)
+    local i8b = makeInner(1)
+    i8b.width, i8b.height = 400, 400
+    zone.fill(i8b)
+    assert(i8b.polyCount == 0, "A14-13 建快取時 zone 與 halo 皆窗外（得 " .. i8b.polyCount .. "）")
+    zone.setAABB(16, 116, 0, 100)  -- 平移滿近候選外擴：vMax=116 命中沿用近候選
+    zone.fill(i8b)
+    assert(i8b.polyCount == 1,
+        "A14-13 halo（117-2=115 ≤ 116）應伸進窗被畫：近候選須含 containment 框外、篩選框內的 zone（得 "
+        .. i8b.polyCount .. "）")
+    zone.clearProviders()
+    zone.setAABB(0, 100, 0, 100)
+
 
     -- A14-11 scale 鍵（殺「刪 e.scale == scale」變異）：zoom 檔位變化未必伴隨
     -- 視窗溢出（恆等投影下視窗完全不動）——scale 是獨立失效鍵，變化必須立即重建
@@ -2113,6 +2135,146 @@ do
     zone.setAABB(0, 100, 0, 100)
     zone.clearProviders()
     print("internal fast path A15 equivalence cases passed")
+end
+
+--------------------------------------------------------------------------------
+-- A16 兩層候選＋同幀共用（2026-10-07 DevProfiler：預設縮放下 ±ZC_PAD 外擴框比視窗大一個數量級，
+-- 三 pass 每幀大多在空掃窗外的候選；每個 pass 又各取一次可視框、仿射與距離閘）：
+--   A16-1 沿路徑平移（跨過近候選框與大候選框）、切縮放檔、開關距離閘時，沿用快取的 inner
+--         與每幀新建的 inner 三 pass 繪製呼叫序列逐筆相同（內部／外部 provider 各一輪）
+--   A16-2 近候選確實比大候選小（優化活性：殺「近候選＝大候選」）
+--   A16-3 同幀只取一次可視框；幀號變了重取；沒有幀號每個 pass 都取；中途拋錯的半套不沿用
+--------------------------------------------------------------------------------
+do
+    zone.clearProviders()
+    zone.setPointer(nil)
+    local seed = 20261007
+    local function rnd(n)
+        seed = (seed * 1103515245 + 12345) % 2147483648
+        return seed % n
+    end
+    local zones = { hasFill = true, hasLine = true, hasIcon = true }
+    for i = 1, 600 do
+        local x, y = rnd(1400) - 200, rnd(1000) - 200
+        local w, h = 2 + rnd(14), 2 + rnd(14)
+        if i % 50 == 0 then w, h = 150, 120 end -- 跨好幾個近候選框的大型地標
+        local rects = { { x1 = x, y1 = y, x2 = x + w, y2 = y + h } }
+        if rnd(3) == 0 then rects[2] = { x1 = x + w, y1 = y, x2 = x + w + 4, y2 = y + 3 } end
+        local z = { rects = rects, iconOnce = rnd(8) > 0, name = "N" .. (i % 7),
+            fill = { r = 0.5, g = 0.5, b = 0.5 }, fillAlpha = 0.3, haloAlpha = 0.4,
+            border = { r = 1, g = 1, b = 1 }, borderAlpha = 0.5,
+            icon = { tex = "t" .. (i % 5), r = 1, g = 0.5, b = 0.25 } }
+        if i % 50 ~= 0 and rnd(10) > 0 then z.lodRect = { x1 = x, y1 = y, x2 = x + w + 4, y2 = y + h } end
+        if rnd(4) == 0 then z.iconRect = { x1 = x + 1, y1 = y + 1, x2 = x + 3, y2 = y + 3 } end
+        zones[i] = z
+    end
+    local W, H = 200, 160
+    local ox, oy, scale = 0, 0, 10
+    local function g(v) return v == nil and "nil" or string.format("%.17g", v) end
+    local function recorder()
+        local log = {}
+        local inner = { width = W, height = H, mapAPI = {
+            worldToUIX = function(_, x) return x - ox end,
+            worldToUIY = function(_, _, y) return y - oy end,
+            getWorldScale = function() return scale end,
+        } }
+        inner.setStencilRect = function(_, x, y, w, h)
+            log[#log + 1] = table.concat({ "stencil", g(x), g(y), g(w), g(h) }, " ")
+        end
+        inner.clearStencilRect = function() log[#log + 1] = "clear" end
+        inner.drawPolygon = function(_, _, x1, y1, x2, y2, x3, y3, x4, y4, r, gg, b, a)
+            log[#log + 1] = table.concat({ "poly", g(x1), g(y1), g(x2), g(y2), g(x3), g(y3), g(x4), g(y4),
+                g(r), g(gg), g(b), g(a) }, " ")
+        end
+        inner.drawTextureScaled = function(_, tex, x, y, w, h, a, r, gg, b)
+            log[#log + 1] = table.concat({ "tex", tex, g(x), g(y), g(w), g(h), g(a), g(r), g(gg), g(b) }, " ")
+        end
+        inner.drawRect = function(_, x, y, w, h, a, r, gg, b)
+            log[#log + 1] = table.concat({ "rect", g(x), g(y), g(w), g(h), g(a), g(r), g(gg), g(b) }, " ")
+        end
+        inner.drawLine = function(_, _, x1, y1, x2, y2, width, a, r, gg, b)
+            log[#log + 1] = table.concat({ "line", g(x1), g(y1), g(x2), g(y2), g(width), g(a), g(r), g(gg), g(b) }, " ")
+        end
+        inner.drawText = function(_, s, x, y, r, gg, b, a, font)
+            log[#log + 1] = table.concat({ "text", s, g(x), g(y), g(r), g(gg), g(b), g(a), tostring(font) }, " ")
+        end
+        return inner, log
+    end
+    local function paint(inner, log)
+        for i = #log, 1, -1 do log[i] = nil end
+        zone.setAABB(ox - 2, ox + W + 2, oy - 2, oy + H + 2) -- 同 visibleWorldAABB 的 ±2
+        zone.resetEdgeCount()
+        zone.fill(inner); zone.lines(inner); zone.icons(inner)
+        log[#log + 1] = "edges " .. zone.edgeCount()
+        return log
+    end
+    -- 路徑：東移 5 格×60（跨近候選框 16、大候選框 64 數次）→ 南移 9 格×20 → 跳遠 → 中距／遠距檔續移 →
+    -- 開距離閘（玩家跟著視野走，觸發移動鍵重建）
+    local path = {}
+    for i = 0, 59 do path[#path + 1] = { i * 5, 0, 10 } end
+    for i = 1, 20 do path[#path + 1] = { 295, i * 9, 10 } end
+    for i = 0, 15 do path[#path + 1] = { 700 + i * 7, 500 - i * 3, 3 } end
+    for i = 0, 15 do path[#path + 1] = { 300 - i * 11, 300, 1 } end
+    for i = 0, 20 do path[#path + 1] = { 100 + i * 6, 100 + i * 2, 10, 90 } end
+    local frames = 0
+    for _, internal in ipairs({ true, false }) do
+        zone.clearProviders()
+        zone.addProvider(internal and "a16int" or "a16ext", function() return zones end, internal)
+        local keep, keepLog = recorder()
+        for step, p in ipairs(path) do
+            ox, oy, scale = p[1], p[2], p[3]
+            zone.setPoiDist(p[4]); zone.setZoneDist(p[4])
+            zone.setPlayerPos(ox + W / 2, oy + H / 2)
+            keep._minidoracatFrame = step
+            paint(keep, keepLog)
+            local fresh, freshLog = recorder()
+            paint(fresh, freshLog)
+            assert(#keepLog == #freshLog, string.format("A16-1 第 %d 步（%s）繪製呼叫數不同：快取 %d／新建 %d",
+                step, internal and "內部" or "外部", #keepLog, #freshLog))
+            for i = 1, #freshLog do
+                assert(keepLog[i] == freshLog[i], string.format("A16-1 第 %d 步（%s）第 %d 筆不同\n  快取：%s\n  新建：%s",
+                    step, internal and "內部" or "外部", i, keepLog[i], freshLog[i]))
+            end
+            frames = frames + (#freshLog > 1 and 1 or 0)
+            if step == 1 then
+                -- A16-2：近候選必須真的比大候選小（視窗 200×160：外擴框面積約 2 倍）
+                for _, e in pairs(keep._minidoracatZC) do
+                    assert(e.n > 0 and #e.near > 0 and #e.near < e.n,
+                        string.format("A16-2 近候選應遠小於大候選（near=%d n=%d）", #e.near, e.n))
+                end
+            end
+        end
+    end
+    assert(frames > #path, "A16-1 fixture 太空，比對無意義（有繪製的幀 " .. frames .. "）")
+    zone.setPoiDist(nil); zone.setZoneDist(nil); zone.setPlayerPos(50, 50)
+
+    -- A16-3 同幀共用
+    zone.clearProviders()
+    zone.setAABB(0, 100, 0, 100)
+    zone.addProvider("a16memo", function() return visibleZone() end, true)
+    local inner = makeInner(10)
+    local base = zone.aabbCalls()
+    inner._minidoracatFrame = 1
+    zone.fill(inner); zone.lines(inner); zone.icons(inner)
+    assert(zone.aabbCalls() - base == 1, "A16-3 同幀三 pass 只應取一次可視框（得 " .. zone.aabbCalls() - base .. "）")
+    inner._minidoracatFrame = 2
+    zone.fill(inner); zone.lines(inner)
+    assert(zone.aabbCalls() - base == 2, "A16-3 幀號改變應重取（得 " .. zone.aabbCalls() - base .. "）")
+    inner._minidoracatFrame = nil
+    zone.fill(inner); zone.lines(inner)
+    assert(zone.aabbCalls() - base == 4, "A16-3 沒有幀號每個 pass 都要現取（得 " .. zone.aabbCalls() - base .. "）")
+    inner._minidoracatFrame = 3
+    local boom = true
+    zone.setFeatureGate(function() if boom then error("boom") end return true end)
+    assert(not pcall(zone.fill, inner), "A16-3 距離閘拋錯應讓 fill 失敗")
+    boom = false
+    local polys = inner.polyCount
+    zone.fill(inner)
+    assert(zone.aabbCalls() - base == 6, "A16-3 中途拋錯的半套不得被同幀沿用（得 " .. zone.aabbCalls() - base .. "）")
+    assert(inner.polyCount == polys + 1, "A16-3 重取後照常繪製")
+    zone.setFeatureGate(nil)
+    zone.clearProviders()
+    print("two-tier candidates and per-frame view A16 cases passed")
 end
 
 -- H. 圖標名稱提示（滑鼠停在圖標上／手把準星）：指標下最上層圖標的名稱畫在圖標上方；
