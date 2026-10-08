@@ -2,6 +2,7 @@
     "IGUI_MapOption_Isometric": "等轴测投影",
     "IGUI_MapOption_PlaceNames": "地名",
     "IGUI_MapOption_RemoteSymbols": "其他玩家标记",
+    "IGUI_MapOption_RemoteSymbols_tooltip": "关闭时隐藏所有其他玩家分享的地图标记，只留你自己的。只想隐藏某几位玩家：在「地图显示设置」的「其他玩家标记」分类点选作者，或在世界地图右键他的标记。",
     "IGUI_MapOption_ZombieIntensity": "丧尸热度",
     "IGUI_MapOption_ZombieDots": "实时丧尸点位"
 }

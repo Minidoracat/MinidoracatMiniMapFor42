@@ -77,8 +77,20 @@ local function installISUI(env)
     end
     function ISPanel:initialise() end
     function ISPanel:instantiate() end
-    function ISPanel:setX(x) self.x = x end
-    function ISPanel:setY(y) self.y = y end
+    -- 照原版 ISUIElement.lua:188-220：沒有父元件（也沒設 keepOnScreen）時，setX/setY 把元件夾在螢幕內。
+    -- 先 setY 再 addChild 的元件會被夾住（原版 :1768 的註解），假物件要照做才測得到
+    function ISPanel:getKeepOnScreen()
+        if self.keepOnScreen ~= nil then return self.keepOnScreen end
+        return not self.parent
+    end
+    function ISPanel:setX(x)
+        if self:getKeepOnScreen() then x = math.max(0, math.min(x, getCore():getScreenWidth() - self.width)) end
+        self.x = x
+    end
+    function ISPanel:setY(y)
+        if self:getKeepOnScreen() then y = math.max(0, math.min(y, getCore():getScreenHeight() - self.height)) end
+        self.y = y
+    end
     function ISPanel:getX() return self.x end
     function ISPanel:getY() return self.y end
     function ISPanel:setWidth(w) self.width = w end
@@ -341,7 +353,7 @@ function H.load(opts)
         end
         dofile(MUI_V1)
         local files = { "TextWrap", "Focus", "Widgets/Controls", "Widgets/Window", "Widgets/Dropdown",
-            "Widgets/ScrollPanel", "Widgets/NavList", "Widgets/Preview", "Widgets/Toast" }
+            "Widgets/ScrollPanel", "Widgets/NavList", "Widgets/Preview", "Widgets/Toast", "VirtualList" }
         for i = 1, #files do require("MinidoracatUI/" .. files[i]) end
         env.UI = MinidoracatUI.v1
         if opts.framework == "old" then
@@ -516,6 +528,8 @@ function H.load(opts)
     -- 真的 _Settings.lua
     local settingsPath = opts.settingsPath or H.SETTINGS
     assert(compile(assert(readFile(settingsPath)), "@_Settings.lua"))()
+    -- 真的 _RemoteList.lua（其他玩家標記的作者清單視窗；作者資料與切換規則在 Core，測試自己換成假的）
+    assert(compile(assert(readFile(REPO_CLIENT .. "MinidoracatMiniMap_RemoteList.lua")), "@_RemoteList.lua"))()
     env.Core = Core
 
     function env.boot() for i = 1, #boots do boots[i]() end end
@@ -524,6 +538,8 @@ function H.load(opts)
     function env.frame()
         local s = Core.settingsWindow()
         if s and s.win:isVisible() then s.win:prerender() end
+        local l = Core.remoteListWindow and Core.remoteListWindow()
+        if l and l.win:isVisible() then l.win:prerender() end
     end
     -- 開窗（小地圖齒輪：outer＝該玩家小地圖）
     function env.open(pn)

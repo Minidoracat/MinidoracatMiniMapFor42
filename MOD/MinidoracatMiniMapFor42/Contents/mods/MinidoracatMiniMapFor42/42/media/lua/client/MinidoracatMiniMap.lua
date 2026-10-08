@@ -909,6 +909,9 @@ local function applyToggleOptions(mapAPI)
         local showRemote = getBoolOption("RemotePlayers", true)
         mapAPI:setBoolean("RemotePlayers", showRemote)
         mapAPI:setBoolean("PlayerNames", showRemote)
+        -- 其他玩家標記：原版每場從 true 開始（WorldMapRenderer.java:152）、兩個原版面板都不存
+        -- （ISMiniMap.lua:605-616、ISWorldMap.lua:1385-1404），這裡套回 ModOptions 存的值
+        mapAPI:setBoolean("RemoteSymbols", getBoolOption("RemoteSymbols", true))
     end
     mapAPI:setBoolean("ZombieIntensity", getBoolOption("ZombieIntensity", false))
     -- 預設 true 跟隨引擎預設（WorldMapRenderer.java:122）——預設關會讓已開「符號」
@@ -928,6 +931,21 @@ local function applyToggleOptions(mapAPI)
     -- 街名（ShowStreetNames）不在這裡設：ISMiniMapInner:prerender 的縮放閘門每幀依選項決定
 end
 -- test:map-toggles:end
+
+-- 其他玩家標記寫到所有現存地圖（各玩家小地圖＋世界地圖單例）。三個入口（設定視窗／ESC 頁、
+-- 小地圖齒輪、世界地圖選項）改值後都呼叫它，兩張地圖才會一致
+-- test:remote-symbols-sync:start
+function Core.syncRemoteSymbols(value)
+    if not isClient() then return end
+    for pn = 0, 3 do
+        local mm = getPlayerMiniMap(pn)
+        local api = mm and mm.inner and mm.inner.mapAPI
+        if api then api:setBoolean("RemoteSymbols", value) end
+    end
+    local wm = ISWorldMap_instance
+    if wm and wm.mapAPI then wm.mapAPI:setBoolean("RemoteSymbols", value) end
+end
+-- test:remote-symbols-sync:end
 
 -- 外框底色不透明度：縮放 outer／bottomPanel／titleBar 的 backgroundColor.a
 -- （原版值首次套用時快照在 _minidoracatBgA，切回「原版」可還原）。
@@ -1089,6 +1107,14 @@ if PZAPI and PZAPI.ModOptions then
     -- 陣營分享的目標（預設開）：關＝分享旗與分享路線都不畫（_Nav.lua／_NavRoute.lua）
     modOptions:addTickBox("SharedTargets", "UI_MinidoracatMiniMap_SharedTargets", true,
         "UI_MinidoracatMiniMap_SharedTargets_tooltip")
+    -- 其他玩家標記（預設開，多人才有作用）：原版齒輪與世界地圖選項各有一顆、原版都不存。
+    -- 本 MOD 存這裡，兩張地圖與兩個原版面板都跟它同步（applyToggleOptions、Core.syncRemoteSymbols）
+    modOptions:addTickBox("RemoteSymbols", "IGUI_MapOption_RemoteSymbols", true,
+        "IGUI_MapOption_RemoteSymbols_tooltip")
+    -- 只看派系與安全屋成員的標記（預設關，多人才有作用）：用本機可見旗標篩，不碰原版隱藏名單
+    -- （_RemoteSymbols.lua；設定視窗、世界地圖選項面板也各有一顆）
+    modOptions:addTickBox("RemoteTrustedOnly", "UI_MinidoracatMiniMap_RemoteTrustedOnly", false,
+        "UI_MinidoracatMiniMap_RemoteTrustedOnly_tooltip")
     -- 導航路線（0.17.0，預設開）：右鍵目標後沿道路畫路線（_NavRoute.lua 全套
     -- 引擎）。純顯示功能不設沙盒 gate；關閉＝退回直線旗標、設目標不觸發建圖。
     -- 例外：開啟搜尋視窗（_Search.lua）仍會 kick 引擎——街名搜尋需要索引，
@@ -1337,6 +1363,10 @@ if PZAPI and PZAPI.ModOptions then
             end
             appliedWorldImagery = cur.imagery
         end
+        -- 其他玩家標記：兩張地圖都跟 ModOptions（重建的小地圖另由 applyToggleOptions 套）；
+        -- 「只看派系與安全屋」改了就立刻重套，不等下一次 OnTick 檢查
+        Core.syncRemoteSymbols(getBoolOption("RemoteSymbols", true))
+        if Core.remoteScopeApply then Core.remoteScopeApply() end
         if plan.clearCustomSize then
             -- 下拉改動＝快速重置：清掉自訂尺寸（之後引擎照常存 ModOptions.ini，
             -- MainOptions.lua:3793）
@@ -1476,6 +1506,8 @@ function ISWorldMap:initDataAndStyle()
     if not ok then
         log("init failed: " .. tostring(err))
     end
+    -- 其他玩家標記：世界地圖每場第一次開時套回 ModOptions 存的值（原版從 true 開始）
+    if isClient() then self.mapAPI:setBoolean("RemoteSymbols", getBoolOption("RemoteSymbols", true)) end
 end
 -- test:worldmap-init:end
 
@@ -1682,9 +1714,11 @@ end
 --    不回寫則之後任何 applyToggleOptions（改尺寸/顏色等設定套用、重建）都會拿
 --    ModOptions 舊值把面板勾選蓋回去（玩家實測：面板關熱度後一調設定就被勾回）。
 --    耦合先做、回寫在後：save() 寫檔失敗拋錯時不可綁架耦合。
--- 同步表與 getVisibleOptions 注入清單一一對應——新增注入項時兩處要一起改。
+-- 同步表＝getVisibleOptions 注入清單＋原版本來就列的 RemoteSymbols（ISMiniMap.lua:106-108）
+-- ——新增注入項時兩處要一起改。
+-- test:panel-sync:start
 local PANEL_MODOPTION_SYNC = {
-    Players = true, RemotePlayers = true, ZombieIntensity = true, PlaceNames = true,
+    Players = true, RemotePlayers = true, ZombieIntensity = true, PlaceNames = true, RemoteSymbols = true,
 }
 if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.onTickBox then
     local originalPanelOnTickBox = ISMiniMapOptionsPanel.onTickBox
@@ -1697,6 +1731,8 @@ if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.onTickBox then
         elseif name == "RemotePlayers" then
             self.map.mapAPI:setBoolean("PlayerNames", selected) -- 名字隨圖標（同 applyToggleOptions）
             self:synchUI() -- debug/admin 全量面板列有 PlayerNames，讓其勾選框即時反映
+        elseif name == "RemoteSymbols" then
+            Core.syncRemoteSymbols(selected) -- 世界地圖（與分割畫面其他小地圖）跟著變
         end
         if modOptions and name and PANEL_MODOPTION_SYNC[name] then
             local opt = modOptions:getOption(name)
@@ -1707,6 +1743,7 @@ if ISMiniMapOptionsPanel and ISMiniMapOptionsPanel.onTickBox then
         end
     end
 end
+-- test:panel-sync:end
 
 --------------------------------------------------------------------------------
 -- 齒輪面板脫離 stencil 裁切（問題：小地圖縮小時面板被切頭）
@@ -1816,7 +1853,7 @@ if ISMiniMapOuter and ISMiniMapOuter.onToggleOptionsPanel then
 end
 
 -- Recreate 包裝（原版對 outer 整個 removeFromUIManager 再新建，ISMiniMap.lua:778-781）：
--- 收掉搬到頂層的舊面板（不會跟著 outer 消失，須手動移除免殘留）、帶過原生三項開關、維持疊放順序
+-- 收掉搬到頂層的舊面板（不會跟著 outer 消失，須手動移除免殘留）、帶過原生兩項開關、維持疊放順序
 -- test:recreate-zorder:start
 if ISMiniMap and ISMiniMap.Recreate then
     local originalRecreate = ISMiniMap.Recreate
@@ -1831,16 +1868,16 @@ if ISMiniMap and ISMiniMap.Recreate then
             ui:removeFromUIManager()
             mm.optionsUI = nil
         end
-        -- 原生三項跨重建快照：原版 Recreate 砍舊建新（ISMiniMap.lua:778-781）且
+        -- 原生兩項跨重建快照：原版 Recreate 砍舊建新（ISMiniMap.lua:778-781）且
         -- 不先 saveSettings（那要等玩家資料拆除，ISPlayerData.lua:59）——本場剛在
-        -- 統一視窗改的等軸測/符號/遠端符號會被 restoreSettings 的舊檔值蓋掉
+        -- 統一視窗改的等軸測/符號會被 restoreSettings 的舊檔值蓋掉。其他玩家標記不在這裡：
+        -- 它存 ModOptions，新小地圖由 applyToggleOptions 套（快照舊值反而會蓋掉剛改的新值）
         local snap
         local api = mm and mm.inner and mm.inner.mapAPI
         if api then
             snap = {
                 Isometric = api:getBoolean("Isometric"),
                 Symbols = api:getBoolean("Symbols"),
-                RemoteSymbols = api:getBoolean("RemoteSymbols"),
             }
         end
         -- 疊放順序：新 outer 經 addToUIManager 進 UIManager.toAdd，下一次 update 附加到清單尾端＝最上層
@@ -1867,7 +1904,6 @@ if ISMiniMap and ISMiniMap.Recreate then
             if napi then
                 napi:setBoolean("Isometric", snap.Isometric)
                 napi:setBoolean("Symbols", snap.Symbols)
-                napi:setBoolean("RemoteSymbols", snap.RemoteSymbols)
             end
         end
         if above then
@@ -2581,9 +2617,10 @@ if ISWorldMap and ISWorldMap.createChildren then
     end
 end
 
--- 世界地圖（M）選項面板注入「圖片化地圖」勾選：與統一視窗/ESC 選項頁同一
--- MapImagery 選項（三面同源）。面板屬世界地圖單例、非每次開圖重建——tick 以
--- prerender 每幀讀值同步（setSelected 不觸發回呼），統一視窗/ESC 改動不脫鉤。
+-- 世界地圖（M）選項面板注入「圖片化地圖」勾選（與統一視窗/ESC 選項頁同一 MapImagery 選項，
+-- 三面同源），多人另加「只看派系與安全屋成員的標記」（RemoteTrustedOnly，看地圖時的快速切換）。
+-- 面板屬世界地圖單例、非每次開圖重建——tick 以 prerender 每幀讀值同步（setSelected 不觸發回呼），
+-- 統一視窗/ESC 改動不脫鉤。原版 synchUI 只動自己 tickBoxes 表裡的勾選（ISWorldMap.lua:164-189）。
 -- 佈局沿原版 WorldMapOptions:createChildren 尾段做法：附加於最底、重算視窗尺寸
 -- （BUTTON_HGT/UI_BORDER_SPACING 是 ISWorldMap.lua 檔內 local，這裡自算字高/間距）
 if WorldMapOptions and WorldMapOptions.createChildren then
@@ -2591,7 +2628,7 @@ if WorldMapOptions and WorldMapOptions.createChildren then
     function WorldMapOptions:createChildren()
         originalWMOptCreateChildren(self)
         -- pcall 邊界：同爪印鈕——例外外洩會沿 createChildren 炸掉世界地圖，
-        -- 失敗只該損失這顆勾選（統一視窗/ESC 仍是入口）
+        -- 失敗只該損失這幾顆勾選（統一視窗/ESC 仍是入口）
         local ok, err = pcall(function()
             -- 冪等以「現任子元件」為準：原版 synchUI 於螢幕高度/debug 狀態變化時
             -- 清空 children 重跑 createChildren，self 欄位會殘留、以欄位判斷會
@@ -2605,27 +2642,37 @@ if WorldMapOptions and WorldMapOptions.createChildren then
             for _, child in pairs(self:getChildren()) do
                 bottom = math.max(bottom, child:getBottom())
             end
-            local tick = ISTickBox:new(11, bottom + 6, self.width, fontH + 4, "", self,
-                function(target, index, selected)
-                    -- settingsApply 同構（該函式是 Settings 模組內 local）：
-                    -- setValue → apply（雙表面重建/卸載）→ save 落盤
-                    local opt = modOptions:getOption("MapImagery")
-                    if not opt then return end
-                    opt:setValue(selected and true or false)
-                    if modOptions.apply then modOptions:apply() end
-                    PZAPI.ModOptions:save()
-                end)
-            tick:initialise()
-            tick:addOption(getText("UI_MinidoracatMiniMap_MapImagery"))
-            tick:setSelected(1, getBoolOption("MapImagery", true) and true or false)
-            tick:setWidthToFit()
-            self:addChild(tick)
-            local origTickPrerender = tick.prerender
-            function tick:prerender()
-                self:setSelected(1, getBoolOption("MapImagery", true) and true or false)
-                origTickPrerender(self)
+            -- 一顆 ModOptions 布林勾選，接在目前最底下
+            local function addTick(id, labelKey, default)
+                local tick = ISTickBox:new(11, bottom + 6, self.width, fontH + 4, "", self,
+                    function(target, index, selected)
+                        -- settingsApply 同構（該函式是 Settings 模組內 local）：
+                        -- setValue → apply（雙表面重建/卸載、其他玩家標記重套）→ save 落盤
+                        local opt = modOptions:getOption(id)
+                        if not opt then return end
+                        opt:setValue(selected and true or false)
+                        if modOptions.apply then modOptions:apply() end
+                        PZAPI.ModOptions:save()
+                    end)
+                tick:initialise()
+                tick:addOption(getText(labelKey))
+                tick:setSelected(1, getBoolOption(id, default) and true or false)
+                tick:setWidthToFit()
+                self:addChild(tick)
+                local origTickPrerender = tick.prerender
+                function tick:prerender()
+                    self:setSelected(1, getBoolOption(id, default) and true or false)
+                    origTickPrerender(self)
+                end
+                bottom = tick:getBottom()
+                return tick
             end
-            tick._minidoracatImageryTick = true -- 冪等標記（掛在子元件上，見上方掃描）
+            -- 冪等標記（掛在子元件上，見上方掃描）
+            addTick("MapImagery", "UI_MinidoracatMiniMap_MapImagery", true)._minidoracatImageryTick = true
+            if isClient() then
+                addTick("RemoteTrustedOnly", "UI_MinidoracatMiniMap_RemoteTrustedOnly", false)
+                    ._minidoracatRemoteTrustedTick = true
+            end
             -- 重算視窗尺寸（沿原版 createChildren 尾段：取子元件最大右/下緣）
             local w, h = 0, 0
             for _, child in pairs(self:getChildren()) do
@@ -2636,10 +2683,28 @@ if WorldMapOptions and WorldMapOptions.createChildren then
             self:setHeight(h + self:resizeWidgetHeight())
         end)
         if not ok then
-            log("world map options panel imagery toggle injection failed: " .. tostring(err))
+            log("world map options panel toggle injection failed: " .. tostring(err))
         end
     end
 end
+
+-- 世界地圖（M）選項面板的「其他玩家標記」：原版 onTickBox 只改這張地圖的記憶體值
+-- （ISWorldMap.lua:14-20）。回寫 ModOptions 並同步小地圖，下次登入照存的值套用
+-- test:remote-symbols-wm:start
+if WorldMapOptions and WorldMapOptions.onTickBox then
+    local originalWMOptTick = WorldMapOptions.onTickBox
+    function WorldMapOptions:onTickBox(index, selected, option)
+        originalWMOptTick(self, index, selected, option)
+        if not (option and option.getName and option:getName() == "RemoteSymbols") then return end
+        Core.syncRemoteSymbols(selected)
+        local opt = modOptions and modOptions:getOption("RemoteSymbols")
+        if opt then
+            opt:setValue(selected)
+            PZAPI.ModOptions:save()
+        end
+    end
+end
+-- test:remote-symbols-wm:end
 
 --------------------------------------------------------------------------------
 -- 導航顯示／選單／分享在 _Nav.lua；行程與非繪製到站更新在 _Itinerary.lua。

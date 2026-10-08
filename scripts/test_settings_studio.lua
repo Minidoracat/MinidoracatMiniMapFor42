@@ -216,7 +216,7 @@ end
 do
     local expect = {
         base = { "MapImagery", "PlaceNames", "StreetNames", "TextAnnotations", "ChunkGrid", "ChunkGridLabels",
-            "Isometric", "Symbols", "RemoteSymbols", "MapTextScale" },
+            "Isometric", "Symbols", "MapTextScale" },
         places = { "Players", "Places", "NavRoute", "KeepFinishedTrip", "MarkerIconSize" },
         poicat = { "PoiBlocks", "PoiWholeBuilding", "PoiColorIcons", "Cat:military", "PoiIconSize", "PoiIconAlpha",
             "ClientPoiDisplayDistance" },
@@ -580,6 +580,21 @@ do
     st.selectSection("mappack")
     check(e.byKey("MapPackLayers") and e.byKey("MapBounds") and e.byKey("MapBoundsColor") and e.byKey("MapBoundsAlpha"),
         "N5 map-pack options live in the MOD maps category")
+    -- 類別很多：換行後的按鈕不能疊在一起（沒有父元件時原版 setY 會把元件夾在螢幕內，ISUIElement.lua:188-220；
+    -- 2026-10-08 實機 100 位作者，第 27 列以後的按鈕全疊在 y=981）
+    local cats = {}
+    for i = 1, 150 do cats[i] = string.format("category-name-%03d", i) end
+    e.zoneCats = cats
+    st.selectSection("zones")
+    local chips = e.controls(function(el)
+        return el._findKey ~= nil and el._findKey:find("ZoneCategoryFilter:", 1, true) == 1 end)
+    local stacked
+    for i = 2, #chips do
+        local a, b = chips[i - 1], chips[i]
+        if b.y < a.y or (b.y == a.y and b.x < a.x + a.width) then stacked = b._findKey break end
+    end
+    checkEq(#chips, 150, "N7 every category gets a chip")
+    check(stacked == nil and chips[#chips].y > 1080, "N7 wrapped chips keep going down past the screen height: " .. tostring(stacked))
     local none = H.load{}
     none.boot()
     local ns = none.open(0)
@@ -764,6 +779,201 @@ do
     local now = e.studio()
     check(now.win ~= st.win and now.win:isVisible() and now.win.font == UIFont.Small and now.selected == "zombie",
         "F5 viewport change: the window reopens with the new font on the same category")
+end
+
+-- ── S 其他玩家標記（多人）：主開關存 ModOptions、作者 chip 走 Core 的切換規則、20 位以上改清單視窗、
+--    重設不放回、單機不列、總搜尋不找作者 ──
+do
+    local sp = H.load{}
+    sp.boot()
+    check(not table.concat(sp.open(0).sections, ","):find("remote", 1, true), "S1 single player has no remote-symbols category")
+
+    local e = H.load{ mp = true }
+    e.boot()
+    local hidden, showAllCalls, listSig = {}, 0, "a"
+    local authors = { { key = "alice", label = "alice（2）", count = 2 }, { key = "bob", label = "bob（1）", count = 1 } }
+    e.Core.remoteSymbolAuthors = function() return authors end
+    e.Core.remoteSymbolHidden = function(a) return hidden[a] == true end
+    -- 切換規則本身（篩選、圈外作者、封包）在 test_remote_symbols；這裡只看設定視窗怎麼用它
+    e.Core.remoteAuthorShown = function(it)
+        return not hidden[it.key] and (it.trusted or e.values.RemoteTrustedOnly ~= true)
+    end
+    e.Core.remoteAuthorSet = function(key, on) hidden[key] = (not on) or nil end
+    e.Core.remoteAuthorSetMany = function(list, on)
+        for i = 1, #list do hidden[list[i].key] = (not on) or nil end
+    end
+    e.Core.remoteListSig = function() return listSig end
+    e.Core.remoteShowAllAuthors = function() showAllCalls = showAllCalls + 1 end
+    local st = e.open(0)
+    checkEq(table.concat(st.sections, ","), "base,places,remote,poicat,zombie,animals,vehicles,safehouse,window,perf",
+        "S1 multiplayer lists the category right after players and navigation")
+    check(navRow(st.nav, "remote").switch ~= nil, "S2 nav shows the master switch")
+    st.selectSection("remote")
+    local header = e.controls(function(el)
+        return el._sec and el._sec.id == "remote" and e.type(el) == "MinidoracatUICheckbox" end)[1]
+    check(header ~= nil and header.checked == true, "S2 master defaults to shown")
+    checkEq(header and header.tooltip, T("IGUI_MapOption_RemoteSymbols_tooltip"), "S2 master tooltip explains per-author hiding")
+    header:forceClick()
+    checkEq(e.values.RemoteSymbols, false, "S2 master writes the RemoteSymbols option")
+    local alice = e.byKey("RemoteAuthor:alice")
+    check(alice ~= nil and alice.title == "alice（2）" and alice:isActive(), "S3 author chip shows the raw label, active = shown")
+    alice.onclick(alice.target, alice)
+    check(hidden.alice == true and not alice:isActive(), "S3 deselecting an author hides them in the vanilla list")
+    local none = byLabel(e, T("UI_MinidoracatMiniMap_SelectNone"))
+    none.onclick(none.target, none)
+    check(hidden.alice and hidden.bob, "S4 select none hides every author")
+    local reset = findControl(e, function(el) return el._sec and el.title == T("UI_MinidoracatMiniMap_StudioResetCategory") end)
+    e.byKey("RemoteTrustedOnly"):forceClick()
+    reset.onclick(reset.target, reset)
+    check(e.values.RemoteSymbols == true and e.values.RemoteTrustedOnly == false and hidden.alice and hidden.bob,
+        "S5 reset restores both switches; hidden authors stay hidden")
+    e.frame()
+    local all = byLabel(e, T("UI_MinidoracatMiniMap_SelectAll"))
+    all.onclick(all.target, all)
+    check(hidden.alice == nil and hidden.bob == nil, "S4 select all shows every author again")
+    -- 只看派系與安全屋：勾了之後，圈外作者的 chip 跟著重畫成關，圈內的照常
+    authors[3] = { key = "dave", label = "dave（1）", count = 1, trusted = true }
+    st.rebuild()
+    local only = e.byKey("RemoteTrustedOnly")
+    check(only ~= nil and only.checked == false, "S8 the faction and safehouse filter defaults to off")
+    only:forceClick()
+    checkEq(e.values.RemoteTrustedOnly, true, "S8 ticking the filter writes RemoteTrustedOnly")
+    e.frame()
+    alice = e.byKey("RemoteAuthor:alice")
+    check(alice ~= nil and not alice:isActive() and e.byKey("RemoteAuthor:dave"):isActive(),
+        "S8 filter on: the outsider's chip redraws as off, the member's stays on")
+    -- 全部顯示：總開關開、篩選關、清單作者全部放回
+    header = e.controls(function(el)
+        return el._sec and el._sec.id == "remote" and e.type(el) == "MinidoracatUICheckbox" end)[1]
+    header:forceClick()
+    check(e.values.RemoteSymbols == false and e.values.RemoteTrustedOnly == true, "S10 setup: master off, filter on")
+    local showAll = byLabel(e, T("UI_MinidoracatMiniMap_RemoteShowAll"))
+    check(showAll ~= nil and showAll.tooltip == T("UI_MinidoracatMiniMap_RemoteShowAll_tooltip"), "S10 show all sits in the category")
+    showAll.onclick(showAll.target, showAll)
+    check(e.values.RemoteSymbols == true and e.values.RemoteTrustedOnly == false and showAllCalls == 1,
+        "S10 show all turns the master on, the filter off and puts every author back")
+    -- 停在這個分類時，作者清單簽章一變就重畫（新分享、派系進出、世界地圖右鍵隱藏），不用切分類
+    e.frame()
+    for _ = 1, 30 do e.frame() end
+    authors[#authors + 1] = { key = "erin", label = "erin（1）", count = 1 }
+    for _ = 1, 30 do e.frame() end
+    check(e.byKey("RemoteAuthor:erin") == nil, "S11 same signature: no rebuild")
+    listSig = "b"
+    for _ = 1, 30 do e.frame() end
+    check(e.byKey("RemoteAuthor:erin") ~= nil, "S11 a changed signature redraws the chips while the category stays open")
+    -- 20 位以內照舊列出；第 21 位起換成摘要＋「管理作者...」（使用者裁定 2026-10-08）
+    authors = {}
+    for i = 1, 20 do authors[i] = { key = string.format("p%02d", i), label = string.format("p%02d（1）", i), count = 1 } end
+    hidden = { p03 = true }
+    st.rebuild()
+    check(e.byKey("RemoteAuthor:p20") ~= nil and e.byKey("RemoteAuthors") == nil, "S13 twenty authors are still listed as chips")
+    authors[21] = { key = "p21", label = "p21（1）", count = 1 }
+    st.rebuild()
+    check(e.byKey("RemoteAuthor:p01") == nil and byLabel(e, T("UI_MinidoracatMiniMap_SelectAll")) == nil,
+        "S13 the 21st author replaces the chips")
+    check(textShown(e, getText("UI_MinidoracatMiniMap_RemoteSummary", "21", "1")), "S13 a summary counts authors and hidden ones")
+    local manage = e.byKey("RemoteAuthors")
+    check(manage ~= nil and manage.title == T("UI_MinidoracatMiniMap_RemoteManage"), "S13 the manage button takes their place")
+    manage.onclick(manage.target, manage)
+    local lw = e.Core.remoteListWindow()
+    check(lw ~= nil and lw.win:isVisible() and #lw.items == 21, "S13 the manage button opens the list window with every author")
+    lw.win:close()
+    authors = {}
+    st.rebuild()
+    check(textShown(e, T("UI_MinidoracatMiniMap_RemoteNoAuthors")), "S6 an empty list says nobody shares with you")
+    -- 設定視窗的總搜尋不找作者：找人到清單視窗裡搜（使用者裁定 2026-10-08）
+    authors = { { key = "carol", label = "carol（1）", count = 1 } }
+    st.win._sig = nil -- 讓索引用現在的作者重建（分類有變時才重建）
+    st.rebuild()
+    st.search._entry:setText("carol")
+    st.search:prerender()
+    e.frame()
+    check(e.controls(function(el) return el._hit ~= nil end)[1] == nil
+        and textShown(e, T("UI_MinidoracatMiniMap_StudioNoResults")), "S7 the settings search does not list authors")
+    st.search._entry:setText("")
+    st.search:prerender()
+    e.frame()
+end
+
+-- ── L 作者清單視窗：搜尋（任一段、不分大小寫、中文）、只看已隱藏、整列切換、底部按鈕只作用在目前清單、自動重整 ──
+do
+    local e = H.load{ mp = true }
+    e.boot()
+    local hidden, calls, listSig = { Gunner27 = true }, {}, "a"
+    local authors = {}
+    for _, name in ipairs({ "BigGun99", "G_u_n", "Gunner07", "Gunner27", "gunslinger", "小明不在家", "我是小明" }) do
+        authors[#authors + 1] = { key = name, label = name, count = #authors + 1 }
+    end
+    for i = 1, 20 do authors[#authors + 1] = { key = string.format("p%02d", i), label = "p", count = 1 } end
+    e.Core.remoteSymbolAuthors = function() return authors end
+    e.Core.remoteSymbolHidden = function(a) return hidden[a] == true end
+    e.Core.remoteAuthorShown = function(it) return not hidden[it.key] end
+    e.Core.remoteAuthorSet = function(key, on)
+        calls[#calls + 1] = key .. (on and "+" or "-")
+        hidden[key] = (not on) or nil
+    end
+    e.Core.remoteAuthorSetMany = function(list, on)
+        local keys = {}
+        for i = 1, #list do
+            keys[i] = list[i].key
+            hidden[list[i].key] = (not on) or nil
+        end
+        calls[#calls + 1] = table.concat(keys, ",") .. (on and "+" or "-")
+    end
+    e.Core.remoteListSig = function() return listSig end
+    local st = e.open(0)
+    st.selectSection("remote")
+    local manage = e.byKey("RemoteAuthors")
+    manage.onclick(manage.target, manage)
+    local lw = e.Core.remoteListWindow()
+    local function keys()
+        local out = {}
+        for i, it in ipairs(lw.list:getItems()) do out[i] = it.key end
+        return table.concat(out, ",")
+    end
+    local function search(text)
+        lw.search._entry:setText(text)
+        lw.search:prerender()
+    end
+    checkEq(lw.meta, getText("UI_MinidoracatMiniMap_RemoteListCount", "27", "27", "1"), "L1 the count line shows totals")
+    local lx, sx = lw.win:getX(), st.win:getAbsoluteX()
+    check(lx >= sx + st.win.width or lx + lw.win.width <= sx, "L1 the window opens beside the settings window, not over it")
+    search("  GUN ")
+    checkEq(keys(), "BigGun99,Gunner07,Gunner27,gunslinger", "L2 search matches any part of the name, ignoring case and spaces")
+    checkEq(e.Core.remoteListWindow().meta, getText("UI_MinidoracatMiniMap_RemoteListCount", "27", "4", "1"),
+        "L2 the count line follows the search")
+    checkEq(lw.showBtn.title, getText("UI_MinidoracatMiniMap_RemoteShowThese", "4"), "L2 the bottom buttons name the count")
+    search("小明")
+    checkEq(keys(), "小明不在家,我是小明", "L3 Chinese names match too")
+    search("gun")
+    lw.only:forceClick()
+    checkEq(keys(), "Gunner27", "L4 hidden only keeps the hidden authors among the matches")
+    lw.only:forceClick()
+    -- 整列點一下＝切換（滑鼠、Enter、手把 A 都走 onSelect）
+    local items = lw.list:getItems()
+    lw.list.onSelect(lw.list, items[2], 2)
+    checkEq(calls[#calls], "Gunner07-", "L5 clicking a shown row hides that author")
+    items = lw.list:getItems()
+    lw.list.onSelect(lw.list, items[3], 3)
+    checkEq(calls[#calls], "Gunner27+", "L5 clicking a hidden row shows that author")
+    -- 底部按鈕只作用在目前清單上的作者
+    lw.hideBtn.onclick(lw.hideBtn.target, lw.hideBtn)
+    checkEq(calls[#calls], "BigGun99,Gunner07,Gunner27,gunslinger-", "L6 hide these only touches the listed authors")
+    check(hidden.p01 == nil and hidden["我是小明"] == nil, "L6 authors outside the search stay as they were")
+    lw.showBtn.onclick(lw.showBtn.target, lw.showBtn)
+    checkEq(calls[#calls], "BigGun99,Gunner07,Gunner27,gunslinger+", "L6 show these puts the same authors back")
+    search("zzz")
+    check(#lw.list:getItems() == 0 and not lw.showBtn:isEnabled() and not lw.hideBtn:isEnabled(),
+        "L7 no match: empty list and both buttons disabled")
+    checkEq(e.Core.remoteListWindow().meta, T("UI_MinidoracatMiniMap_RemoteListEmpty"), "L7 the count line says nothing matches")
+    -- 開著時簽章一變（新分享、派系進出、別處改了隱藏）就重整
+    search("")
+    authors[#authors + 1] = { key = "zed", label = "zed", count = 1 }
+    for _ = 1, 30 do e.frame() end
+    check(not keys():find("zed", 1, true), "L8 same signature: no refresh")
+    listSig = "b"
+    for _ = 1, 30 do e.frame() end
+    check(keys():find("zed", 1, true) ~= nil, "L8 a changed signature refreshes the open list")
 end
 
 io.write(string.format("test_settings_studio: %d assertions, %d failures\n", assertions, failures))

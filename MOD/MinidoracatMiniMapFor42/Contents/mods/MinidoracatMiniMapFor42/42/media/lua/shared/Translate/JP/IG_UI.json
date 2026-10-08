@@ -2,6 +2,7 @@
     "IGUI_MapOption_Isometric": "アイソメ表示",
     "IGUI_MapOption_PlaceNames": "地名",
     "IGUI_MapOption_RemoteSymbols": "他プレイヤーの記号",
+    "IGUI_MapOption_RemoteSymbols_tooltip": "オフにすると、他のプレイヤーが共有したマップ記号をすべて隠し、自分の記号だけ残します。特定のプレイヤーだけ隠すには、「マップ表示設定」の「他プレイヤーの記号」カテゴリで作成者を選ぶか、ワールドマップでその記号を右クリックします。",
     "IGUI_MapOption_ZombieIntensity": "ゾンビ密度",
     "IGUI_MapOption_ZombieDots": "リアルタイムゾンビ"
 }

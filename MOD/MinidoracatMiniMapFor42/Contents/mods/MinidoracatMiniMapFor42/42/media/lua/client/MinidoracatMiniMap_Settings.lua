@@ -73,10 +73,9 @@ local SEC_BASE = { id = "base", label = "UI_MinidoracatMiniMap_SecBase", icon = 
         { id = "ChunkGrid", label = "UI_MinidoracatMiniMap_ChunkGrid", default = false },
         { id = "ChunkGridLabels", label = "UI_MinidoracatMiniMap_ChunkGridLabels", default = true },
         -- 原版引擎選項（Isometric/Symbols 由原版 saveSettings 跨場存 WorldMapSettings，
-        -- ISMiniMap.lua:605-616；RemoteSymbols 原版即不持久化）：不在 ESC、重設不動
+        -- ISMiniMap.lua:605-616）：不在 ESC、重設不動。其他玩家標記在 SEC_REMOTE
         { id = "Isometric", label = "IGUI_MapOption_Isometric", engine = true },
         { id = "Symbols", label = "IGUI_MapOption_Symbols", engine = true },
-        { id = "RemoteSymbols", label = "IGUI_MapOption_RemoteSymbols", engine = true },
     },
     sliders = {
         { id = "MapTextScale", label = "UI_MinidoracatMiniMap_MapTextScale",
@@ -97,6 +96,16 @@ local SEC_PLACES = { id = "places", label = "UI_MinidoracatMiniMap_SecPlaces", i
     sliders = {
         { id = "MarkerIconSize", label = "UI_MinidoracatMiniMap_MarkerIconSize",
             default = 16, min = 8, max = 48, step = 1, fmt = "%dpx" },
+    },
+}
+-- 其他玩家標記（多人）：主開關＝ModOptions RemoteSymbols（主檔 applyToggleOptions／
+-- Core.syncRemoteSymbols 同步兩張地圖與原版兩個面板）；作者清單見下方 SEC_REMOTE.chips。
+-- 「只看派系與安全屋成員」由 _RemoteSymbols.lua 用本機可見旗標篩；rebuild＝作者 chip 跟著重畫
+local SEC_REMOTE = { id = "remote", label = "IGUI_MapOption_RemoteSymbols", icon = "users", mpOnly = true,
+    master = { id = "RemoteSymbols", label = "IGUI_MapOption_RemoteSymbols", default = true,
+        tooltip = "IGUI_MapOption_RemoteSymbols_tooltip" },
+    ticks = {
+        { id = "RemoteTrustedOnly", label = "UI_MinidoracatMiniMap_RemoteTrustedOnly", default = false, rebuild = true },
     },
 }
 local SEC_POI = { id = "poicat", label = "UI_MinidoracatMiniMap_SecPOI", icon = "pin",
@@ -283,7 +292,8 @@ local SEC_MAPPACK = { id = "mappack", label = "UI_MinidoracatMiniMap_SecMapPack"
 -- 三個條件全是 live 值（政策可即時改、權限可被升降、分割畫面每個 slot 各自判定），
 -- 每次重建與每幀 live 檢查都現判。
 local SEC_ADMIN = { id = "admin", label = "UI_MinidoracatMiniMap_SecAdmin", icon = "shieldCheck" }
-local LAYER_SECTIONS = { SEC_BASE, SEC_PLACES, SEC_POI, SEC_ZOMBIE, SEC_ANIMALS, SEC_VEHICLES, SEC_SAFEHOUSE }
+local LAYER_SECTIONS = { SEC_BASE, SEC_PLACES, SEC_REMOTE, SEC_POI, SEC_ZOMBIE, SEC_ANIMALS, SEC_VEHICLES,
+    SEC_SAFEHOUSE }
 local WINDOW_SECTIONS = { SEC_WINDOW, SEC_PERF }
 
 local function adminSectionEligible(pn)
@@ -423,7 +433,7 @@ local function unifiedSetAllFilter(optId, uiDefs, enabled)
     PZAPI.ModOptions:save()
 end
 
--- 引擎選項直讀直寫（等軸測/符號/遠端符號）：無小地圖時讀 false、寫 no-op。
+-- 引擎選項直讀直寫（等軸測/符號）：無小地圖時讀 false、寫 no-op。
 -- pn＝視窗擁有者（分割畫面 P2+ 開的視窗不能讀寫到 P1 的小地圖）
 local function unifiedEngineGet(name, pn)
     pn = pn or 0
@@ -521,6 +531,31 @@ SEC_POI.chips = { opt = "Cat",
         local def = type(cats) == "table" and cats[it.key]
         return tex, def and def.color or { r = 0.7, g = 0.7, b = 0.7 }
     end,
+}
+-- 作者清單＝原版逐作者隱藏（WorldMapSymbolsV2.setAuthorHidden → 伺服器 hidden_authors.ini，
+-- 登入時送回：HiddenAuthors.java:64-99、GameServer.java:2877-2895），本 MOD 不另存；
+-- 資料源、可見規則與切換規則在 _RemoteSymbols.lua（缺檔＝清單空白、只剩主開關，以下 Core 函式不會被叫到）。
+-- chip 亮＝畫得出來：開著「只看派系與安全屋」時圈外作者一律顯示關。
+-- 20 位以內照舊列出；超過就換成摘要＋「管理作者...」開清單視窗（_RemoteList.lua）；作者不進設定視窗的
+-- 總搜尋，找人到清單視窗裡搜（使用者裁定 2026-10-08）
+SEC_REMOTE.chips = { opt = "RemoteAuthor", raw = true, empty = "UI_MinidoracatMiniMap_RemoteNoAuthors",
+    limit = 20, noSearch = true, more = "UI_MinidoracatMiniMap_RemoteManage",
+    items = function(pn) return Core.remoteSymbolAuthors and Core.remoteSymbolAuthors(pn or 0) or {} end,
+    get = function(it) return Core.remoteAuthorShown(it) end,
+    set = function(it, on, pn) Core.remoteAuthorSet(it.key, on, pn) end,
+    setAll = function(list, on) Core.remoteAuthorSetMany(list, on) end,
+    summary = function(items)
+        local hidden = 0
+        for i = 1, #items do
+            if Core.remoteSymbolHidden(items[i].key) then hidden = hidden + 1 end
+        end
+        return getText("UI_MinidoracatMiniMap_RemoteSummary", tostring(#items), tostring(hidden))
+    end,
+    open = function(win)
+        if Core.openRemoteAuthors then Core.openRemoteAuthors(win._playerNum or 0, win) end
+    end,
+    -- 隱藏名單是伺服器上的原版資料：「重設此分類」只還原兩個開關，不把藏掉的作者放回來
+    reset = function() return false end,
 }
 
 -- test:addon-settings-callbacks:start
@@ -626,8 +661,7 @@ local function studioSnapshotEngineStates()
         if playerObj and getPlayerMiniMap(pn) then
             states[#states + 1] = { pn = pn,
                 isometric = unifiedEngineGet("Isometric", pn),
-                symbols = unifiedEngineGet("Symbols", pn),
-                remoteSymbols = unifiedEngineGet("RemoteSymbols", pn) }
+                symbols = unifiedEngineGet("Symbols", pn) }
         end
     end
     return states
@@ -638,7 +672,6 @@ local function studioRestoreEngineStates(states)
         local state = states[i]
         unifiedEngineSet("Isometric", state.isometric, state.pn)
         unifiedEngineSet("Symbols", state.symbols, state.pn)
-        unifiedEngineSet("RemoteSymbols", state.remoteSymbols, state.pn)
     end
 end
 
@@ -734,9 +767,15 @@ local function studioSections(pn)
     sortSections(addons)
     sortSections(admins)
     if adminSectionEligible(pn) then table.insert(admins, 1, SEC_ADMIN) end
+    -- mpOnly 分類（其他玩家標記）單機不列：單機沒有別人的標記
+    local layers = {}
+    for i = 1, #LAYER_SECTIONS do
+        local sec = LAYER_SECTIONS[i]
+        if not (sec.mpOnly and not isClient()) then layers[#layers + 1] = sec end
+    end
     local groups, flat = {}, {}
     local all = {
-        { title = "UI_MinidoracatMiniMap_GroupLayers", items = LAYER_SECTIONS },
+        { title = "UI_MinidoracatMiniMap_GroupLayers", items = layers },
         { title = "UI_MinidoracatMiniMap_GroupWindow", items = WINDOW_SECTIONS },
         { title = "UI_MinidoracatMiniMap_GroupAddons", items = addons },
         { title = "UI_MinidoracatMiniMap_GroupAdmin", items = admins },
@@ -815,7 +854,7 @@ local function studioBuildIndex(list)
                 studioIndexAdd(index, sec, sec.master.label, "boolean", "mod", sec.master, sec.master.id)
             end
             studioIndexEntries(index, sec, sec.ticks, "boolean", "mod")
-            if sec.chips then
+            if sec.chips and not sec.chips.noSearch then
                 local items = sec.chips.items()
                 for j = 1, #items do
                     studioIndexAdd(index, sec, items[j].label, "navigate", nil, nil,
@@ -1223,12 +1262,27 @@ end
 
 local function onChip(win, btn)
     local on = not btn:isActive()
-    btn._chips.set(btn._chip, on)
+    btn._chips.set(btn._chip, on, win._playerNum or 0)
     btn:setActive(on)
 end
 local function onChipsAll(win, btn)
     btn._chips.setAll(btn._items, btn._on)
     studioMarkDirty(win)
+end
+local function onChipsMore(win, btn)
+    btn._chips.open(win)
+end
+-- 其他玩家標記「全部顯示」：清單作者全部放回、關掉「只看派系與安全屋」、打開總開關，一次 apply
+local function onRemoteShowAll(win)
+    if Core.remoteShowAllAuthors then Core.remoteShowAllAuthors(win._playerNum or 0) end
+    if modOptions then
+        local only, master = modOptions:getOption("RemoteTrustedOnly"), modOptions:getOption("RemoteSymbols")
+        if only then only:setValue(false) end
+        if master then master:setValue(true) end
+        studioApply()
+    end
+    studioMarkDirty(win)
+    studioNavRefresh(win)
 end
 
 local function onResetSection(win, btn)
@@ -1308,7 +1362,7 @@ local function addHeader(ctx, sec)
     if master then
         local box = ctx.UI.Checkbox.new{ x = ctx.x + ctx.w - 40, y = ctx.y + math.floor((h - 20) / 2),
             width = 40, height = 20, label = "", checked = studioMasterValue(master), target = ctx.win,
-            onChange = onMasterBox, tooltip = getText(master.label), font = ctx.font }
+            onChange = onMasterBox, tooltip = getText(master.tooltip or master.label), font = ctx.font }
         box._sec = sec
         box:setEnabled(sectionEnabled(sec, ctx.pn) and (master.members ~= nil or entryEnabled(master, ctx.pn)))
         put(ctx, box)
@@ -1343,9 +1397,17 @@ local function addTicks(ctx, sec, list)
 end
 
 local function addChips(ctx, chips)
-    local items = chips.items()
+    local items = chips.items(ctx.pn)
     if #items == 0 then
         if chips.empty then addNote(ctx, getText(chips.empty)) end
+        return
+    end
+    -- 超過上限（其他玩家標記：20 位）就不列按鈕，改成摘要＋開清單視窗的按鈕
+    if chips.limit and #items > chips.limit then
+        addNote(ctx, chips.summary(items), ctx.colors.text)
+        local btn = addButton(ctx, getText(chips.more), onChipsMore, nil, ctx.w)
+        btn._chips, btn._findKey = chips, chips.opt .. "s"
+        advance(ctx, btn)
         return
     end
     local h = ctx.fontH + 8
@@ -1359,13 +1421,15 @@ local function addChips(ctx, chips)
         local btn = ctx.UI.Button.new{ x = x, y = y, height = h, title = chips.raw and it.label or getText(it.label),
             icon = tex, iconColor = canTint and tint or nil, style = "chip", active = chips.get(it),
             target = ctx.win, onClick = onChip, font = ctx.font }
+        btn._chips, btn._chip, btn._findKey = chips, it, chips.opt .. ":" .. it.key
+        put(ctx, btn)
+        -- 換行要在 addChild 之後才移：沒有父元件時原版 setX/setY 會把元件夾在螢幕內
+        -- （ISUIElement.lua:188-220，原版註解 :1768），清單一長，後面幾列就全疊在同一個位置
         if x > ctx.x and x + btn.width > ctx.x + ctx.w then
             x, y = ctx.x, y + h + 4
             btn:setX(x)
             btn:setY(y)
         end
-        btn._chips, btn._chip, btn._findKey = chips, it, chips.opt .. ":" .. it.key
-        put(ctx, btn)
         x = x + btn.width + 4
     end
     ctx.y = y + h + GAP
@@ -1458,6 +1522,12 @@ local function addNotes(ctx, sec)
             addNote(ctx, getText(rectMode == 1 and "UI_MinidoracatMiniMap_SafehouseHiddenBySandbox"
                 or "UI_MinidoracatMiniMap_SafehouseNamesHiddenBySandbox"), ORANGE)
         end
+    elseif sec == SEC_REMOTE then
+        -- 全開放在作者清單上面：作者多時不用捲到清單底
+        local text = getText("UI_MinidoracatMiniMap_RemoteShowAll")
+        local w = math.min(ctx.w, math.max(120, getTextManager():MeasureStringX(ctx.font, text) + 24))
+        advance(ctx, addButton(ctx, text, onRemoteShowAll, getText("UI_MinidoracatMiniMap_RemoteShowAll_tooltip"), w))
+        addNote(ctx, getText("UI_MinidoracatMiniMap_RemoteAuthorsNote"))
     end
 end
 
@@ -2003,6 +2073,17 @@ local function studioPrerender(self)
         self._dirty = true
     end
     if studioLiveSettingsDirty(self) then self._dirty = true end
+    -- 停在「其他玩家標記」分類時每 30 幀比一次作者清單簽章（新分享、派系進出、世界地圖右鍵隱藏），
+    -- 變了就重畫 chip；第一次只記下來（剛重建過）
+    if self._selectedSec == SEC_REMOTE.id and Core.remoteListSig then
+        self._remoteTick = (self._remoteTick or 0) + 1
+        if self._remoteTick >= 30 then
+            self._remoteTick = 0
+            local sig = Core.remoteListSig(pn)
+            if self._remoteSig ~= nil and sig ~= self._remoteSig then self._dirty = true end
+            self._remoteSig = sig
+        end
+    end
     local mouseDown = isMouseButtonDown and isMouseButtonDown(0)
     if not mouseDown then
         if self._saveDirty then studioSave(self) end

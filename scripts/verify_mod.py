@@ -470,6 +470,7 @@ _lua_tests = [
     ("test_itinerary_ui.lua", "行程 UI 確認、錯誤提示與頁面切換", False),
     ("test_itinerary_routes.lua", "剩餘行程預覽與活動路線分層", False),
     ("test_fog_of_war.lua", "深霧／薄霧與多人已知區域修復", False),
+    ("test_remote_symbols.lua", "其他玩家標記：存檔、兩張地圖同步、作者清單可見規則、右鍵隱藏", False),
     ("test_markers.lua", "addon marker provider 依 slot 名單繪製", False),
     ("test_chunk_grid.lua", "chunk 格線對齊／編號範圍／縮放封頂／stencil 配對", False),
     ("test_recreate_zorder.lua", "小地圖重建維持 UI 疊放順序", False),

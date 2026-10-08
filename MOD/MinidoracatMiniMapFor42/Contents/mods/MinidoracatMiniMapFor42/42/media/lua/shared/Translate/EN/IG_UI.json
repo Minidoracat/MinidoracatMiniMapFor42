@@ -2,6 +2,7 @@
     "IGUI_MapOption_Isometric": "Isometric",
     "IGUI_MapOption_PlaceNames": "Place Names",
     "IGUI_MapOption_RemoteSymbols": "Remote Symbols",
+    "IGUI_MapOption_RemoteSymbols_tooltip": "Off hides every map symbol other players share; yours stay. To hide only certain players, pick them in the \"Remote Symbols\" category of Map Display Settings, or right-click their symbol on the world map.",
     "IGUI_MapOption_ZombieIntensity": "Zombie Heatmap",
     "IGUI_MapOption_ZombieDots": "Live Zombie Dots"
 }

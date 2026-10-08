@@ -94,6 +94,8 @@ local function newMiniMap()
 end
 local function newWorldMap()
     local map = setmetatable({}, { __index = ISWorldMap })
+    -- 原版 createChildren 先建好 mapAPI（ISWorldMap.lua:268），initDataAndStyle 才在 ShowWorldMap 跑
+    map.mapAPI = { setBoolean = function(_, name, value) map[name] = value end }
     map:initDataAndStyle()
     map.HideUnvisited = map.hideUnvisitedAreas -- 原版 ShowWorldMap 的套用。
     return map

@@ -147,6 +147,8 @@ local function installWMRightMouseUp()
                     self.onMinidoracatShareTarget)
             end
         end
+        -- 游標下是別人分享的標記：最後一項「隱藏 X 的標記」（_RemoteSymbols.lua；缺檔＝不加）
+        if Core.remoteSymbolHideOption then Core.remoteSymbolHideOption(context, self, x, y) end
         return true
     end
     ISWorldMap.onRightMouseUp = navRightMouseUp
