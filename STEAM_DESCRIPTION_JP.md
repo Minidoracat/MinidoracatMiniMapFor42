@@ -9,6 +9,8 @@
 [list]
 [*] 必須：[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url]（Required Items に表示されます。未導入では読み込めません）
 [*] 任意：下のシリーズ MOD を必要に応じて追加。本 MOD だけでもすべての機能を使えます
+[*] [b]途中追加・削除：[/b]どちらも可能。削除するときはミニマップ シリーズのアドオンも一緒に外してください
+[*] [b]対応言語：[/b]繁體中文、简体中文、English、日本語
 [/list]
 シリーズの MOD はすべて最新版に更新し、更新後はゲームを再起動してください。
 
