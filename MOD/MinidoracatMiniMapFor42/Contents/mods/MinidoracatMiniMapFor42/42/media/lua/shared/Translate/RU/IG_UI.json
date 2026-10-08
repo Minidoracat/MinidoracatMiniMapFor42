@@ -1,0 +1,8 @@
+{
+    "IGUI_MapOption_Isometric": "Изометрия",
+    "IGUI_MapOption_PlaceNames": "Названия мест",
+    "IGUI_MapOption_RemoteSymbols": "Чужие символы",
+    "IGUI_MapOption_RemoteSymbols_tooltip": "Выкл. скрывает все символы карты, которыми делятся другие игроки; ваши остаются. Чтобы скрыть только некоторых игроков, выберите их в разделе «Чужие символы» окна «Настройки отображения карты» или щёлкните ПКМ по их символу на карте мира.",
+    "IGUI_MapOption_ZombieIntensity": "Тепловая карта зомби",
+    "IGUI_MapOption_ZombieDots": "Точки зомби"
+}

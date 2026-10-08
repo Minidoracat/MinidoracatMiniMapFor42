@@ -1,0 +1,8 @@
+{
+    "IGUI_MapOption_Isometric": "Isométrique",
+    "IGUI_MapOption_PlaceNames": "Nom des endroits",
+    "IGUI_MapOption_RemoteSymbols": "Symboles des autres",
+    "IGUI_MapOption_RemoteSymbols_tooltip": "Désactivé masque tous les symboles de carte partagés par les autres joueurs ; les vôtres restent. Pour ne masquer que certains joueurs, choisissez-les dans la catégorie « Symboles des autres » des Réglages d'affichage de la carte, ou faites un clic droit sur leur symbole sur la carte du monde.",
+    "IGUI_MapOption_ZombieIntensity": "Carte thermique zombies",
+    "IGUI_MapOption_ZombieDots": "Zombies en direct"
+}

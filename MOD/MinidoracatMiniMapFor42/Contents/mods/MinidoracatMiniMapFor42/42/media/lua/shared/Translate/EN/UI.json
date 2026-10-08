@@ -178,7 +178,7 @@
     "UI_MinidoracatMiniMap_ZDotColor_Yellow": "Yellow",
     "UI_MinidoracatMiniMap_ZDotColor_Purple": "Purple",
     "UI_MinidoracatMiniMap_ZDotColor_White": "White",
-    "UI_MinidoracatMiniMap_ZDotColor_Red": "Red (same as player marker, not recommended)",
+    "UI_MinidoracatMiniMap_ZDotColor_Red": "Red (same as player, not advised)",
     "UI_MinidoracatMiniMap_ZombieDotSize": "Zombie dot size",
     "UI_MinidoracatMiniMap_ZDotSize_Small": "Small",
     "UI_MinidoracatMiniMap_ZDotSize_Medium": "Medium (default)",

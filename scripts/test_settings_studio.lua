@@ -760,8 +760,27 @@ do
     es, ss = openWith(899, 14)
     checkEq(st.inspector.width, 18 * 30 + 28, "F4 Medium lane cap = font height x 30")
     checkEq(ss.inspector.width, 14 * 30 + 28, "F4 Small lane cap = font height x 30")
-    -- 下限：字很大（遊戲字級調大＝Small 30px）時標籤撐不到下限，車道＝字高×21
-    checkEq(select(2, openWith(1080, 30)).inspector.width, 30 * 21 + 28, "F4 lane floor = font height x 21")
+    -- 字很大（遊戲字級調大＝Small 30px）、車道沒頂到上限時：車道在 [字高×21, 字高×30] 之內，每個分類的
+    -- 滑桿標籤、下拉標籤與下拉選項都不截字（2026-10-09 八語 E2E：標籤欄夾在車道 45%、車道沒算選項寬，EN 也截）
+    local eb, sb = openWith(1080, 30)
+    local laneB = sb.inspector.width - 28
+    check(laneB >= 30 * 21 and laneB < 30 * 30, "F4 uncapped lane stays within [font height x 21, x 30) (" .. laneB .. ")")
+    local cut = {}
+    for _, id in ipairs(sb.sections) do
+        sb.selectSection(id)
+        for _, el in ipairs(eb.studio().controls) do
+            if el._options then
+                for _, o in ipairs(el._options) do
+                    if o.w > el.width - 33 then cut[#cut + 1] = id .. ":" .. o.label end
+                end
+            elseif el._labelW and el.label then
+                if getTextManager():MeasureStringX(el.font, el.label) > el._labelW then cut[#cut + 1] = id .. ":" .. el.label end
+            elseif el._lines and #el._lines == 1 and el.width == sb.win._labelW and el._lines[1]:sub(-3) == "..." then
+                cut[#cut + 1] = id .. ":" .. el._lines[1]
+            end
+        end
+    end
+    checkEq(table.concat(cut, ","), "", "F4 uncapped lane: no slider label, dropdown label or option is cut")
     -- 說明段落用視窗字型斷行：每行以該字型量都不超出文字塊寬
     local over
     st.selectSection("perf")

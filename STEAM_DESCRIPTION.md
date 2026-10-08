@@ -10,7 +10,7 @@
 [*] 必裝：[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url]（Required Items 會一併列出，缺少會無法載入）
 [*] 選裝：下方系列 MOD 依需求加裝；本 MOD 單獨就能完整使用
 [*] [b]中途加入／移除：[/b]都可以；移除時小地圖系列的附加 MOD 也要一起移除
-[*] [b]介面語言：[/b]繁體中文、简体中文、English、日本語
+[*] [b]介面語言：[/b]繁體中文、简体中文、English、日本語、한국어、Русский、Español、Português、Türkçe、Français、Polski、Deutsch（翻譯有問題請回報）
 [/list]
 系列 MOD 請都更新到最新版，更新後重新啟動遊戲。
 

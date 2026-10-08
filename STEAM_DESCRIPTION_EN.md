@@ -10,7 +10,7 @@ Turns the world map and the corner mini-map into full-color top-down images, wit
 [*] Required: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url] (listed under Required Items; this mod cannot load without it)
 [*] Optional: add the series mods below as needed; this mod works fully on its own
 [*] [b]Add/remove mid-save:[/b] safe either way; when removing it, also remove the MiniMap add-ons
-[*] [b]Languages:[/b] 繁體中文, 简体中文, English, 日本語
+[*] [b]Languages:[/b] 繁體中文, 简体中文, English, 日本語, 한국어, Русский, Español, Português, Türkçe, Français, Polski, Deutsch (please report any translation issues)
 [/list]
 Keep every Minidoracat MiniMap series mod up to date and restart the game after updating.
 

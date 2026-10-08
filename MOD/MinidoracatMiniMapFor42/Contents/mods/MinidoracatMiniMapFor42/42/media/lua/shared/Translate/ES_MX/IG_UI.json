@@ -1,0 +1,8 @@
+{
+    "IGUI_MapOption_Isometric": "Isométrico",
+    "IGUI_MapOption_PlaceNames": "Nombres de lugares",
+    "IGUI_MapOption_RemoteSymbols": "Símbolos remotos",
+    "IGUI_MapOption_RemoteSymbols_tooltip": "Desactivado oculta todos los símbolos del mapa que comparten otros jugadores; los tuyos se mantienen. Para ocultar solo a ciertos jugadores, selecciónalos en la categoría \"Símbolos remotos\" de Visualización del mapa, o haz clic derecho en su símbolo en el mapa del mundo.",
+    "IGUI_MapOption_ZombieIntensity": "Mapa de calor de zombis",
+    "IGUI_MapOption_ZombieDots": "Puntos de zombis en vivo"
+}

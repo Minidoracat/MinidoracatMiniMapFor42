@@ -1,0 +1,8 @@
+{
+    "IGUI_MapOption_Isometric": "Isometrisch",
+    "IGUI_MapOption_PlaceNames": "Ortsnamen",
+    "IGUI_MapOption_RemoteSymbols": "Remote-Symbole",
+    "IGUI_MapOption_RemoteSymbols_tooltip": "Aus blendet alle Kartensymbole aus, die andere Spieler teilen; deine bleiben. Um nur bestimmte Spieler auszublenden, wähle sie in der Kategorie \"Remote-Symbole\" der Kartenanzeige oder klicke auf der Weltkarte mit rechts auf ihr Symbol.",
+    "IGUI_MapOption_ZombieIntensity": "Zombie-Heatmap",
+    "IGUI_MapOption_ZombieDots": "Live-Zombiepunkte"
+}

@@ -1,0 +1,8 @@
+{
+    "IGUI_MapOption_Isometric": "Izometria",
+    "IGUI_MapOption_PlaceNames": "Nazwy miejsc",
+    "IGUI_MapOption_RemoteSymbols": "Symbole zdalne",
+    "IGUI_MapOption_RemoteSymbols_tooltip": "Wyłączenie ukrywa wszystkie symbole mapy udostępniane przez innych graczy; twoje zostają. Aby ukryć tylko wybranych graczy, zaznacz ich w kategorii „Symbole zdalne” w Ustawieniach wyświetlania mapy albo kliknij prawym przyciskiem ich symbol na mapie świata.",
+    "IGUI_MapOption_ZombieIntensity": "Mapa cieplna zombie",
+    "IGUI_MapOption_ZombieDots": "Kropki zombie na żywo"
+}

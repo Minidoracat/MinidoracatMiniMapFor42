@@ -1804,14 +1804,20 @@ local function studioMeasure(list, fontH, font)
     local tm = getTextManager()
     local function tw(key) return tm:MeasureStringX(font, getTextOrNull(key) or key) end
     local navW = fontH * 11
-    local tickW, labelW = 0, 0
+    local tickW, labelW, optW = 0, 0, 0
     local function ticks(l)
         if not l then return end
         for i = 1, #l do tickW = math.max(tickW, tw(l[i].label)) end
     end
     local function labels(l)
         if not l then return end
-        for i = 1, #l do labelW = math.max(labelW, tw(l[i].label)) end
+        for i = 1, #l do
+            labelW = math.max(labelW, tw(l[i].label))
+            local items = l[i].items
+            if items then
+                for j = 1, #items do optW = math.max(optW, tw(items[j])) end
+            end
+        end
     end
     for i = 1, #list do
         local sec = list[i]
@@ -1824,9 +1830,12 @@ local function studioMeasure(list, fontH, font)
         labels(spec.nameSliders)
         labels(spec.distance)
     end
-    local laneW = math.max(fontH * 21, tickW + 44 + 8, labelW + 180)
+    -- 標籤欄放得下最長標籤（lane 為它保留 180 給滑桿）；下拉框放得下最寬選項：
+    -- 下拉框寬＝lane－標籤欄－8，文字可用寬再扣框邊與箭頭 33，另留 4 餘量。
+    -- 標籤欄若照 lane 比例夾，lane 為長標籤加寬也救不回截字（2026-10-09 八語 E2E，EN 也截）
+    local laneW = math.max(fontH * 21, tickW + 44 + 8, labelW + 180, labelW + 8 + optW + 33 + 4)
     if laneW > fontH * 30 then laneW = fontH * 30 end
-    return navW + 12, laneW, math.min(labelW, math.floor(laneW * 0.45))
+    return navW + 12, laneW, math.min(labelW, laneW - 180)
 end
 
 --------------------------------------------------------------------------------

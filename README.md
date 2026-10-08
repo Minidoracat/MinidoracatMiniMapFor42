@@ -205,8 +205,8 @@ MOD 地圖街名翻譯改為**只翻名稱、保留原作者道路**：所有語
 以上設定**遊戲內按小地圖齒輪鈕（統一設定視窗）即可直接調整**，改動即時生效並存檔；
 ESC 選項頁按「接受」亦同步。設定存於 `%UserProfile%\Zomboid\Lua\ModOptions.ini`（引擎管理）。
 
-**語言支援**：繁體中文（CH）、简体中文（CN）、English（EN）、日本語（JP），
-四語鍵完全同步；其他語言回退英文。
+**語言支援**：繁體中文（CH）、简体中文（CN）、English（EN）、日本語（JP）、한국어（KO）、Русский（RU）、Español（ES，同一份用於 AR／ES_CL／ES_MX）、Português（PTBR，同一份用於 PT）、Türkçe（TR）、Français（FR）、Polski（PL）、Deutsch（DE），
+各語系鍵完全同步；其他語言回退英文。翻譯有問題請回報。
 
 ## 伺服器管理（沙盒選項）
 

@@ -5,7 +5,7 @@
 [b]繁體中文版：[/b][url=https://steamcommunity.com/workshop/filedetails/discussion/3763913359/569297034317714443/]小地圖完整說明：功能、導航與道路資料[/url]
 
 [h2]🚀 Quick start[/h2]
-Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url]; in multiplayer the server must enable it. Keep series mods updated; restart after updating. The gear's Map Display Settings window needs the updated UI Library; with an older one the gear only shows an update notice, and every setting is still in ESC → Options → MOD. UI languages: Traditional/Simplified Chinese, English, Japanese.
+Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url]; in multiplayer the server must enable it. Keep series mods updated; restart after updating. The gear's Map Display Settings window needs the updated UI Library; with an older one the gear only shows an update notice, and every setting is still in ESC → Options → MOD. UI languages: Traditional/Simplified Chinese, English, Japanese, Korean, Russian, Spanish, Portuguese, Turkish, French, Polish, German (please report any translation issues).
 [olist]
 [*] Press [b]/[/b] to toggle the mini-map (rebind: Options → Key Bindings → [MinidoracatMiniMap]). Or use the Minimap button in the family toolbar (right edge of the screen, left of the moodles): left-click toggles the mini-map, right-click ghost mode.
 [*] Press [b]M[/b] for the world map.
@@ -76,6 +76,7 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [*] [b]Chunk grid[/b] (off by default, in "Base map & text"): marks each 8x8-tile chunk and your chunk's number and range.
 [*] [b]Sizes[/b]: icon size sliders for resource points, zombies, animals, vehicles, safehouses and custom zones, plus "Marker size (home, favorites, nav, search)" (also other mods' markers that have no layer yet) and "Map text size" (50–300%). Game-drawn street/place names don't scale. Search "size" in the settings window to find them all.
 [*] [b]Display distance[/b]: the zombie, animal, vehicle, resource point and safehouse categories each have one, shown as "your value / server cap"; the lower applies, 0 = no limit.
+[*] [b]Remote Symbols[/b] (MP only): the "Remote Symbols" category hides every map symbol other players share with you, or only certain authors (the same list as "Hide Author's Symbols" in the vanilla Sharing panel, stored on the server); right-click someone's symbol on the world map → "Hide X's map symbols". "Only faction and safehouse members' symbols" keeps only shares from your faction and safehouse; "Show all" brings everything back. With more than 20 authors, "Manage authors..." opens a searchable list.
 [/list]
 
 [h2]⚙️ Settings[/h2]
@@ -83,7 +84,7 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [h3]🎛️ Map Display Settings (gear)[/h3]
 [list]
 [*] [b]Open[/b]: the gear on the mini-map, or the paw-print button in the world map (M) button row. Changes apply and save instantly.
-[*] [b]Four groups[/b] in the side list: "Map layers" (Base map & text, Players & navigation, Resource points, Zombies, Animals, Vehicles, Safehouses), "Window & controls" (Mini-map window, Performance notes), "Add-ons" and "Admin" (only when the server allows Tactical view and you have the permission). Each category has an icon; categories with a master switch toggle right in the list. The search box finds settings across categories.
+[*] [b]Four groups[/b] in the side list: "Map layers" (Base map & text, Players & navigation, Remote Symbols (MP only), Resource points, Zombies, Animals, Vehicles, Safehouses), "Window & controls" (Mini-map window, Performance notes), "Add-ons" and "Admin" (only when the server allows Tactical view and you have the permission). Each category has an icon; categories with a master switch toggle right in the list. The search box finds settings across categories.
 [*] [b]Live previews[/b] at the top of the zombie, animal, vehicle, resource point, safehouse, players & navigation and custom zone categories show size, color, opacity, style and name changes the way the map draws them, even with nothing nearby.
 [*] [b]Filter chips[/b]: resource point categories, animal species and vehicle categories are clickable chips, with icons colored as on the map.
 [*] [b]Tooltips & reset[/b]: every toggle has the same help text as the ESC page (hover it). "Reset this category" restores this mod's defaults only; vanilla map-engine options stay. "Mini-map window" has "Reset to default size" to clear edge-drag resizing.

@@ -178,7 +178,7 @@
     "UI_MinidoracatMiniMap_ZDotColor_Yellow": "黄",
     "UI_MinidoracatMiniMap_ZDotColor_Purple": "紫",
     "UI_MinidoracatMiniMap_ZDotColor_White": "白",
-    "UI_MinidoracatMiniMap_ZDotColor_Red": "赤（プレイヤーマーカーと同色、非推奨）",
+    "UI_MinidoracatMiniMap_ZDotColor_Red": "赤（プレイヤーと同色、非推奨）",
     "UI_MinidoracatMiniMap_ZombieDotSize": "ゾンビ点のサイズ",
     "UI_MinidoracatMiniMap_ZDotSize_Small": "小",
     "UI_MinidoracatMiniMap_ZDotSize_Medium": "中（デフォルト）",

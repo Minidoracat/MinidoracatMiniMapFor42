@@ -1,0 +1,8 @@
+{
+    "IGUI_MapOption_Isometric": "İzometrik",
+    "IGUI_MapOption_PlaceNames": "Yer İsimleri",
+    "IGUI_MapOption_RemoteSymbols": "Uzak Semboller",
+    "IGUI_MapOption_RemoteSymbols_tooltip": "Kapalıyken diğer oyuncuların paylaştığı tüm harita sembolleri gizlenir; sizinkiler kalır. Yalnızca belirli oyuncuları gizlemek için Harita Görüntüleme Ayarları'nın \"Uzak Semboller\" kategorisinde onları seçin ya da dünya haritasında sembollerine sağ tıklayın.",
+    "IGUI_MapOption_ZombieIntensity": "Zombi Isı Haritası",
+    "IGUI_MapOption_ZombieDots": "Canlı Zombi Noktaları"
+}

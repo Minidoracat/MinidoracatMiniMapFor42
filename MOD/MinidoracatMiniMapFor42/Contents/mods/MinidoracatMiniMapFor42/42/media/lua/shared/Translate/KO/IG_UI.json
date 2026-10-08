@@ -1,0 +1,8 @@
+{
+    "IGUI_MapOption_Isometric": "아이소메트릭",
+    "IGUI_MapOption_PlaceNames": "장소 이름",
+    "IGUI_MapOption_RemoteSymbols": "공유 기호",
+    "IGUI_MapOption_RemoteSymbols_tooltip": "끄면 다른 플레이어가 공유한 지도 기호를 모두 숨기며, 내 기호는 그대로 남습니다. 특정 플레이어만 숨기려면 지도 표시 설정의 \"공유 기호\" 분류에서 선택하거나, 세계 지도에서 그 플레이어의 기호를 우클릭하세요.",
+    "IGUI_MapOption_ZombieIntensity": "좀비 히트맵",
+    "IGUI_MapOption_ZombieDots": "실시간 좀비 점"
+}
