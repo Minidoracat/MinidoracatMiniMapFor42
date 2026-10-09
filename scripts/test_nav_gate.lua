@@ -37,7 +37,8 @@ local compile = loadstring or load
 --------------------------------------------------------------------------------
 -- 沙箱：只把 PZ 全域換成假物件，兩個 production 檔原封不動執行
 --------------------------------------------------------------------------------
-local function fixture()
+-- rightClick＝true：裝原版小地圖右鍵（_Nav.lua 載入期才會包它）與 player 0 選單單例
+local function fixture(rightClick)
     local printed, packets, players, handlers, events = {}, {}, {}, {}, {}
     local client, shareAllowed, opts = false, true, {}
     local draws = { route = 0, ping = 0, rects = 0, lines = 0, routeFail = false, texts = {} }
@@ -59,13 +60,32 @@ local function fixture()
     assert(load(mapTextSource, "map-text", "t", setmetatable({ Core = core,
         getSliderValue = function(_, default) return default end }, { __index = _G })))()
     local api = {}
+    -- 小地圖右鍵：原版 onRightMouseUp 消耗 rightMouseDown 旗標、留下只有 debug 項的選單
+    -- （ISMiniMap.lua:280-298，numOptions 從 1 起算）；addOption 同原版回傳 option
+    local innerClass, ctx = {}, nil
+    if rightClick then
+        innerClass.onRightMouseUp = function(self)
+            self.rightMouseDown = false
+            ctx = { options = {}, numOptions = 1 }
+            function ctx:addOption(name, target, fn, a, b)
+                local o = { name = name, target = target, fn = fn, a = a, b = b }
+                self.options[#self.options + 1] = o
+                self.numOptions = self.numOptions + 1
+                return o
+            end
+            function ctx:setVisible(v) self.visible = v end
+        end
+    end
     local textManager = {
         MeasureStringX = function(_, _, text) return #tostring(text) * 6 end,
         getFontHeight = function() return 12 end,
     }
     local env = setmetatable({
         MinidoracatMiniMapCore = core, MinidoracatMiniMapAPI = api, Events = events,
-        ISMiniMapInner = {}, -- 無 onRightMouseUp＝小地圖右鍵 wrap 不安裝（本測試不涉）
+        ISMiniMapInner = innerClass, getPlayerContextMenu = function() return ctx end,
+        ISToolTip = { new = function()
+            return { initialise = function() end, setVisible = function(self, v) self.visible = v end }
+        end },
         getSpecificPlayer = function(pn) return players[pn] end,
         isClient = function() return client end,
         getText = function(key) return "T:" .. tostring(key) end,
@@ -130,7 +150,7 @@ local function fixture()
     end
     return {
         core = core, api = api, printed = printed, packets = packets, draws = draws, opts = opts,
-        player = player, inner = inner,
+        player = player, inner = inner, innerClass = innerClass, menu = function() return ctx end,
         client = function(v) client = v end,
         share = function(v) shareAllowed = v end,
         fire = function(event, ...)
@@ -597,5 +617,84 @@ do
     assert(hasText(t, "Bob"), "F7 畫面內分享旗不受 arrow 影響")
 end
 
+--------------------------------------------------------------------------------
+-- 七、小地圖右鍵導航項鎖定（真 _Nav 選單包裝＋真 navGateAllows／navErrorText）：
+--     set 閘門擋住時加到最後／先去這裡／取代整趟變灰＋原因 tooltip，插入與回家收到
+--     同一句原因（灰父項、未設家說明由 test_itinerary_ui／test_places 驗）；其餘照常
+--------------------------------------------------------------------------------
+do
+    local t = fixture(true)
+    local API, Core = t.api, t.core
+    t.player(0)
+    local handoff = {}
+    Core.navInsertSubMenu = function(_, _, _, _, _, _, blocked) handoff.insert = tostring(blocked) end
+    Core.placesAddMenu = function(_, _, _, _, blocked) handoff.places = tostring(blocked) end
+    local LOCKED = { ["T:UI_MinidoracatMiniMap_TripAdd"] = true,
+        ["T:UI_MinidoracatMiniMap_TripPriority"] = true, ["T:UI_MinidoracatMiniMap_SetTarget"] = true }
+    local OTHERS = { "T:UI_MinidoracatMiniMap_TripManage", "T:UI_MinidoracatMiniMap_CopyHere",
+        "T:UI_MinidoracatMiniMap_SearchMenu" }
+    local setAsks = 0
+    local gateMode = "allow"
+    API.registerNavGate("Probe", function(_, context)
+        if context == "set" then setAsks = setAsks + 1 end
+        if gateMode == "block" then return false, "UI_Addon_NeedGPS" end
+        if gateMode == "drawOnly" and context == "draw" then return false end
+    end)
+    local function rightClick(tag, want)
+        setAsks, handoff.insert, handoff.places = 0, nil, nil
+        local mini = setmetatable({ playerNum = 0, rightMouseDown = true, mapAPI = {
+            uiToWorldX = function() return 12.7 end, uiToWorldY = function() return 34.2 end,
+        } }, { __index = t.innerClass })
+        mini:onRightMouseUp(5, 6)
+        local menu = assert(t.menu(), tag .. ": 原版選單")
+        eq(menu.visible, true, tag .. " 追加後選單可見")
+        local seen = 0
+        for _, o in ipairs(menu.options) do
+            if LOCKED[o.name] then
+                seen = seen + 1
+                eq(o.notAvailable, want and true or nil, tag .. " " .. o.name .. " 可用性")
+                eq(o.toolTip and o.toolTip.description, want, tag .. " " .. o.name .. " 原因 tooltip")
+            end
+        end
+        eq(seen, 3, tag .. " 三個會設導航的項都在")
+        for _, name in ipairs(OTHERS) do
+            local found
+            for _, o in ipairs(menu.options) do
+                if o.name:sub(1, #name) == name then found = o end
+            end
+            assert(found, tag .. " 缺 " .. name)
+            eq(found.notAvailable, nil, tag .. " " .. name .. " 不受閘門影響")
+        end
+        eq(handoff.insert, tostring(want), tag .. " 插入子選單收到同一句原因")
+        eq(handoff.places, tostring(want), tag .. " 回家收到同一句原因")
+    end
+
+    -- M1: 放行＝全部可用；建一次選單只問一次 set 閘門
+    rightClick("M1", nil)
+    eq(setAsks, 1, "M1 只問一次 set 閘門")
+    -- M2: 舊 addon 閘門（AutoDrive GPS）擋＝原因鍵經 navErrorText 成玩家文字
+    gateMode = "block"
+    rightClick("M2", "T:UI_Addon_NeedGPS")
+    eq(setAsks, 1, "M2 只問一次 set 閘門")
+    -- M3: 只擋 draw 的閘門不鎖選單（鎖定只看 set）
+    gateMode = "drawOnly"
+    rightClick("M3", nil)
+    -- M4: 功能閘門 nav（地圖手錶缺定位模組）擋＝它的原因
+    gateMode = "allow"
+    API.registerFeatureGate("Watch", function(_, feature)
+        if feature == "nav" then return false, "UI_Watch_NeedLocator" end
+    end)
+    rightClick("M4", "T:UI_Watch_NeedLocator")
+    -- M5: 閘門本身拋錯＝不鎖（點擊時的 set 檢查仍是安全網），選單照建
+    local realFeature = Core.featureAllowed
+    Core.featureAllowed = function(pn, feature, surface)
+        if feature == "nav" then error("injected feature gate failure") end
+        return realFeature(pn, feature, surface)
+    end
+    rightClick("M5", nil)
+    Core.featureAllowed = realFeature
+end
+
 print("test_nav_gate: OK（註冊/判定 G1-G9＋set 閘門 S1-S6＋分享撤回 H1-H3"
-    .. "＋繪製閘門與繪製唯讀 D1-D7＋getNavTarget Q1-Q4＋功能閘門與行程撤銷 F1-F7）")
+    .. "＋繪製閘門與繪製唯讀 D1-D7＋getNavTarget Q1-Q4＋功能閘門與行程撤銷 F1-F7"
+    .. "＋小地圖右鍵導航項鎖定 M1-M5）")

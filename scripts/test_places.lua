@@ -11,6 +11,9 @@ local sources = { readFile(itineraryPath), readFile(placesPath) }
 -- 主檔地圖文字／標記大小 helper：抽 test:map-text 真實作，滑條值由 placeSliders 控制
 local mapTextSource = assert(readFile(dir .. "MinidoracatMiniMap.lua"):gsub("\r\n", "\n"):match(
     "%-%- test:map%-text:start\n(.-)\n%-%- test:map%-text:end"), "找不到主檔 map-text 測試區段")
+-- 右鍵導航項鎖定 helper（Core.navMenuLock）：抽 _Nav.lua 的真實作
+local menuLockSource = assert(readFile(dir .. "MinidoracatMiniMap_Nav.lua"):gsub("\r\n", "\n"):match(
+    "%-%- test:nav%-menu%-lock:start\n(.-)\n%-%- test:nav%-menu%-lock:end"), "找不到 _Nav nav-menu-lock 測試區段")
 local placeSliders, placeOpts = {}, {}
 
 local function fixture()
@@ -74,6 +77,7 @@ local function fixture()
         else chunk = assert(load(source, "module" .. i, "t", env)) end
         chunk()
     end
+    assert(load(menuLockSource, "nav-menu-lock", "t", setmetatable({ Core = core }, { __index = env })))()
     local function player(pn, md)
         local p = { pn = pn, x = 0, y = 0, md = md or {}, sync = 0, online = -1 }
         function p:getModData() return self.md end
@@ -129,6 +133,10 @@ do
     local go = assert(m:find("UI_MinidoracatMiniMap_GoHome"), "右鍵有回家")
     eq(go.notAvailable, true, "未設家時右鍵回家不可用")
     eq(go.toolTip.description, "UI_MinidoracatMiniMap_HomeNotSet", "不可用項附說明")
+    -- 未設家又遇導航被擋：仍先說明怎麼設家（設了家才有意義談導航設備）
+    local mb = menu(); t.core.placesAddMenu(mb, 0, 10, 20, "NeedGPS")
+    eq(mb:find("UI_MinidoracatMiniMap_GoHome").toolTip.description, "UI_MinidoracatMiniMap_HomeNotSet",
+        "未設家時導航被擋仍說明設定家")
     local set = assert(m:find("UI_MinidoracatMiniMap_SetHome"), "右鍵有設為家")
     set.fn(set.target, set.a, set.b)
     eq(lastMessage(t), "UI_MinidoracatMiniMap_HomeSet", "設為家回饋")
@@ -136,6 +144,13 @@ do
     eq(hx, 10, "家 x"); eq(hy, 20, "家 y"); eq(label, "UI_MinidoracatMiniMap_PlaceHome", "無名家顯示「家」")
     m = menu(); t.core.placesAddMenu(m, 0, 30, 40)
     eq(m:find("UI_MinidoracatMiniMap_GoHome").notAvailable, nil, "設家後右鍵回家可用")
+    -- 導航被擋（navBlocked＝原因文字）：已設家的回家變灰並說原因；設為家／加入收藏不受影響
+    m = menu(); t.core.placesAddMenu(m, 0, 30, 40, "NeedGPS")
+    go = m:find("UI_MinidoracatMiniMap_GoHome")
+    eq(go.notAvailable, true, "導航被擋時右鍵回家不可用")
+    eq(go.toolTip.description, "NeedGPS", "被擋的回家附導航被擋原因")
+    eq(m:find("UI_MinidoracatMiniMap_SetHome").notAvailable, nil, "導航被擋不影響設為家")
+    eq(m:find("UI_MinidoracatMiniMap_PlaceAdd").notAvailable, nil, "導航被擋不影響加入收藏")
     -- 再設一次＝搬家，不累積第二筆
     assert(t.core.placesSetHomeAt(0, 50, 60))
     eq(t.core.placesState(0).count, 1, "搬家不新增收藏")

@@ -2363,6 +2363,88 @@ do
     Core.toggleSearchWindow(0)
 end
 
+--------------------------------------------------------------------------------
+-- LK. 右鍵導航被擋：插入父項只加灰色一項＋原因（不掛子選單）；世界地圖開著時
+--     訊息改走 UI 框架 Toast（halo 畫在被全螢幕地圖蓋住的角色頭上）
+--------------------------------------------------------------------------------
+do
+    -- 真 Core.navMenuLock（_Nav.lua nav-menu-lock 區段）
+    local lockFile = assert(io.open((sourcePath:gsub("_Search%.lua$", "_Nav.lua")), "rb"))
+    local lockSource = assert(lockFile:read("*a"):gsub("\r\n", "\n"):match(
+        "%-%- test:nav%-menu%-lock:start\n(.-)\n%-%- test:nav%-menu%-lock:end"),
+        "找不到 _Nav nav-menu-lock 測試區段")
+    lockFile:close()
+    ISToolTip = { new = function()
+        return { initialise = function() end, setVisible = function(self, v) self.visible = v end }
+    end }
+    assert(load(lockSource, "nav-menu-lock", "t", setmetatable({ Core = Core }, { __index = _G })))()
+    -- 地圖右鍵選單（player 單例：有 subMenuPool；getNew 的子選單同形）
+    local gotNew = 0
+    local function mapMenu()
+        local m = { player = 0, subMenuPool = {}, options = {}, subs = 0 }
+        function m:addOption(text, target, fn, param)
+            local o = { text = text, target = target, onSelect = fn, param = param }
+            self.options[#self.options + 1] = o
+            return o
+        end
+        function m:addSubMenu(option, sub) option.subMenu = sub; self.subs = self.subs + 1 end
+        return m
+    end
+    ISContextMenu.getNew = function() gotNew = gotNew + 1; return mapMenu() end
+    setTrip(0, "navigating", { stop(1, 10, 10, "pending", "A"), stop(2, 20, 20, "pending", "B") },
+        1, nil, 291)
+    -- LK1: 有錨點又被擋＝只有灰色父項＋原因，不建子選單
+    local m = mapMenu()
+    Core.navInsertSubMenu(m, {}, 0, 5, 6, nil, "NeedGPS")
+    eq(#m.options, 1, "LK1: 被擋時只加插入父項")
+    eq(m.options[1].text, "UI_MinidoracatMiniMap_TripInsert", "LK1: 父項文字不變")
+    eq(m.options[1].notAvailable, true, "LK1: 父項變灰")
+    eq(m.options[1].toolTip and m.options[1].toolTip.description, "NeedGPS", "LK1: 附原因 tooltip")
+    eq(m.subs + gotNew, 0, "LK1: 不掛子選單（灰父項的子選單照樣點得到）")
+    -- LK2: 放行＝原本的子選單（對照組：同一份行程確實會掛）
+    m = mapMenu()
+    Core.navInsertSubMenu(m, {}, 0, 5, 6)
+    eq(m.subs, 1, "LK2: 放行時掛子選單")
+    falsy(m.options[1].notAvailable, "LK2: 放行時父項可用")
+    -- LK3: 沒有錨點＝即使被擋也不加（插入等於加尾）
+    setTrip(0, "navigating", { stop(1, 10, 10, "arrived", "A") }, 1, nil, 292)
+    m = mapMenu()
+    Core.navInsertSubMenu(m, {}, 0, 5, 6, nil, "NeedGPS")
+    eq(#m.options, 0, "LK3: 零錨點不加插入項")
+    ISContextMenu.getNew = nil
+    trips[0] = nil
+
+    -- LK4-LK8: 搜尋視窗沒開時的訊息出口（前提：Z 段結尾已關窗）
+    local toasts = {}
+    MinidoracatUI = { v1 = { CAPABILITIES = { toast = true },
+        Toast = { show = function(o) toasts[#toasts + 1] = o end } } }
+    ISWorldMap_instance = { playerNum = 0, visible = true }
+    function ISWorldMap_instance:isVisible() return self.visible end
+    local halosBefore = #halos
+    Core.navMessage(0, "NeedGPS")
+    eq(#toasts, 1, "LK4: 自己的世界地圖開著＝走 Toast")
+    eq(toasts[1].message, "NeedGPS", "LK4: Toast 帶完整訊息")
+    truthy((toasts[1].maxLines or 1) > 1, "LK4: 長原因可換行，不被單行截掉")
+    eq(#halos, halosBefore, "LK4: 不再另畫 halo")
+    ISWorldMap_instance.visible = false
+    Core.navMessage(0, "NeedGPS")
+    eq(#toasts, 1, "LK5: 世界地圖關著不走 Toast")
+    eq(#halos, halosBefore + 1, "LK5: 世界地圖關著照舊 halo")
+    ISWorldMap_instance.visible, ISWorldMap_instance.playerNum = true, 1
+    Core.navMessage(0, "NeedGPS")
+    eq(#toasts, 1, "LK6: 別人的世界地圖（分割畫面）不走 Toast")
+    eq(#halos, halosBefore + 2, "LK6: 照舊 halo")
+    ISWorldMap_instance.playerNum = 0
+    MinidoracatUI.v1.CAPABILITIES.toast = false
+    Core.navMessage(0, "NeedGPS")
+    eq(#halos, halosBefore + 3, "LK7: 框架沒有 toast 能力退 halo")
+    MinidoracatUI.v1.CAPABILITIES.toast = true
+    MinidoracatUI.v1.Toast.show = function() error("injected toast failure") end
+    Core.navMessage(0, "NeedGPS")
+    eq(#halos, halosBefore + 4, "LK8: Toast 拋錯退 halo，訊息不得消失")
+    MinidoracatUI, ISWorldMap_instance, ISToolTip = nil, nil, nil
+end
+
 -- X. 真 Core／UI 聯測：raw trip 與 public claim 表面必須真的接得上。
 do
     Events.OnCreatePlayer = { Add = function() end }
@@ -2474,4 +2556,4 @@ print("test_itinerary_ui: 全數通過（A 開窗切頁收合 / B 提示列防�
     .. "M 快捷鍵入口 / N 分割畫面 ping / Q 接續模式兩入口 / R 插入錨點防線 / "
     .. "S 逐站停等與認領鎖定 / T 搜尋頁動作可用性 / U 全文出口 / "
     .. "V 全文列逐行可讀 / W 插入錨點有界標籤與全文出口 / X 真 Core 接管與直線指引 / Y 按鈕錨定 / "
-    .. "Z 收藏清單與回家）")
+    .. "Z 收藏清單與回家 / LK 右鍵插入項鎖定與世界地圖 Toast）")

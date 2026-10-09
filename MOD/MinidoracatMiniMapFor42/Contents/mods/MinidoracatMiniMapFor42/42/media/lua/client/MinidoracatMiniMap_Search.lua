@@ -475,6 +475,8 @@ end
 
 -- 視窗內訊息列（開窗時的操作回饋必須看得見；視窗不在／已收合＝退原版 halo，
 -- 同 navSetTarget 既有通道——右鍵地圖直接編輯行程時不能靜默失敗）。
+-- 自己的世界地圖開著時 halo 畫在被全螢幕地圖蓋住的角色頭上：改走 UI 框架 Toast
+-- （置頂；寫法同 _Settings.lua studioNeedFramework），框架缺 toast 能力才退 halo。
 -- good＝成功回饋（綠字／addGoodText），其餘一律當失敗（警告色／addBadText）
 local function winMessage(pn, text, good)
     local win = searchWin
@@ -490,6 +492,14 @@ local function winMessage(pn, text, good)
     end
     local playerObj = getSpecificPlayer(pn)
     if not playerObj then return end
+    local wm = ISWorldMap_instance
+    if wm and wm:isVisible() and (wm.playerNum or 0) == pn then
+        local UI = MinidoracatUI and MinidoracatUI.v1
+        if UI and UI.CAPABILITIES and UI.CAPABILITIES.toast and UI.Toast
+                and pcall(UI.Toast.show, { message = text, maxLines = 4 }) then
+            return
+        end
+    end
     if good then
         HaloTextHelper.addGoodText(playerObj, text)
     else
@@ -1330,12 +1340,17 @@ end
 -- ISContextMenu.lua:1199／1075；getNew 走 player 單例的 subMenuPool，前手一定先
 -- 呼叫過 ISContextMenu.get 才有那張池子）。沒有待前往站可當錨點時整項不加——
 -- 插入等於加尾，不留一條死路；第三方選單缺方法或不是 player 單例時安靜略過，
--- 不得讓別人的選單連坐壞掉
-Core.navInsertSubMenu = function(context, target, pn, x, y, label)
+-- 不得讓別人的選單連坐壞掉。blocked＝Core.navMenuBlocked 的原因文字：只加灰色父項
+-- ＋說明、不掛子選單
+Core.navInsertSubMenu = function(context, target, pn, x, y, label, blocked)
     if type(context.addSubMenu) ~= "function" or type(context.player) ~= "number" then return end
     if type(context.subMenuPool) ~= "table" then return end
     if not (ISContextMenu and ISContextMenu.getNew) then return end
     if Core.navInsertAnchors(pn) == 0 then return end
+    if blocked then
+        Core.navMenuLock(context:addOption(getText("UI_MinidoracatMiniMap_TripInsert")), blocked)
+        return
+    end
     local sub = ISContextMenu:getNew(context)
     if Core.navInsertOptions(sub, target, pn, x, y, label) == 0 then return end
     context:addSubMenu(context:addOption(getText("UI_MinidoracatMiniMap_TripInsert")), sub)

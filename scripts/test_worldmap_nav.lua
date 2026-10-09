@@ -20,7 +20,8 @@
 --       （點選單不得自動出發）；
 --   (6) 開圖自癒：別的 MOD 整個覆寫 onRightMouseUp（不呼叫前手）→ ShowWorldMap 後
 --       重包一層，兩家選項都在；重包有上限；
---   (7) prerender 加繪：先座標列後導航；各自 pcall＋實例旗標 log-once。
+--   (7) prerender 加繪：先座標列後導航；各自 pcall＋實例旗標 log-once；
+--   (8) set 閘門擋住：會設導航的項 notAvailable＋原因 tooltip，選單只問一次閘門，拋錯不鎖。
 -- 用法：lua scripts/test_worldmap_nav.lua [path/to/MinidoracatMiniMap_WorldMapNav.lua]
 local navPath = arg[1]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_WorldMapNav.lua"
@@ -39,6 +40,12 @@ local rightBody = assert(source:match(
 local preBody = assert(source:match(
     "%-%- test:wm%-prerender:start\n(.-)\n%-%- test:wm%-prerender:end"),
     "找不到 wm-prerender 測試區段")
+-- 右鍵導航項鎖定 helper（Core.navMenuBlocked／navMenuLock）：抽 _Nav.lua 真實作
+local lockFile = assert(io.open(navPath:gsub("_WorldMapNav%.lua$", "_Nav.lua"), "rb"))
+local lockBody = assert(lockFile:read("*a"):gsub("\r\n", "\n"):match(
+    "%-%- test:nav%-menu%-lock:start\n(.-)\n%-%- test:nav%-menu%-lock:end"),
+    "找不到 _Nav nav-menu-lock 測試區段")
+lockFile:close()
 
 local compile = loadstring or load
 
@@ -65,7 +72,9 @@ local gets = 0                   -- ISContextMenu.get 呼叫次數
 local function mkContext(pn)
     local c = { pn = pn, options = {}, visible = false, hides = 0 }
     function c:addOption(name, target, fn, a, b)
-        self.options[#self.options + 1] = { name = name, target = target, fn = fn, a = a, b = b }
+        local o = { name = name, target = target, fn = fn, a = a, b = b }
+        self.options[#self.options + 1] = o
+        return o -- 同原版 addOption 回傳 option（notAvailable／toolTip 掛在上面）
     end
     function c:isVisible() return self.visible end
     function c:hideAndChildren() self.visible = false; self.hides = self.hides + 1 end
@@ -141,13 +150,36 @@ Core.navShareTarget = function(pn) calls[#calls + 1] = "navShare:" .. pn end
 Core.copyCoordsText = function(el, text) calls[#calls + 1] = "copy:" .. text end
 Core.navShareAllowed = function() return sandboxAllow end
 -- 插入子選單：本體只負責委派給 Core（錨點、owner／revision 防線都在 _Search.lua，
--- 不在這裡複製一份）。有待前往站時才會掛上那一項
+-- 不在這裡複製一份）。有待前往站時才會掛上那一項；blocked＝鎖定原因（灰父項由 _Search 負責）
 local insertAnchors = false
-Core.navInsertSubMenu = function(context, target, pn, x, y, label)
+local handoff = {} -- 委派給 navInsertSubMenu／placesAddMenu 的鎖定原因（"nil"＝放行）
+Core.navInsertSubMenu = function(context, target, pn, x, y, label, blocked)
     calls[#calls + 1] = string.format("insertSub:%s:%s:%s:%s", tostring(pn),
         tostring(x), tostring(y), tostring(label))
+    handoff.insert = tostring(blocked)
     if not insertAnchors then return end
     context:addOption("UI_MinidoracatMiniMap_TripInsert", target, nil)
+end
+Core.placesAddMenu = function(context, pn, wx, wy, blocked) handoff.places = tostring(blocked) end
+-- set 閘門（真 navGateAllows 在 _Nav.lua；這裡只控回傳）：gateMode＝allow／block／blockNoKey／throw
+local gateMode, gateCalls = "allow", {}
+Core.navGateAllows = function(pn, context)
+    gateCalls[#gateCalls + 1] = tostring(pn) .. ":" .. tostring(context)
+    if gateMode == "throw" then error("injected gate failure") end
+    if gateMode == "block" then return false, "UI_Test_NeedGPS" end
+    if gateMode == "blockNoKey" then return false end
+    return true
+end
+Core.navErrorText = function(reason, detailKey) -- 同 _Itinerary.lua：blocked 有 detailKey 就用它
+    if reason == "blocked" and detailKey then return getText(detailKey) end
+    return getText("UI_MinidoracatMiniMap_TripError_" .. tostring(reason))
+end
+local ISToolTip = {}
+function ISToolTip:new()
+    local t = {}
+    function t:initialise() end
+    function t:setVisible(v) self.visible = v end
+    return t
 end
 local drawCoordsFail, drawNavFail = false, false
 Core.drawPlayerCoords = function(el)
@@ -215,6 +247,9 @@ return {
     setNavTarget = function(v) navTarget = v end,
     setTrip = function(state, err) tripState, tripError = state, err end,
     setInsertAnchors = function(v) insertAnchors = v end,
+    setGate = function(v) gateMode = v end,
+    gateCalls = gateCalls,
+    handoff = handoff,
     setDrawFail = function(coords, nav) drawCoordsFail = coords; drawNavFail = nav end,
     ISUIElement = ISUIElement,
     ISPanel = ISPanel,
@@ -226,7 +261,7 @@ return {
 }
 ]=]
 
-local mod = assert(compile(env .. "\n" .. callbackBody .. "\n" .. rightBody .. "\n"
+local mod = assert(compile(env .. "\n" .. lockBody .. "\n" .. callbackBody .. "\n" .. rightBody .. "\n"
     .. preBody .. "\n" .. suffix, "wm-nav"))()
 
 -- 假世界地圖實例（wrap 後的 method 以 ":" 呼叫）
@@ -359,6 +394,47 @@ end
 assert(delegated, "R10: 插入子選單須以 pn 與原始世界座標委派 Core.navInsertSubMenu（實得 "
     .. table.concat(mod.calls, ",") .. "）")
 mod.setInsertAnchors(false)
+mod.clearCalls(); mod.resetMenus()
+
+--------------------------------------------------------------------------------
+-- L1-L4: set 閘門擋住時會設導航的項變灰＋說明原因（原版 notAvailable＋ISToolTip）；
+--        建一次選單只問一次閘門；行程管理／複製座標／搜尋不受影響；插入與回家把同一句
+--        原因交給 _Search／_Places（灰父項與未設家說明各自的測試驗）
+--------------------------------------------------------------------------------
+local LOCKED = { ["UI_MinidoracatMiniMap_TripAdd"] = true,
+    ["UI_MinidoracatMiniMap_TripPriority"] = true, [SET] = true }
+local function lockCheck(tag, want)
+    for i = #mod.gateCalls, 1, -1 do mod.gateCalls[i] = nil end
+    mod.clearCalls(); mod.resetMenus()
+    wm1:onRightMouseUp(5, 6)
+    local m = mod.menu(1)
+    assert(names(m) == OURS, tag .. ": 選項與順序不變（實得 " .. names(m) .. "）")
+    assert(#mod.gateCalls == 1 and mod.gateCalls[1] == "1:set",
+        tag .. ": 建選單只問一次 set 閘門（實得 " .. table.concat(mod.gateCalls, ",") .. "）")
+    for _, o in ipairs(m.options) do
+        if want and LOCKED[o.name] then
+            assert(o.notAvailable == true, tag .. ": " .. o.name .. " 須變灰")
+            assert(o.toolTip and o.toolTip.description == want and o.toolTip.visible == false,
+                tag .. ": " .. o.name .. " 須附隱藏中的原因 tooltip（實得 "
+                .. tostring(o.toolTip and o.toolTip.description) .. "）")
+        else
+            assert(o.notAvailable == nil and o.toolTip == nil, tag .. ": " .. o.name .. " 須維持可用")
+        end
+    end
+    assert(mod.handoff.insert == tostring(want) and mod.handoff.places == tostring(want),
+        tag .. ": 插入／回家須收到同一句原因（實得 " .. tostring(mod.handoff.insert) .. "／"
+        .. tostring(mod.handoff.places) .. "）")
+end
+mod.setOrigMode("none")
+mod.setGate("block")
+lockCheck("L1 擋住帶原因鍵", "UI_Test_NeedGPS")
+mod.setGate("blockNoKey")
+lockCheck("L2 擋住無原因鍵＝generic", "UI_MinidoracatMiniMap_TripError_blocked")
+mod.setGate("allow")
+lockCheck("L3 放行", nil)
+mod.setGate("throw")
+lockCheck("L4 閘門拋錯＝不鎖（點擊時的 set 檢查仍是安全網）", nil)
+mod.setGate("allow")
 mod.clearCalls(); mod.resetMenus()
 
 --------------------------------------------------------------------------------
@@ -659,6 +735,6 @@ assert(passiveInstance(otherPanel):onRightMouseUp(1, 2) == nil,
 assert(passiveInstance(otherPanel):onRightMouseDown(1, 2) == nil, "X9: down 同理")
 ExtractionMode = nil
 
-print("test_worldmap_nav: OK（R1-R9＋N1-N5＋X1-X9（含 X8b）：工具透傳/前手選單合併/自建/歸屬/殘留選單/"
+print("test_worldmap_nav: OK（R1-R9＋N1-N5＋L1-L4＋X1-X9（含 X8b）：工具透傳/前手選單合併/自建/歸屬/殘留選單/"
     .. "行程選項閘/回呼分流/開圖重包/冪等/重包上限/加繪順序/log-once/"
     .. "Extraction Mode 被動 overlay 右鍵放行）")

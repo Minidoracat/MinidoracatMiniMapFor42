@@ -428,17 +428,11 @@ Core.placesPromptRename = function(pn, id)
         report(pn, ok, reason)
     end)
 end
--- 雙地圖右鍵共用：回家（未設家時依原版慣例 notAvailable＋說明）、設為家、加入收藏
-Core.placesAddMenu = function(context, pn, worldX, worldY)
+-- 雙地圖右鍵共用：回家（依原版慣例 notAvailable＋說明：未設家優先說明設定方法，
+-- 否則 navBlocked＝Core.navMenuBlocked 的導航被擋原因）、設為家、加入收藏
+Core.placesAddMenu = function(context, pn, worldX, worldY, navBlocked)
     local option = context:addOption(getText("UI_MinidoracatMiniMap_GoHome"), pn, menuGoHome)
-    if not homeOf(pn) then
-        option.notAvailable = true
-        local tip = ISToolTip:new()
-        tip:initialise()
-        tip:setVisible(false)
-        tip.description = getText("UI_MinidoracatMiniMap_HomeNotSet")
-        option.toolTip = tip
-    end
+    Core.navMenuLock(option, not homeOf(pn) and getText("UI_MinidoracatMiniMap_HomeNotSet") or navBlocked)
     context:addOption(getText("UI_MinidoracatMiniMap_SetHome"), pn, menuSetHome, worldX, worldY)
     context:addOption(getText("UI_MinidoracatMiniMap_PlaceAdd"), pn, menuAddPlace, worldX, worldY)
 end
