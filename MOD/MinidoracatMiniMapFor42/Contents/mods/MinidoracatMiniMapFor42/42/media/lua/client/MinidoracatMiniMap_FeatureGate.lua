@@ -1,5 +1,5 @@
 -- MinidoracatMiniMap_FeatureGate.lua
--- 通用功能閘門（featureApiVersion 1）：讓 addon（首個消費者＝地圖錶）依玩家狀態
+-- 通用功能閘門（featureApiVersion 2；v2 加 featureServerOff）：讓 addon（首個消費者＝地圖錶）依玩家狀態
 -- 關掉小地圖或其中某項功能。沒有任何註冊時 Core.featureAllowed 在 # 判斷後直接
 -- 回 true，所有掛點行為與加 API 前逐位元相同。
 -- 掛點（呼叫時查 Core.featureAllowed＋nil 防呆＝缺檔時放行）：
@@ -26,7 +26,7 @@ local function log(msg) print("[MinidoracatMiniMap] " .. tostring(msg)) end
 Core.featureGates = {} -- { { owner=, fn=, errLogged= }, ... }
 local cache = {} -- [feature][surface 或 NO_SURFACE][pn] = { at=, ok=, reason=, dist= }
 
-API.featureApiVersion = 1
+API.featureApiVersion = 2
 -- gateFn(playerNum, feature, surface) --> allowed[, reasonKey[, maxDist]]
 -- 只有明確回 false 才擋；同 owner 再註冊＝覆蓋（錯誤旗標重置）
 function API.registerFeatureGate(ownerModId, gateFn)
@@ -47,6 +47,21 @@ function API.registerFeatureGate(ownerModId, gateFn)
     if not found then gates[#gates + 1] = { owner = ownerModId, fn = gateFn } end
     cache = {} -- 新 gate 立即生效，不等 250ms 舊快取過期
     return true
+end
+
+-- 伺服器沙盒是不是把這項 feature 掛點控制的東西全關了（v2）：addon 拿來在自己的介面寫「伺服器未開放」，
+-- 不必知道主 MOD 的沙盒鍵名。zombie＝殭屍點位與殭屍熱度都不允許；scan＝動物與載具圖標都不允許；
+-- 其餘 feature 沒有對應的伺服器總開關，一律 false。不傳 pn＝不吃管理員戰術旁路：回答的是伺服器開放了沒。
+function API.featureServerOff(feature)
+    local gate = Core.sandboxGate
+    if not gate then return false end
+    if feature == "zombie" then
+        return gate("AllowZombieDots", true) == false and gate("AllowZombieIntensity", true) == false
+    end
+    if feature == "scan" then
+        return gate("AllowAnimalDots", true) == false and gate("AllowVehicleDots", true) == false
+    end
+    return false
 end
 
 -- 熱路徑（每幀多次）：零註冊在 # 後返回；有註冊時同 (pn, feature, surface) 250ms 內

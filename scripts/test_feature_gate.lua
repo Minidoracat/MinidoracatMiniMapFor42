@@ -25,10 +25,17 @@ end
 
 local function fixture()
     local t = { now = 1000, clockReads = 0, printed = {}, halos = {}, tactical = {}, draws = {},
-        textAt = {}, zoom = 1, opts = {} }
+        textAt = {}, zoom = 1, opts = {}, sandbox = {}, gatePns = {} }
     local core = {
         ready = true,
         policy = { tacticalActive = function(pn) return t.tactical[pn] == true end },
+        -- 主檔 sandboxGate 的形狀（MinidoracatMiniMap.lua sandboxGate → Policy.gate）：沒設的鍵回預設
+        sandboxGate = function(name, default, pn)
+            t.gatePns[#t.gatePns + 1] = pn == nil and "nil" or tostring(pn)
+            local v = t.sandbox[name]
+            if v == nil then return default end
+            return v
+        end,
         mapTextZoom = function() return t.zoom end,
         drawMapText = function(el, text, x, y)
             t.draws[#t.draws + 1] = text
@@ -81,7 +88,7 @@ end
 do
     local t = fixture()
     local Core, API = t.core, t.api
-    checkEq(API.featureApiVersion, 1, "Z1 featureApiVersion")
+    checkEq(API.featureApiVersion, 2, "Z1 featureApiVersion")
     local reads = t.clockReads
     local ok, reason, dist = Core.featureAllowed(0, "minimap", "mini")
     check(ok == true and reason == nil and dist == nil, "Z1 零註冊回 true、無原因、無距離")
@@ -372,6 +379,31 @@ do
         and not mainSource:find("showRemotePlayers ~= false", 1, true),
         "主檔兩表面的隊友壓制都走 Core.gateRemotePlayers")
     check(mainSource:find("Core.drawNoSignal(self, mmReason)", 1, true), "主檔無訊號走 Core.drawNoSignal")
+end
+
+-- 十一、featureServerOff（v2）：伺服器把這項 feature 的掛點全關了才回 true；不吃戰術旁路
+do
+    local t = fixture()
+    local API = t.api
+    check(API.featureServerOff("zombie") == false and API.featureServerOff("scan") == false, "O1 預設全開＝都不算關")
+    t.sandbox.AllowZombieDots = false
+    check(API.featureServerOff("zombie") == false, "O2 只關殭屍點位：熱度還開著，不算關")
+    t.sandbox.AllowZombieIntensity = false
+    check(API.featureServerOff("zombie") == true, "O2 點位與熱度都關＝zombie 關")
+    t.sandbox.AllowAnimalDots = false
+    check(API.featureServerOff("scan") == false, "O3 只關動物：載具還開著，不算關")
+    t.sandbox.AllowVehicleDots = false
+    check(API.featureServerOff("scan") == true, "O3 動物與載具都關＝scan 關")
+    for _, f in ipairs({ "minimap", "arrow", "poi", "nav", "share", "nope" }) do
+        check(API.featureServerOff(f) == false, "O4 沒有伺服器總開關的 feature 一律 false：" .. f)
+    end
+    check(API.featureServerOff(nil) == false and API.featureServerOff(42) == false, "O4 壞引數回 false")
+    local allNil = #t.gatePns > 0
+    for _, pn in ipairs(t.gatePns) do allNil = allNil and pn == "nil" end
+    t.tactical[0] = true
+    check(allNil and API.featureServerOff("zombie") == true, "O5 不傳 pn：戰術檢視也照實回答伺服器關了")
+    t.core.sandboxGate = nil
+    check(API.featureServerOff("zombie") == false, "O6 主檔沒有 sandboxGate（舊共用面）回 false")
 end
 
 print("feature gate assertions " .. assertions .. ", failures " .. failures)
