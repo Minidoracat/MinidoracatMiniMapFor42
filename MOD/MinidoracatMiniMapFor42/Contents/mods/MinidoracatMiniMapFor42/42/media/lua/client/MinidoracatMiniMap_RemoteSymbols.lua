@@ -1,10 +1,10 @@
 -- MinidoracatMiniMap_RemoteSymbols.lua
 -- 本檔範圍：其他玩家分享的地圖標記（原版 B42 多人的「分享」）——作者清單資料、切換作者的規則
--- （設定分類的作者按鈕與清單視窗 _RemoteList.lua 共用）、「只看派系與安全屋成員」篩選，與世界地圖右鍵「隱藏 X 的標記」。
+-- （設定分類的作者按鈕與清單視窗 _RemoteList.lua 共用）、「只看陣營與安全屋成員」篩選，與世界地圖右鍵「隱藏 X 的標記」。
 -- 隱藏名單是原版的：WorldMapSymbolsV2.setAuthorHidden 送伺服器、存 hidden_authors.ini，
 -- 玩家登入時送回（HiddenAuthors.java:64-99、GameServer.java:2877-2895），本 MOD 不另存；
 -- 小地圖與世界地圖共用 MapItem 單例的同一份標記（ISMiniMap.lua:193），隱藏對兩張地圖同時生效。
--- 「只看派系與安全屋成員」（ModOptions RemoteTrustedOnly）不碰這份名單，改用每則標記的本機可見旗標
+-- 「只看陣營與安全屋成員」（ModOptions RemoteTrustedOnly）不碰這份名單，改用每則標記的本機可見旗標
 -- （WorldMapBaseSymbolV2.setVisible：畫圖與 hitTest 都看它，WorldMapBaseSymbol.java:233-275、
 -- SymbolsRenderData.java:30、WorldMapSymbols.java:182），不存檔也不上傳。
 -- 主開關 RemoteSymbols 的存檔與兩張地圖同步在主檔（applyToggleOptions、Core.syncRemoteSymbols）。
@@ -19,7 +19,7 @@ local function symbolsApi(pn)
     return mapAPI and mapAPI:getSymbolsAPIv2() or nil
 end
 
--- 照抄原版可見規則（WorldMapBaseSymbol.java:250-270）：全部可見／同派系／同安全屋／指名給我
+-- 照抄原版可見規則（WorldMapBaseSymbol.java:250-270）：全部可見／同陣營／同安全屋／指名給我
 local function visibleToMe(s, me)
     if s:isVisibleToEveryone() then return true end
     local author = s:getAuthor()
@@ -37,7 +37,7 @@ local function visibleToMe(s, me)
     return false
 end
 
--- 圈內人：跟我同派系（回 "faction"），或跟我同一間安全屋（回 "safehouse"）；圈外回 nil。判法同原版可見規則的
+-- 圈內人：跟我同陣營（回 "faction"），或跟我同一間安全屋（回 "safehouse"）；圈外回 nil。判法同原版可見規則的
 -- 身分比對（WorldMapBaseSymbol.java:252-262，getPlayerFaction／hasSafehouse 取第一個符合的，同一個物件才算）；
 -- 同一輪查詢記在 memo
 local function circle(faction, house)
@@ -56,7 +56,7 @@ end
 -- 作者清單資料：{ key = 帳號, count = 標記數, tag = "faction"|"safehouse"|nil, trusted = 圈內人,
 -- label = "帳號（標記數）" }，依帳號排序（設定分類的作者按鈕用 label，清單視窗用 key／count／tag）。
 -- 只列別人分享、而且沒被隱藏時你本來就看得到的：引擎把每則分享標記送給每個客戶端
--- （WorldMapServer.java:154-163、238-249），不套可見規則會露出只分享給派系的作者名。
+-- （WorldMapServer.java:154-163、238-249），不套可見規則會露出只分享給陣營的作者名。
 -- 已隱藏的作者照列（清單要能把他放回來）
 function Core.remoteSymbolAuthors(pn)
     if not isClient() then return {} end
@@ -100,7 +100,7 @@ end
 
 -- 本 MOD 改隱藏名單的次數（右鍵、chip、全部顯示都走下面這支）；設定視窗用它判斷 chip 要不要重畫
 local hiddenRevision = 0
--- 派系或安全屋的成員數（沒有＝-1），簽章用
+-- 陣營或安全屋的成員數（沒有＝-1），簽章用
 local function groupSize(group) return group and group:getPlayers():size() or -1 end
 
 -- 原版每呼叫一次就送一個封包（HiddenAuthors.java:109-114）：值沒變就不送
@@ -112,7 +112,7 @@ function Core.setRemoteSymbolHidden(author, hidden)
     end
 end
 
--- 作者清單的簽章：標記數、我的派系與安全屋和人數、本 MOD 改過隱藏名單幾次。設定視窗停在這個分類時
+-- 作者清單的簽章：標記數、我的陣營與安全屋和人數、本 MOD 改過隱藏名單幾次。設定視窗停在這個分類時
 -- 定期比對，變了就重畫 chip（新分享、有人加入或退出、在世界地圖右鍵隱藏）。原版「分享」面板改的
 -- 隱藏名單不在簽章裡，要切換分類或重開視窗才會反映
 function Core.remoteListSig(pn)
@@ -125,13 +125,13 @@ function Core.remoteListSig(pn)
         groupSize(house), hiddenRevision }, "|")
 end
 
--- chip 亮不亮＝這位作者的標記畫不畫（主開關另計）：沒被隱藏，而且沒開「只看派系與安全屋」或他是圈內人
+-- chip 亮不亮＝這位作者的標記畫不畫（主開關另計）：沒被隱藏，而且沒開「只看陣營與安全屋」或他是圈內人
 function Core.remoteAuthorShown(item)
     if Core.remoteSymbolHidden(item.key) then return false end
     return item.trusted or Core.getBoolOption("RemoteTrustedOnly", false) ~= true
 end
 
--- 現在是不是圈內人（現查：設定視窗開著時有人加入或退出派系，chip 上的 trusted 還是建清單那一刻的）
+-- 現在是不是圈內人（現查：設定視窗開著時有人加入或退出陣營，chip 上的 trusted 還是建清單那一刻的）
 function Core.remoteAuthorTrusted(author)
     local player = getSpecificPlayer(0)
     if not player then return false end
@@ -139,7 +139,7 @@ function Core.remoteAuthorTrusted(author)
     return circle(Faction.getPlayerFaction(me), SafeHouse.hasSafehouse(me))(author) ~= nil
 end
 
--- 開著「只看派系與安全屋」時點開圈外作者 keep：離開這個模式前，其他圈外作者先記進原版隱藏名單，
+-- 開著「只看陣營與安全屋」時點開圈外作者 keep：離開這個模式前，其他圈外作者先記進原版隱藏名單，
 -- 畫面上維持關閉、只放出 keep（使用者裁定 2026-10-08）。圈內人不動
 function Core.remoteHideOutsiders(keep, pn)
     local items = Core.remoteSymbolAuthors(pn or 0)
@@ -156,7 +156,7 @@ function Core.remoteShowAllAuthors(pn)
     for i = 1, #items do Core.setRemoteSymbolHidden(items[i].key, false) end
 end
 
--- 改「只看派系與安全屋」並套用；套用尾端的 Core.settingsAfterApply 讓開著的設定視窗重畫
+-- 改「只看陣營與安全屋」並套用；套用尾端的 Core.settingsAfterApply 讓開著的設定視窗重畫
 local function setTrustedOnly(on)
     local opt = Core.modOptions and Core.modOptions:getOption("RemoteTrustedOnly")
     if not opt then return end
@@ -165,9 +165,9 @@ local function setTrustedOnly(on)
     PZAPI.ModOptions:save()
 end
 
--- 切換一位作者（設定分類的作者按鈕、清單視窗的列共用）。開著「只看派系與安全屋」時點亮圈外作者＝離開
+-- 切換一位作者（設定分類的作者按鈕、清單視窗的列共用）。開著「只看陣營與安全屋」時點亮圈外作者＝離開
 -- 這個模式：其他圈外作者先記進隱藏名單維持關閉，只放出這一位（使用者裁定 2026-10-08）。
--- 圈內人現查，不用清單建立時的 trusted：視窗開著時有人加入派系，快照會讓點擊誤關篩選
+-- 圈內人現查，不用清單建立時的 trusted：視窗開著時有人加入陣營，快照會讓點擊誤關篩選
 function Core.remoteAuthorSet(author, on, pn)
     if on and Core.getBoolOption("RemoteTrustedOnly", false) and not Core.remoteAuthorTrusted(author) then
         Core.remoteHideOutsiders(author, pn)
@@ -177,7 +177,7 @@ function Core.remoteAuthorSet(author, on, pn)
 end
 
 -- 一次切換多位（設定分類的全選／全不選、清單視窗底部兩顆按鈕只傳目前清單上的作者）。點亮的人裡有
--- 圈外作者＝直接離開「只看派系與安全屋」，不必先把其他圈外作者記進隱藏名單
+-- 圈外作者＝直接離開「只看陣營與安全屋」，不必先把其他圈外作者記進隱藏名單
 function Core.remoteAuthorSetMany(list, on)
     if on and Core.getBoolOption("RemoteTrustedOnly", false) then
         for i = 1, #list do
@@ -190,10 +190,10 @@ function Core.remoteAuthorSetMany(list, on)
     for i = 1, #list do Core.setRemoteSymbolHidden(list[i].key, not on) end
 end
 
--- 上次套用「只看派系與安全屋」時的狀態：模式、標記數、我的派系與安全屋和它們的人數
+-- 上次套用「只看陣營與安全屋」時的狀態：模式、標記數、我的陣營與安全屋和它們的人數
 local applied = { on = false, n = -1 }
 
--- 把「只看派系與安全屋」套到目前所有別人分享的標記：圈外的不畫，圈內的照常。新收到的標記預設可見
+-- 把「只看陣營與安全屋」套到目前所有別人分享的標記：圈外的不畫，圈內的照常。新收到的標記預設可見
 -- （WorldMapBaseSymbol.java:42），所以標記數或圈內人數一變就重套；作者改內容沿用同一個物件
 -- （WorldMapClient.java:107-121），旗標不會被洗掉。一直沒開＝直接返回，不掃標記。
 -- ponytail: 同一個檢查間隔內標記一增一減、或圈內一進一出，會等到下一次變動才重套；要更準得自己記標記 ID
@@ -230,7 +230,7 @@ end)
 
 -- 世界地圖右鍵：游標下是別人分享的標記，就加「隱藏 X 的標記」。hitTest 只命中畫得出來、
 -- 至少 10px 的使用者標記（WorldMapSymbols.java:181-197），所以已隱藏的作者、關掉「其他玩家
--- 標記」時的、被「只看派系與安全屋」篩掉的、縮得太小的都不會出現；自己的標記與私人標記也不出現
+-- 標記」時的、被「只看陣營與安全屋」篩掉的、縮得太小的都不會出現；自己的標記與私人標記也不出現
 function Core.remoteSymbolHideOption(context, mapUI, x, y)
     if not isClient() then return end
     local api = mapUI.mapAPI and mapUI.mapAPI:getSymbolsAPIv2()

@@ -1,5 +1,5 @@
 -- 其他玩家標記：主開關存 ModOptions、三個入口同步兩張地圖（主檔切片），
--- 作者清單的可見規則、「只看派系與安全屋成員」篩選與世界地圖右鍵「隱藏 X 的標記」（_RemoteSymbols.lua）。
+-- 作者清單的可見規則、「只看陣營與安全屋成員」篩選與世界地圖右鍵「隱藏 X 的標記」（_RemoteSymbols.lua）。
 -- 標準 Lua，不是 Kahlua；原版符號 API 是假物件，介面照 WorldMapSymbolsV2.java:72-149、401-406、475-513。
 local CLIENT = arg and arg[1]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/"
@@ -46,7 +46,7 @@ local function symbolsApi(list)
 end
 local function mapOf(api) return { mapAPI = { getSymbolsAPIv2 = function() return api end } } end
 
--- 派系／安全屋：getPlayers():size() 是篩選的「圈內人數」簽章
+-- 陣營／安全屋：getPlayers():size() 是篩選的「圈內人數」簽章
 local function group()
     local g = { n = 1 }
     function g:getPlayers() local owner = self; return { size = function() return owner.n end } end
@@ -85,8 +85,8 @@ local api = symbolsApi({
     symbol{ author = "alice", everyone = true },
     symbol{ author = "me", everyone = true, own = true },
     symbol{ author = "me", private = true },
-    symbol{ author = "carol", faction = true },          -- 別的派系：看不到
-    symbol{ author = "dave", faction = true },           -- 同派系
+    symbol{ author = "carol", faction = true },          -- 別的陣營：看不到
+    symbol{ author = "dave", faction = true },           -- 同陣營
     symbol{ author = "erin", safehouse = true },         -- 同安全屋
     symbol{ author = "frank", safehouse = true },        -- 別的安全屋：看不到
     symbol{ author = "gina", players = { "x", "me" } },  -- 指名給我
@@ -147,7 +147,7 @@ env.mp = false
 checkEq(#menuAt(1), 0, "H4 single player: no option")
 env.mp = true
 
--- 只看派系與安全屋成員：本機可見旗標，圈外不畫、圈內照常；自己的與私人標記不碰
+-- 只看陣營與安全屋成員：本機可見旗標，圈外不畫、圈內照常；自己的與私人標記不碰
 local function vis(i) return api.list[i].t.visible end
 Core.remoteScopeApply()
 checkEq(env.sets, 0, "T1 filter never turned on: no symbol is touched")

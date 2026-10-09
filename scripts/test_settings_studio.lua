@@ -850,7 +850,7 @@ do
     local all = byLabel(e, T("UI_MinidoracatMiniMap_SelectAll"))
     all.onclick(all.target, all)
     check(hidden.alice == nil and hidden.bob == nil, "S4 select all shows every author again")
-    -- 只看派系與安全屋：勾了之後，圈外作者的 chip 跟著重畫成關，圈內的照常
+    -- 只看陣營與安全屋：勾了之後，圈外作者的 chip 跟著重畫成關，圈內的照常
     authors[3] = { key = "dave", label = "dave（1）", count = 1, trusted = true }
     st.rebuild()
     local only = e.byKey("RemoteTrustedOnly")
@@ -871,7 +871,7 @@ do
     showAll.onclick(showAll.target, showAll)
     check(e.values.RemoteSymbols == true and e.values.RemoteTrustedOnly == false and showAllCalls == 1,
         "S10 show all turns the master on, the filter off and puts every author back")
-    -- 停在這個分類時，作者清單簽章一變就重畫（新分享、派系進出、世界地圖右鍵隱藏），不用切分類
+    -- 停在這個分類時，作者清單簽章一變就重畫（新分享、陣營進出、世界地圖右鍵隱藏），不用切分類
     e.frame()
     for _ = 1, 30 do e.frame() end
     authors[#authors + 1] = { key = "erin", label = "erin（1）", count = 1 }
@@ -985,7 +985,7 @@ do
     check(#lw.list:getItems() == 0 and not lw.showBtn:isEnabled() and not lw.hideBtn:isEnabled(),
         "L7 no match: empty list and both buttons disabled")
     checkEq(e.Core.remoteListWindow().meta, T("UI_MinidoracatMiniMap_RemoteListEmpty"), "L7 the count line says nothing matches")
-    -- 開著時簽章一變（新分享、派系進出、別處改了隱藏）就重整
+    -- 開著時簽章一變（新分享、陣營進出、別處改了隱藏）就重整
     search("")
     authors[#authors + 1] = { key = "zed", label = "zed", count = 1 }
     for _ = 1, 30 do e.frame() end

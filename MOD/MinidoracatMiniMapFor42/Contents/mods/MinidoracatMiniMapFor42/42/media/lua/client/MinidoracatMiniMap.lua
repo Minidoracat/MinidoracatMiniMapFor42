@@ -1111,7 +1111,7 @@ if PZAPI and PZAPI.ModOptions then
     -- 本 MOD 存這裡，兩張地圖與兩個原版面板都跟它同步（applyToggleOptions、Core.syncRemoteSymbols）
     modOptions:addTickBox("RemoteSymbols", "IGUI_MapOption_RemoteSymbols", true,
         "IGUI_MapOption_RemoteSymbols_tooltip")
-    -- 只看派系與安全屋成員的標記（預設關，多人才有作用）：用本機可見旗標篩，不碰原版隱藏名單
+    -- 只看陣營與安全屋成員的標記（預設關，多人才有作用）：用本機可見旗標篩，不碰原版隱藏名單
     -- （_RemoteSymbols.lua；設定視窗、世界地圖選項面板也各有一顆）
     modOptions:addTickBox("RemoteTrustedOnly", "UI_MinidoracatMiniMap_RemoteTrustedOnly", false,
         "UI_MinidoracatMiniMap_RemoteTrustedOnly_tooltip")
@@ -1364,7 +1364,7 @@ if PZAPI and PZAPI.ModOptions then
             appliedWorldImagery = cur.imagery
         end
         -- 其他玩家標記：兩張地圖都跟 ModOptions（重建的小地圖另由 applyToggleOptions 套）；
-        -- 「只看派系與安全屋」改了就立刻重套，不等下一次 OnTick 檢查
+        -- 「只看陣營與安全屋」改了就立刻重套，不等下一次 OnTick 檢查
         Core.syncRemoteSymbols(getBoolOption("RemoteSymbols", true))
         if Core.remoteScopeApply then Core.remoteScopeApply() end
         if plan.clearCustomSize then
@@ -2618,7 +2618,7 @@ if ISWorldMap and ISWorldMap.createChildren then
 end
 
 -- 世界地圖（M）選項面板注入「圖片化地圖」勾選（與統一視窗/ESC 選項頁同一 MapImagery 選項，
--- 三面同源），多人另加「只看派系與安全屋成員的標記」（RemoteTrustedOnly，看地圖時的快速切換）。
+-- 三面同源），多人另加「只看陣營與安全屋成員的標記」（RemoteTrustedOnly，看地圖時的快速切換）。
 -- 面板屬世界地圖單例、非每次開圖重建——tick 以 prerender 每幀讀值同步（setSelected 不觸發回呼），
 -- 統一視窗/ESC 改動不脫鉤。原版 synchUI 只動自己 tickBoxes 表裡的勾選（ISWorldMap.lua:164-189）。
 -- 佈局沿原版 WorldMapOptions:createChildren 尾段做法：附加於最底、重算視窗尺寸

@@ -100,7 +100,7 @@ local SEC_PLACES = { id = "places", label = "UI_MinidoracatMiniMap_SecPlaces", i
 }
 -- 其他玩家標記（多人）：主開關＝ModOptions RemoteSymbols（主檔 applyToggleOptions／
 -- Core.syncRemoteSymbols 同步兩張地圖與原版兩個面板）；作者清單見下方 SEC_REMOTE.chips。
--- 「只看派系與安全屋成員」由 _RemoteSymbols.lua 用本機可見旗標篩；rebuild＝作者 chip 跟著重畫
+-- 「只看陣營與安全屋成員」由 _RemoteSymbols.lua 用本機可見旗標篩；rebuild＝作者 chip 跟著重畫
 local SEC_REMOTE = { id = "remote", label = "IGUI_MapOption_RemoteSymbols", icon = "users", mpOnly = true,
     master = { id = "RemoteSymbols", label = "IGUI_MapOption_RemoteSymbols", default = true,
         tooltip = "IGUI_MapOption_RemoteSymbols_tooltip" },
@@ -535,7 +535,7 @@ SEC_POI.chips = { opt = "Cat",
 -- 作者清單＝原版逐作者隱藏（WorldMapSymbolsV2.setAuthorHidden → 伺服器 hidden_authors.ini，
 -- 登入時送回：HiddenAuthors.java:64-99、GameServer.java:2877-2895），本 MOD 不另存；
 -- 資料源、可見規則與切換規則在 _RemoteSymbols.lua（缺檔＝清單空白、只剩主開關，以下 Core 函式不會被叫到）。
--- chip 亮＝畫得出來：開著「只看派系與安全屋」時圈外作者一律顯示關。
+-- chip 亮＝畫得出來：開著「只看陣營與安全屋」時圈外作者一律顯示關。
 -- 20 位以內照舊列出；超過就換成摘要＋「管理作者...」開清單視窗（_RemoteList.lua）；作者不進設定視窗的
 -- 總搜尋，找人到清單視窗裡搜（使用者裁定 2026-10-08）
 SEC_REMOTE.chips = { opt = "RemoteAuthor", raw = true, empty = "UI_MinidoracatMiniMap_RemoteNoAuthors",
@@ -1272,7 +1272,7 @@ end
 local function onChipsMore(win, btn)
     btn._chips.open(win)
 end
--- 其他玩家標記「全部顯示」：清單作者全部放回、關掉「只看派系與安全屋」、打開總開關，一次 apply
+-- 其他玩家標記「全部顯示」：清單作者全部放回、關掉「只看陣營與安全屋」、打開總開關，一次 apply
 local function onRemoteShowAll(win)
     if Core.remoteShowAllAuthors then Core.remoteShowAllAuthors(win._playerNum or 0) end
     if modOptions then
@@ -2082,7 +2082,7 @@ local function studioPrerender(self)
         self._dirty = true
     end
     if studioLiveSettingsDirty(self) then self._dirty = true end
-    -- 停在「其他玩家標記」分類時每 30 幀比一次作者清單簽章（新分享、派系進出、世界地圖右鍵隱藏），
+    -- 停在「其他玩家標記」分類時每 30 幀比一次作者清單簽章（新分享、陣營進出、世界地圖右鍵隱藏），
     -- 變了就重畫 chip；第一次只記下來（剛重建過）
     if self._selectedSec == SEC_REMOTE.id and Core.remoteListSig then
         self._remoteTick = (self._remoteTick or 0) + 1

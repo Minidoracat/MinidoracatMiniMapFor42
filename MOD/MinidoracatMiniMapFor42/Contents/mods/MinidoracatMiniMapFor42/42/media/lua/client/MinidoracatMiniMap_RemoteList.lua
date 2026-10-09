@@ -11,7 +11,7 @@ local Core = MinidoracatMiniMapCore
 if not (Core and Core.ready) then return end
 
 local listUI -- 單例，同設定視窗
-local REFRESH_FRAMES = 30 -- 約半秒比一次作者清單簽章（新分享、派系進出、別處改了隱藏）
+local REFRESH_FRAMES = 30 -- 約半秒比一次作者清單簽章（新分享、陣營進出、別處改了隱藏）
 local PAD = 8
 local TOGGLE_W = 36
 local TAG_TRUST = { r = 0.42, g = 0.62, b = 0.28, a = 0.45 }
@@ -66,7 +66,7 @@ local function refresh(win)
     win._sig = listSig(win)
 end
 
--- 一列：開關＋帳號＋標籤（派系／安全屋／已隱藏）＋右側標記數。文字與寬度在 bind 時算好，prerender 只畫
+-- 一列：開關＋帳號＋標籤（陣營／安全屋／已隱藏）＋右側標記數。文字與寬度在 bind 時算好，prerender 只畫
 local function rowPrerender(self)
     local it = self._item
     if not it then return end
