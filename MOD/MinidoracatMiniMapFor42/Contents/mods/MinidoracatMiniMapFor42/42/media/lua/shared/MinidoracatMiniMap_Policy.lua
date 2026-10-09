@@ -181,7 +181,7 @@ local OPTION_PREFIX = "MinidoracatMiniMap."
 local TTL_MS = 250
 local NUM_LIMIT = 1000000000 -- 數字合理值域（±1e9）：順手把 inf 一併排除
 
--- 23 鍵 schema：{ 沙盒鍵名, 型別, 預設值 }。預設值必須與
+-- 24 鍵 schema：{ 沙盒鍵名, 型別, 預設值 }。預設值必須與
 -- media/sandbox-options.txt 的 default 逐鍵一致——這是「舊伺服器缺鍵」時的
 -- 實際生效值，寫錯會讓缺鍵的伺服器行為與有鍵的不同。enum 以 number 表示
 -- （Java 端 getValue 回選項索引）。
@@ -211,8 +211,11 @@ local SCHEMA = {
     -- _Dots.lua scanIntervalMs 判 tacticalActive，不經 gate()/sandboxDistance()
     { "ZombieScanInterval", "number", 0 },
     { "VehicleAnimalScanInterval", "number", 0 },
+    -- 資源點預設版本（1＝小地圖資源、2＝房間資料）：只給「依伺服器設定」的玩家當預設，
+    -- 玩家自己選了就不看它；不在任何旁路白名單
+    { "PoiSourceDefault", "number", 1 },
 }
-local SCHEMA_N = 23 -- 顯式筆數（家規：不用 # 依賴隱性長度）
+local SCHEMA_N = 24 -- 顯式筆數（家規：不用 # 依賴隱性長度）
 
 local KIND = {}
 for i = 1, SCHEMA_N do

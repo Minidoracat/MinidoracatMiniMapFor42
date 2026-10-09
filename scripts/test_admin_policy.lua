@@ -662,7 +662,7 @@ checkEq(R.policy.livestockMode(0), 2, "既有牲畜政策不受影響")
 checkEq(R.policy.safehouseMode(0), 3, "既有安全屋政策不受影響")
 
 --------------------------------------------------------------------------------
--- 13. 23 鍵 schema 與 sandbox-options.txt 逐鍵對齊
+-- 13. 24 鍵 schema 與 sandbox-options.txt 逐鍵對齊
 --     SCHEMA 預設＝「舊伺服器缺鍵」時的實際生效值，寫錯會讓缺鍵伺服器的行為與
 --     有鍵的不同，而且不會有任何錯誤訊息。
 --------------------------------------------------------------------------------
@@ -687,8 +687,8 @@ local missingInSchema = 0
 for name in pairs(sbDeclared) do
     if kinds[name] == nil then missingInSchema = missingInSchema + 1 end
 end
-checkEq(sbCount, 23, "sandbox-options.txt 有 23 個選項")
-checkEq(S.schemaN, 23, "SCHEMA_N 顯式筆數＝23")
+checkEq(sbCount, 24, "sandbox-options.txt 有 24 個選項")
+checkEq(S.schemaN, 24, "SCHEMA_N 顯式筆數＝24")
 checkEq(#S.schema, S.schemaN, "SCHEMA 列數與 SCHEMA_N 一致（漏改就靜默少載一把鍵）")
 checkEq(missingInSchema, 0, "沙盒選項全部在 SCHEMA 內（漏一把＝該鍵永遠讀不到）")
 -- 掃描間隔（秒，0＝即時）：戰術檢視的「一律即時」在 _Dots.lua 判，不得進旁路白名單
@@ -700,7 +700,7 @@ for i = 1, S.schemaN do
     checkEq(row[2] .. "|" .. tostring(row[3]), sbDeclared[row[1]] or "missing",
         "SCHEMA 與 sandbox-options 對齊：" .. row[1])
     -- 缺鍵時的實際生效值必須就是 SCHEMA 預設；這同時證明 KIND/DEFAULTS 建表
-    -- 迴圈確實走完 23 列（少一列＝該鍵變未知鍵，read 會回 nil）。
+    -- 迴圈確實走完 24 列（少一列＝該鍵變未知鍵，read 會回 nil）。
     checkEq(S.policy.read(row[1]), row[3], "缺鍵時實際生效值＝SCHEMA 預設：" .. row[1])
 end
 
@@ -751,7 +751,7 @@ check(source:find("Events%.OnCreatePlayer%.Add%(clearLocalSlot%)") ~= nil
 --------------------------------------------------------------------------------
 -- 斷言條數守門：新增／刪除斷言必須同步改這個數字，否則整批被靜默略過也不會
 -- 有人發現；schema 與 never-bypass 迴圈產生的動態斷言亦計入總數。
-local EXPECTED_ASSERTIONS = 296
+local EXPECTED_ASSERTIONS = 298
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
         .. ", actual " .. assertions)

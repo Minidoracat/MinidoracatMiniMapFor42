@@ -1133,6 +1133,13 @@ if PZAPI and PZAPI.ModOptions then
     -- 繪製與 provider 都在 MinidoracatMiniMapPOI.lua（讀本命名空間的 PoiIcons/PoiBlocks/Cat_*）。
     modOptions:addSeparator()
     modOptions:addTitle("UI_MinidoracatMiniMap_SecPOI")
+    -- 資源版本（預設「依伺服器設定」＝沙盒 PoiSourceDefault，沙盒預設小地圖資源）：
+    -- 1＝依伺服器、2＝小地圖資源（離線烘焙、原版地圖）、3＝房間資料（執行期 RoomDef、含地圖 MOD）。
+    -- 解析與重建在 MinidoracatMiniMapPOI.lua（effectiveSource／簽章）；查詢在 shared/MinidoracatMiniMapResources.lua
+    combo = modOptions:addComboBox("PoiSource", "UI_MinidoracatMiniMap_PoiSource", "UI_MinidoracatMiniMap_PoiSource_tooltip")
+    combo:addItem("UI_MinidoracatMiniMap_PoiSource_Server", true)
+    combo:addItem("UI_MinidoracatMiniMap_PoiSource_Minimap", false)
+    combo:addItem("UI_MinidoracatMiniMap_PoiSource_Rooms", false)
     modOptions:addTickBox("PoiIcons", "UI_MinidoracatMiniMap_PoiIcons", true,
         "UI_MinidoracatMiniMap_PoiIcons_tooltip")
     modOptions:addTickBox("PoiBlocks", "UI_MinidoracatMiniMap_PoiBlocks", false,

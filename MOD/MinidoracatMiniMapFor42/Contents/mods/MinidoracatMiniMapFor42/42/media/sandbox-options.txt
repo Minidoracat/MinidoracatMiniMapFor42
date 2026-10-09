@@ -45,6 +45,9 @@ option MinidoracatMiniMap.VehicleAnimalScanInterval
 option MinidoracatMiniMap.PoiDisplayDistance
 {type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMapAreas, translation = MinidoracatMiniMapPoiDisplayDistance,}
 
+option MinidoracatMiniMap.PoiSourceDefault
+{type = enum, numValues = 2, default = 1, page = MinidoracatMiniMapAreas, translation = MinidoracatMiniMapPoiSourceDefault,}
+
 option MinidoracatMiniMap.ZoneDisplayDistance
 {type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMapAreas, translation = MinidoracatMiniMapZoneDisplayDistance,}
 

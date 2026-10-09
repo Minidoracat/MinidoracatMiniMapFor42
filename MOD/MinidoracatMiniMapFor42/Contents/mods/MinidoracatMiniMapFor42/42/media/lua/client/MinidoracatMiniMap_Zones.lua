@@ -801,6 +801,7 @@ local function drawBasementBadge(el, bx0, by0, bs, a)
 end
 
 -- 圖標名稱提示文字：內建資源點＝類別名（地下設施加「（地下室）」，與搜尋結果同字），
+-- 房間資料版一筆有多個類別時＝provider 備好的 tip（「A / B」，整棟的類別），
 -- 外部 zone＝它的 name；都沒有就不提示。類別名依類別快取（語系 session 內不變）
 local iconTipByCat = {}
 local function iconTipText(z, internal)
@@ -809,6 +810,7 @@ local function iconTipText(z, internal)
         if type(n) == "string" and n ~= "" then return n end
         return nil
     end
+    if z.tip then return z.tip end
     local cat = z.category
     if type(cat) ~= "string" then return nil end
     local key = z.basement and (cat .. "|b") or cat

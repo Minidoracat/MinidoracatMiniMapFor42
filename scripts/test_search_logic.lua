@@ -158,8 +158,8 @@ MinidoracatMiniMapPOIData = {
 }
 ]]
     local chunk3 = assert((loadstring or load)(prelude .. sourceHints .. "\n" .. finalizer .. "\n" .. seg3
-        .. "\nreturn doSearch, function(items) fixtureStreets = items end", "search-dosearch"))
-    local doSearch, setStreets = chunk3()
+        .. "\nreturn doSearch, function(items) fixtureStreets = items end, Core", "search-dosearch"))
+    local doSearch, setStreets, SCore = chunk3()
     -- 「basement」前綴：地下條目全類別命中（2 筆 u=1），label 帶後綴
     local r = doSearch("base", 0, 0)
     eq(#r, 2, "basement 前綴：恰 2 筆地下條目")
@@ -176,6 +176,28 @@ MinidoracatMiniMapPOIData = {
     eq(doSearch("st", 0, 0)[1].kind, "street", "st 命中的是街道")
     eq(#doSearch("as", 0, 0), 0, "中段子串 as 不觸發（前綴語義）")
     eq(#doSearch("(", 0, 0), 0, "括號不觸發（匹配鍵無標點）")
+    -- 房間資料版：搜尋讀地圖上同一份建築清單（Core.poiRoomBuildings），落點＝該類最大房間中心；
+    -- 一筆多類各自一個結果，地下後綴看該類的落點；烘焙資料不再出現
+    SCore.poiSource = function() return "rooms" end
+    SCore.poiRoomBuildings = function() return {
+        { cats = { food = true, gun = true }, anchors = {
+            food = { x = 200, y = 200, w = 2, h = 2, basement = false },
+            gun = { x = 210, y = 200, w = 4, h = 2, basement = true } } },
+    }, 1 end
+    r = doSearch("food", 0, 0)
+    eq(#r, 1, "房間資料版：只列建築清單裡的 food，烘焙的兩筆不出現")
+    eq(r[1].label, "Food", "房間資料版：地上落點不帶後綴")
+    eq(r[1].x, 201, "房間資料版：落點 X＝該類最大房間中心")
+    eq(r[1].y, 201, "房間資料版：落點 Y＝該類最大房間中心")
+    r = doSearch("base", 0, 0)
+    eq(#r, 1, "房間資料版地下關鍵字：只命中落點在地下的類別")
+    eq(r[1].label, "Armory (basement)", "房間資料版：同一筆的另一類照自己的落點判地下")
+    eq(r[1].x, 212, "房間資料版：多類建築的第二類用自己的落點")
+    SCore.poiRoomBuildings = function() return nil, 0 end
+    eq(#doSearch("food", 0, 0), 0, "房間資料版還沒掃完：沒有資源點結果")
+    SCore.poiSource = function() return "minimap" end
+    eq(#doSearch("food", 0, 0), 2, "切回小地圖資源版：照烘焙資料")
+    SCore.poiSource, SCore.poiRoomBuildings = nil, nil
     local byOriginal, byDisplay = doSearch("original avenue", 0, 0), doSearch("oak", 0, 0)
     eq(#byOriginal, 1, "原名命中同一條即時道路")
     eq(byOriginal[1].label, byDisplay[1].label, "原名與譯名搜尋顯示同一結果")

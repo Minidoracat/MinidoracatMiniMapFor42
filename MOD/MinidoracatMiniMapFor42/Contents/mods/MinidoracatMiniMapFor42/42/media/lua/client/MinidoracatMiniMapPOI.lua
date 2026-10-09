@@ -8,6 +8,10 @@
 -- 檔名字母序在 MinidoracatMiniMap.lua 之後載入，故 registerZoneProvider 已就緒，
 -- ModOptions（PoiIcons/PoiBlocks/Cat_*）也已由主檔在 MinidoracatMiniMap 命名空間註冊。
 --
+-- 資源版本（ModOptions PoiSource／沙盒 PoiSourceDefault，effectiveSource 解析）：小地圖資源＝上述
+-- POIData 烘焙資料（本檔原本的路徑）；房間資料＝shared/MinidoracatMiniMapResources.lua 執行期讀
+-- RoomDef 的結果，含地圖 MOD，由 buildRoomConverted 轉成同一種 zone（說明見該函式）。
+--
 -- 顯示模式（兩顆開關獨立）：
 --   PoiIcons（預設開）→ zone 帶 icon = { tex, r, g, b }（圖標即識別，主檔 iconPass 繪）
 --   PoiBlocks（預設關）→ zone 帶 fillAlpha（類別色半透明填色，無框線）＋
@@ -67,6 +71,8 @@ local poiZones = {}   -- 轉好的 zone 陣列（provider 每幀回傳此參照�
 -- 彩色／單色貼圖與地圖上畫的完全一致；OnTick 暫停（單機開世界地圖）時兩者一起停在舊值
 local poiLegend = { count = 0, basement = false }
 local lastSig = nil   -- 上次建置時的開關/類別簽章；OnTick 比對變動才重建
+-- 房間資料版最近一次建置用的建築清單（buildingsIn 的副本；搜尋讀它，不另外再查一次）
+local roomList, roomCount = nil, 0
 
 -- log 是離線測試接縫（test_zone_render 抽 test:poi-icon 區段注入 stub 驗 log-once）
 local function log(msg)
@@ -88,6 +94,30 @@ local function getBoolOption(id, default)
     local opt = opts:getOption(id)
     if opt == nil then return default end
     return opt:getValue()
+end
+
+-- 下拉選項的索引（1 起）；缺選項或值不是數字回 default
+local function getComboOption(id, default)
+    if not optsCache then
+        local opts = PZAPI and PZAPI.ModOptions and PZAPI.ModOptions:getOptions(OPTIONS_NAMESPACE)
+        if not opts then return default end
+        optsCache = opts
+    end
+    local opt = optsCache:getOption(id)
+    local v = opt and opt:getValue()
+    if type(v) ~= "number" then return default end
+    return v
+end
+
+-- 目前生效的資源版本："minimap"（離線烘焙，原版地圖）或 "rooms"（執行期 RoomDef，含地圖 MOD）。
+-- PoiSource：1＝依伺服器設定（沙盒 PoiSourceDefault：1 小地圖資源、2 房間資料）、2＝小地圖資源、3＝房間資料
+local function effectiveSource()
+    local v = getComboOption("PoiSource", 1)
+    if v == 2 then return "minimap" end
+    if v == 3 then return "rooms" end
+    local P = MinidoracatMiniMapPolicy
+    local d = P and P.readNumber and P.readNumber("PoiSourceDefault", 1) or 1
+    return d == 2 and "rooms" or "minimap"
 end
 
 -- 類別圖標材質快取：只快取成功（miss 交引擎 nullTextures 負快取，同主檔 adotsTexture 策略）。
@@ -135,7 +165,129 @@ end
 -- 矩形），錨點為 iconRect（有給）否則 rects[1]。
 --------------------------------------------------------------------------------
 -- test:poi-convert:start
-local function buildPoiConverted()
+-- 圖例：只列真的畫得出圖標的類別（勾選中且材質在），照 ORDER 顯示順序；
+-- 貼圖與染色同地圖上的 zone（彩色染白、單色染類別色）。兩種資源版本共用
+local function appendLegend(legend, cats, catOn, colorMode)
+    local order = MinidoracatMiniMapPOICategories.ORDER
+    if type(order) ~= "table" then return end
+    for i = 1, #order do
+        local cat = order[i]
+        local def = cats[cat]
+        if def and catOn[cat] then
+            local tex, isColor = iconTexture(cat, colorMode)
+            if tex then
+                local color = def.color or { r = 0.7, g = 0.7, b = 0.7 }
+                legend.count = legend.count + 1
+                legend[legend.count] = { name = getText(def.nameKey), tex = tex,
+                    r = isColor and 1 or color.r, g = isColor and 1 or color.g,
+                    b = isColor and 1 or color.b }
+            end
+        end
+    end
+end
+
+-- 房間資料版（shared/MinidoracatMiniMapResources.lua 的掃描結果，一筆＝一筆 BuildingDef）：
+-- 每個勾選中的類別一顆圖標，釘在該類最大的房間；區塊一律整棟外框（判定單位就是整棟，
+-- PoiWholeBuilding 不作用），而且一筆只畫一塊——填色、底襯與名稱只放在 ORDER 最前的類別那個
+-- zone，其餘類別的 zone 只帶圖標（同一個外框疊兩層填色會變色、名稱會疊字）。多類時名稱與
+-- 停留提示是「A / B」；單類不帶 tip，提示照小地圖資源版的類別名（含地下室後綴）。
+-- 距離閘量各類最大的房間（distRects＝這筆所有顯示中類別的落點，整筆一起出現或隱藏；
+-- 落點都在外框內，符合 internal 的 distRects ⊆ lodRect 快排前提）；最長邊超過
+-- POI_LOD_MAX_EDGE 的不附 lodRect（地標）。
+-- 還沒掃完時 buildingsIn 回 nil（"pending"）＝這次空白，掃完由簽章觸發重建。
+local ROOM_WORLD = 100000000 -- 查全圖用的半邊長（世界格），buildingsIn 的合法值域內
+local function buildRoomConverted()
+    local built = {}
+    local legend = { count = 0, basement = false }
+    local cats = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.CATEGORIES
+    local order = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.ORDER
+    local iconsOn = getBoolOption("PoiIcons", true)
+    local blocksOn = getBoolOption("PoiBlocks", false)
+    local API = MinidoracatMiniMapResourceAPI
+    local list, n = nil, 0
+    if API and API.buildingsIn then
+        list, n = API.buildingsIn(-ROOM_WORLD, -ROOM_WORLD, 2 * ROOM_WORLD, 2 * ROOM_WORLD, "rooms")
+        if not list then n = 0 end
+    end
+    roomList, roomCount = list, n -- 搜尋（_Search.lua）讀同一份
+    if list and type(cats) == "table" and type(order) == "table" and (iconsOn or blocksOn) then
+        local colorMode = getBoolOption("PoiColorIcons", false)
+        local catOn, names, texs, colored = {}, {}, {}, {}
+        for i = 1, #order do
+            local key = order[i]
+            local def = cats[key]
+            if def then
+                catOn[key] = getBoolOption("Cat_" .. key, true)
+                names[key] = getText(def.nameKey)
+                if iconsOn then texs[key], colored[key] = iconTexture(key, colorMode) end
+            end
+        end
+        local hits = {}
+        for bi = 1, n do
+            local b = list[bi]
+            local hn = 0
+            for i = 1, #order do
+                local key = order[i]
+                if catOn[key] and b.cats[key] then
+                    hn = hn + 1
+                    hits[hn] = key
+                end
+            end
+            if hn > 0 then
+                local joined = names[hits[1]]
+                for k = 2, hn do joined = joined .. " / " .. names[hits[k]] end
+                local whole = { x1 = b.x, y1 = b.y, x2 = b.x + b.w, y2 = b.y + b.h }
+                local lodRect = nil
+                if (b.w > b.h and b.w or b.h) <= POI_LOD_MAX_EDGE then lodRect = whole end
+                local spots = {}
+                for k = 1, hn do
+                    local a = b.anchors[hits[k]]
+                    spots[k] = { x1 = a.x, y1 = a.y, x2 = a.x + a.w, y2 = a.y + a.h }
+                end
+                for k = 1, hn do
+                    local key = hits[k]
+                    local block = k == 1 and blocksOn
+                    local tex = texs[key]
+                    if tex or block then
+                        local a = b.anchors[key]
+                        local color = cats[key].color or { r = 0.7, g = 0.7, b = 0.7 }
+                        local isColor = colored[key]
+                        built[#built + 1] = {
+                            id = "room:" .. key .. ":" .. bi,
+                            rects = { whole },
+                            lodRect = lodRect,
+                            iconOnce = true,
+                            iconRect = spots[k],
+                            distRects = spots,
+                            fill = { r = color.r, g = color.g, b = color.b },
+                            fillAlpha = block and POI_FILL_ALPHA or 0,
+                            haloAlpha = block and POI_HALO_ALPHA or nil,
+                            name = block and joined or nil,
+                            tip = hn > 1 and joined or nil,
+                            icon = tex and { tex = tex,
+                                r = isColor and 1 or color.r,
+                                g = isColor and 1 or color.g,
+                                b = isColor and 1 or color.b } or nil,
+                            category = key,
+                            basement = a.basement or nil,
+                        }
+                        if tex and a.basement then legend.basement = true end
+                    end
+                end
+            end
+        end
+        if iconsOn then appendLegend(legend, cats, catOn, colorMode) end
+    end
+    built.hasFill = blocksOn
+    built.hasLine = blocksOn
+    built.hasIcon = iconsOn
+    poiZones = built
+    poiLegend = legend
+end
+
+-- source：effectiveSource() 的結果；nil 或 "minimap" 走離線烘焙資料（下方原本的路徑）
+local function buildPoiConverted(source)
+    if source == "rooms" then return buildRoomConverted() end
     local built = {}
     local legend = { count = 0, basement = false }
     local data = MinidoracatMiniMapPOIData
@@ -251,25 +403,7 @@ local function buildPoiConverted()
                     end
                 end
             end
-            -- 圖例：只列真的畫得出圖標的類別（勾選中且材質在），照 ORDER 顯示順序；
-            -- 貼圖與染色同上方 zone（彩色染白、單色染類別色）
-            local order = MinidoracatMiniMapPOICategories.ORDER
-            if iconsOn and type(order) == "table" then
-                for i = 1, #order do
-                    local cat = order[i]
-                    local def = cats[cat]
-                    if def and catOn[cat] then
-                        local tex, isColor = iconTexture(cat, colorMode)
-                        if tex then
-                            local color = def.color or { r = 0.7, g = 0.7, b = 0.7 }
-                            legend.count = legend.count + 1
-                            legend[legend.count] = { name = getText(def.nameKey), tex = tex,
-                                r = isColor and 1 or color.r, g = isColor and 1 or color.g,
-                                b = isColor and 1 or color.b }
-                        end
-                    end
-                end
-            end
+            if iconsOn then appendLegend(legend, cats, catOn, colorMode) end
         end
     end
     -- 聚合旗標（perf 稽核 ZR-1，主檔三 pass 據此整段跳過無效迴圈）：預設純圖標
@@ -286,11 +420,18 @@ local function buildPoiConverted()
 end
 -- test:poi-convert:end
 
--- 開關/類別勾選簽章：PoiIcons、PoiBlocks、PoiColorIcons、PoiWholeBuilding 與 20 類
--- Cat_ 的當前值串接（4＋ORDER 類別數，現 20 類共 24 值）。變動即重建（樣式與區塊
--- 形狀切換走此路，下一 tick 重載對應材質集/幾何）。
+-- 開關/類別勾選簽章：資源版本（房間資料版另帶掃描是否完成）、PoiIcons、PoiBlocks、
+-- PoiColorIcons、PoiWholeBuilding 與 20 類 Cat_ 的當前值串接。變動即重建（樣式與區塊
+-- 形狀切換走此路，下一 tick 重載對應材質集/幾何）。房間資料版沒掃完時 prepare 會開始
+-- 背景掃描；掃完那一次簽章從 P 變 R，觸發重建。回傳第二值＝生效的資源版本
 local function currentSig()
-    local parts = { getBoolOption("PoiIcons", true) and "1" or "0",
+    local source = effectiveSource()
+    local ready = "-"
+    if source == "rooms" then
+        local API = MinidoracatMiniMapResourceAPI
+        ready = (API and API.prepare and API.prepare("rooms")) and "R" or "P"
+    end
+    local parts = { source, ready, getBoolOption("PoiIcons", true) and "1" or "0",
         getBoolOption("PoiBlocks", false) and "1" or "0",
         getBoolOption("PoiColorIcons", false) and "1" or "0",
         getBoolOption("PoiWholeBuilding", true) and "1" or "0" }
@@ -300,7 +441,7 @@ local function currentSig()
             parts[#parts + 1] = getBoolOption("Cat_" .. order[i], true) and "1" or "0"
         end
     end
-    return table.concat(parts)
+    return table.concat(parts), source
 end
 
 -- providerFn（主 MOD 每幀呼叫：世界＋小地圖）：只回快取，不重建。
@@ -315,12 +456,16 @@ local Core = MinidoracatMiniMapCore
 if Core then
     Core.poiIconTexture = iconTexture
     Core.poiLegend = function() return poiLegend end
+    -- 設定視窗（說明文字、整棟開關變灰）與搜尋讀生效版本；搜尋另讀房間資料版的建築清單
+    Core.poiSource = effectiveSource
+    Core.poiRoomBuildings = function() return roomList, roomCount end
 end
 
 Events.OnGameStart.Add(function()
     -- 翻譯已載入、ModOptions 存檔值已套用 → 首建帶正確名稱與開關狀態
-    buildPoiConverted()
-    lastSig = currentSig()
+    local sig, source = currentSig()
+    buildPoiConverted(source)
+    lastSig = sig
 end)
 
 -- 沿 C2：快取重建只在簽章變動時（開關/類別勾選改動經齒輪面板/統一視窗/ESC 選項頁
@@ -333,9 +478,9 @@ Events.OnTick.Add(function()
     sigTick = sigTick + 1
     if sigTick < 15 then return end
     sigTick = 0
-    local sig = currentSig()
+    local sig, source = currentSig()
     if sig ~= lastSig then
         lastSig = sig
-        buildPoiConverted()
+        buildPoiConverted(source)
     end
 end)

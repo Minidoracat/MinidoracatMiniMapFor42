@@ -287,22 +287,39 @@ local function doSearch(text, px, py)
         local baseHit = #q >= 2 and baseCore:sub(1, #q) == q
         if anyCat or baseHit then
             local hits = {}
-            for i = 1, #data do
-                local e = data[i]
-                local nm = hitCats[e.cat]
-                    or (baseHit and e.u == 1 and allNames[e.cat] or nil)
-                if nm and e.rn and e.rn >= 1 then
-                    local r1 = e.r[1]
-                    local ex, ey = r1.x + r1.w / 2, r1.y + r1.h / 2
-                    local d = math.sqrt(dist2(px, py, ex, ey))
-                    -- 剪枝早退：滿載且比末位遠→不配置 entry table 直接丟
-                    if #hits < MAX_POI_RESULTS or d < hits[#hits].d then
-                        -- 地下條目後綴（資料 u=1＝B42 basement）：地上是別的建築，
-                        -- 不標會被當標錯（同圖標「↓」角標語義）
-                        local label = (e.u == 1)
-                            and (nm .. getText("UI_MinidoracatMiniMap_SearchBasement")) or nm
-                        boundedInsert(hits, MAX_POI_RESULTS,
-                            { kind = "poi", label = label, x = ex, y = ey, d = d })
+            local function addHit(nm, ex, ey, basement)
+                local d = math.sqrt(dist2(px, py, ex, ey))
+                -- 剪枝早退：滿載且比末位遠→不配置 entry table 直接丟
+                if #hits < MAX_POI_RESULTS or d < hits[#hits].d then
+                    -- 地下條目後綴（資料 u=1＝B42 basement）：地上是別的建築，
+                    -- 不標會被當標錯（同圖標「↓」角標語義）
+                    local label = basement
+                        and (nm .. getText("UI_MinidoracatMiniMap_SearchBasement")) or nm
+                    boundedInsert(hits, MAX_POI_RESULTS,
+                        { kind = "poi", label = label, x = ex, y = ey, d = d })
+                end
+            end
+            -- 房間資料版：地圖上畫的同一份建築清單（MinidoracatMiniMapPOI.lua），落點＝該類最大的房間；
+            -- 一筆有多個類別時各自是一個結果。還沒掃完時清單是空的
+            if Core.poiSource and Core.poiSource() == "rooms" then
+                local list, n = nil, 0
+                if Core.poiRoomBuildings then list, n = Core.poiRoomBuildings() end
+                for i = 1, list and n or 0 do
+                    local b = list[i]
+                    for cat in pairs(b.cats) do
+                        local a = b.anchors[cat]
+                        local nm = hitCats[cat] or (baseHit and a.basement and allNames[cat] or nil)
+                        if nm then addHit(nm, a.x + a.w / 2, a.y + a.h / 2, a.basement) end
+                    end
+                end
+            else
+                for i = 1, #data do
+                    local e = data[i]
+                    local nm = hitCats[e.cat]
+                        or (baseHit and e.u == 1 and allNames[e.cat] or nil)
+                    if nm and e.rn and e.rn >= 1 then
+                        local r1 = e.r[1]
+                        addHit(nm, r1.x + r1.w / 2, r1.y + r1.h / 2, e.u == 1)
                     end
                 end
             end
