@@ -358,7 +358,7 @@
     "UI_MinidoracatMiniMap_ZoneCategoryFilter_tooltip": "Comma-separated zone categories to hide (the category checkboxes in the unified settings window write this automatically; empty = show all). Categories come from the \"category\" field in the server's zones.json.",
     "UI_MinidoracatMiniMap_ZoneNoCats": "No categorized zones yet (servers can add a \"category\" field to zones in zones.json)",
     "UI_MinidoracatMiniMap_PoiIcons": "Show resource points",
-    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "Mark vanilla map resource points (military, police, gun store and 20 categories in total) with icons on both the minimap and world map. On by default; toggle individual categories under \"Resource categories\" below.",
+    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "Mark resource points (military, police, gun store and 20 categories in total) with icons on both the minimap and world map; which maps are covered depends on \"Resource version\". On by default; toggle individual categories under \"Resource categories\" below.",
     "UI_MinidoracatMiniMap_PoiBlocks": "Show resource blocks",
     "UI_MinidoracatMiniMap_PoiBlocks_tooltip": "Additionally outline resource point areas with a translucent block and name (off by default). Independent from icons; both can be on at once.",
     "UI_MinidoracatMiniMap_PoiColorIcons": "Full-color POI icons",

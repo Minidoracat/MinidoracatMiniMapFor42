@@ -358,7 +358,7 @@
     "UI_MinidoracatMiniMap_ZoneCategoryFilter_tooltip": "不顯示的區域類別，逗號分隔（統一設定視窗的類別勾選會自動寫入；留空＝全部顯示）。類別由伺服器 zones.json 的 category 欄位定義。",
     "UI_MinidoracatMiniMap_ZoneNoCats": "目前沒有帶類別的區域（伺服器可在 zones.json 各區域加 \"category\" 欄位）",
     "UI_MinidoracatMiniMap_PoiIcons": "顯示資源點",
-    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "在小地圖與世界地圖上以圖標標出原版地圖資源點（軍事、警察、槍店等 20 類）。預設開啟；可用下方「資源點類別」單獨開關各類別。",
+    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "在小地圖與世界地圖上以圖標標出資源點（軍事、警察、槍店等 20 類），涵蓋哪些地圖依「資源版本」而定。預設開啟；可用下方「資源點類別」單獨開關各類別。",
     "UI_MinidoracatMiniMap_PoiBlocks": "顯示資源點區塊",
     "UI_MinidoracatMiniMap_PoiBlocks_tooltip": "額外以半透明色塊與名稱標出資源點範圍（預設關閉）。與圖標互相獨立，可同時開啟。",
     "UI_MinidoracatMiniMap_PoiColorIcons": "彩色資源點圖標",

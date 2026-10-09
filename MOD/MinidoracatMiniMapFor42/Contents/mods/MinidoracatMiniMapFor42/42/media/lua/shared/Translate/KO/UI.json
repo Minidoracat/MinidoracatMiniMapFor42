@@ -358,7 +358,7 @@
     "UI_MinidoracatMiniMap_ZoneCategoryFilter_tooltip": "숨길 구역 분류를 쉼표로 구분합니다(통합 설정 창의 분류 체크박스가 자동으로 기록하며, 비어 있으면 모두 표시). 분류는 서버 zones.json의 \"category\" 필드에서 가져옵니다.",
     "UI_MinidoracatMiniMap_ZoneNoCats": "아직 분류된 구역이 없습니다(서버에서 zones.json의 구역에 \"category\" 필드를 추가할 수 있습니다)",
     "UI_MinidoracatMiniMap_PoiIcons": "자원 위치 표시",
-    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "바닐라 지도의 자원 위치(군사, 경찰, 총포점 등 총 20개 분류)를 미니맵과 세계 지도 모두에 아이콘으로 표시합니다. 기본적으로 켜져 있으며, 아래 \"자원 분류\"에서 분류별로 켜고 끌 수 있습니다.",
+    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "자원 위치(군사, 경찰, 총포점 등 총 20개 분류)를 미니맵과 세계 지도 모두에 아이콘으로 표시합니다. 어떤 지도가 포함되는지는 \"자원 버전\"에 따라 다릅니다. 기본적으로 켜져 있으며, 아래 \"자원 분류\"에서 분류별로 켜고 끌 수 있습니다.",
     "UI_MinidoracatMiniMap_PoiBlocks": "자원 블록 표시",
     "UI_MinidoracatMiniMap_PoiBlocks_tooltip": "자원 위치 영역을 반투명 블록과 이름으로 추가로 표시합니다(기본적으로 꺼짐). 아이콘과 별개이며 둘 다 동시에 켤 수 있습니다.",
     "UI_MinidoracatMiniMap_PoiColorIcons": "풀컬러 POI 아이콘",

@@ -358,7 +358,7 @@
     "UI_MinidoracatMiniMap_ZoneCategoryFilter_tooltip": "Categorias de zonas a ocultar, separadas por vírgula (as caixas de categorias na janela de configurações unificada preenchem isto automaticamente; vazio = mostrar todas). As categorias vêm do campo \"category\" do zones.json do servidor.",
     "UI_MinidoracatMiniMap_ZoneNoCats": "Nenhuma zona com categoria ainda (os servidores podem adicionar um campo \"category\" às zonas no zones.json)",
     "UI_MinidoracatMiniMap_PoiIcons": "Mostrar pontos de recurso",
-    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "Marca com ícones os pontos de recurso do mapa original (militar, polícia, loja de armas e 20 categorias no total) no minimapa e no mapa do mundo. Ligado por padrão; ative ou desative categorias individuais em \"Categorias de recursos\" abaixo.",
+    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "Marca com ícones os pontos de recurso (militar, polícia, loja de armas e 20 categorias no total) no minimapa e no mapa do mundo; quais mapas entram depende de \"Versão dos recursos\". Ligado por padrão; ative ou desative categorias individuais em \"Categorias de recursos\" abaixo.",
     "UI_MinidoracatMiniMap_PoiBlocks": "Mostrar blocos de recursos",
     "UI_MinidoracatMiniMap_PoiBlocks_tooltip": "Contorna também as áreas dos pontos de recurso com um bloco translúcido e nome (desligado por padrão). Independente dos ícones; os dois podem ficar ligados ao mesmo tempo.",
     "UI_MinidoracatMiniMap_PoiColorIcons": "Ícones de POI coloridos",

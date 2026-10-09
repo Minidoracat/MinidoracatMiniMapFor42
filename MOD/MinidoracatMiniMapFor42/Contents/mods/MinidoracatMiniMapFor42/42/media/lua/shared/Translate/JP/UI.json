@@ -358,7 +358,7 @@
     "UI_MinidoracatMiniMap_ZoneCategoryFilter_tooltip": "非表示にするゾーンカテゴリー（カンマ区切り。統合設定ウィンドウのカテゴリーチェックが自動で書き込みます。空＝すべて表示）。カテゴリーはサーバーの zones.json の category 欄で定義されます。",
     "UI_MinidoracatMiniMap_ZoneNoCats": "カテゴリー付きゾーンはまだありません（サーバーは zones.json の各ゾーンに \"category\" 欄を追加できます）",
     "UI_MinidoracatMiniMap_PoiIcons": "資源ポイントを表示",
-    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "バニラマップの資源ポイント（軍事・警察・銃砲店など全 20 種）をミニマップとワールドマップにアイコンで表示します。既定はオン。下の「資源カテゴリー」で各カテゴリーを個別に切り替えられます。",
+    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "資源ポイント（軍事・警察・銃砲店など全 20 種）をミニマップとワールドマップにアイコンで表示します。対象のマップは「資源バージョン」によって変わります。既定はオン。下の「資源カテゴリー」で各カテゴリーを個別に切り替えられます。",
     "UI_MinidoracatMiniMap_PoiBlocks": "資源ブロックを表示",
     "UI_MinidoracatMiniMap_PoiBlocks_tooltip": "資源ポイントの範囲を半透明のブロックと名称で追加表示します（既定はオフ）。アイコンとは独立しており、同時にオンにできます。",
     "UI_MinidoracatMiniMap_PoiColorIcons": "フルカラー資源ポイントアイコン",

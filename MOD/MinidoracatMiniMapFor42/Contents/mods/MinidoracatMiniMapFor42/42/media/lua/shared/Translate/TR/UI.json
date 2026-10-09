@@ -358,7 +358,7 @@
     "UI_MinidoracatMiniMap_ZoneCategoryFilter_tooltip": "Gizlenecek bölge kategorileri, virgülle ayrılmış (birleşik ayarlar penceresindeki kategori onay kutuları bunu otomatik yazar; boş = tümünü göster). Kategoriler sunucunun zones.json dosyasındaki \"category\" alanından gelir.",
     "UI_MinidoracatMiniMap_ZoneNoCats": "Henüz kategorili bölge yok (sunucular zones.json içindeki bölgelere \"category\" alanı ekleyebilir)",
     "UI_MinidoracatMiniMap_PoiIcons": "Kaynak noktalarını göster",
-    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "Orijinal haritadaki kaynak noktalarını (askeri, polis, silah mağazası ve toplam 20 kategori) hem mini haritada hem dünya haritasında simgelerle işaretler. Varsayılan olarak açık; tek tek kategorileri aşağıdaki \"Kaynak kategorileri\" altından açıp kapatın.",
+    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "Kaynak noktalarını (askeri, polis, silah mağazası ve toplam 20 kategori) hem mini haritada hem dünya haritasında simgelerle işaretler; hangi haritaların kapsandığı \"Kaynak sürümü\" ayarına bağlıdır. Varsayılan olarak açık; tek tek kategorileri aşağıdaki \"Kaynak kategorileri\" altından açıp kapatın.",
     "UI_MinidoracatMiniMap_PoiBlocks": "Kaynak bloklarını göster",
     "UI_MinidoracatMiniMap_PoiBlocks_tooltip": "Kaynak noktası alanlarını ayrıca yarı saydam bir blok ve adla çerçeveler (varsayılan olarak kapalı). Simgelerden bağımsızdır; ikisi aynı anda açık olabilir.",
     "UI_MinidoracatMiniMap_PoiColorIcons": "Tam renkli POI simgeleri",

@@ -358,7 +358,7 @@
     "UI_MinidoracatMiniMap_ZoneCategoryFilter_tooltip": "Catégories de zones à masquer, séparées par des virgules (les cases à cocher des catégories de la fenêtre des réglages l'écrivent automatiquement ; vide = tout afficher). Les catégories viennent du champ \"category\" du zones.json du serveur.",
     "UI_MinidoracatMiniMap_ZoneNoCats": "Aucune zone catégorisée pour l'instant (les serveurs peuvent ajouter un champ \"category\" aux zones dans zones.json)",
     "UI_MinidoracatMiniMap_PoiIcons": "Points de ressources",
-    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "Marque d'une icône les points de ressources de la carte d'origine (militaire, police, armurerie et 20 catégories au total) sur la mini-carte et la carte du monde. Activé par défaut ; activez ou désactivez chaque catégorie dans « Catégories de ressources » ci-dessous.",
+    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "Marque d'une icône les points de ressources (militaire, police, armurerie et 20 catégories au total) sur la mini-carte et la carte du monde ; les cartes couvertes dépendent de « Version des ressources ». Activé par défaut ; activez ou désactivez chaque catégorie dans « Catégories de ressources » ci-dessous.",
     "UI_MinidoracatMiniMap_PoiBlocks": "Blocs de ressources",
     "UI_MinidoracatMiniMap_PoiBlocks_tooltip": "Entoure en plus les zones des points de ressources d'un bloc translucide avec un nom (désactivé par défaut). Indépendant des icônes ; les deux peuvent être activés à la fois.",
     "UI_MinidoracatMiniMap_PoiColorIcons": "Icônes POI en couleur",

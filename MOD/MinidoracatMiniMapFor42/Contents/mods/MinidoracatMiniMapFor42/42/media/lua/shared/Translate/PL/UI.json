@@ -358,7 +358,7 @@
     "UI_MinidoracatMiniMap_ZoneCategoryFilter_tooltip": "Kategorie stref do ukrycia, oddzielone przecinkami (zapisywane automatycznie przez pola wyboru kategorii we wspólnym oknie ustawień; puste = pokaż wszystkie). Kategorie pochodzą z pola \"category\" w pliku zones.json serwera.",
     "UI_MinidoracatMiniMap_ZoneNoCats": "Brak skategoryzowanych stref (serwer może dodać strefom pole \"category\" w zones.json)",
     "UI_MinidoracatMiniMap_PoiIcons": "Pokaż punkty zasobów",
-    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "Oznacza ikonami punkty zasobów z mapy gry (wojsko, policja, sklep z bronią - łącznie 20 kategorii) na minimapie i mapie świata. Domyślnie włączone; poszczególne kategorie przełączysz poniżej w „Kategoriach zasobów”.",
+    "UI_MinidoracatMiniMap_PoiIcons_tooltip": "Oznacza ikonami punkty zasobów (wojsko, policja, sklep z bronią - łącznie 20 kategorii) na minimapie i mapie świata; to, które mapy są objęte, zależy od „Wersji zasobów”. Domyślnie włączone; poszczególne kategorie przełączysz poniżej w „Kategoriach zasobów”.",
     "UI_MinidoracatMiniMap_PoiBlocks": "Pokaż bloki zasobów",
     "UI_MinidoracatMiniMap_PoiBlocks_tooltip": "Dodatkowo obrysowuje obszary punktów zasobów półprzezroczystym blokiem z nazwą (domyślnie wyłączone). Niezależne od ikon; oba mogą być włączone jednocześnie.",
     "UI_MinidoracatMiniMap_PoiColorIcons": "Pełnokolorowe ikony POI",
