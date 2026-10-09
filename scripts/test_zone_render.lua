@@ -1436,6 +1436,8 @@ local function getText(key) return "T_" .. key end
 local POI_FILL_ALPHA = 0.28
 local POI_HALO_ALPHA = 0.5
 local POI_LOD_MAX_EDGE = 100
+-- 小地圖資源版的合併清單（shared/MinidoracatMiniMapResources.lua）：測試直接回 POIData 假資料
+MinidoracatMiniMapResources = { minimapEntries = function() return MinidoracatMiniMapPOIData end }
 ]=]
 local convSuffix = [=[
 return {

@@ -27,11 +27,19 @@ whose bboxes usually differ by a few squares) -- see build_entries.
 Output is deterministic: entries are sorted by (cat, rects, bbox), so
 re-running with unchanged inputs produces a byte-identical file.
 
+The output also carries the vanilla map directory name and the 300x300 cells
+it owns (`cells300`, see cells300()): the client keeps a baked entry only when
+no higher-priority map directory owns that cell, the same rule the engine uses
+to drop overridden buildings. The map pack imports this module to bake map-mod
+entries with the same rules (MinidoracatMiniMapModMapsFor42
+scripts/gen_map_resources.py).
+
 Usage:
-    python scripts/gen_poi_data.py [--raw PATH] [--out PATH]
+    python scripts/gen_poi_data.py [--raw PATH] [--out PATH] [--vanilla-maps DIR]
 """
 import argparse
 import json
+import os
 import re
 from pathlib import Path
 
@@ -44,6 +52,9 @@ SHARED_LUA_DIR = (
 DEFAULT_RAW = REPO_ROOT / "scripts/poi_raw.json"
 DEFAULT_CATEGORIES_LUA = SHARED_LUA_DIR / "MinidoracatMiniMapPOICategories.lua"
 DEFAULT_OUT = SHARED_LUA_DIR / "MinidoracatMiniMapPOIData.lua"
+PZ_PATH = Path(os.environ.get("PZ_PATH", r"D:\SteamLibrary\steamapps\common\ProjectZomboid"))
+VANILLA_MAP_DIR = "Muldraugh, KY"
+DEFAULT_VANILLA_MAPS = PZ_PATH / "media" / "maps" / VANILLA_MAP_DIR
 
 # 只擷取 nameKey + rooms（key、rooms 內容）。rooms 收尾的 `},` 之後允許任意欄位
 # （如 color = { r, g, b }），故 regex 在 rooms 結束即停，不要求 entry 立即收合——
@@ -405,7 +416,65 @@ def build_entries(raw_buildings, categories):
     return entries, stats, dup_count
 
 
-def render_lua(entries, raw_count, gen_command):
+def cells300(map_dir):
+    """Return the sorted 300x300 cells a map directory owns, as (cx, cy) pairs.
+
+    Same rule as MapFiles.postLoad (MapFiles.java:120-134, 42.21.0): the
+    directory owns 300-cell (cx, cy) when it has both 256-cell lotheaders
+    (a, b) and (a + 1, b + 1), a = floor(cx * 300 / 256), b likewise. The
+    engine drops a building when a higher-priority directory owns the 300-cell
+    of its bbox corner (IsoMetaGrid.java:2108-2113, 2128-2137); the client
+    repeats that check with these lists (MinidoracatMiniMapResources.lua).
+    Integer floor division matches the engine's float math: the exact values
+    are at least 1/300 away from an integer.
+    """
+    has = set()
+    for f in Path(map_dir).glob("*.lotheader"):
+        parts = f.stem.split("_")
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            has.add((int(parts[0]), int(parts[1])))
+    if not has:
+        return []
+    xs = [c[0] for c in has]
+    ys = [c[1] for c in has]
+    out = []
+    for cy in range(min(ys) * 256 // 300, (max(ys) + 1) * 256 // 300 + 1):
+        for cx in range(min(xs) * 256 // 300, (max(xs) + 1) * 256 // 300 + 1):
+            a, b = cx * 300 // 256, cy * 300 // 256
+            if (a, b) in has and (a + 1, b + 1) in has:
+                out.append((cx, cy))
+    # 客戶端用 cx * 1000 + cy 當鍵
+    assert all(cy < 1000 for _, cy in out), "cell300 y >= 1000 breaks the client key"
+    return out
+
+
+def render_cells300(table, cells):
+    """Lua lines for `<table>.cells300 = { cx, cy, cx, cy, ... }`, 16 pairs per line."""
+    lines = [f"{table}.cells300 = {{"]
+    flat = [n for c in cells for n in c]
+    for i in range(0, len(flat), 32):
+        lines.append("    " + ", ".join(str(n) for n in flat[i:i + 32]) + ",")
+    lines.append("}")
+    return lines
+
+
+def render_entry(e):
+    """One entry as a Lua table constructor (the POIData entry contract below).
+    The map pack renders its entries with this function too."""
+    parts = ", ".join(
+        f"{{ x = {x}, y = {y}, w = {w}, h = {h} }}"
+        for x, y, w, h in e["rects"])
+    bbox = e.get("bbox")
+    b = ""
+    if bbox:
+        b = (f", b = {{ x = {bbox[0]}, y = {bbox[1]}, "
+             f"w = {bbox[2]}, h = {bbox[3]} }}")
+    if e.get("underground"):
+        b += ", u = 1"
+    return f'{{ cat = "{e["cat"]}", rn = {len(e["rects"])}, r = {{ {parts} }}{b} }}'
+
+
+def render_lua(entries, raw_count, gen_command, map_dir=VANILLA_MAP_DIR, cells=()):
     lines = [
         "-- MinidoracatMiniMapPOIData.lua",
         "-- 由 scripts/gen_poi_data.py 產生，請勿手動編輯。重新分類請改",
@@ -425,23 +494,16 @@ def render_lua(entries, raw_count, gen_command):
         "MinidoracatMiniMapPOIData = {",
     ]
     for e in entries:
-        parts = ", ".join(
-            f"{{ x = {x}, y = {y}, w = {w}, h = {h} }}"
-            for x, y, w, h in e["rects"])
-        bbox = e.get("bbox")
-        b = ""
-        if bbox:
-            b = (f", b = {{ x = {bbox[0]}, y = {bbox[1]}, "
-                 f"w = {bbox[2]}, h = {bbox[3]} }}")
-        if e.get("underground"):
-            b += ", u = 1"
-        lines.append(
-            f'    {{ cat = "{e["cat"]}", rn = {len(e["rects"])}, '
-            f'r = {{ {parts} }}{b} }},'
-        )
+        lines.append(f"    {render_entry(e)},")
     lines.append("}")
     lines.append("")
     lines.append(f"MinidoracatMiniMapPOIData.count = {len(entries)}")
+    lines.append("")
+    lines.append("-- 這份資料的地圖目錄與它擁有的 300 格（cells300()，引擎 MapFiles.postLoad 的 hasCell300）。")
+    lines.append("-- Map= 排在前面的地圖擁有同一格時，引擎丟掉這裡的建築，客戶端也跟著不顯示")
+    lines.append("-- （MinidoracatMiniMapResources.lua）。")
+    lines.append(f'MinidoracatMiniMapPOIData.mapDir = "{map_dir}"')
+    lines.extend(render_cells300("MinidoracatMiniMapPOIData", cells))
     lines.append("")
     return "\n".join(lines)
 
@@ -450,7 +512,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--raw", type=Path, default=DEFAULT_RAW, help="poi_raw.json path")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="output .lua path")
+    parser.add_argument("--vanilla-maps", type=Path, default=DEFAULT_VANILLA_MAPS,
+                        help="vanilla map directory with the *.lotheader files (cells300)")
     args = parser.parse_args()
+
+    if not args.vanilla_maps.is_dir():
+        parser.error(f"vanilla map directory not found: {args.vanilla_maps}\n"
+                     f"Set PZ_PATH or pass --vanilla-maps <game>/media/maps/{VANILLA_MAP_DIR}.")
 
     if not args.raw.exists():
         parser.error(
@@ -467,13 +535,15 @@ def main():
     entries, stats, dup_count = build_entries(raw_buildings, categories)
 
     gen_command = "python scripts/gen_poi_data.py"
-    lua_text = render_lua(entries, len(raw_buildings), gen_command)
+    cells = cells300(args.vanilla_maps)
+    lua_text = render_lua(entries, len(raw_buildings), gen_command, VANILLA_MAP_DIR, cells)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", encoding="utf-8", newline="\n") as f:
         f.write(lua_text)
 
     print(f"raw buildings: {len(raw_buildings)}")
     print(f"poi entries:   {len(entries)} ({dup_count} duplicate rows dropped)")
+    print(f"cells300:      {len(cells)} ({args.vanilla_maps.name})")
     print(f"output:        {args.out}")
     print("category hits:")
     zero_hit = []

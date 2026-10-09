@@ -89,7 +89,7 @@ chunk()
 print = realPrint
 local R = MinidoracatMiniMapResourceAPI
 check(type(R) == "table", "R0 MinidoracatMiniMapResourceAPI 在檔尾發布")
-eq(R.resourceApiVersion, 1, "R0 resourceApiVersion")
+eq(R.resourceApiVersion, 2, "R0 resourceApiVersion")
 
 --------------------------------------------------------------------------------
 -- R1-R4 房間資料：分類、落點、外框、大小寫、世界還沒載入
@@ -314,6 +314,130 @@ conv.build("minimap")
 eq(queried, nil, "P10 小地圖資源版不查房間資料")
 check(#conv.zones() == 2 and conv.zones()[1].category == "police", "P10 小地圖資源版畫烘焙資料")
 
+--------------------------------------------------------------------------------
+-- M 地圖資源（v2）：registerMapResources、照地圖優先序過濾、別名
+--------------------------------------------------------------------------------
+local Res = MinidoracatMiniMapResources
+check(type(Res) == "table" and type(Res.minimapEntries) == "function", "M0 內部合併清單在檔尾發布")
+check(type(R.registerMapResources) == "function", "M0 registerMapResources")
+
+printed = {}
+print = function(s) printed[#printed + 1] = tostring(s) end
+local okA, whyA = R.registerMapResources("", { mapMod = "A", mapDir = "A", cells300 = {} })
+local okB, whyB = R.registerMapResources("Pack", { mapMod = "A", cells300 = {} })
+local okC, whyC = R.registerMapResources("Pack", { mapMod = "A", mapDir = "A", cells300 = {}, poi = 5 })
+print = realPrint
+check(okA == false and whyA == "badowner", "M1 owner 是空字串：false, badowner")
+check(okB == false and whyB == "badspec", "M1 缺 mapDir：false, badspec")
+check(okC == false and whyC == "badspec", "M1 poi 不是表：false, badspec")
+eq(#printed, 2, "M1 參數錯只 log、不丟錯；同一個 owner 的 badspec 只印一次")
+
+-- 原版：(0,0)、(1,0) 兩格；(2,0) 原版不擁有（地圖邊緣），但沒有別的地圖擁有時引擎照樣留下
+MinidoracatMiniMapPOIData = {
+    { cat = "police", rn = 1, r = { { x = 110, y = 110, w = 4, h = 4 } }, b = { x = 100, y = 100, w = 20, h = 20 } },
+    { cat = "medical", rn = 1, r = { { x = 410, y = 110, w = 4, h = 4 } }, b = { x = 400, y = 100, w = 20, h = 20 } },
+    { cat = "police", rn = 1, r = { { x = 710, y = 110, w = 4, h = 4 } } },
+    count = 3, mapDir = "Muldraugh, KY", cells300 = { 0, 0, 1, 0 },
+}
+check(R.registerMapResources("Pack", { mapMod = "Frogtown", mapDir = "Frogtown", cells300 = { 1, 0 },
+    poi = {
+        { cat = "prison", rn = 1, r = { { x = 355, y = 55, w = 3, h = 3 } }, b = { x = 350, y = 50, w = 10, h = 10 } },
+        { cat = "medical", rn = 1, r = { { x = 1005, y = 55, w = 3, h = 3 } }, b = { x = 1000, y = 50, w = 10, h = 10 } },
+        count = 2,
+    },
+    aliases = { Teshuyaopin = "medical", policeoffice = "prisoncells", Foo = "nothere" },
+}) == true, "M2 合法 spec 註冊成功")
+R.registerMapResources("Pack", { mapMod = "OtherMod", mapDir = "OtherMap", cells300 = { 0, 0 },
+    poi = { { cat = "police", rn = 1, r = { { x = 55, y = 55, w = 3, h = 3 } } }, count = 1 } })
+R.registerMapResources("Pack", { mapMod = "DupA", mapDir = "Dup", cells300 = { 0, 0 }, poi = { count = 0 } })
+R.registerMapResources("Pack", { mapMod = "DupB", mapDir = "Dup", cells300 = { 0, 0 }, poi = { count = 0 } })
+
+local dirs, mods = {}, {}
+function getLotDirectories() return jlist(dirs) end
+function getActivatedMods() return jlist(mods) end
+local function entryXs()
+    local data = Res.minimapEntries()
+    local xs = {}
+    for i = 1, data.count do xs[i] = (data[i].b or data[i].r[1]).x end
+    return table.concat(xs, ",")
+end
+local function newWorld(d, m)
+    dirs, mods = d, m
+    grid = newGrid({})
+end
+
+printed = {}
+print = function(s) printed[#printed + 1] = tostring(s) end
+newWorld({ "Frogtown", "Muldraugh, KY" }, { "Frogtown" })
+local xsM3 = entryXs()
+print = realPrint
+eq(xsM3, "350,1000,100,710", "M3 Frogtown 排前面：它擁有的 (1,0) 藏掉原版那筆；沒人擁有的格子兩邊都留")
+local reportLine, aliasWarn = false, 0
+for i = 1, #printed do
+    if printed[i]:find("Frogtown 2; Muldraugh, KY 2 (1 hidden by map priority)", 1, true) then reportLine = true end
+    if printed[i]:find("of map dir 'Frogtown' ignored", 1, true) then aliasWarn = aliasWarn + 1 end
+end
+check(reportLine, "M3 建好時印一行各地圖筆數與被藏的筆數")
+eq(aliasWarn, 2, "M3 兩個不能用的別名（鍵是 20 類房名、目標不是）各警告一次")
+list, why = R.buildingsIn(0, 0, 2000, 2000, "minimap")
+eq(why, 4, "M3 buildingsIn(minimap) 也讀合併清單")
+check(list[1].x == 350 and list[1].cats.prison and list[1].anchors.prison.x == 355, "M3 地圖包條目：外框＝b、落點＝r[1]")
+
+newWorld({ "Muldraugh, KY", "Frogtown" }, { "Frogtown" })
+eq(entryXs(), "100,400,710,1000", "M4 原版排前面：原版擁有的 (1,0) 藏掉 Frogtown 那筆")
+newWorld({ "Frogtown", "Muldraugh, KY" }, {})
+eq(entryXs(), "100,400,710", "M5 Frogtown 的 MOD 沒啟用：不用它的資料，也不藏原版")
+newWorld({ "Muldraugh, KY" }, { "Frogtown" })
+eq(entryXs(), "100,400,710", "M5 Frogtown 的地圖目錄沒載入：不用它的資料")
+newWorld({ "OtherMap", "Muldraugh, KY" }, {})
+eq(entryXs(), "100,400,710", "M5 OtherMod 沒啟用：同上")
+newWorld({ "Frogtown" }, { "Frogtown" })
+eq(entryXs(), "350,1000", "M6 世界沒有原版目錄：原版資料全部不顯示")
+printed = {}
+print = function(s) printed[#printed + 1] = tostring(s) end
+newWorld({ "Dup", "Muldraugh, KY" }, { "DupA", "DupB" })
+local xsM7 = entryXs()
+entryXs()
+print = realPrint
+eq(xsM7, "100,400,710", "M7 同一個目錄有兩個啟用中的註冊：兩個都不用")
+local dupLines = 0
+for i = 1, #printed do if printed[i]:find("more than one active registration", 1, true) then dupLines = dupLines + 1 end end
+eq(dupLines, 1, "M7 重複註冊只警告一次")
+getLotDirectories = nil
+newWorld({}, { "Frogtown" })
+getLotDirectories = nil
+eq(entryXs(), "100,400,710", "M8 拿不到地圖目錄：照舊只有原版、全部保留")
+function getLotDirectories() return jlist(dirs) end
+
+-- 別名：只在 Frogtown 擁有的格子；鍵是 20 類房名、目標不是 20 類房名的別名都不用
+local inFrog = building(320, 10, 20, 20, { room("Teshuyaopin", 0, { { 320, 10, 5, 5 } }),
+    room("policeoffice", 0, { { 330, 10, 4, 4 } }) })
+local inVanilla = building(10, 10, 20, 20, { room("Teshuyaopin", 0, { { 10, 10, 5, 5 } }) })
+local badTarget = building(330, 40, 10, 10, { room("Foo", 0, { { 330, 40, 5, 5 } }) })
+printed = {}
+print = function(s) printed[#printed + 1] = tostring(s) end
+newWorld({ "Frogtown", "Muldraugh, KY" }, { "Frogtown" })
+grid = newGrid({ inFrog, inVanilla, badTarget })
+local fc = R.buildingCategories(inFrog)
+local vc = R.buildingCategories(inVanilla)
+local bc = R.buildingCategories(badTarget)
+R.prepare("rooms")
+runTicks(10)
+print = realPrint
+check(fc and fc.medical and fc.police and not fc.prison,
+    "M9 Frogtown 格子裡：Teshuyaopin 照別名算醫療；policeoffice 是 20 類房名，別名不能改它")
+eq(vc, nil, "M9 原版格子裡同名的房間不套 Frogtown 的別名")
+eq(bc, nil, "M9 目標不是 20 類房名的別名不用")
+list, why = R.buildingsIn(0, 0, 2000, 2000, "rooms")
+check(why == 1 and list[1].x == 320 and list[1].anchors.medical.x == 320, "M10 房間資料掃描也套別名，落點是別名房間")
+
+-- 掃完之後才註冊（別的 addon 晚註冊）：房間資料用新的別名重掃
+R.registerMapResources("Pack2", { mapMod = "Frogtown2", mapDir = "Frogtown2", cells300 = { 9, 9 } })
+eq(R.prepare("rooms"), false, "M11 註冊後房間資料重新掃描")
+runTicks(10)
+eq(R.prepare("rooms"), true, "M11 重掃完成")
+
 MinidoracatMiniMapPOIData = nil
+getLotDirectories, getActivatedMods = nil, nil
 print("room resources: " .. checks .. " checks, " .. failures .. " failures")
 if failures > 0 then os.exit(1) end

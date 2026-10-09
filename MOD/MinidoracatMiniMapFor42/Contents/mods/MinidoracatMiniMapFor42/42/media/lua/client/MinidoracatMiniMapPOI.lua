@@ -1,6 +1,7 @@
 -- MinidoracatMiniMapPOI.lua
--- 主 MOD 內建 POI 的 client 層：把 MinidoracatMiniMapPOIData（1669 筆 20 類，
--- v3 逐房間矩形：r[1]=最大合併矩形為圖標錨點、區塊畫主樓層各房間）轉成
+-- 主 MOD 內建 POI 的 client 層：把小地圖資源版的烘焙資料（原版 MinidoracatMiniMapPOIData 1669 筆
+-- 20 類，加上地圖包用 registerMapResources 註冊的地圖；v3 逐房間矩形：r[1]=最大合併矩形為圖標錨點、
+-- 區塊畫主樓層各房間）轉成
 -- 主 MOD zone renderer 的 schema，並以「內部 provider」註冊
 -- （registerZoneProvider("MinidoracatMiniMapFor42.POI", fn, nil, internal=true)——POI 有自己的
 -- PoiIcons/PoiBlocks/類別勾選，不走 per-provider 母開關，且 internal 使其不受 ZoneLayer 總閘連坐）。
@@ -9,8 +10,8 @@
 -- ModOptions（PoiIcons/PoiBlocks/Cat_*）也已由主檔在 MinidoracatMiniMap 命名空間註冊。
 --
 -- 資源版本（ModOptions PoiSource／沙盒 PoiSourceDefault，effectiveSource 解析）：小地圖資源＝上述
--- POIData 烘焙資料（本檔原本的路徑）；房間資料＝shared/MinidoracatMiniMapResources.lua 執行期讀
--- RoomDef 的結果，含地圖 MOD，由 buildRoomConverted 轉成同一種 zone（說明見該函式）。
+-- 烘焙資料（本檔原本的路徑；合併與地圖優先序過濾在 shared/MinidoracatMiniMapResources.lua）；房間資料＝
+-- 同一個 shared 檔執行期讀 RoomDef 的結果，含地圖 MOD，由 buildRoomConverted 轉成同一種 zone（說明見該函式）。
 --
 -- 顯示模式（兩顆開關獨立）：
 --   PoiIcons（預設開）→ zone 帶 icon = { tex, r, g, b }（圖標即識別，主檔 iconPass 繪）
@@ -155,8 +156,8 @@ end
 -- test:poi-icon:end
 
 --------------------------------------------------------------------------------
--- POIData → renderer schema（OnGameStart 建一次；翻譯此時已載入，getText 可用）。
--- 消費契約（v3 逐房間矩形）：MinidoracatMiniMapPOIData 為陣列，每項
+-- 小地圖資源 → renderer schema（OnGameStart 建一次；翻譯此時已載入，getText 可用）。
+-- 消費契約（v3 逐房間矩形）：MinidoracatMiniMapResources.minimapEntries() 回 POIData 形狀的陣列，每項
 -- { cat, rn, r={ {x,y,w,h},.. }, b={x,y,w,h}|nil }（世界 square 座標；r 按面積
 -- 大→小、r[1] 為圖標/名稱錨點——注意是「最大合併後矩形」，相鄰房間已在烘焙端
 -- 併塊；b＝整棟建築外框，非 r 的聯集；迭代用 rn，Kahlua # 不可信）。未知類別
@@ -290,7 +291,9 @@ local function buildPoiConverted(source)
     if source == "rooms" then return buildRoomConverted() end
     local built = {}
     local legend = { count = 0, basement = false }
-    local data = MinidoracatMiniMapPOIData
+    -- 原版加已註冊的地圖，已照引擎的地圖優先序過濾（shared/MinidoracatMiniMapResources.lua）
+    local Res = MinidoracatMiniMapResources
+    local data = Res and Res.minimapEntries() or nil
     local cats = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.CATEGORIES
     -- iconsOn/blocksOn 宣告在資料檢查之外：檔尾的聚合旗標（ZR-1）要用——資料缺失
     -- 時 built 為空陣列、旗標仍照開關設定（空表怎麼設都不畫，語意一致）

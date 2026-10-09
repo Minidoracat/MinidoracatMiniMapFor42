@@ -262,9 +262,10 @@ local function doSearch(text, px, py)
         end
     end
     -- POI 類別名：命中類別→有界最近-N 展開該類設施。錨點＝r[1] 矩形中心
-    -- （MinidoracatMiniMapPOIData 消費契約：r 按面積排序、r[1] 為圖標錨點）
+    -- （小地圖資源版的消費契約：r 按面積排序、r[1] 為圖標錨點；清單含地圖包註冊的地圖）
     local cats = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.CATEGORIES
-    local data = MinidoracatMiniMapPOIData
+    local Res = MinidoracatMiniMapResources
+    local data = Res and Res.minimapEntries() or nil
     if type(cats) == "table" and type(data) == "table" then
         local allNames = {} -- 全類別譯名（地下關鍵字命中時查名用）
         local hitCats = {}

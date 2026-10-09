@@ -156,6 +156,7 @@ MinidoracatMiniMapPOIData = {
     { cat = "food", rn = 1, r = { { x = 50, y = 50, w = 4, h = 4 } } },
     { cat = "gun", rn = 1, r = { { x = 90, y = 90, w = 4, h = 4 } }, u = 1 },
 }
+MinidoracatMiniMapResources = { minimapEntries = function() return MinidoracatMiniMapPOIData end }
 ]]
     local chunk3 = assert((loadstring or load)(prelude .. sourceHints .. "\n" .. finalizer .. "\n" .. seg3
         .. "\nreturn doSearch, function(items) fixtureStreets = items end, Core", "search-dosearch"))
@@ -318,6 +319,7 @@ local function getTextManager()
 end
 local MinidoracatMiniMapPOICategories = { CATEGORIES = { food = { nameKey = "Cat_food" } } }
 local MinidoracatMiniMapPOIData = { { cat = "food", rn = 1, r = { { x = 10, y = 20, w = 4, h = 4 } } } }
+local MinidoracatMiniMapResources = { minimapEntries = function() return MinidoracatMiniMapPOIData end }
 ]]
     local suffix = [[
 return {

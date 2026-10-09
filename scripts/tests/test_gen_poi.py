@@ -449,21 +449,45 @@ def test_house_gate_real_corpus_decisions_if_raw_present():
 def test_baked_output_matches_fresh_bake_if_raw_present():
     """Committed MinidoracatMiniMapPOIData.lua must be byte-identical to a
     fresh bake -- catches 'edited Categories.lua but forgot to re-run
-    gen_poi_data.py' and hand-edited output. Skipped when poi_raw.json is
-    absent (optional file, see test_default_raw_schema_if_present)."""
+    gen_poi_data.py' and hand-edited output. Skipped when poi_raw.json or the
+    vanilla map directory (cells300) is absent."""
     if not g.DEFAULT_RAW.exists():
         print(f"SKIP: {g.DEFAULT_RAW} not present in this checkout")
+        return
+    if not g.DEFAULT_VANILLA_MAPS.is_dir():
+        print(f"SKIP: {g.DEFAULT_VANILLA_MAPS} not present (set PZ_PATH)")
         return
     import json
 
     raw = json.loads(g.DEFAULT_RAW.read_text(encoding="utf-8"))
     categories = g.parse_categories(g.DEFAULT_CATEGORIES_LUA)
     entries, _, _ = g.build_entries(raw, categories)
-    expected = g.render_lua(entries, len(raw), "python scripts/gen_poi_data.py")
+    expected = g.render_lua(entries, len(raw), "python scripts/gen_poi_data.py",
+                            g.VANILLA_MAP_DIR, g.cells300(g.DEFAULT_VANILLA_MAPS))
     actual = g.DEFAULT_OUT.read_text(encoding="utf-8")
     assert actual == expected, (
         "MinidoracatMiniMapPOIData.lua is stale -- re-run scripts/gen_poi_data.py"
     )
+
+
+def test_cells300_follows_engine_two_corner_rule():
+    """cells300 must own a 300-cell only when both 256-cell lotheaders (a, b)
+    and (a + 1, b + 1) exist (MapFiles.postLoad). Owning too much hides real
+    vanilla POIs under a map mod; owning too little shows POIs of buildings the
+    engine dropped."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        # 300 格 (0,0)→256 格 (0,0)+(1,1)；(1,1)→(1,1)+(2,2)；(2,2)→(2,2)+(3,3)
+        for name in ("0_0", "1_1", "2_2", "5_5", "chunkdata_0_0", "x_1"):
+            (d / f"{name}.lotheader").write_bytes(b"")
+        assert g.cells300(d) == [(0, 0), (1, 1)], g.cells300(d)
+        # 少了對角那一格就不擁有：(2,2) 缺 (3,3)、(4,4) 缺 (4,4)
+        (d / "3_3.lotheader").write_bytes(b"")
+        assert (2, 2) in g.cells300(d)
+    with tempfile.TemporaryDirectory() as tmp:
+        assert g.cells300(Path(tmp)) == []
 
 
 def test_room_sets_pairwise_disjoint():
