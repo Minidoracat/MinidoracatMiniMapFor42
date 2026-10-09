@@ -1640,7 +1640,8 @@ local function buildAddon(ctx, sec)
         btn:setEnabled(addonActionEnabled(entry, ctx.pn))
         advance(ctx, btn)
     end
-    addResetButton(ctx, sec)
+    -- 重設只還原 ticks／combos／sliders／圖層（studioResetSection）；只有 actions 的分類（例：地圖錶管理）不放這顆鈕
+    if #spec.layers + #spec.ticks + #spec.combos + #spec.sliders > 0 then addResetButton(ctx, sec) end
 end
 -- test:addon-settings-builder:end
 

@@ -355,6 +355,7 @@ check(API.registerSettingsSection("Econ", { label = "UI_Econ", icon = "coins", o
     layers = { { id = "terminals", label = "UI_Term", size = 16 } } }), "W1 economy registers")
 check(API.registerSettingsSection("AD2", { label = "UI_AD2", order = 15 }), "W1 same order, later seq")
 check(API.registerSettingsSection("WatchAdmin", { label = "UI_WatchAdmin", icon = "settings", group = "admin", order = 12,
+    actions = { { label = "UI_WatchAdminOpen", tooltip = "UI_WatchAdminOpen_tip", run = function() end } },
     visible = function(pn) calls.visiblePn = pn; return pn == 0 end }), "W1 admin-group section registers")
 check(API.registerSettingsSection("Broken", { label = "UI_Broken", order = 50,
     visible = function() error("visible boom") end }), "W1 throwing visible registers")
@@ -507,6 +508,11 @@ do
         elseif el._sec and t == "MinidoracatUIButton" then kinds[#kinds + 1] = "reset" end
     end
     checkEq(table.concat(kinds, ","), "tick,combo,slider,action,reset", "A8 addon control order")
+    -- 只有 actions 的分類（地圖錶管理）沒有可重設的值：照樣放動作鈕，不放重設鈕
+    s.selectSection("addon_WatchAdmin")
+    check(env.controls(function(el) return el.title == "UI_WatchAdminOpen" end)[1] ~= nil
+        and env.controls(function(el) return el._sec and el.title == T("UI_MinidoracatMiniMap_StudioResetCategory") end)[1] == nil,
+        "A9 action-only section shows its action but no reset button")
 end
 
 -- ── 搜尋：addon tick＝可切的勾選、slider／action／圖層＝跳轉 ────────────────────────
