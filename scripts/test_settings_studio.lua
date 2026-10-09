@@ -39,11 +39,12 @@ end
 local function typed(env, typeName)
     return env.controls(function(el) return env.type(el) == typeName end)
 end
+-- 說明段落會斷行：整段接起來、去掉空白再比（中日韓斷行不吃空白，拉丁文字斷行吃掉一個空白）
 local function textShown(env, text)
+    local want = text:gsub("%s", "")
     return findControl(env, function(el)
         if not el._lines then return false end
-        for _, l in ipairs(el._lines) do if l:find(text, 1, true) then return true end end
-        return false
+        return table.concat(el._lines):gsub("%s", ""):find(want, 1, true) ~= nil
     end) ~= nil
 end
 
@@ -331,7 +332,7 @@ do
     caps.buttonIconColor = true
 end
 
--- ── I 牲畜模式 4、安全屋沙盒模式 1 ─────────────────────────────────────────────
+-- ── I 牲畜模式 4、安全屋沙盒模式 1、伺服器鎖定資源版本 ─────────────────────────
 do
     env.livestockMode = 4
     env.frame()
@@ -347,6 +348,21 @@ do
         "I2 safehouse name mode 1 disables only the names tick")
     check(textShown(env, T("UI_MinidoracatMiniMap_SafehouseNamesHiddenBySandbox")), "I2 safehouse sandbox note")
     env.safehouseNameMode = nil
+    -- 鎖定時下拉變灰、顯示「依伺服器設定」，玩家存的值不動；解除後回到玩家的選擇
+    local lockedNow = true
+    env.Core.poiSource = function() return "minimap", lockedNow end
+    env.values.PoiSource = 3
+    s.selectSection("poicat")
+    local dd = env.byKey("PoiSource")
+    check(dd:isEnabled() == false and dd:getSelected() == 1 and env.values.PoiSource == 3,
+        "I3 server lock: version dropdown disabled, shows Server setting, saved choice kept")
+    check(textShown(env, T("UI_MinidoracatMiniMap_PoiSourceLocked")), "I3 server lock note")
+    lockedNow = false
+    s.rebuild()
+    dd = env.byKey("PoiSource")
+    check(dd:isEnabled() and dd:getSelected() == 3 and not textShown(env, T("UI_MinidoracatMiniMap_PoiSourceLocked")),
+        "I4 unlocked: dropdown back to the saved choice, no lock note")
+    env.Core.poiSource, env.values.PoiSource = nil, nil
 end
 
 -- ── J 效果預覽：每個圖層分類頂端都有，畫法來自地圖 helper，現值即時反映 ─────────────

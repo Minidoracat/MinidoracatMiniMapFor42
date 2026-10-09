@@ -9,7 +9,7 @@
 -- 檔名字母序在 MinidoracatMiniMap.lua 之後載入，故 registerZoneProvider 已就緒，
 -- ModOptions（PoiIcons/PoiBlocks/Cat_*）也已由主檔在 MinidoracatMiniMap 命名空間註冊。
 --
--- 資源版本（ModOptions PoiSource／沙盒 PoiSourceDefault，effectiveSource 解析）：小地圖資源＝上述
+-- 資源版本（ModOptions PoiSource／沙盒 PoiSourceDefault、PoiSourceLock，effectiveSource 解析）：小地圖資源＝上述
 -- 烘焙資料（本檔原本的路徑；合併與地圖優先序過濾在 shared/MinidoracatMiniMapResources.lua）；房間資料＝
 -- 同一個 shared 檔執行期讀 RoomDef 的結果，含地圖 MOD，由 buildRoomConverted 轉成同一種 zone（說明見該函式）。
 --
@@ -110,16 +110,20 @@ local function getComboOption(id, default)
     return v
 end
 
--- 目前生效的資源版本："minimap"（離線烘焙，原版地圖）或 "rooms"（執行期 RoomDef，含地圖 MOD）。
--- PoiSource：1＝依伺服器設定（沙盒 PoiSourceDefault：1 小地圖資源、2 房間資料）、2＝小地圖資源、3＝房間資料
+-- test:poi-source:start
+-- 目前生效的資源版本："minimap"（離線烘焙的清單）或 "rooms"（執行期 RoomDef，含地圖 MOD）；第二值＝伺服器是否鎖定。
+-- PoiSource：1＝依伺服器設定（沙盒 PoiSourceDefault：1 小地圖資源、2 房間資料）、2＝小地圖資源、3＝房間資料。
+-- 沙盒 PoiSourceLock 開時一律當成 1：玩家存的值不動，解除後照舊生效
 local function effectiveSource()
-    local v = getComboOption("PoiSource", 1)
-    if v == 2 then return "minimap" end
-    if v == 3 then return "rooms" end
     local P = MinidoracatMiniMapPolicy
+    local locked = P ~= nil and P.readBool ~= nil and P.readBool("PoiSourceLock", false) == true
+    local v = locked and 1 or getComboOption("PoiSource", 1)
+    if v == 2 then return "minimap", locked end
+    if v == 3 then return "rooms", locked end
     local d = P and P.readNumber and P.readNumber("PoiSourceDefault", 1) or 1
-    return d == 2 and "rooms" or "minimap"
+    return d == 2 and "rooms" or "minimap", locked
 end
+-- test:poi-source:end
 
 -- 類別圖標材質快取：只快取成功（miss 交引擎 nullTextures 負快取，同主檔 adotsTexture 策略）。
 -- 路徑＝完整 media/ 相對 + 副檔名（原版慣例，佐證 getTexture("media/ui/Animals/ChickenSlot_empty.png")
@@ -459,7 +463,8 @@ local Core = MinidoracatMiniMapCore
 if Core then
     Core.poiIconTexture = iconTexture
     Core.poiLegend = function() return poiLegend end
-    -- 設定視窗（說明文字、整棟開關變灰）與搜尋讀生效版本；搜尋另讀房間資料版的建築清單
+    -- 設定視窗（說明文字、整棟開關與資源版本下拉變灰）與搜尋讀生效版本（第二值＝伺服器鎖定）；
+    -- 搜尋另讀房間資料版的建築清單
     Core.poiSource = effectiveSource
     Core.poiRoomBuildings = function() return roomList, roomCount end
 end

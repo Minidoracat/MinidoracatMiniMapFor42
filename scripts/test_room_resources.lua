@@ -439,5 +439,34 @@ eq(R.prepare("rooms"), true, "M11 重掃完成")
 
 MinidoracatMiniMapPOIData = nil
 getLotDirectories, getActivatedMods = nil, nil
+
+--------------------------------------------------------------------------------
+-- S 生效的資源版本（MinidoracatMiniMapPOI.lua test:poi-source 區段）：玩家選擇、沙盒預設、伺服器鎖定
+--------------------------------------------------------------------------------
+local srcBody = assert(poiSource:match("%-%- test:poi%-source:start\n(.-)\n%-%- test:poi%-source:end"),
+    "找不到 poi-source 測試區段")
+local choice = 1
+local sb = { PoiSourceDefault = 1, PoiSourceLock = false }
+local resolve = assert((loadstring or load)("local function getComboOption(id, default) return GET_CHOICE() end\n"
+    .. srcBody .. "\nreturn effectiveSource"))()
+GET_CHOICE = function() return choice end
+MinidoracatMiniMapPolicy = {
+    readBool = function(k, d) local v = sb[k]; if v == nil then return d end; return v end,
+    readNumber = function(k, d) local v = sb[k]; if v == nil then return d end; return v end,
+}
+local function pick(c, default, lock)
+    choice, sb.PoiSourceDefault, sb.PoiSourceLock = c, default, lock
+    local s, locked = resolve()
+    return s .. (locked and "+lock" or "")
+end
+eq(pick(1, 2, false), "rooms", "S1 依伺服器設定＝沙盒預設")
+eq(pick(3, 1, false), "rooms", "S2 沒鎖定時玩家自己的選擇優先")
+eq(pick(3, 1, true), "minimap+lock", "S3 鎖定時忽略玩家的選擇，用沙盒預設")
+eq(pick(2, 2, true), "rooms+lock", "S3 鎖定時兩種預設都照沙盒")
+eq(pick(3, 1, nil), "rooms", "S4 舊伺服器沒有鎖定鍵＝不鎖")
+MinidoracatMiniMapPolicy = nil
+eq(pick(3, 1, true), "rooms", "S5 沒有 Policy 時照玩家的選擇")
+eq(pick(1, 2, true), "minimap", "S5 沒有 Policy 時依伺服器設定＝小地圖資源")
+GET_CHOICE = nil
 print("room resources: " .. checks .. " checks, " .. failures .. " failures")
 if failures > 0 then os.exit(1) end

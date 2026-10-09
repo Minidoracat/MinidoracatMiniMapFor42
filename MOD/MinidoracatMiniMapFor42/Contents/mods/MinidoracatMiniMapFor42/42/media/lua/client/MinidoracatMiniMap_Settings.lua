@@ -43,7 +43,7 @@ local Policy = Core.policy
 --   tick：{ id, label, default, engine?（直寫引擎選項，重設不動）, mpOnly?, gate?（沙盒閘）,
 --           livestock?（牲畜模式 4 停用）, shMode?（安全屋沙盒模式 1 停用）,
 --           minimapOnly?（資源點房間資料版停用）, rebuild?, tooltip? }
---   combo：{ id, label, default, items, rebuild?, tooltip? }
+--   combo：{ id, label, default, items, rebuild?, tooltip?, poiLock?（伺服器鎖定資源版本時停用、顯示 default） }
 --   slider：{ id, label, default, min, max, step, fmt, zeroLabel?, capBy?（伺服器上限＝沙盒選項名） }
 -- 值即寫 ModOptions（同步 ESC 頁元件，ModOptions.lua:68-73）並走既有 modOptions:apply()。
 --------------------------------------------------------------------------------
@@ -116,7 +116,7 @@ local SEC_POI = { id = "poicat", label = "UI_MinidoracatMiniMap_SecPOI", icon = 
     -- rebuild＝換版本時說明與「整棟範圍」的可用狀態跟著重畫
     combosFirst = true,
     combos = {
-        { id = "PoiSource", label = "UI_MinidoracatMiniMap_PoiSource", default = 1, rebuild = true,
+        { id = "PoiSource", label = "UI_MinidoracatMiniMap_PoiSource", default = 1, rebuild = true, poiLock = true,
             tooltip = "UI_MinidoracatMiniMap_PoiSource_tooltip",
             items = { "UI_MinidoracatMiniMap_PoiSource_Server", "UI_MinidoracatMiniMap_PoiSource_Minimap",
                 "UI_MinidoracatMiniMap_PoiSource_Rooms" } },
@@ -608,9 +608,13 @@ end
 --------------------------------------------------------------------------------
 -- 狀態判定（inspector、導覽開關、搜尋結果共用同一份）
 --------------------------------------------------------------------------------
--- 控制項可否操作：伺服器沙盒閘、牲畜可見性模式 4、安全屋沙盒模式 1、資源點房間資料版
+-- 控制項可否操作：伺服器沙盒閘、牲畜可見性模式 4、安全屋沙盒模式 1、資源點房間資料版、伺服器鎖定資源版本
 local function entryEnabled(entry, pn)
     if entry.minimapOnly and Core.poiSource and Core.poiSource() == "rooms" then return false end
+    if entry.poiLock and Core.poiSource then
+        local _, locked = Core.poiSource()
+        if locked then return false end
+    end
     if entry.gate and sandboxGate(entry.gate, true, pn) == false then return false end
     if entry.livestock and livestockVisibilityMode(pn) == 4 then return false end
     local modeFn = entry.shMode and Core[entry.shMode]
@@ -1456,9 +1460,13 @@ local function addCombos(ctx, list)
     if not list then return end
     for i = 1, #list do
         local entry = list[i]
-        local dd = addDropdown(ctx, getText(entry.label), entry.items, getComboIndex(entry.id, entry.default), onModCombo,
+        -- 停用時顯示 default（伺服器鎖定資源版本＝「依伺服器設定」）；玩家存的值不動，解除後照舊
+        local enabled = entryEnabled(entry, ctx.pn)
+        local selected = enabled and getComboIndex(entry.id, entry.default) or entry.default
+        local dd = addDropdown(ctx, getText(entry.label), entry.items, selected, onModCombo,
             entry.tooltip and getText(entry.tooltip) or nil)
         dd._entry, dd._findKey = entry, entry.id
+        dd:setEnabled(enabled)
     end
 end
 
@@ -1535,9 +1543,11 @@ local function addNotes(ctx, sec)
                 or "UI_MinidoracatMiniMap_SafehouseNamesHiddenBySandbox"), ORANGE)
         end
     elseif sec == SEC_POI then
-        -- 目前生效的資源版本說明（「依伺服器設定」時就是伺服器選的那一種）
-        local rooms = Core.poiSource and Core.poiSource() == "rooms"
-        addNote(ctx, getText(rooms and "UI_MinidoracatMiniMap_PoiSourceNoteRooms"
+        -- 目前生效的資源版本說明（「依伺服器設定」或伺服器鎖定時就是伺服器選的那一種）
+        local source, locked = "minimap", false
+        if Core.poiSource then source, locked = Core.poiSource() end
+        if locked then addNote(ctx, getText("UI_MinidoracatMiniMap_PoiSourceLocked"), ORANGE) end
+        addNote(ctx, getText(source == "rooms" and "UI_MinidoracatMiniMap_PoiSourceNoteRooms"
             or "UI_MinidoracatMiniMap_PoiSourceNoteMinimap"))
     elseif sec == SEC_REMOTE then
         -- 全開放在作者清單上面：作者多時不用捲到清單底
