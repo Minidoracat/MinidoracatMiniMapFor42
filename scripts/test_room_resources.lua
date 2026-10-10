@@ -89,7 +89,7 @@ chunk()
 print = realPrint
 local R = MinidoracatMiniMapResourceAPI
 check(type(R) == "table", "R0 MinidoracatMiniMapResourceAPI 在檔尾發布")
-eq(R.resourceApiVersion, 3, "R0 resourceApiVersion")
+eq(R.resourceApiVersion, 4, "R0 resourceApiVersion")
 
 --------------------------------------------------------------------------------
 -- R1-R4 房間資料：分類、落點、外框、大小寫、世界還沒載入
@@ -406,6 +406,33 @@ list, why = R.buildingsIn(0, 0, 2000, 2000, "minimap")
 eq(why, 4, "M3 buildingsIn(minimap) 也讀合併清單")
 check(list[1].x == 350 and list[1].cats.prison and list[1].anchors.prison.x == 355, "M3 地圖包條目：外框＝b、落點＝r[1]")
 
+-- K 停車場查詢 parkingIn（v4）：讀停車場圖層同一份合併清單（這個世界是 Frogtown 排在原版前面）
+do
+    check(type(R.parkingIn) == "function", "K0 parkingIn")
+    local function xs(l, n)
+        local out = {}
+        for i = 1, n do out[i] = l[i].x end
+        return table.concat(out, ",")
+    end
+    local l, n = R.parkingIn(0, 0, 2000, 2000)
+    eq(xs(l, n), "380,1080,150,750", "K1 照地圖優先序：Frogtown 的 (1,0) 藏掉原版那區，和圖層一致")
+    check(l[1].w == 5 and l[1].h == 10 and l[1].rowCount == 1 and l[1].rows[1].x == 380 and l[1].rows[1].h == 10,
+        "K1 x,y,w,h＝整區外框 b、rows＝各排車位")
+    l, n = R.parkingIn(155, 0, 10, 50)
+    eq(n, 0, "K2 半開區間：矩形從外框右緣開始不算相交")
+    l, n = R.parkingIn(154, 19, 1, 1)
+    eq(n, 1, "K2 外框右下角那一格算相交")
+    l = R.parkingIn(140, 0, 20, 20)
+    l[1].x, l[1].rows[1].x = -1, -1
+    local again = R.parkingIn(140, 0, 20, 20)
+    check(again[1].x == 150 and again[1].rows[1].x == 150 and Res.parkingEntries()[3].b.x == 150
+        and Res.parkingEntries()[3].r[1].x == 150, "K3 回傳副本：改了不影響合併清單與下次查詢")
+    local bad, why0 = R.parkingIn(0, 0, 0, 10)
+    check(bad == nil and why0 == "badrect", "K4 w ≤ 0：nil, badrect")
+    bad, why0 = R.parkingIn(0 / 0, 0, 10, 10)
+    check(bad == nil and why0 == "badrect", "K4 NaN：nil, badrect")
+end
+
 newWorld({ "Muldraugh, KY", "Frogtown" }, { "Frogtown" })
 eq(entryXs(), "100,400,710,1000", "M4 原版排前面：原版擁有的 (1,0) 藏掉 Frogtown 那筆")
 eq(parkingXs(), "150,450,750,1080", "M4 停車場：原版擁有的 (1,0) 藏掉 Frogtown 那區")
@@ -471,6 +498,24 @@ eq(Res.minimapEntries().count, 0, "M12 沒有 POIData：資源點是空的")
 MinidoracatMiniMapParkingData = nil
 grid = newGrid({})
 eq(Res.parkingEntries().count, 0, "M12 沒有停車場資料＝沒有停車場")
+
+do
+    MinidoracatMiniMapParkingData = {
+        { rn = 1, r = { { x = 10, y = 10, w = 5, h = 5 } } }, -- 沒有 b
+        { rn = 0, r = {}, b = { x = 20, y = 10, w = 5, h = 5 } }, -- 沒有車位排
+        { rn = 2, r = { { x = 30, y = 10, w = 0, h = 5 }, { x = 32, y = 10, w = 3, h = 5 } },
+            b = { x = 30, y = 10, w = 5, h = 5 } },
+        count = 3,
+    }
+    grid = newGrid({})
+    local l, n = R.parkingIn(0, 0, 100, 100)
+    check(n == 1 and l[1].x == 30 and l[1].rowCount == 1 and l[1].rows[1].x == 32,
+        "K5 跳過圖層不畫的區（沒有 b、沒有車位排）與無效的排")
+    MinidoracatMiniMapParkingData = nil
+    grid = newGrid({})
+    l, n = R.parkingIn(0, 0, 100, 100)
+    check(type(l) == "table" and n == 0, "K6 沒有停車場資料：空清單、0")
+end
 
 --------------------------------------------------------------------------------
 -- Z 停車場 zone provider（client/MinidoracatMiniMapParking.lua，整份載入、假 Core／Events）

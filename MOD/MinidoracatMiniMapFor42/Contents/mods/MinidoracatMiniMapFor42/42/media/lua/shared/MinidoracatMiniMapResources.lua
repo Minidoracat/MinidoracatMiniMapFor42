@@ -451,7 +451,7 @@ local function copyBuilding(b)
     return { x = b.x, y = b.y, w = b.w, h = b.h, cats = cats, anchors = anchors }
 end
 
-local API = { resourceApiVersion = 3 }
+local API = { resourceApiVersion = 4 }
 
 -- 外框與矩形相交（半開區間 [x, x+w)×[y, y+h)）的建築，回 list, n（list 是副本）；
 -- 失敗回 nil, reason："badrect"／"badversion"／"pending"（房間資料還沒掃完，已開始背景掃描）
@@ -475,6 +475,42 @@ function API.buildingsIn(x, y, w, h, version)
         if b.x < x2 and x < b.x + b.w and b.y < y2 and y < b.y + b.h then
             n = n + 1
             out[n] = copyBuilding(b)
+        end
+    end
+    return out, n
+end
+
+-- 整區外框 b 與矩形相交（半開區間）的停車區（v4），回 list, n（list 是副本）；失敗回 nil, "badrect"。
+-- 讀和停車場圖層同一份合併清單（地圖優先序已過濾），也跳過圖層不畫的區（沒有 b 或沒有一排有效的車位）。
+-- 每筆 { x, y, w, h, rows = { { x, y, w, h }, … }, rowCount }：x,y,w,h＝整區外框 b，rows＝各排車位 r
+function API.parkingIn(x, y, w, h)
+    if not (finiteNumber(x) and finiteNumber(y) and finiteNumber(w) and finiteNumber(h) and w > 0 and h > 0) then
+        return nil, "badrect"
+    end
+    local function valid(c)
+        return type(c) == "table" and type(c.x) == "number" and type(c.y) == "number"
+            and type(c.w) == "number" and type(c.h) == "number" and c.w > 0 and c.h > 0
+    end
+    local data = currentWorld().parking
+    local out, n = {}, 0
+    local x2, y2 = x + w, y + h
+    for i = 1, data.count do
+        local e = data[i]
+        local b, r = e.b, e.r
+        if valid(b) and type(r) == "table" and type(e.rn) == "number"
+            and b.x < x2 and x < b.x + b.w and b.y < y2 and y < b.y + b.h then
+            local rows, rc = {}, 0
+            for k = 1, e.rn do
+                local c = r[k]
+                if valid(c) then
+                    rc = rc + 1
+                    rows[rc] = { x = c.x, y = c.y, w = c.w, h = c.h }
+                end
+            end
+            if rc > 0 then
+                n = n + 1
+                out[n] = { x = b.x, y = b.y, w = b.w, h = b.h, rows = rows, rowCount = rc }
+            end
         end
     end
     return out, n
@@ -548,7 +584,7 @@ end
 
 MinidoracatMiniMapResourceAPI = API
 -- 主 MOD 內部用（client 的資源點／停車場繪製與搜尋）：小地圖資源版的合併清單，形狀同 MinidoracatMiniMapPOIData
--- ／MinidoracatMiniMapParkingData（陣列＋count），唯讀、不複製。不是公開 API：addon 用 buildingsIn。
+-- ／MinidoracatMiniMapParkingData（陣列＋count），唯讀、不複製。不是公開 API：addon 用 buildingsIn／parkingIn。
 MinidoracatMiniMapResources = {
     minimapEntries = function() return currentWorld().entries end,
     parkingEntries = function() return currentWorld().parking end,

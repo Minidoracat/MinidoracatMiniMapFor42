@@ -54,6 +54,7 @@ local function build(data)
         for i = 1, data.count or 0 do
             local e = data[i]
             local rn, r, b = e.rn, e.r, e.b
+            -- 跳過哪些區要和 shared 的公開查詢 parkingIn 一致（改一邊要改另一邊）
             if type(rn) == "number" and rn >= 1 and type(r) == "table" and validRect(b) then
                 local rects = {}
                 for k = 1, rn do
