@@ -6,12 +6,18 @@ The original program code and original documentation by Minidoracat are
 licensed under the MIT License reproduced below. Generated game-derived
 DATA is excluded as described in section 2, even when stored in a Lua file.
 
-The author reports creating the 40 POI icons using Codex image generation:
+The author reports creating the 40 POI category icons using Codex image
+generation:
   media/ui/poi_icons/poi_*.png
   media/ui/poi_icons/color/poi_*.png
-These icons are also offered under MIT to the extent that Minidoracat owns
-licensable rights in them. AI generation is not a warranty of originality,
-exclusive copyright or clearance of third-party rights.
+(except poi_parking.png). These icons are also offered under MIT to the
+extent that Minidoracat owns licensable rights in them. AI generation is not
+a warranty of originality, exclusive copyright or clearance of third-party
+rights.
+
+The two parking icons (media/ui/poi_icons/poi_parking.png and
+media/ui/poi_icons/color/poi_parking.png) were drawn programmatically for
+this project and are licensed under MIT.
 
 2. Project Zomboid and map-derived data - NOT MIT
 
@@ -22,13 +28,15 @@ This exclusion includes the game-derived data in these repository files:
   scripts/road_patch_approvals.json
 and these files relative to this mod's 42 directory:
   media/lua/shared/MinidoracatMiniMapPOIData.lua
+  media/lua/shared/MinidoracatMiniMapParkingData.lua
   media/lua/shared/MinidoracatMiniMapStreetNames.lua
   media/lua/shared/MinidoracatMiniMapRoadPatches.lua
 
-These contain building/room geometry extracted from game map files, street
-names and positions, road geometry/width sets, surface classifications and
-map-based road repairs. They are provided for this Project Zomboid mod under
-the applicable game terms, not as an independently MIT-licensed map dataset.
+These contain building/room geometry and parking areas extracted from game map
+files, street names and positions, road geometry/width sets, surface
+classifications and map-based road repairs. They are provided for this
+Project Zomboid mod under the applicable game terms, not as an independently
+MIT-licensed map dataset.
 Original extraction/generation algorithms remain MIT; that does not change
 the rights in their inputs or game-derived outputs.
 

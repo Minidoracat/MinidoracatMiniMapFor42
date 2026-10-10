@@ -89,7 +89,7 @@ chunk()
 print = realPrint
 local R = MinidoracatMiniMapResourceAPI
 check(type(R) == "table", "R0 MinidoracatMiniMapResourceAPI 在檔尾發布")
-eq(R.resourceApiVersion, 2, "R0 resourceApiVersion")
+eq(R.resourceApiVersion, 3, "R0 resourceApiVersion")
 
 --------------------------------------------------------------------------------
 -- R1-R4 房間資料：分類、落點、外框、大小寫、世界還沒載入
@@ -315,10 +315,11 @@ eq(queried, nil, "P10 小地圖資源版不查房間資料")
 check(#conv.zones() == 2 and conv.zones()[1].category == "police", "P10 小地圖資源版畫烘焙資料")
 
 --------------------------------------------------------------------------------
--- M 地圖資源（v2）：registerMapResources、照地圖優先序過濾、別名
+-- M 地圖資源（v3）：registerMapResources、照地圖優先序過濾、別名、停車場
 --------------------------------------------------------------------------------
 local Res = MinidoracatMiniMapResources
-check(type(Res) == "table" and type(Res.minimapEntries) == "function", "M0 內部合併清單在檔尾發布")
+check(type(Res) == "table" and type(Res.minimapEntries) == "function" and type(Res.parkingEntries) == "function",
+    "M0 內部合併清單（資源點、停車場）在檔尾發布")
 check(type(R.registerMapResources) == "function", "M0 registerMapResources")
 
 printed = {}
@@ -326,10 +327,12 @@ print = function(s) printed[#printed + 1] = tostring(s) end
 local okA, whyA = R.registerMapResources("", { mapMod = "A", mapDir = "A", cells300 = {} })
 local okB, whyB = R.registerMapResources("Pack", { mapMod = "A", cells300 = {} })
 local okC, whyC = R.registerMapResources("Pack", { mapMod = "A", mapDir = "A", cells300 = {}, poi = 5 })
+local okD, whyD = R.registerMapResources("Pack", { mapMod = "A", mapDir = "A", cells300 = {}, parking = "x" })
 print = realPrint
 check(okA == false and whyA == "badowner", "M1 owner 是空字串：false, badowner")
 check(okB == false and whyB == "badspec", "M1 缺 mapDir：false, badspec")
 check(okC == false and whyC == "badspec", "M1 poi 不是表：false, badspec")
+check(okD == false and whyD == "badspec", "M1 parking 不是表：false, badspec")
 eq(#printed, 2, "M1 參數錯只 log、不丟錯；同一個 owner 的 badspec 只印一次")
 
 -- 原版：(0,0)、(1,0) 兩格；(2,0) 原版不擁有（地圖邊緣），但沒有別的地圖擁有時引擎照樣留下
@@ -339,10 +342,22 @@ MinidoracatMiniMapPOIData = {
     { cat = "police", rn = 1, r = { { x = 710, y = 110, w = 4, h = 4 } } },
     count = 3, mapDir = "Muldraugh, KY", cells300 = { 0, 0, 1, 0 },
 }
+-- 停車場跟資源點同一套格子規則（錨點＝b 的左上角）：(0,0)、(1,0)、(2,0) 各一區
+MinidoracatMiniMapParkingData = {
+    { rn = 1, r = { { x = 150, y = 10, w = 5, h = 10 } }, b = { x = 150, y = 10, w = 5, h = 10 }, i = 1 },
+    { rn = 1, r = { { x = 450, y = 10, w = 5, h = 10 } }, b = { x = 450, y = 10, w = 5, h = 10 }, i = 1 },
+    { rn = 1, r = { { x = 750, y = 10, w = 5, h = 10 } }, b = { x = 750, y = 10, w = 5, h = 10 } },
+    count = 3,
+}
 check(R.registerMapResources("Pack", { mapMod = "Frogtown", mapDir = "Frogtown", cells300 = { 1, 0 },
     poi = {
         { cat = "prison", rn = 1, r = { { x = 355, y = 55, w = 3, h = 3 } }, b = { x = 350, y = 50, w = 10, h = 10 } },
         { cat = "medical", rn = 1, r = { { x = 1005, y = 55, w = 3, h = 3 } }, b = { x = 1000, y = 50, w = 10, h = 10 } },
+        count = 2,
+    },
+    parking = {
+        { rn = 1, r = { { x = 380, y = 10, w = 5, h = 10 } }, b = { x = 380, y = 10, w = 5, h = 10 }, i = 1 },
+        { rn = 1, r = { { x = 1080, y = 10, w = 5, h = 10 } }, b = { x = 1080, y = 10, w = 5, h = 10 }, i = 1 },
         count = 2,
     },
     aliases = { Teshuyaopin = "medical", policeoffice = "prisoncells", Foo = "nothere" },
@@ -361,6 +376,12 @@ local function entryXs()
     for i = 1, data.count do xs[i] = (data[i].b or data[i].r[1]).x end
     return table.concat(xs, ",")
 end
+local function parkingXs()
+    local data = Res.parkingEntries()
+    local xs = {}
+    for i = 1, data.count do xs[i] = data[i].b.x end
+    return table.concat(xs, ",")
+end
 local function newWorld(d, m)
     dirs, mods = d, m
     grid = newGrid({})
@@ -372,12 +393,14 @@ newWorld({ "Frogtown", "Muldraugh, KY" }, { "Frogtown" })
 local xsM3 = entryXs()
 print = realPrint
 eq(xsM3, "350,1000,100,710", "M3 Frogtown 排前面：它擁有的 (1,0) 藏掉原版那筆；沒人擁有的格子兩邊都留")
+eq(parkingXs(), "380,1080,150,750", "M3 停車場同一套地圖優先序：Frogtown 的 (1,0) 藏掉原版那區")
 local reportLine, aliasWarn = false, 0
 for i = 1, #printed do
-    if printed[i]:find("Frogtown 2; Muldraugh, KY 2 (1 hidden by map priority)", 1, true) then reportLine = true end
+    if printed[i]:find("Frogtown 2; Muldraugh, KY 2 (1 hidden by map priority)", 1, true)
+        and printed[i]:find("4 parking areas", 1, true) then reportLine = true end
     if printed[i]:find("of map dir 'Frogtown' ignored", 1, true) then aliasWarn = aliasWarn + 1 end
 end
-check(reportLine, "M3 建好時印一行各地圖筆數與被藏的筆數")
+check(reportLine, "M3 建好時印一行各地圖筆數、被藏的筆數與停車場數")
 eq(aliasWarn, 2, "M3 兩個不能用的別名（鍵是 20 類房名、目標不是）各警告一次")
 list, why = R.buildingsIn(0, 0, 2000, 2000, "minimap")
 eq(why, 4, "M3 buildingsIn(minimap) 也讀合併清單")
@@ -385,6 +408,7 @@ check(list[1].x == 350 and list[1].cats.prison and list[1].anchors.prison.x == 3
 
 newWorld({ "Muldraugh, KY", "Frogtown" }, { "Frogtown" })
 eq(entryXs(), "100,400,710,1000", "M4 原版排前面：原版擁有的 (1,0) 藏掉 Frogtown 那筆")
+eq(parkingXs(), "150,450,750,1080", "M4 停車場：原版擁有的 (1,0) 藏掉 Frogtown 那區")
 newWorld({ "Frogtown", "Muldraugh, KY" }, {})
 eq(entryXs(), "100,400,710", "M5 Frogtown 的 MOD 沒啟用：不用它的資料，也不藏原版")
 newWorld({ "Muldraugh, KY" }, { "Frogtown" })
@@ -407,6 +431,7 @@ getLotDirectories = nil
 newWorld({}, { "Frogtown" })
 getLotDirectories = nil
 eq(entryXs(), "100,400,710", "M8 拿不到地圖目錄：照舊只有原版、全部保留")
+eq(parkingXs(), "150,450,750", "M8 拿不到地圖目錄：原版停車場全部保留")
 function getLotDirectories() return jlist(dirs) end
 
 -- 別名：只在 Frogtown 擁有的格子；鍵是 20 類房名、目標不是 20 類房名的別名都不用
@@ -439,6 +464,63 @@ eq(R.prepare("rooms"), true, "M11 重掃完成")
 
 MinidoracatMiniMapPOIData = nil
 getLotDirectories, getActivatedMods = nil, nil
+-- 只有停車場資料（POIData 缺席）也建原版 spec；換世界（新 metagrid）時重算
+grid = newGrid({})
+eq(parkingXs(), "150,450,750", "M12 沒有 POIData：原版停車場照樣顯示")
+eq(Res.minimapEntries().count, 0, "M12 沒有 POIData：資源點是空的")
+MinidoracatMiniMapParkingData = nil
+grid = newGrid({})
+eq(Res.parkingEntries().count, 0, "M12 沒有停車場資料＝沒有停車場")
+
+--------------------------------------------------------------------------------
+-- Z 停車場 zone provider（client/MinidoracatMiniMapParking.lua，整份載入、假 Core／Events）
+--------------------------------------------------------------------------------
+do
+    local opts = {}
+    local providers, onStart, onTick = {}, nil, nil
+    local entries = { count = 2,
+        { rn = 2, r = { { x = 10, y = 10, w = 5, h = 20 }, { x = 20, y = 10, w = 5, h = 20 } },
+            b = { x = 10, y = 8, w = 20, h = 24 }, i = 1 },
+        { rn = 1, r = { { x = 40, y = 10, w = 5, h = 20 } }, b = { x = 40, y = 10, w = 5, h = 20 } } }
+    local savedEvents = Events
+    Events = { OnGameStart = { Add = function(fn) onStart = fn end }, OnTick = { Add = function(fn) onTick = fn end } }
+    MinidoracatMiniMapAPI = { registerZoneProvider = function(owner, fn, label, internal)
+        providers[#providers + 1] = { owner = owner, fn = fn, label = label, internal = internal } end }
+    MinidoracatMiniMapCore = {
+        getBoolOption = function(id, default) if opts[id] == nil then return default end return opts[id] end,
+        poiIconTexture = function(cat, color) return "TEX_" .. cat .. (color and "_c" or ""), color end,
+    }
+    MinidoracatMiniMapResources = { parkingEntries = function() return entries end }
+    getText = function(k) return k end
+    assert(loadfile(ROOT .. "client/MinidoracatMiniMapParking.lua"))()
+    eq(#providers, 0, "Z1 載入時不註冊（OnGameStart 才註冊，排在 POI 之後）")
+    onStart()
+    check(#providers == 1 and providers[1].internal == true and providers[1].label == nil, "Z1 OnGameStart 註冊內部 provider")
+    local z = providers[1].fn()
+    eq(#z, 2, "Z2 一區一個 zone")
+    check(z[1].rects[2].x1 == 20 and z[1].rects[2].x2 == 25 and z[1].lodRect.y1 == 8 and z[1].lodRect.y2 == 32,
+        "Z2 rects＝各排車位、lodRect＝整區 b")
+    check(z[1].icon.tex == "TEX_parking" and z[1].icon.b ~= 1 and z[1].iconOnce and z[1].iconRect == z[1].lodRect,
+        "Z3 i == 1 的區帶單色圖標（染停車藍），釘在 b 的中心")
+    check(z[2].icon == nil and z[2].iconRect == nil, "Z3 其他區不帶圖標")
+    check(z[1].tip == "UI_MinidoracatMiniMap_Parking" and z[1].category == "parking" and z[1].fillAlpha > 0,
+        "Z4 填色、停留提示與類別")
+    check(z.hasFill == true and z.hasLine == false and z.hasIcon == true, "Z4 聚合旗標")
+    opts.PoiColorIcons = true
+    for _ = 1, 15 do onTick() end
+    z = providers[1].fn()
+    check(z[1].icon.tex == "TEX_parking_c" and z[1].icon.r == 1 and z[1].icon.b == 1, "Z5 彩色圖標染白")
+    opts.ParkingLayer = false
+    for _ = 1, 15 do onTick() end
+    z = providers[1].fn()
+    check(#z == 0 and z.hasFill == false and z.hasIcon == false, "Z6 ParkingLayer 關：空表")
+    opts.ParkingLayer = nil
+    entries = { count = 0 }
+    for _ = 1, 15 do onTick() end
+    eq(#providers[1].fn(), 0, "Z7 合併清單換了就重建")
+    Events = savedEvents
+    MinidoracatMiniMapAPI, MinidoracatMiniMapCore, MinidoracatMiniMapResources, getText = nil, nil, nil, nil
+end
 
 --------------------------------------------------------------------------------
 -- S 生效的資源版本（MinidoracatMiniMapPOI.lua test:poi-source 區段）：玩家選擇、沙盒預設、伺服器鎖定

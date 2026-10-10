@@ -365,7 +365,7 @@ check(API.registerSettingsSection("Hidden", { label = "UI_Hidden", order = 5,
 env.policy.can, env.policy.allowTactical = true, true
 local s = env.open(0)
 checkEq(table.concat(s.sections, ","),
-    "base,places,poicat,zombie,animals,vehicles,safehouse,window,perf,addon_Watch,addon_AutoDrive,addon_AD2,"
+    "base,places,poicat,parking,zombie,animals,vehicles,safehouse,window,perf,addon_Watch,addon_AutoDrive,addon_AD2,"
     .. "addon_Econ,addon_VM,addon_Broken,addon_Plain,admin,addon_WatchAdmin",
     "W2 add-ons by (order, seq); hidden dropped; admin view first in the admin group")
 checkEq(calls.visiblePn, 0, "W2 visible(pn) receives the owner slot")

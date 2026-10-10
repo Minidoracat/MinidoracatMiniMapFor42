@@ -112,7 +112,7 @@ local TEXTS = {
     UI_MinidoracatMiniMap_SearchKindCoord = "Coord",
     UI_MinidoracatMiniMap_SearchKindStreet = "Street",
     UI_MinidoracatMiniMap_SearchKindPoi = "Place",
-    Cat_food = "Food", Cat_gun = "Armory",
+    Cat_food = "Food", Cat_gun = "Armory", UI_MinidoracatMiniMap_Parking = "Parking lot",
     UI_MinidoracatMiniMap_SearchModMapSource = "MOD map: %1", UI_MapA = "Localized Map A",
 }
 local function getText(k, arg)
@@ -156,7 +156,16 @@ MinidoracatMiniMapPOIData = {
     { cat = "food", rn = 1, r = { { x = 50, y = 50, w = 4, h = 4 } } },
     { cat = "gun", rn = 1, r = { { x = 90, y = 90, w = 4, h = 4 } }, u = 1 },
 }
-MinidoracatMiniMapResources = { minimapEntries = function() return MinidoracatMiniMapPOIData end }
+-- 停車場：只有 i == 1 的區帶圖標與搜尋結果；落點＝b 的中心。近的非 i 區不得出現，35 座停車場只列 30 座
+local fixtureParking = {
+    { rn = 1, r = {}, b = { x = 100, y = 0, w = 10, h = 10 }, i = 1 },
+    { rn = 1, r = {}, b = { x = 1, y = 1, w = 2, h = 2 } },
+    { rn = 1, r = {}, b = { x = 20, y = 0, w = 10, h = 10 }, i = 1 },
+}
+for k = 1, 33 do fixtureParking[#fixtureParking + 1] = { rn = 1, r = {}, b = { x = 1000 + k, y = 0, w = 2, h = 2 }, i = 1 } end
+fixtureParking.count = #fixtureParking
+MinidoracatMiniMapResources = { minimapEntries = function() return MinidoracatMiniMapPOIData end,
+    parkingEntries = function() return fixtureParking end }
 ]]
     local chunk3 = assert((loadstring or load)(prelude .. sourceHints .. "\n" .. finalizer .. "\n" .. seg3
         .. "\nreturn doSearch, function(items) fixtureStreets = items end, Core", "search-dosearch"))
@@ -285,6 +294,16 @@ MinidoracatMiniMapResources = { minimapEntries = function() return MinidoracatMi
     eq(zh[1].label, "沃克路", "譯名客戶端：顯示譯名、用即時錨點")
     eq(#doSearch("沃克", 0, 0), 1, "譯名客戶端：譯名搜尋不受影響")
     MinidoracatMiniMapStreetNames = nil
+    setStreets({})
+    local park = doSearch("PARK", 0, 0)
+    eq(#park, 30, "停車場：命中譯名子字串（不分大小寫），列到 MAX_POI_RESULTS 為止")
+    eq(park[1].x, 25, "停車場：最近的排第一，落點＝b 的中心 X")
+    eq(park[1].y, 5, "停車場：落點＝b 的中心 Y")
+    eq(park[2].x, 105, "停車場：第二近；沒有 i 的區不列")
+    eq(park[1].label, "Parking lot", "停車場：結果名稱＝停車場譯名")
+    eq(park[1].kind, "poi", "停車場：結果類型同資源點")
+    eq(park[30].x, 1029, "停車場：超出上限的遠處停車場被剪掉")
+    eq(#doSearch("garage", 0, 0), 0, "停車場：查詢字不在譯名裡就不列")
 end
 
 -- 完整搜尋模組：資料故障不能冒充查無命中，恢復提示也不能被當作導航座標。
@@ -319,7 +338,8 @@ local function getTextManager()
 end
 local MinidoracatMiniMapPOICategories = { CATEGORIES = { food = { nameKey = "Cat_food" } } }
 local MinidoracatMiniMapPOIData = { { cat = "food", rn = 1, r = { { x = 10, y = 20, w = 4, h = 4 } } } }
-local MinidoracatMiniMapResources = { minimapEntries = function() return MinidoracatMiniMapPOIData end }
+local MinidoracatMiniMapResources = { minimapEntries = function() return MinidoracatMiniMapPOIData end,
+    parkingEntries = function() return { count = 0 } end }
 ]]
     local suffix = [[
 return {

@@ -49,7 +49,7 @@
     "Sandbox_MinidoracatMiniMapVehicleAnimalScanInterval": "载具与动物图标刷新间隔（秒）",
     "Sandbox_MinidoracatMiniMapVehicleAnimalScanInterval_tooltip": "0＝实时（默认，约每 0.5 秒更新）。\nN＞0＝载具与动物图标每 N 秒才更新一次，并以玩家为中心取样，拖动地图不会重新取样。\n开启战术查看的管理员始终实时。\n取样在各玩家的客户端进行，不会改变服务器负担。",
     "Sandbox_MinidoracatMiniMapPoiDisplayDistance": "资源点（POI）显示距离（格）",
-    "Sandbox_MinidoracatMiniMapPoiDisplayDistance_tooltip": "0＝无距离限制（默认）。\nN＞0＝资源点区域（显示中的分类房间）最近点距玩家 N 格内才显示（区块、框线、图标一并隐藏）。\n1 格约 1 米；建议 300＝约一个街区群，保留探索感。\n仅影响内置资源点；地图包范围框线等其他图层不受影响。\n采用二维直线距离，不计楼层。\n管理员点击「应用」后立即生效。",
+    "Sandbox_MinidoracatMiniMapPoiDisplayDistance_tooltip": "0＝无距离限制（默认）。\nN＞0＝资源点区域（显示中的分类房间）最近点距玩家 N 格内才显示（区块、框线、图标一并隐藏）。\n1 格约 1 米；建议 300＝约一个街区群，保留探索感。\n影响内置资源点与停车场图层；地图包范围框线等其他图层不受影响。\n采用二维直线距离，不计楼层。\n管理员点击「应用」后立即生效。",
     "Sandbox_MinidoracatMiniMapPoiSourceDefault": "资源点默认版本",
     "Sandbox_MinidoracatMiniMapPoiSourceDefault_tooltip": "玩家把小地图的「资源版本」保持为「按服务器设置」（默认）时，看到哪一种资源点。\n小地图资源（默认）：作者整理的清单，每栋建筑只标一个主要用途，涵盖原版地图和地图包收录的地图 MOD。\n房间数据：游戏进行时读取建筑里的房间名称，只要有一间房属于某类就算，一栋可以同时属于好几类，所有地图 MOD 都会标出；标出的地点比较多，例如学校医务室也会算成医疗。\n没勾「玩家只能看默认版本」时，玩家仍可以在自己的设置里改选另一种。\n管理员点击「应用」后立即生效。",
     "Sandbox_MinidoracatMiniMapPoiSourceDefault_option1": "小地图资源",

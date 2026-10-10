@@ -1144,6 +1144,9 @@ if PZAPI and PZAPI.ModOptions then
         "UI_MinidoracatMiniMap_PoiIcons_tooltip")
     modOptions:addTickBox("PoiBlocks", "UI_MinidoracatMiniMap_PoiBlocks", false,
         "UI_MinidoracatMiniMap_PoiBlocks_tooltip")
+    -- 停車場圖層（預設開；繪製與 provider 在 MinidoracatMiniMapParking.lua，跟 POI 同一道距離閘）
+    modOptions:addTickBox("ParkingLayer", "UI_MinidoracatMiniMap_ParkingLayer", true,
+        "UI_MinidoracatMiniMap_ParkingLayer_tooltip")
     -- 20 類別勾選（預設全開）：ORDER 定順序，逐鍵到 CATEGORIES 取 nameKey，缺鍵略過。
     local poiCats = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.CATEGORIES
     local poiOrder = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.ORDER

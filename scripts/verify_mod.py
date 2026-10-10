@@ -510,10 +510,11 @@ for _script, _label, _may_skip in _lua_tests:
     else:
         fail(_gate, ["無輸出"]) if not _lines else ok(f"{_gate}：{_lines[-1]}")
 
-# ---- Python 路網稽核與交叉檢查契約 ----
+# ---- Python 路網稽核與交叉檢查契約、停車場判定規則 ----
 for _script, _label in (
         ("test_audit_streets", "路網稽核契約"),
-        ("test_xcheck_street_patches", "道路交叉檢查資料安全")):
+        ("test_xcheck_street_patches", "道路交叉檢查資料安全"),
+        ("test_gen_parking", "停車場判定規則")):
     _gate = f"{_label}測試（{_script}.py）"
     _sentinel = f"{_script}: OK"
     _r = subprocess.run(

@@ -329,6 +329,27 @@ local function doSearch(text, px, py)
             end
         end
     end
+    -- 停車場：查詢字是「停車場」譯名的子字串→有界最近-N 列出停車場。一座停車場只有 i == 1 那一區
+    -- 有圖標，搜尋也只列那一區，落點＝它的範圍框 b 的中心（同圖標）。不看 ParkingLayer（同 POI 搜尋不看 PoiIcons）
+    local parking = Res and Res.parkingEntries() or nil
+    local parkingName = getText("UI_MinidoracatMiniMap_Parking")
+    if type(parking) == "table" and parkingName:lower():find(q, 1, true) then
+        local hits = {}
+        for i = 1, parking.count or 0 do
+            local e = parking[i]
+            local b = e.i == 1 and e.b or nil
+            if b then
+                local ex, ey = b.x + b.w / 2, b.y + b.h / 2
+                local d = math.sqrt(dist2(px, py, ex, ey))
+                if #hits < MAX_POI_RESULTS or d < hits[#hits].d then
+                    boundedInsert(hits, MAX_POI_RESULTS, { kind = "poi", label = parkingName, x = ex, y = ey, d = d })
+                end
+            end
+        end
+        for i = 1, #hits do
+            results[#results + 1] = finalizeItem(hits[i])
+        end
+    end
     return results
 end
 

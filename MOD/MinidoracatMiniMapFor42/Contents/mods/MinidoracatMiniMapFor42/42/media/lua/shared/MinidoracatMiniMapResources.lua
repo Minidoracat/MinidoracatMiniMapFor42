@@ -88,11 +88,11 @@ local function warnOnce(key, msg)
 end
 
 --------------------------------------------------------------------------------
--- 地圖資源（resourceApiVersion 2）：原版與註冊地圖都是同一種 spec
--- { mapMod, mapDir, cells300 = { cx, cy, … }, poi = POIData 形狀, aliasesRaw }
+-- 地圖資源（resourceApiVersion 3）：原版與註冊地圖都是同一種 spec
+-- { mapMod, mapDir, cells300 = { cx, cy, … }, poi = POIData 形狀, parking = ParkingData 形狀, aliasesRaw }
 --------------------------------------------------------------------------------
 local specs, specCount = {}, 0
-local vanillaSpec = nil -- 由 MinidoracatMiniMapPOIData 建，資料表換了才重建
+local vanillaSpec = nil -- 由 MinidoracatMiniMapPOIData／ParkingData 建，任一資料表換了才重建
 local world = nil       -- 目前世界算好的結果（buildWorld）
 
 local function cellSet(list)
@@ -191,11 +191,13 @@ local function appendEntries(out, data, keep)
 end
 
 local function currentVanillaSpec()
-    local data = MinidoracatMiniMapPOIData
-    if type(data) ~= "table" then return nil end
-    if not vanillaSpec or vanillaSpec.poi ~= data then
-        vanillaSpec = { mapDir = type(data.mapDir) == "string" and data.mapDir or VANILLA_DIR,
-            cells300 = data.cells300, poi = data }
+    local data, parking = MinidoracatMiniMapPOIData, MinidoracatMiniMapParkingData
+    if type(data) ~= "table" then data = nil end
+    if type(parking) ~= "table" then parking = nil end
+    if not data and not parking then return nil end
+    if not vanillaSpec or vanillaSpec.poi ~= data or vanillaSpec.parking ~= parking then
+        vanillaSpec = { mapDir = data and type(data.mapDir) == "string" and data.mapDir or VANILLA_DIR,
+            cells300 = data and data.cells300, poi = data, parking = parking }
     end
     return vanillaSpec
 end
@@ -203,11 +205,15 @@ end
 -- 這個世界的小地圖資源（原版加已啟用的註冊地圖，照地圖優先序過濾）與別名查表。
 -- 拿不到地圖目錄（世界還沒載入、離線測試）時照舊只有原版、全部保留；這種結果不快取，下次再算。
 local function buildWorld(grid)
-    local w = { grid = grid, final = false, entries = { count = 0 }, order = {}, anyAlias = false }
+    local w = { grid = grid, final = false, entries = { count = 0 }, parking = { count = 0 }, order = {},
+        anyAlias = false }
     local vanilla = currentVanillaSpec()
     local dirs, n = lotDirs()
     if not dirs then
-        if vanilla then appendEntries(w.entries, vanilla.poi, nil) end
+        if vanilla then
+            appendEntries(w.entries, vanilla.poi, nil)
+            appendEntries(w.parking, vanilla.parking, nil)
+        end
         return w
     end
     w.final = true
@@ -260,13 +266,16 @@ local function buildWorld(grid)
         local s = order[i]
         local before = w.entries.count
         -- 排在前面的地圖都不擁有這一格，引擎才會留下這張地圖的建築
-        local hidden = appendEntries(w.entries, s.poi, function(cx, cy) return topRank(cx, cy) >= i end)
+        local function keep(cx, cy) return topRank(cx, cy) >= i end
+        local hidden = appendEntries(w.entries, s.poi, keep)
+        appendEntries(w.parking, s.parking, keep)
         if s ~= vanilla and aliasTable(s, rc) then w.anyAlias = true end
         report = report .. (i > 1 and "; " or "") .. s.mapDir .. " " .. tostring(w.entries.count - before)
             .. (hidden > 0 and (" (" .. tostring(hidden) .. " hidden by map priority)") or "")
     end
     print("[MinidoracatMiniMap] map resources: " .. tostring(m) .. " maps with data in this world ("
-        .. tostring(specCount) .. " registered), " .. tostring(w.entries.count) .. " minimap POIs: " .. report)
+        .. tostring(specCount) .. " registered), " .. tostring(w.entries.count) .. " minimap POIs, "
+        .. tostring(w.parking.count) .. " parking areas: " .. report)
     return w
 end
 
@@ -442,7 +451,7 @@ local function copyBuilding(b)
     return { x = b.x, y = b.y, w = b.w, h = b.h, cats = cats, anchors = anchors }
 end
 
-local API = { resourceApiVersion = 2 }
+local API = { resourceApiVersion = 3 }
 
 -- 外框與矩形相交（半開區間 [x, x+w)×[y, y+h)）的建築，回 list, n（list 是副本）；
 -- 失敗回 nil, reason："badrect"／"badversion"／"pending"（房間資料還沒掃完，已開始背景掃描）
@@ -510,8 +519,9 @@ function API.categories()
     return out, n
 end
 
--- 註冊一張地圖的資源資料（v2；地圖包在 shared 載入時呼叫，客戶端與伺服器都要註冊）。
+-- 註冊一張地圖的資源資料（v3；地圖包在 shared 載入時呼叫，客戶端與伺服器都要註冊）。
 -- spec＝{ mapMod, mapDir, cells300 = { cx, cy, … }, poi = 和 MinidoracatMiniMapPOIData 同形狀|nil,
+--        parking = 和 MinidoracatMiniMapParkingData 同形狀|nil（v3 起）,
 --        aliases = { [自訂房名] = 原版房名 }|nil }。回 true；參數不對回 false, reason，只 log 一次、不丟錯
 function API.registerMapResources(ownerModId, spec)
     if type(ownerModId) ~= "string" or ownerModId == "" then
@@ -521,14 +531,15 @@ function API.registerMapResources(ownerModId, spec)
     if type(spec) ~= "table" or type(spec.mapMod) ~= "string" or spec.mapMod == ""
         or type(spec.mapDir) ~= "string" or spec.mapDir == "" or type(spec.cells300) ~= "table"
         or (spec.poi ~= nil and type(spec.poi) ~= "table")
+        or (spec.parking ~= nil and type(spec.parking) ~= "table")
         or (spec.aliases ~= nil and type(spec.aliases) ~= "table") then
         warnOnce("reg:badspec:" .. ownerModId, "registerMapResources(" .. ownerModId
-            .. "): spec needs mapMod, mapDir, cells300 and optional poi/aliases tables; ignored")
+            .. "): spec needs mapMod, mapDir, cells300 and optional poi/parking/aliases tables; ignored")
         return false, "badspec"
     end
     specCount = specCount + 1
     specs[specCount] = { owner = ownerModId, mapMod = spec.mapMod, mapDir = spec.mapDir,
-        cells300 = spec.cells300, poi = spec.poi, aliasesRaw = spec.aliases }
+        cells300 = spec.cells300, poi = spec.poi, parking = spec.parking, aliasesRaw = spec.aliases }
     world = nil
     scan.grid = nil -- 房間資料要用新的別名重掃（下一次 prepare／查詢時重新開始）
     return true
@@ -536,6 +547,9 @@ end
 -- test:room-resources:end
 
 MinidoracatMiniMapResourceAPI = API
--- 主 MOD 內部用（client 的資源點繪製與搜尋）：小地圖資源版的合併清單，形狀同 MinidoracatMiniMapPOIData
--- （陣列＋count），唯讀、不複製。不是公開 API：addon 用 buildingsIn。
-MinidoracatMiniMapResources = { minimapEntries = function() return currentWorld().entries end }
+-- 主 MOD 內部用（client 的資源點／停車場繪製與搜尋）：小地圖資源版的合併清單，形狀同 MinidoracatMiniMapPOIData
+-- ／MinidoracatMiniMapParkingData（陣列＋count），唯讀、不複製。不是公開 API：addon 用 buildingsIn。
+MinidoracatMiniMapResources = {
+    minimapEntries = function() return currentWorld().entries end,
+    parkingEntries = function() return currentWorld().parking end,
+}

@@ -140,6 +140,12 @@ local SEC_POI = { id = "poicat", label = "UI_MinidoracatMiniMap_SecPOI", icon = 
             zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited", capBy = "PoiDisplayDistance" },
     },
 }
+-- 停車場：只有母開關（MinidoracatMiniMapParking.lua 的內部 provider 讀它）；圖標大小、透明度與顯示距離
+-- 跟資源點同一組設定，不另開。addNotes 補一段停車場怎麼判定的說明
+local SEC_PARKING = { id = "parking", label = "UI_MinidoracatMiniMap_Parking", icon = "carSedan",
+    master = { id = "ParkingLayer", label = "UI_MinidoracatMiniMap_ParkingLayer", default = true,
+        tooltip = "UI_MinidoracatMiniMap_ParkingLayer_tooltip" },
+}
 local SEC_ZOMBIE = { id = "zombie", label = "UI_MinidoracatMiniMap_SecZombie", icon = "skull",
     gate = "AllowZombieDots",
     master = { id = "ZombieDots", label = "UI_MinidoracatMiniMap_ZombieDots", default = false, gate = "AllowZombieDots" },
@@ -302,8 +308,8 @@ local SEC_MAPPACK = { id = "mappack", label = "UI_MinidoracatMiniMap_SecMapPack"
 -- 三個條件全是 live 值（政策可即時改、權限可被升降、分割畫面每個 slot 各自判定），
 -- 每次重建與每幀 live 檢查都現判。
 local SEC_ADMIN = { id = "admin", label = "UI_MinidoracatMiniMap_SecAdmin", icon = "shieldCheck" }
-local LAYER_SECTIONS = { SEC_BASE, SEC_PLACES, SEC_REMOTE, SEC_POI, SEC_ZOMBIE, SEC_ANIMALS, SEC_VEHICLES,
-    SEC_SAFEHOUSE }
+local LAYER_SECTIONS = { SEC_BASE, SEC_PLACES, SEC_REMOTE, SEC_POI, SEC_PARKING, SEC_ZOMBIE, SEC_ANIMALS,
+    SEC_VEHICLES, SEC_SAFEHOUSE }
 local WINDOW_SECTIONS = { SEC_WINDOW, SEC_PERF }
 
 local function adminSectionEligible(pn)
@@ -1555,6 +1561,8 @@ local function addNotes(ctx, sec)
         local w = math.min(ctx.w, math.max(120, getTextManager():MeasureStringX(ctx.font, text) + 24))
         advance(ctx, addButton(ctx, text, onRemoteShowAll, getText("UI_MinidoracatMiniMap_RemoteShowAll_tooltip"), w))
         addNote(ctx, getText("UI_MinidoracatMiniMap_RemoteAuthorsNote"))
+    elseif sec == SEC_PARKING then
+        addNote(ctx, getText("UI_MinidoracatMiniMap_ParkingHow"))
     end
 end
 
