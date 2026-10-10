@@ -32,10 +32,18 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [*] [b]Legend & hover names[/b]: a POI legend sits under the world-map legend (S hides both); hover an icon (gamepad: crosshair) to see its name.
 [/list]
 
+[h3]🅿️ Parking lots[/h3]
+[list]
+[*] Both maps mark parking lots with a blue area and a P icon: zoom in to see each row of stalls, zoom out to see only the P; one P per lot. Hover the P to see "Parking lot".
+[*] [b]How lots are found[/b]: from the map's vehicle spawn spots (where the game places parked cars). Areas with painted parking lines or room for 6 or more cars are marked as parking lots; single spots and home driveways are not. On the vanilla map, street-side parking and spots on grass are left out too. This is automatic, so a few places may be wrong or missing.
+[*] 573 lots on the vanilla map; with [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps[/url], the map mods it covers get them too (map mods keep street-side parking, and a big lot may show several P icons).
+[*] On by default; turn it off in the "Parking lot" settings category or on the ESC options page. Icon size, opacity and display distance follow the resource point settings, including the server's resource point display distance.
+[/list]
+
 [h3]🔍 Search & trip window[/h3]
 [list]
 [*] Open with the toolbar magnifier, right-click "Search map...", or [b];[/b].
-[*] Type coordinates (e.g. 12895,3499), a street name (original or translated) or one of 20 facility categories, sorted by distance.
+[*] Type coordinates (e.g. 12895,3499), a street name (original or translated), one of 20 facility categories, or "parking lot" for the nearest lots; sorted by distance.
 [*] Show a result on the map, navigate to it or add it to your trip. Right-click results or trip stops for more actions.
 [*] A "MOD map: name" tag only marks a confirmed source — not an error or a driving certification.
 [/list]
@@ -85,7 +93,7 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [h3]🎛️ Map Display Settings (gear)[/h3]
 [list]
 [*] [b]Open[/b]: the gear on the mini-map, or the paw-print button in the world map (M) button row. Changes apply and save instantly.
-[*] [b]Four groups[/b] in the side list: "Map layers" (Base map & text, Players & navigation, Remote Symbols (MP only), Resource points, Zombies, Animals, Vehicles, Safehouses), "Window & controls" (Mini-map window, Performance notes), "Add-ons" and "Admin" (only when the server allows Tactical view and you have the permission). Each category has an icon; categories with a master switch toggle right in the list. The search box finds settings across categories.
+[*] [b]Four groups[/b] in the side list: "Map layers" (Base map & text, Players & navigation, Remote Symbols (MP only), Resource points, Parking lot, Zombies, Animals, Vehicles, Safehouses), "Window & controls" (Mini-map window, Performance notes), "Add-ons" and "Admin" (only when the server allows Tactical view and you have the permission). Each category has an icon; categories with a master switch toggle right in the list. The search box finds settings across categories.
 [*] [b]Live previews[/b] at the top of the zombie, animal, vehicle, resource point, safehouse, players & navigation and custom zone categories show size, color, opacity, style and name changes the way the map draws them, even with nothing nearby.
 [*] [b]Filter chips[/b]: resource point categories, animal species and vehicle categories are clickable chips, with icons colored as on the map.
 [*] [b]Tooltips & reset[/b]: every toggle has the same help text as the ESC page (hover it). "Reset this category" restores this mod's defaults only; vanilla map-engine options stay. "Mini-map window" has "Reset to default size" to clear edge-drag resizing.

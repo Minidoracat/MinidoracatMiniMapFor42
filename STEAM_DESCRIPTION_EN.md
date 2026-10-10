@@ -24,7 +24,7 @@ Keep every Minidoracat MiniMap series mod up to date and restart the game after 
 
 [h2]✨ Main features[/h2]
 [list]
-[*] [b]Image-based maps[/b]: full-color top-down images on both maps; POIs with a legend and hover names
+[*] [b]Image-based maps[/b]: full-color top-down images on both maps, with POIs and parking lots marked
 [*] [b]Search[/b]: coordinates, street names (original/translated) and facility categories; show results on the map or add them to your trip
 [*] [b]Multi-target navigation & trips[/b]: up to 16 targets, road-following routes that replan when you go off course
 [*] [b]Home & favorites[/b]: right-click the map to set home or add favorites; one-click Go home
