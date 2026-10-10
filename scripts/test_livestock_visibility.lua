@@ -998,6 +998,43 @@ do
     H.setOption("SafehouseNames", false); H.setOption("Safehouses", true)
 end
 
+-- Safehouse MOD 的屋：原生屋主是服務帳號 "@MSH:<id>"，標籤與同陣營改用 v1.ownerName 的真正屋主；
+-- 沒裝／資料未到（nil）／API 不合只顯示名稱、不算同陣營，絕不露出 "@MSH:"；資料到了在列快取重建時更新
+do
+    local H = safehouseHarness
+    H.setMode(3); H.setNameMode(3)
+    H.setDistance(nil); H.setNameDistance(nil); H.setView(nil)
+    H.setOption("Safehouses", false); H.setOption("SafehouseIcons", false)
+    H.setOption("SafehouseNames", true)
+    local real, asked = {}, {}
+    local api = { API_MAJOR = 1, CAPABILITIES = { ownerName = true },
+        ownerName = function(owner) asked[#asked + 1] = owner; return real[owner] end }
+    H.setHouses({ H.safehouse(10, 10, 20, 20, false, "@MSH:7", "Fort"),
+        H.safehouse(30, 10, 40, 20, false, "@MSH:8", "Alice"),
+        H.safehouse(50, 10, 60, 20, false, "Bob", "Bob's Farm") })
+    local function labels() H.draw(); return table.concat(H.names(), " | ") end
+    assert(labels() == "Fort | Alice | Bob's Farm (Bob)", "沒裝 Safehouse：服務帳號不得出現在標籤")
+    MinidoracatSafehouse = { v1 = api }
+    assert(labels() == "Fort | Alice | Bob's Farm (Bob)", "Safehouse 資料未到：只顯示名稱")
+    assert(#asked == 2 and asked[1] == "@MSH:7" and asked[2] == "@MSH:8", "一般安全屋不應查 Safehouse")
+    real["@MSH:7"], real["@MSH:8"] = "Alice", "Alice"
+    -- 名稱＝真正屋主（"Alice"）只顯示一次；第一次查是 nil 也會在列快取重建（draw 前進 1 秒）後更新
+    assert(labels() == "Fort (Alice) | Alice | Bob's Farm (Bob)",
+        "資料到了：列快取重建後顯示真正屋主，名稱＝屋主只顯示一次")
+    api.API_MAJOR = 2
+    assert(labels() == "Fort | Alice | Bob's Farm (Bob)", "API_MAJOR 不合視同沒裝")
+    api.API_MAJOR = 1
+    -- 同陣營（模式4）：真正屋主 Alice 在我的陣營＝青框；資料未到不算同陣營
+    H.setOption("SafehouseNames", false); H.setOption("Safehouses", true)
+    H.setHouses({ H.safehouse(10, 10, 20, 20, false, "@MSH:7", "Fort") })
+    H.setMode(4); H.setFaction({ Alice = true })
+    assert(H.draw() == 4, "模式4：Safehouse 的屋以真正屋主判同陣營")
+    real["@MSH:7"] = nil; H.setFaction({ ["@MSH:7"] = true })
+    assert(H.draw() == 0, "模式4：真正屋主未到不算同陣營（不得拿服務帳號比對）")
+    H.setFaction(nil); H.setMode(3)
+    MinidoracatSafehouse = nil
+end
+
 -- 候選列（shCandidates，2026-10-07：數百間安全屋逐幀全掃）：沿用候選與每幀重篩的繪製逐筆相同
 -- （框線座標序列、圖標數、名稱序列）。視野裁切與純距離閘兩種模式，玩家／視窗沿路徑移動、半徑中途改變
 do

@@ -29,10 +29,10 @@ local Policy = Core.policy
 -- 資料源：SafeHouse.getSafehouseList()（用例 ISSafehousesList.lua:61-62）、
 -- 範圍 getX/getY/getX2/getY2（SafeHouse.java:596-632）、成員判定
 -- playerAllowed(String)（SafeHouse.java:288-290，只查 owner＋players）、
--- 名稱 getTitle()（SafeHouse.java:727，預設 "Safehouse"）、屋主 getOwner()（:656）；
--- 名稱與屋主帳號不同時附上「(屋主)」（safehouseLabel）。
+-- 名稱 getTitle()（SafeHouse.java:727，預設 "Safehouse"）、屋主 getOwner()（:656，安全屋 MOD
+-- 代管的屋換成真正屋主：safehouseOwner）；名稱與屋主帳號不同時附上「(屋主)」（safehouseLabel）。
 -- 陣營判定：Faction.getPlayerFaction(username)（Faction.java:123，原版用例
--- ISFactionUI.lua:408 為 IsoPlayer 版）→ faction:isOwner/isMember(owner)（:150/:154）。
+-- ISFactionUI.lua:408 為 IsoPlayer 版）→ faction:isOwner/isMember(屋主)（:150/:154）。
 -- 每幀成本：幾何與成員身分走 1 秒快取（refreshSafehouseRows），距離閘與視野裁切先於成員判定——
 -- 大型伺服器上安全屋可達數百，原本每幀每間 4 個座標 getter＋playerAllowed 都是跨界呼叫
 -- （2026-09-25 正式服實測 drawSafehouses 佔客戶端 Lua 取樣 1.67%）。單機無安全屋＝零成本。
@@ -64,6 +64,20 @@ local function safehouseLabel(title, owner)
         return title .. " (" .. owner .. ")"
     end
     return title or ""
+end
+
+-- 屋主帳號：安全屋 MOD（選用、不在 require=）代管的屋，原生屋主是服務帳號 "@MSH:<claimId>"
+-- （"@" 不是合法帳號字元），真正屋主與成員都在 players；真正屋主查它的客戶端 API
+-- MinidoracatSafehouse.v1.ownerName（不配置、不丟錯；資料未到回 nil，並在背景向伺服器要一次）。
+-- 拿不到回 nil：標籤只顯示名稱、不算同陣營；列快取 1 秒重建時再查，資料到了就更新。
+-- 載入序不保證，呼叫期才讀全域
+local function safehouseOwner(owner)
+    if not (owner and string.find(owner, "^@MSH:")) then return owner end
+    local SH = MinidoracatSafehouse and MinidoracatSafehouse.v1
+    if SH and SH.API_MAJOR == 1 and SH.CAPABILITIES and SH.CAPABILITIES.ownerName then
+        return SH.ownerName(owner)
+    end
+    return nil
 end
 
 -- 模式判定純函式（三處共用：範圍／圖標走 SafehouseDisplay，名稱走 SafehouseNameDisplay）
@@ -288,7 +302,7 @@ local function drawSafehouses(inner)
             if faction and not mine then
                 ally = row.ally
                 if ally == nil then
-                    local owner = sh:getOwner()
+                    local owner = safehouseOwner(sh:getOwner())
                     ally = owner ~= nil and (faction:isOwner(owner) or faction:isMember(owner))
                     row.ally = ally
                 end
@@ -310,7 +324,7 @@ local function drawSafehouses(inner)
                 if showName then
                     name = row.label
                     if name == nil then
-                        name = safehouseLabel(sh:getTitle(), sh:getOwner())
+                        name = safehouseLabel(sh:getTitle(), safehouseOwner(sh:getOwner()))
                         row.label = name
                     end
                 end
