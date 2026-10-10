@@ -196,7 +196,7 @@ local function dimMapBody(inner, on)
         if touched == 0 and n > 0 and not dimIncomplete and not ghostKindWarned then
             ghostKindWarned = true
             print("[MinidoracatMiniMap] ghost: no style layers classified ("
-                .. n .. " layers) — engine layer type strings changed?")
+                .. n .. " layers) - engine layer type strings changed?")
         end
         if dimIncomplete then
             -- 本輪未完整壓暗（分類失敗＝pyramid 可能誤 skip；寫失敗＝快照在手可還原；

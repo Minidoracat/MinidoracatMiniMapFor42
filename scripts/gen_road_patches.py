@@ -1029,7 +1029,13 @@ def build_payload(
 def _lua_string(value: str) -> str:
     if any(ord(char) < 0x20 for char in value):
         _fail("Lua strings must not contain C0 controls")
-    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    # Kahlua 的 LexState 逐 char 以 (byte)c 存、字串結束才用 UTF-8 解回（LexState.java:194-199、245-247）：
+    # 直接寫進字面值的非 ASCII 會被截壞，寫成 UTF-8 位元組的 \ddd（固定三位）才會解回原字
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return '"' + "".join(
+        char if ord(char) < 0x80 else "".join(f"\\{byte:03d}" for byte in char.encode("utf-8"))
+        for char in escaped
+    ) + '"'
 
 
 def _lua_number(value: float | int) -> str:

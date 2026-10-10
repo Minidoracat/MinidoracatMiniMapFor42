@@ -298,8 +298,11 @@ def test_schema_source_hash_and_candidate_status_are_strict(tmp_path):
     approval_path.write_text(json.dumps(approval), encoding="utf-8")
     with pytest.raises(GEN.GenerationError, match="status must be 'ok'"):
         GEN.generate(audit_path, approval_path, out_path)
-def test_lua_string_encoder_escapes_quotes_and_rejects_c0():
-    assert GEN._lua_string('a"\\地圖') == '"a\\"\\\\地圖"'
+def test_lua_string_encoder_escapes_quotes_utf8_bytes_and_rejects_c0():
+    # 非 ASCII 寫成 UTF-8 位元組的固定三位 \ddd（Kahlua 直接讀非 ASCII 字面值會截壞）；後面接數字也不會被吃進跳脫
+    encoded = GEN._lua_string('a"\\地圖’1')
+    assert encoded == '"a\\"\\\\\\229\\156\\176\\229\\156\\150\\226\\128\\1531"'
+    assert encoded.isascii()
     with pytest.raises(GEN.GenerationError, match="C0 controls"):
         GEN._lua_string("bad\nstring")
 
