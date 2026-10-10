@@ -203,16 +203,19 @@ local function currentVanillaSpec()
 end
 
 -- 這個世界的小地圖資源（原版加已啟用的註冊地圖，照地圖優先序過濾）與別名查表。
+-- spans＝每張地圖在 entries 裡的區段 { vanilla, mapMod, mapDir, from, to }（poi_blocks.json 匯出分原版與地圖 MOD 用）。
 -- 拿不到地圖目錄（世界還沒載入、離線測試）時照舊只有原版、全部保留；這種結果不快取，下次再算。
 local function buildWorld(grid)
     local w = { grid = grid, final = false, entries = { count = 0 }, parking = { count = 0 }, order = {},
-        anyAlias = false }
+        anyAlias = false, spans = { count = 0 } }
     local vanilla = currentVanillaSpec()
     local dirs, n = lotDirs()
     if not dirs then
         if vanilla then
             appendEntries(w.entries, vanilla.poi, nil)
             appendEntries(w.parking, vanilla.parking, nil)
+            w.spans.count = 1
+            w.spans[1] = { vanilla = true, from = 1, to = w.entries.count }
         end
         return w
     end
@@ -269,6 +272,9 @@ local function buildWorld(grid)
         local function keep(cx, cy) return topRank(cx, cy) >= i end
         local hidden = appendEntries(w.entries, s.poi, keep)
         appendEntries(w.parking, s.parking, keep)
+        w.spans.count = i
+        w.spans[i] = { vanilla = s == vanilla, mapMod = s.mapMod, mapDir = s.mapDir, from = before + 1,
+            to = w.entries.count }
         if s ~= vanilla and aliasTable(s, rc) then w.anyAlias = true end
         report = report .. (i > 1 and "; " or "") .. s.mapDir .. " " .. tostring(w.entries.count - before)
             .. (hidden > 0 and (" (" .. tostring(hidden) .. " hidden by map priority)") or "")
@@ -588,4 +594,9 @@ MinidoracatMiniMapResourceAPI = API
 MinidoracatMiniMapResources = {
     minimapEntries = function() return currentWorld().entries end,
     parkingEntries = function() return currentWorld().parking end,
+    -- poi_blocks.json 匯出用：回 (spans, entries)，spans[i] 是第 i 張地圖在 entries 的 from..to（見 buildWorld）
+    minimapSpans = function()
+        local w = currentWorld()
+        return w.spans, w.entries
+    end,
 }

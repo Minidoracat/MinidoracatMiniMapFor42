@@ -19,8 +19,8 @@ local compile = loadstring or load
 local body = assert(readSource(exportPath):match(
     "%-%- test:poi%-export:start\n(.-)\n%-%- test:poi%-export:end"),
     "找不到 poi-export 測試區段")
-local buildPoiBlocksJson = assert(compile(
-    body .. "\nreturn buildPoiBlocksJson", "poi-export"))()
+local buildPoiBlocksJson, jsonString = assert(compile(
+    body .. "\nreturn buildPoiBlocksJson, jsonString", "poi-export"))()
 
 local passed, failed = 0, 0
 local function check(name, ok, detail)
@@ -69,6 +69,50 @@ check("modversion 消毒", buildPoiBlocksJson({ count = 0 }, 'a"b\\c 1.2-3')
     == '{"v":1,"modversion":"abc1.2-3","count":0,"categories":{\n}}')
 check("modversion 全異常→unknown", buildPoiBlocksJson({ count = 0 }, '"\\"')
     == '{"v":1,"modversion":"unknown","count":0,"categories":{\n}}')
+
+--------------------------------------------------------------------------------
+-- maps（2026-10-10，additive）：根層照舊、"maps" 接在 categories 後、每張圖一個物件、
+-- 物件開頭在行首（第二張起逗號在行首）、根物件到 EOF 才閉合；名稱是 jsonString 的結果
+--------------------------------------------------------------------------------
+check("jsonString 跳脫", jsonString('a"b\\c') == '"a\\"b\\\\c"')
+check("jsonString 控制字元寫成 \\u00xx", jsonString("x\1y\127") == '"x\\u0001y\\u007f"')
+check("jsonString 空白、逗號、撇號、非 ASCII 原樣", jsonString("Constown, KY's 回音河") == "\"Constown, KY's 回音河\"")
+check("jsonString 非字串、空字串回 nil", jsonString(nil) == nil and jsonString("") == nil and jsonString(5) == nil)
+local mapFixture = {
+    count = 2,
+    { mapMod = jsonString("CamdenCountyB42"), mapDir = jsonString("Camden County B42"), data = {
+        { cat = "food", rn = 1, b = { x = 5000, y = 6000, w = 8, h = 8 }, r = { { x = 5000, y = 6000, w = 4, h = 4 } } },
+        { cat = "gas", rn = 1, b = { x = 5100, y = 6100, w = 6, h = 6 }, u = 1, r = { { x = 5100, y = 6100, w = 3, h = 3 } } },
+        count = 2 } },
+    { mapMod = jsonString('Odd"Mod'), mapDir = jsonString("Constown, KY"), data = {
+        { cat = "books", rn = 1, b = { x = 7000, y = 7000, w = 5, h = 5 }, r = { { x = 7000, y = 7000, w = 5, h = 5 } } },
+        count = 1 } },
+}
+local goldenMaps = table.concat({
+    '{"v":1,"modversion":"42.21.0-0.42.0","count":1,"categories":{',
+    '"police":[{"b":[50,60,7,8],"r":[[50,60,7,8]]}',
+    ']},"maps":[',
+    '{"mapMod":"CamdenCountyB42","mapDir":"Camden County B42","count":2,"categories":{',
+    '"food":[{"b":[5000,6000,8,8],"r":[[5000,6000,4,4]]}',
+    '],"gas":[{"b":[5100,6100,6,6],"u":1,"r":[[5100,6100,3,3]]}',
+    ']}}',
+    ',{"mapMod":"Odd\\"Mod","mapDir":"Constown, KY","count":1,"categories":{',
+    '"books":[{"b":[7000,7000,5,5],"r":[[7000,7000,5,5]]}',
+    ']}}',
+    ']}',
+}, "\n")
+local vanillaOne = { fixture[4], count = 1 }
+got = buildPoiBlocksJson(vanillaOne, "42.21.0-0.42.0", mapFixture)
+check("maps 黃金字串全等", got == goldenMaps, "got:\n" .. got .. "\nwant:\n" .. goldenMaps)
+check("maps 空清單與不帶 maps 逐 byte 相同", buildPoiBlocksJson(fixture, "42.20.0-0.13.0", { count = 0 }) == golden)
+check("原版 0 筆、只有地圖 MOD", buildPoiBlocksJson({ count = 0 }, "1", { mapFixture[2], count = 1 }) == table.concat({
+    '{"v":1,"modversion":"1","count":0,"categories":{',
+    '},"maps":[',
+    '{"mapMod":"Odd\\"Mod","mapDir":"Constown, KY","count":1,"categories":{',
+    '"books":[{"b":[7000,7000,5,5],"r":[[7000,7000,5,5]]}',
+    ']}}',
+    ']}',
+}, "\n"))
 
 --------------------------------------------------------------------------------
 -- 真實 POIData 煙霧測試：頭尾、逐條目結構數、括號守恆、座標整數性
@@ -181,7 +225,7 @@ local function getFileReader(path, createIfNull)
         close = function(_) end,
     }
 end
-local MinidoracatMiniMapPOIData = ]==] .. FIXTURE_SRC .. "\n"
+local MinidoracatMiniMapPOIData = ]==] .. FIXTURE_SRC .. "\nlocal MinidoracatMiniMapResources = nil\n"
 local CONTROLS = [==[
 return {
     fireServer = function()
@@ -196,7 +240,8 @@ return {
         if k == "isClient" then isClientVal = v
         elseif k == "writer" then writerAvailable = v
         elseif k == "writeFail" then writeShouldFail = v
-        elseif k == "data" then MinidoracatMiniMapPOIData = v end
+        elseif k == "data" then MinidoracatMiniMapPOIData = v
+        elseif k == "resources" then MinidoracatMiniMapResources = v end
     end,
 }
 ]==]
@@ -256,6 +301,34 @@ h.set("writeFail", true)
 h.fireGame()
 check("S6 讀回驗證失敗警告", hasLog(h, "verify FAILED"))
 check("S6 無成功 log", not hasLog(h, "exported ("))
+
+-- S7 有合併清單：原版只留沒被地圖優先序藏掉的那段、另附有資源點的地圖 MOD（空區段的地圖不輸出）；
+-- 內容全等 builder 輸出、成功 log 帶地圖 MOD 筆數
+h = makeHarness()
+local spanEntries = {
+    { cat = "food", rn = 1, b = { x = 5000, y = 6000, w = 8, h = 8 }, r = { { x = 5000, y = 6000, w = 4, h = 4 } } },
+    bootFixture[2], -- 原版 police；原版 books 被藏掉，不在合併清單裡
+    count = 2,
+}
+h.set("resources", { minimapSpans = function()
+    return { count = 3,
+        { vanilla = false, mapMod = "CamdenCountyB42", mapDir = "Camden County B42", from = 1, to = 1 },
+        { vanilla = false, mapMod = "EmptyMod", mapDir = "Empty", from = 2, to = 1 },
+        { vanilla = true, from = 2, to = 2 } }, spanEntries
+end })
+h.fireServer()
+local expectS7 = buildPoiBlocksJson({ bootFixture[2], count = 1 }, "42.20.1-9.9.9", { count = 1,
+    { mapMod = jsonString("CamdenCountyB42"), mapDir = jsonString("Camden County B42"), data = { spanEntries[1], count = 1 } } })
+check("S7 原版去掉被藏的、附地圖 MOD", h.written[EXPORT_PATH] == expectS7,
+    "got:\n" .. tostring(h.written[EXPORT_PATH]) .. "\nwant:\n" .. expectS7)
+check("S7 log 帶地圖 MOD 筆數", hasLog(h, "exported (1 buildings, plus 1 in 1 map mods"))
+
+-- S8 合併清單出錯：照舊整份原版烘焙資料、log 說明退回
+h = makeHarness()
+h.set("resources", { minimapSpans = function() error("boom") end })
+h.fireServer()
+check("S8 退回整份原版", h.written[EXPORT_PATH] == expectedBoot)
+check("S8 log 說明退回", hasLog(h, "merged map list unavailable"))
 
 print(string.format("poi-export tests: %d passed, %d failed", passed, failed))
 if failed > 0 then os.exit(1) end

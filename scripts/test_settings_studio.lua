@@ -363,20 +363,29 @@ do
     dd = env.byKey("PoiSource")
     check(dd:isEnabled() and dd:getSelected() == 3 and not textShown(env, T("UI_MinidoracatMiniMap_PoiSourceLocked")),
         "I4 unlocked: dropdown back to the saved choice, no lock note")
-    -- 兩種方式各有標題與說明；只有生效的那一種標「使用中」（這裡是伺服器解析出的「依房間」）
+    -- 預設收合：只有「目前使用：<生效的方式>」（這裡是伺服器解析出的「依房間」）與說明鈕；
+    -- 按下展開兩種方式的說明與共同依據，再按收回
     env.Core.poiSource = function() return "rooms", false end
     s.rebuild()
-    local mainTitle = findControl(env, function(el)
-        return el._lines ~= nil and el._lines[1] == T("UI_MinidoracatMiniMap_PoiSource_Minimap")
-    end)
-    local roomTitle = findControl(env, function(el)
-        return el._lines ~= nil and el._lines[1] == T("UI_MinidoracatMiniMap_PoiSource_Rooms")
-    end)
-    check(mainTitle ~= nil and roomTitle ~= nil and mainTitle._right == nil
-        and roomTitle._right == T("UI_MinidoracatMiniMap_PoiSourceActive")
+    local help = env.byKey("PoiSourceHelp")
+    check(textShown(env, getText("UI_MinidoracatMiniMap_PoiSourceCurrent", T("UI_MinidoracatMiniMap_PoiSource_Rooms")))
+        and help ~= nil and help.title == T("UI_MinidoracatMiniMap_PoiSourceHelpShow")
+        and not textShown(env, T("UI_MinidoracatMiniMap_PoiSourceNoteMinimap"))
+        and not textShown(env, T("UI_MinidoracatMiniMap_PoiSourceBasis")),
+        "I5 collapsed by default: one line names the method in effect, the details stay hidden")
+    help.onclick(help.target, help)
+    env.frame()
+    help = env.byKey("PoiSourceHelp")
+    check(help.title == T("UI_MinidoracatMiniMap_PoiSourceHelpHide")
         and textShown(env, T("UI_MinidoracatMiniMap_PoiSourceNoteMinimap"))
-        and textShown(env, T("UI_MinidoracatMiniMap_PoiSourceNoteRooms")),
-        "I5 both methods explained; only the effective one is tagged in use")
+        and textShown(env, T("UI_MinidoracatMiniMap_PoiSourceNoteRooms"))
+        and textShown(env, T("UI_MinidoracatMiniMap_PoiSourceBasis")),
+        "I6 the button expands both methods and the shared basis")
+    help.onclick(help.target, help)
+    env.frame()
+    check(env.byKey("PoiSourceHelp").title == T("UI_MinidoracatMiniMap_PoiSourceHelpShow")
+        and not textShown(env, T("UI_MinidoracatMiniMap_PoiSourceNoteRooms")),
+        "I6 pressing it again collapses the details")
     env.Core.poiSource, env.values.PoiSource = nil, nil
 end
 

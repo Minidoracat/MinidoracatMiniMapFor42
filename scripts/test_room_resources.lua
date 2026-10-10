@@ -394,6 +394,15 @@ local xsM3 = entryXs()
 print = realPrint
 eq(xsM3, "350,1000,100,710", "M3 Frogtown 排前面：它擁有的 (1,0) 藏掉原版那筆；沒人擁有的格子兩邊都留")
 eq(parkingXs(), "380,1080,150,750", "M3 停車場同一套地圖優先序：Frogtown 的 (1,0) 藏掉原版那區")
+do
+    -- poi_blocks.json 匯出靠 spans 分出原版與地圖 MOD：照地圖優先序接成連續區段、被藏的那筆不在任何區段
+    local spans, entries = Res.minimapSpans()
+    local s1, s2 = spans[1], spans[2]
+    check(spans.count == 2 and entries == Res.minimapEntries()
+        and s1.vanilla == false and s1.mapMod == "Frogtown" and s1.mapDir == "Frogtown" and s1.from == 1 and s1.to == 2
+        and s2.vanilla == true and s2.from == 3 and s2.to == 4 and entries.count == 4,
+        "M3 minimapSpans：Frogtown 1-2、原版 3-4（原版被藏的那筆不在區段裡）")
+end
 local reportLine, aliasWarn = false, 0
 for i = 1, #printed do
     if printed[i]:find("Frogtown 2; Muldraugh, KY 2 (1 hidden by map priority)", 1, true)
@@ -459,6 +468,11 @@ newWorld({}, { "Frogtown" })
 getLotDirectories = nil
 eq(entryXs(), "100,400,710", "M8 拿不到地圖目錄：照舊只有原版、全部保留")
 eq(parkingXs(), "150,450,750", "M8 拿不到地圖目錄：原版停車場全部保留")
+do
+    local spans, entries = Res.minimapSpans()
+    check(spans.count == 1 and spans[1].vanilla == true and spans[1].from == 1 and spans[1].to == entries.count
+        and entries.count == 3, "M8 拿不到地圖目錄：spans 只有一段原版，涵蓋全部原版條目")
+end
 function getLotDirectories() return jlist(dirs) end
 
 -- 別名：只在 Frogtown 擁有的格子；鍵是 20 類房名、目標不是 20 類房名的別名都不用

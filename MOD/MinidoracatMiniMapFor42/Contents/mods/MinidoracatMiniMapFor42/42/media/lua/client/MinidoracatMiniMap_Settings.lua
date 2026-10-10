@@ -112,8 +112,8 @@ local SEC_REMOTE = { id = "remote", label = "IGUI_MapOption_RemoteSymbols", icon
 local SEC_POI = { id = "poicat", label = "UI_MinidoracatMiniMap_SecPOI", icon = "pin",
     -- 母開關只控內部 POI provider（與 ZoneLayer 解耦）
     master = { id = "PoiIcons", label = "UI_MinidoracatMiniMap_PoiIcons", default = true },
-    -- 標示方式放在最上面（combosFirst），下面接兩種方式的分段說明（addNotes）；
-    -- rebuild＝換方式時「使用中」標籤與「整棟範圍」的可用狀態跟著重畫
+    -- 標示方式放在最上面（combosFirst），下面接「目前使用」一行與可展開的說明（addNotes）；
+    -- rebuild＝換方式時「目前使用」與「整棟範圍」的可用狀態跟著重畫
     combosFirst = true,
     combos = {
         { id = "PoiSource", label = "UI_MinidoracatMiniMap_PoiSource", default = 1, rebuild = true, poiLock = true,
@@ -1549,27 +1549,35 @@ local function addNotes(ctx, sec)
                 or "UI_MinidoracatMiniMap_SafehouseNamesHiddenBySandbox"), ORANGE)
         end
     elseif sec == SEC_POI then
-        -- 兩種標示方式各一段（同效能說明：標題列＋縮排說明）；生效的那一種（含「依伺服器設定」
-        -- 解析出的、伺服器鎖定的）在標題列右側標「使用中」；最後一句：兩種都依房名，不是原版地圖色塊
+        -- 一行「目前使用：<生效的標示方式>」（「依伺服器設定」解析出的、伺服器鎖定的都算）＋右側說明鈕；
+        -- 按下才展開兩種方式的說明（同效能說明的排版：標題列＋縮排說明）與共同依據（兩種都依房名，
+        -- 不是原版地圖色塊）。展開狀態只記在這個視窗；callback 寫成匿名函式（主 chunk local 已近上限）
         local source, locked = "minimap", false
         if Core.poiSource then source, locked = Core.poiSource() end
         if locked then addNote(ctx, getText("UI_MinidoracatMiniMap_PoiSourceLocked"), ORANGE) end
-        local active = getText("UI_MinidoracatMiniMap_PoiSourceActive")
-        local methods = {
-            { source = "minimap", title = "UI_MinidoracatMiniMap_PoiSource_Minimap", note = "UI_MinidoracatMiniMap_PoiSourceNoteMinimap" },
-            { source = "rooms", title = "UI_MinidoracatMiniMap_PoiSource_Rooms", note = "UI_MinidoracatMiniMap_PoiSourceNoteRooms" },
-        }
-        for i = 1, 2 do
-            local m = methods[i]
-            local title = textLine(ctx, ctx.x, ctx.y, ctx.w, getText(m.title))
-            if m.source == source then
-                title._right, title._rightColor = active, ctx.colors.accent
-                title._rightW = getTextManager():MeasureStringX(ctx.font, active)
+        local open = ctx.win._poiHelpOpen == true
+        local label = getText(open and "UI_MinidoracatMiniMap_PoiSourceHelpHide" or "UI_MinidoracatMiniMap_PoiSourceHelpShow")
+        local btnW = math.min(ctx.w, getTextManager():MeasureStringX(ctx.font, label) + 24)
+        local btn = addButton(ctx, label, function(win)
+            win._poiHelpOpen = not win._poiHelpOpen
+            studioMarkDirty(win)
+        end, nil, btnW, ctx.x + ctx.w - btnW)
+        btn._findKey = "PoiSourceHelp"
+        textLine(ctx, ctx.x, ctx.y + math.floor((btn.height - ctx.fontH) / 2), ctx.w - btnW - 8,
+            getText("UI_MinidoracatMiniMap_PoiSourceCurrent", getText(source == "rooms"
+                and "UI_MinidoracatMiniMap_PoiSource_Rooms" or "UI_MinidoracatMiniMap_PoiSource_Minimap")))
+        advance(ctx, btn)
+        if open then
+            local methods = {
+                { "UI_MinidoracatMiniMap_PoiSource_Minimap", "UI_MinidoracatMiniMap_PoiSourceNoteMinimap" },
+                { "UI_MinidoracatMiniMap_PoiSource_Rooms", "UI_MinidoracatMiniMap_PoiSourceNoteRooms" },
+            }
+            for i = 1, 2 do
+                advance(ctx, textLine(ctx, ctx.x, ctx.y, ctx.w, getText(methods[i][1])))
+                addNote(ctx, getText(methods[i][2]), nil, 12)
             end
-            advance(ctx, title)
-            addNote(ctx, getText(m.note), nil, 12)
+            addNote(ctx, getText("UI_MinidoracatMiniMap_PoiSourceBasis"))
         end
-        addNote(ctx, getText("UI_MinidoracatMiniMap_PoiSourceBasis"))
         addDivider(ctx)
     elseif sec == SEC_REMOTE then
         -- 全開放在作者清單上面：作者多時不用捲到清單底

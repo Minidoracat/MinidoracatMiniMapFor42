@@ -1,7 +1,7 @@
 -- MinidoracatMiniMapPOIExport.lua — 資源點區塊 JSON 匯出（外部工具契約）
--- 啟動時把 MinidoracatMiniMapPOIData（烘焙資料，shared 目錄、client/server 都載）
--- 序列化成 Zomboid/Lua/MinidoracatMiniMap/poi_blocks.json，給外部程式（如
--- MinidoracatBuildingResetFor42 重置工具）讀「地圖上實際顯示的資源點區塊」——
+-- 啟動時把這個世界的「依主要用途」資源點（原版加地圖包收錄、已啟用的地圖 MOD，照地圖
+-- 優先序過濾，和小地圖畫的同一份合併清單）序列化成 Zomboid/Lua/MinidoracatMiniMap/poi_blocks.json，
+-- 給外部程式（pz-rewild 重置工具）讀「地圖上實際存在的資源點區塊」——
 -- 與 Zones addon 的 zones.json 同在 Zomboid/Lua 根，工具端一個根目錄讀兩份。
 --
 -- 檔案格式 v1（一條目一行；條目間逗號在行首）：
@@ -11,7 +11,16 @@
 --   僅地下時輸出——additive 擴充，消費端（pz-rewild）忽略未知鍵不受影響）
 --   ,{...}
 --   ],"<cat2>":[...
+--   ]},"maps":[
+--   {"mapMod":"<Mod ID>","mapDir":"<地圖目錄>","count":M,"categories":{
+--   "<cat>":[{...}
 --   ]}}
+--   ,{"mapMod":...}
+--   ]}
+--   · 根層 count／categories＝原版地圖；被排在前面的地圖 MOD 蓋掉的原版建築不輸出
+--     （引擎也不載入它們）。maps（2026-10-10 起，additive）＝這個世界有資源點的地圖 MOD，
+--     順序＝地圖優先序，條目格式同根層，各自的 count 只算自己；沒有任何地圖 MOD 資源點時
+--     整個 maps 鍵不輸出（輸出與舊版逐 byte 相同）。mapMod／mapDir 是無損 JSON 字串。
 --   · 座標＝世界 square，x/y 左上角、w/h 尺寸，涵蓋 tiles [x, x+w-1]；
 --     B42 chunk 換算 wx = floor(tileX/8)（chunk = 8×8 tiles，存檔 map/<wx>/<wy>.bin，
 --     見 .omc/research/pz-b42-runtime-chunk-reset.md）
@@ -19,14 +28,14 @@
 --     大→小，r[1] 為圖標錨點）——語意同 MinidoracatMiniMapPOIData 檔頭的 b/r，
 --     b 缺席（測試 fixture 契約）時省略該欄
 --   · modversion＝寫檔當下安裝的 MOD 版本（取不到時 "unknown"）——新鮮度標記，
---     同版本內輸出 byte-identical、版本更新才變
---   · categories key 按字母序（POIData 本身按 cat 排序）、條目順序與 POIData
+--     同版本、同一組地圖內輸出 byte-identical
+--   · categories key 按字母序（烘焙資料本身按 cat 排序）、條目順序與烘焙資料
 --     相同——輸入不變則輸出逐 byte 相同
 --
 -- ⚠ 外部工具端義務（座標會被拿去刪存檔 chunk，讀壞資料＝刪錯區域）：
 --   1. 整檔嚴格 JSON 解析；解析失敗＝視同檔案不存在，中止操作（撕裂檔防護——
 --      外層物件到 EOF 才閉合，任何截斷前綴都過不了嚴格解析；勿逐行流式取用）。
---   2. 各分類條目總數必須等於 count，不等＝中止。
+--   2. 根層各分類條目總數必須等於根層 count、maps 每一項的條目總數必須等於該項 count，不等＝中止。
 --   3. 破壞性操作前驗 modversion 等於伺服器實際安裝的 MOD 版本（保底：檔案
 --      mtime ≥ 伺服器本次啟動時間）——寫檔失敗時舊檔會殘留，靠這條擋陳舊座標。
 --   4. 容忍檔案不存在（MOD 更新後尚未開過一次遊戲/伺服器）。
@@ -52,15 +61,44 @@
 -- modversion 白名單消毒（僅留字母數字 . -）：值進 JSON 字串字面值，杜絕引號/
 -- 反斜線破壞結構（正常 mod.info 版本號不受影響）。cat 刻意不消毒——烘焙的
 -- 手寫識別字（純小寫字母），字元集由煙霧測試的 %a+ 類別段數檢查鎖定。
-local function buildPoiBlocksJson(data, modversion)
-    local mv = "unknown"
-    if type(modversion) == "string" and modversion ~= "" then
-        mv = modversion:gsub("[^%w%.%-]", "")
-        if mv == "" then mv = "unknown" end
+-- 地圖名稱（mapMod、mapDir）可含空白、逗號、撇號、中文，必須無損：寫法同
+-- server/MinidoracatMiniMapPlayerExport.lua 的 escapeJson（\ " 照 JSON 規則、控制字元寫成
+-- \u00xx）；對照表靠 string.char 建（原版無用例，包 pcall），建不起來時含控制字元的名字回 nil。
+local CTRL_ESCAPE = {}
+pcall(function()
+    local hexd = "0123456789abcdef"
+    for b = 0, 31 do
+        local hi = math.floor(b / 16)
+        local lo = b - hi * 16
+        CTRL_ESCAPE[string.char(b)] = "\\u00" .. hexd:sub(hi + 1, hi + 1) .. hexd:sub(lo + 1, lo + 1)
     end
-    local lines = { '{"v":1,"modversion":"' .. mv .. '","count":' .. data.count
-        .. ',"categories":{' }
-    local ln = 1
+    CTRL_ESCAPE[string.char(127)] = "\\u007f"
+end)
+
+-- 字串 → JSON 字串字面值（含引號）；不是字串、空字串或無法無損表示時回 nil
+local function jsonString(s)
+    if type(s) ~= "string" or s == "" then return nil end
+    local out, on = {}, 0
+    for i = 1, s:len() do
+        local c = s:sub(i, i)
+        local piece = c
+        if c == "\\" then
+            piece = "\\\\"
+        elseif c == '"' then
+            piece = '\\"'
+        elseif c:match("%c") then
+            piece = CTRL_ESCAPE[c]
+            if not piece then return nil end
+        end
+        on = on + 1
+        out[on] = piece
+    end
+    return '"' .. table.concat(out, "", 1, on) .. '"'
+end
+
+-- data[1..data.count]（已依 cat 排序）接成「一條目一行」放進 lines[ln+1..]；
+-- 回 (新的 ln, 最後一類的陣列是否還開著)
+local function appendCategoryLines(lines, ln, data)
     local curCat = nil
     for i = 1, data.count do
         local e = data[i]
@@ -98,8 +136,41 @@ local function buildPoiBlocksJson(data, modversion)
         ln = ln + 1
         lines[ln] = table.concat(parts, "", 1, pn) -- 顯式界（家規：Kahlua 缺 4 參走 table.len＝隱性 # 依賴）
     end
+    return ln, curCat ~= nil
+end
+
+-- maps＝{ count = n, [k] = { mapMod = <jsonString 結果>, mapDir = <jsonString 結果>, data = 同 data 形狀 } }|nil；
+-- 名稱由呼叫端先過 jsonString。n 為 0 或 maps 為 nil 時輸出與舊版逐 byte 相同（沒有 "maps" 鍵）
+local function buildPoiBlocksJson(data, modversion, maps)
+    local mv = "unknown"
+    if type(modversion) == "string" and modversion ~= "" then
+        mv = modversion:gsub("[^%w%.%-]", "")
+        if mv == "" then mv = "unknown" end
+    end
+    local lines = { '{"v":1,"modversion":"' .. mv .. '","count":' .. data.count
+        .. ',"categories":{' }
+    local ln, open = appendCategoryLines(lines, 1, data)
+    local close = open and ']}' or '}'
+    local mn = (type(maps) == "table" and type(maps.count) == "number") and maps.count or 0
+    if mn < 1 then
+        ln = ln + 1
+        lines[ln] = close .. '}'
+        return table.concat(lines, "\n", 1, ln)
+    end
     ln = ln + 1
-    lines[ln] = (curCat ~= nil) and ']}}' or '}}'
+    lines[ln] = close .. ',"maps":['
+    for k = 1, mn do
+        local m = maps[k]
+        ln = ln + 1
+        lines[ln] = (k > 1 and ',' or '') .. '{"mapMod":' .. m.mapMod .. ',"mapDir":' .. m.mapDir
+            .. ',"count":' .. m.data.count .. ',"categories":{'
+        local mapOpen
+        ln, mapOpen = appendCategoryLines(lines, ln, m.data)
+        ln = ln + 1
+        lines[ln] = mapOpen and ']}}' or '}}'
+    end
+    ln = ln + 1
+    lines[ln] = ']}'
     return table.concat(lines, "\n", 1, ln)
 end
 -- test:poi-export:end
@@ -123,6 +194,44 @@ local function readBackMatches(path, text)
     return table.concat(got, "\n") == text
 end
 
+-- 要匯出的資源點：(原版 data, maps)。合併清單（MinidoracatMiniMapResources.lua 的 minimapSpans）
+-- 拿得到時，原版只留沒被地圖優先序藏掉的，另附各地圖 MOD 的條目；拿不到（缺 API、例外）時
+-- 照舊整份原版烘焙資料。名稱無法寫成 JSON 的地圖整張略過並 log（少匯出＝重置工具少一些
+-- 目標，不會刪錯區域）
+local function exportData()
+    local R = MinidoracatMiniMapResources
+    if type(R) == "table" and type(R.minimapSpans) == "function" then
+        local ok, spans, entries = pcall(R.minimapSpans)
+        if ok and type(spans) == "table" and type(entries) == "table" then
+            local vanilla, maps = { count = 0 }, { count = 0 }
+            for i = 1, spans.count do
+                local s = spans[i]
+                local d = { count = 0 }
+                for j = s.from, s.to do
+                    d.count = d.count + 1
+                    d[d.count] = entries[j]
+                end
+                if s.vanilla then
+                    vanilla = d
+                elseif d.count > 0 then
+                    local mod, dir = jsonString(s.mapMod), jsonString(s.mapDir)
+                    if mod and dir then
+                        maps.count = maps.count + 1
+                        maps[maps.count] = { mapMod = mod, mapDir = dir, data = d }
+                    else
+                        print("[MinidoracatMiniMap] poi_blocks export: map dir '" .. tostring(s.mapDir)
+                            .. "' has a name JSON cannot carry; its " .. d.count .. " POIs are left out")
+                    end
+                end
+            end
+            return vanilla, maps
+        end
+        print("[MinidoracatMiniMap] poi_blocks export: merged map list unavailable (" .. tostring(spans)
+            .. "), exporting vanilla POIs only")
+    end
+    return MinidoracatMiniMapPOIData, nil
+end
+
 local function exportPoiBlocks()
     -- 版本取用失敗（API 缺席/例外）降級 "unknown"，不擋匯出
     local okMv, info = pcall(getModInfoByID, "MinidoracatMiniMapFor42")
@@ -131,15 +240,21 @@ local function exportPoiBlocks()
         local okV, v = pcall(function() return info:getModVersion() end)
         if okV then mv = v end
     end
-    local data = MinidoracatMiniMapPOIData
+    local data, maps = exportData()
+    local mapCount, mapPois = 0, 0
+    if maps then
+        mapCount = maps.count
+        for k = 1, maps.count do mapPois = mapPois + maps[k].data.count end
+    end
+    local vanillaCount = (type(data) == "table" and type(data.count) == "number") and data.count or 0
     local text
     local exported = 0
-    if type(data) == "table" and type(data.count) == "number" and data.count >= 1 then
+    if vanillaCount + mapPois >= 1 then
         -- pcall：烘焙資料異常（rn 超界等）不炸 boot 事件——落到下方空文件路徑
-        local okB, built = pcall(buildPoiBlocksJson, data, mv)
+        local okB, built = pcall(buildPoiBlocksJson, data, mv, maps)
         if okB then
             text = built
-            exported = data.count
+            exported = vanillaCount
         else
             print("[MinidoracatMiniMap] poi_blocks export build FAILED (" .. tostring(built) .. ")")
         end
@@ -149,6 +264,7 @@ local function exportPoiBlocks()
         -- 讀到空集就不動作；留著舊座標反而會被拿去刪錯區域（silent-failure review
         -- 發現）。空輸入的 builder 無失敗路徑，不需再包 pcall
         text = buildPoiBlocksJson({ count = 0 }, mv)
+        mapCount, mapPois = 0, 0
         print("[MinidoracatMiniMap] poi_blocks export: no usable POI data, writing EMPTY document to neutralize any stale file")
     end
     local writer = getFileWriter(POI_BLOCKS_PATH, true, false)
@@ -169,8 +285,9 @@ local function exportPoiBlocks()
     -- flag），pcall 接不到磁碟錯誤；逐行讀回比對是唯一可靠的完整性證據，驗證
     -- 通過才記成功。readLine 剝行尾，以 "\n" 重組與原文比對（builder 只用 \n）。
     if readBackMatches(POI_BLOCKS_PATH, text) then
-        print("[MinidoracatMiniMap] poi_blocks.json exported (" .. exported
-            .. " buildings, modversion " .. tostring(mv or "unknown") .. ")")
+        print("[MinidoracatMiniMap] poi_blocks.json exported (" .. exported .. " buildings"
+            .. (mapCount > 0 and (", plus " .. mapPois .. " in " .. mapCount .. " map mods") or "")
+            .. ", modversion " .. tostring(mv or "unknown") .. ")")
     else
         print("[MinidoracatMiniMap] poi_blocks export verify FAILED -- poi_blocks.json may be TORN/STALE; external tools must strict-parse, verify count and modversion before use")
     end
