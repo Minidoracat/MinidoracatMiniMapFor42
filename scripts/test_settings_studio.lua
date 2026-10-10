@@ -363,6 +363,20 @@ do
     dd = env.byKey("PoiSource")
     check(dd:isEnabled() and dd:getSelected() == 3 and not textShown(env, T("UI_MinidoracatMiniMap_PoiSourceLocked")),
         "I4 unlocked: dropdown back to the saved choice, no lock note")
+    -- 兩種方式各有標題與說明；只有生效的那一種標「使用中」（這裡是伺服器解析出的「依房間」）
+    env.Core.poiSource = function() return "rooms", false end
+    s.rebuild()
+    local mainTitle = findControl(env, function(el)
+        return el._lines ~= nil and el._lines[1] == T("UI_MinidoracatMiniMap_PoiSource_Minimap")
+    end)
+    local roomTitle = findControl(env, function(el)
+        return el._lines ~= nil and el._lines[1] == T("UI_MinidoracatMiniMap_PoiSource_Rooms")
+    end)
+    check(mainTitle ~= nil and roomTitle ~= nil and mainTitle._right == nil
+        and roomTitle._right == T("UI_MinidoracatMiniMap_PoiSourceActive")
+        and textShown(env, T("UI_MinidoracatMiniMap_PoiSourceNoteMinimap"))
+        and textShown(env, T("UI_MinidoracatMiniMap_PoiSourceNoteRooms")),
+        "I5 both methods explained; only the effective one is tagged in use")
     env.Core.poiSource, env.values.PoiSource = nil, nil
 end
 
