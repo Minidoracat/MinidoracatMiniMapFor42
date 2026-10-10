@@ -643,15 +643,26 @@ if ISMiniMapInner and ISMiniMapInner.onRightMouseUp then
         local pn = self.playerNum or 0
         local playerObj = getSpecificPlayer(pn)
         if not playerObj then return end
-        -- 功能閘門 minimap 被擋＝畫面是「無訊號」，不追加任何地圖選項
-        local fa = Core.featureAllowed
-        if fa and not fa(pn, "minimap", "mini") then return end
         -- 取 player 0 的單例：原版 onRightMouseUp 硬編碼 ISContextMenu.get(0,...)
         -- （ISMiniMap.lua:284-287），追加必須跟它同一個 menu
         local context = getPlayerContextMenu(0)
-        -- uiToWorld 用例 ISMiniMap.lua:289-290；選單內容兩張地圖共用（Core.mapMenuFill）
-        Core.mapMenuFill(context, self, pn, self.mapAPI:uiToWorldX(x, y), self.mapAPI:uiToWorldY(x, y),
-            playerObj)
+        -- uiToWorld 用例 ISMiniMap.lua:289-290
+        local wx, wy = self.mapAPI:uiToWorldX(x, y), self.mapAPI:uiToWorldY(x, y)
+        -- 「傳送至此」：原版小地圖只在 debug 加（ISMiniMap.lua:291-293），世界地圖則連多人管理員也有
+        -- （ISWorldMap.lua:911、941-943）。多人非 debug 時照伺服器 /teleportto 的權限
+        -- （TeleportToCommand 的 RequiredCapability＝TeleportToCoordinates）補在最前面，和 debug 同位置；
+        -- 回呼用原版 onTeleport（同原版，固定傳送 player 0）。管理員工具不看功能閘門
+        local admin = getSpecificPlayer(0)
+        local role = isClient() and not getDebug() and Capability and admin and admin:getRole()
+        if role and role:hasCapability(Capability.TeleportToCoordinates)
+                and getWorld():getMetaGrid():isValidChunk(wx / 10, wy / 10) then
+            context:addOption(getText("IGUI_ZombiePopulation_TeleportHere"), self, self.onTeleport, wx, wy)
+        end
+        -- 功能閘門 minimap 被擋＝畫面是「無訊號」，不追加地圖選項；選單內容兩張地圖共用（Core.mapMenuFill）
+        local fa = Core.featureAllowed
+        if not fa or fa(pn, "minimap", "mini") then
+            Core.mapMenuFill(context, self, pn, wx, wy, playerObj)
+        end
         if context.numOptions > 1 then context:setVisible(true) end
     end
 end

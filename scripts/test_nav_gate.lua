@@ -706,8 +706,67 @@ do
     end
     rightClick("M5", nil)
     Core.featureAllowed = realFeature
+
+    -- M6: 多人非 debug、角色有 /teleportto 權限（TeleportToCoordinates）＝第一項補原版「傳送至此」；
+    --     debug（原版自己加）、單機、沒權限、不是有效 chunk 都不加；小地圖無訊號時照樣有（管理員工具）
+    Core.featureGates = {}
+    local TELEPORT = "T:IGUI_ZombiePopulation_TeleportHere"
+    local state = { debug = false, cap = true, valid = true }
+    getDebug = function() return state.debug end
+    Capability = { TeleportToCoordinates = "TeleportToCoordinates" }
+    getWorld = function()
+        return { getMetaGrid = function() return { isValidChunk = function(_, cx, cy)
+            state.chunk = { cx, cy }
+            return state.valid
+        end } end }
+    end
+    local admin = t.player(0, "Admin")
+    admin.getRole = function()
+        return { hasCapability = function(_, c) return state.cap and c == "TeleportToCoordinates" end }
+    end
+    t.innerClass.onTeleport = function() end
+    local function teleportMenu(tag)
+        local mini = setmetatable({ playerNum = 0, rightMouseDown = true, mapAPI = {
+            uiToWorldX = function() return 12.7 end, uiToWorldY = function() return 34.2 end,
+        } }, { __index = t.innerClass })
+        mini:onRightMouseUp(5, 6)
+        local menu = assert(t.menu(), tag .. ": 原版選單")
+        local names = {}
+        for i, o in ipairs(menu.options) do names[i] = o.name end
+        return menu, table.concat(names, ",")
+    end
+    t.client(true)
+    local menu, names = teleportMenu("M6a")
+    eq(names, TELEPORT .. "," .. ORDER, "M6a 多人管理員＝傳送至此排第一，其餘照舊")
+    local tp = menu.options[1]
+    assert(tp.fn == t.innerClass.onTeleport and tp.a == 12.7 and tp.b == 34.2,
+        "M6a 回呼是原版 onTeleport、帶點擊的世界座標")
+    eq(state.chunk[1], 1.27, "M6a 有效 chunk 用原版同一個換算（世界座標／10）")
+    state.cap = false
+    menu, names = teleportMenu("M6b")
+    eq(names, ORDER, "M6b 角色沒有 TeleportToCoordinates＝不加")
+    state.cap, state.debug = true, true
+    menu, names = teleportMenu("M6c")
+    eq(names, ORDER, "M6c debug 由原版自己加，本 MOD 不重複")
+    state.debug, state.valid = false, false
+    menu, names = teleportMenu("M6d")
+    eq(names, ORDER, "M6d 點在地圖外（無效 chunk）＝不加")
+    state.valid = true
+    t.client(false)
+    menu, names = teleportMenu("M6e")
+    eq(names, ORDER, "M6e 單機（非 debug）＝不加")
+    t.client(true)
+    API.registerFeatureGate("Watch", function(_, feature)
+        if feature == "minimap" then return false end
+    end)
+    menu, names = teleportMenu("M6f")
+    eq(names, TELEPORT, "M6f 小地圖無訊號＝只剩傳送至此")
+    eq(menu.visible, true, "M6f 只有傳送也要顯示選單")
+    Core.featureGates = {}
+    t.client(false)
+    getDebug, Capability, getWorld = nil, nil, nil
 end
 
 print("test_nav_gate: OK（註冊/判定 G1-G9＋set 閘門 S1-S6＋分享撤回 H1-H3"
     .. "＋繪製閘門與繪製唯讀 D1-D7＋getNavTarget Q1-Q4＋功能閘門與行程撤銷 F1-F7"
-    .. "＋小地圖右鍵選單與導航項鎖定 M1-M5）")
+    .. "＋小地圖右鍵選單與導航項鎖定 M1-M5＋管理員傳送至此 M6）")
