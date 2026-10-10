@@ -2364,7 +2364,7 @@ do
 end
 
 --------------------------------------------------------------------------------
--- LK. 右鍵導航被擋：插入父項只加灰色一項＋原因（不掛子選單）；世界地圖開著時
+-- LK. 右鍵導航被擋：「加入行程」父項只加紅色一項＋原因（不掛子選單）；世界地圖開著時
 --     訊息改走 UI 框架 Toast（halo 畫在被全螢幕地圖蓋住的角色頭上）
 --------------------------------------------------------------------------------
 do
@@ -2393,24 +2393,37 @@ do
     ISContextMenu.getNew = function() gotNew = gotNew + 1; return mapMenu() end
     setTrip(0, "navigating", { stop(1, 10, 10, "pending", "A"), stop(2, 20, 20, "pending", "B") },
         1, nil, 291)
-    -- LK1: 有錨點又被擋＝只有灰色父項＋原因，不建子選單
+    -- LK1: 有錨點又被擋＝只有紅色父項「加入行程」＋原因，不建子選單；回 true（呼叫端不再放平的加到最後）
     local m = mapMenu()
-    Core.navInsertSubMenu(m, {}, 0, 5, 6, nil, "NeedGPS")
-    eq(#m.options, 1, "LK1: 被擋時只加插入父項")
-    eq(m.options[1].text, "UI_MinidoracatMiniMap_TripInsert", "LK1: 父項文字不變")
-    eq(m.options[1].notAvailable, true, "LK1: 父項變灰")
+    eq(Core.navInsertSubMenu(m, {}, 0, 5, 6, nil, "NeedGPS"), true, "LK1: 被擋時回報已加這一項")
+    eq(#m.options, 1, "LK1: 被擋時只加父項")
+    eq(m.options[1].text, "UI_MinidoracatMiniMap_TripAddMenu", "LK1: 父項是「加入行程」")
+    eq(m.options[1].notAvailable, true, "LK1: 父項不可用")
     eq(m.options[1].toolTip and m.options[1].toolTip.description, "NeedGPS", "LK1: 附原因 tooltip")
-    eq(m.subs + gotNew, 0, "LK1: 不掛子選單（灰父項的子選單照樣點得到）")
-    -- LK2: 放行＝原本的子選單（對照組：同一份行程確實會掛）
+    eq(m.subs + gotNew, 0, "LK1: 不掛子選單（停用父項的子選單照樣點得到）")
+    -- LK2: 放行＝子選單照行程順序：先去這裡→插在各待前往站之前→加到行程最後
     m = mapMenu()
-    Core.navInsertSubMenu(m, {}, 0, 5, 6)
+    eq(Core.navInsertSubMenu(m, {}, 0, 5, 6), true, "LK2: 放行時回報已加")
     eq(m.subs, 1, "LK2: 放行時掛子選單")
     falsy(m.options[1].notAvailable, "LK2: 放行時父項可用")
-    -- LK3: 沒有錨點＝即使被擋也不加（插入等於加尾）
+    local sub = m.options[1].subMenu
+    eq(#sub.options, 4, "LK2: 先去這裡＋兩個插入位置＋加到最後")
+    eq(sub.options[1].text, "UI_MinidoracatMiniMap_TripPriority", "LK2: 第一項是先去這裡")
+    eq(sub.options[1].param, 5, "LK2: 先去這裡帶原始座標")
+    eq(sub.options[4].text, "UI_MinidoracatMiniMap_TripAdd", "LK2: 最後一項是加到行程最後")
+    -- LK2b: 不能掛子選單（第三方選單缺 addSubMenu）＝不加、不留空父項，交給呼叫端放平的加到最後
+    local bare = { options = {} }
+    function bare:addOption(text)
+        self.options[#self.options + 1] = { text = text }
+        return self.options[#self.options]
+    end
+    eq(Core.navInsertSubMenu(bare, {}, 0, 5, 6), nil, "LK2b: 不能掛子選單時回 nil")
+    eq(#bare.options, 0, "LK2b: 不留空父項")
+    -- LK3: 沒有錨點＝即使被擋也不加（插入等於加尾，呼叫端放平的加到最後）
     setTrip(0, "navigating", { stop(1, 10, 10, "arrived", "A") }, 1, nil, 292)
     m = mapMenu()
-    Core.navInsertSubMenu(m, {}, 0, 5, 6, nil, "NeedGPS")
-    eq(#m.options, 0, "LK3: 零錨點不加插入項")
+    eq(Core.navInsertSubMenu(m, {}, 0, 5, 6, nil, "NeedGPS"), nil, "LK3: 零錨點回 nil")
+    eq(#m.options, 0, "LK3: 零錨點不加這一項")
     ISContextMenu.getNew = nil
     trips[0] = nil
 
@@ -2556,4 +2569,4 @@ print("test_itinerary_ui: 全數通過（A 開窗切頁收合 / B 提示列防�
     .. "M 快捷鍵入口 / N 分割畫面 ping / Q 接續模式兩入口 / R 插入錨點防線 / "
     .. "S 逐站停等與認領鎖定 / T 搜尋頁動作可用性 / U 全文出口 / "
     .. "V 全文列逐行可讀 / W 插入錨點有界標籤與全文出口 / X 真 Core 接管與直線指引 / Y 按鈕錨定 / "
-    .. "Z 收藏清單與回家 / LK 右鍵插入項鎖定與世界地圖 Toast）")
+    .. "Z 收藏清單與回家 / LK 右鍵「加入行程」子選單與鎖定、世界地圖 Toast）")

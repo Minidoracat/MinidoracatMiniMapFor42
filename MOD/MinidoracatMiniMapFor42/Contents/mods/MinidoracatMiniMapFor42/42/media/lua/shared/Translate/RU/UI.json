@@ -85,6 +85,7 @@
     "UI_MinidoracatMiniMap_TripAdd": "Добавить в конец поездки",
     "UI_MinidoracatMiniMap_TripPriority": "Сначала сюда",
     "UI_MinidoracatMiniMap_TripInsert": "Вставить перед точкой...",
+    "UI_MinidoracatMiniMap_TripAddMenu": "Добавить в поездку",
     "UI_MinidoracatMiniMap_TripInsertBefore": "Вставить перед %1. %2",
     "UI_MinidoracatMiniMap_TripStart": "Начать навигацию",
     "UI_MinidoracatMiniMap_TripContinue": "К следующей точке",
@@ -452,7 +453,7 @@
     "UI_MinidoracatMiniMap_GoHome": "Домой",
     "UI_MinidoracatMiniMap_SetHome": "Сделать домом",
     "UI_MinidoracatMiniMap_BtnGoHome": "Домой: заменить текущую поездку на дом и начать навигацию",
-    "UI_MinidoracatMiniMap_HomeNotSet": "Дом ещё не задан. Щёлкните ПКМ по месту на карте и выберите «Сделать домом».",
+    "UI_MinidoracatMiniMap_HomeNotSet": "Дом ещё не задан. Щёлкните ПКМ по месту на карте и выберите «Избранное» › «Сделать домом».",
     "UI_MinidoracatMiniMap_AlreadyHome": "Вы уже дома.",
     "UI_MinidoracatMiniMap_HomeSet": "Дом задан",
     "UI_MinidoracatMiniMap_PlaceAdd": "В избранное...",
@@ -463,7 +464,7 @@
     "UI_MinidoracatMiniMap_PlaceConfirmRemove": "Удалить «%1» из избранного?",
     "UI_MinidoracatMiniMap_PlaceMenu": "Избранное",
     "UI_MinidoracatMiniMap_PlaceMenuSetHome": "Сделать домом",
-    "UI_MinidoracatMiniMap_PlacesEmpty": "Избранного пока нет. Щёлкните ПКМ по карте и выберите «В избранное...» или выберите результат поиска и нажмите «Избранное».",
+    "UI_MinidoracatMiniMap_PlacesEmpty": "Избранного пока нет. Щёлкните ПКМ по карте и выберите «Избранное» › «В избранное...» или выберите результат поиска и нажмите «Избранное».",
     "UI_MinidoracatMiniMap_SearchKindPlace": "Избранное",
     "UI_MinidoracatMiniMap_PlaceError_unsupported": "Избранное сохранено более новой версией этого мода. Обновите мод, чтобы его редактировать."
 }

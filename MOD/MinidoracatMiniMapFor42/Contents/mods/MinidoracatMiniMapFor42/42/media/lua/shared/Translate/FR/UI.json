@@ -85,6 +85,7 @@
     "UI_MinidoracatMiniMap_TripAdd": "Ajouter en fin de trajet",
     "UI_MinidoracatMiniMap_TripPriority": "Y aller d'abord",
     "UI_MinidoracatMiniMap_TripInsert": "Insérer avant une étape...",
+    "UI_MinidoracatMiniMap_TripAddMenu": "Ajouter au trajet",
     "UI_MinidoracatMiniMap_TripInsertBefore": "Insérer avant %1. %2",
     "UI_MinidoracatMiniMap_TripStart": "Démarrer la navigation",
     "UI_MinidoracatMiniMap_TripContinue": "Étape suivante",
@@ -452,7 +453,7 @@
     "UI_MinidoracatMiniMap_GoHome": "Rentrer",
     "UI_MinidoracatMiniMap_SetHome": "Définir comme domicile",
     "UI_MinidoracatMiniMap_BtnGoHome": "Rentrer : remplace le trajet actuel par le domicile et démarre la navigation",
-    "UI_MinidoracatMiniMap_HomeNotSet": "Aucun domicile défini. Faites un clic droit sur un endroit de la carte et choisissez « Définir comme domicile ».",
+    "UI_MinidoracatMiniMap_HomeNotSet": "Aucun domicile défini. Faites un clic droit sur un endroit de la carte et choisissez « Favoris » › « Définir comme domicile ».",
     "UI_MinidoracatMiniMap_AlreadyHome": "Vous êtes déjà chez vous.",
     "UI_MinidoracatMiniMap_HomeSet": "Domicile défini",
     "UI_MinidoracatMiniMap_PlaceAdd": "Ajouter aux favoris...",
@@ -463,7 +464,7 @@
     "UI_MinidoracatMiniMap_PlaceConfirmRemove": "Retirer « %1 » des favoris ?",
     "UI_MinidoracatMiniMap_PlaceMenu": "Favoris",
     "UI_MinidoracatMiniMap_PlaceMenuSetHome": "Définir comme domicile",
-    "UI_MinidoracatMiniMap_PlacesEmpty": "Aucun favori. Faites un clic droit sur la carte et choisissez « Ajouter aux favoris... », ou sélectionnez un résultat de recherche et utilisez Favoris.",
+    "UI_MinidoracatMiniMap_PlacesEmpty": "Aucun favori. Faites un clic droit sur la carte et choisissez « Favoris » › « Ajouter aux favoris... », ou sélectionnez un résultat de recherche et utilisez Favoris.",
     "UI_MinidoracatMiniMap_SearchKindPlace": "Favori",
     "UI_MinidoracatMiniMap_PlaceError_unsupported": "Les favoris ont été enregistrés par une version plus récente de ce mod. Mettez le mod à jour pour les modifier."
 }

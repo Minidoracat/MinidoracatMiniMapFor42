@@ -151,10 +151,25 @@ do
     eq(go.toolTip.description, "NeedGPS", "被擋的回家附導航被擋原因")
     eq(m:find("UI_MinidoracatMiniMap_SetHome").notAvailable, nil, "導航被擋不影響設為家")
     eq(m:find("UI_MinidoracatMiniMap_PlaceAdd").notAvailable, nil, "導航被擋不影響加入收藏")
-    -- 再設一次＝搬家，不累積第二筆
+    -- 已有家再「設為家」＝這裡另建一筆當家，舊家留在收藏（同搜尋視窗「設為家」：不刪地點，
+    -- 誤點不會弄丟舊家座標；2026-10-11 設計稿作答）
     assert(t.core.placesSetHomeAt(0, 50, 60))
-    eq(t.core.placesState(0).count, 1, "搬家不新增收藏")
-    eq((t.api.getNavHome(0)), 50, "家已搬到新座標")
+    local s = t.core.placesState(0)
+    eq(s.count, 2, "設為家不覆蓋舊家：多一筆收藏")
+    eq((t.api.getNavHome(0)), 50, "家換到新座標")
+    eq(t.core.placeLabel(0, s.places[1]), "10, 20", "舊家留在收藏（無名顯示座標）")
+end
+
+-- 有名稱的家再「設為家」：舊家連名稱留在收藏，新家無名顯示「家」
+do
+    local t = fixture(); t.player(0)
+    assert(t.core.placesSetHome(0, assert(t.core.placesAdd(0, 1, 2, "Base"))))
+    assert(t.core.placesSetHomeAt(0, 7, 8))
+    local s = t.core.placesState(0)
+    eq(s.count, 2, "有名稱的舊家不被覆蓋")
+    eq(s.places[1].label, "Base", "舊家名稱留在收藏"); eq(s.places[1].x, 1, "舊家座標留在收藏")
+    local hx, _, label = t.api.getNavHome(0)
+    eq(hx, 7, "家換到新座標"); eq(label, "UI_MinidoracatMiniMap_PlaceHome", "新家無名顯示「家」")
 end
 
 -- 一鍵回家：沒有行程或只有一站時直接取代成單站並開始導航；站名為家的顯示名。
@@ -247,8 +262,6 @@ do
     assert(t.core.placesSetHome(0, a))
     eq((t.api.getNavHome(0)), 1, "把既有收藏設為家")
     eq(select(3, t.api.getNavHome(0)), "Base", "有名稱的家顯示名稱")
-    assert(t.core.placesSetHomeAt(0, 7, 8))
-    eq(t.core.placesState(0).places[1].label, "Base", "搬家保留名稱")
     for i = 3, 64 do assert(t.core.placesAdd(0, i, i, "Place " .. i)) end
     local restored = fixture(); restored.player(0, p.md)
     local loaded = restored.core.placesState(0)

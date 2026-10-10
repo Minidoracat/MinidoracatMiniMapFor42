@@ -85,6 +85,7 @@
     "UI_MinidoracatMiniMap_TripAdd": "Adicionar ao fim da viagem",
     "UI_MinidoracatMiniMap_TripPriority": "Ir aqui primeiro",
     "UI_MinidoracatMiniMap_TripInsert": "Inserir antes de uma parada...",
+    "UI_MinidoracatMiniMap_TripAddMenu": "Adicionar à viagem",
     "UI_MinidoracatMiniMap_TripInsertBefore": "Inserir antes de %1. %2",
     "UI_MinidoracatMiniMap_TripStart": "Iniciar navegação",
     "UI_MinidoracatMiniMap_TripContinue": "Ir para a próxima parada",
@@ -452,7 +453,7 @@
     "UI_MinidoracatMiniMap_GoHome": "Ir para casa",
     "UI_MinidoracatMiniMap_SetHome": "Definir como casa",
     "UI_MinidoracatMiniMap_BtnGoHome": "Ir para casa: substitui a viagem atual pela casa e começa a navegar",
-    "UI_MinidoracatMiniMap_HomeNotSet": "Nenhuma casa definida ainda. Clique com o botão direito em um ponto do mapa e escolha “Definir como casa”.",
+    "UI_MinidoracatMiniMap_HomeNotSet": "Nenhuma casa definida ainda. Clique com o botão direito em um ponto do mapa e escolha “Favoritos” › “Definir como casa”.",
     "UI_MinidoracatMiniMap_AlreadyHome": "Você já está em casa.",
     "UI_MinidoracatMiniMap_HomeSet": "Casa definida",
     "UI_MinidoracatMiniMap_PlaceAdd": "Adicionar aos favoritos…",
@@ -463,7 +464,7 @@
     "UI_MinidoracatMiniMap_PlaceConfirmRemove": "Remover “%1” dos favoritos?",
     "UI_MinidoracatMiniMap_PlaceMenu": "Favoritos",
     "UI_MinidoracatMiniMap_PlaceMenuSetHome": "Definir como casa",
-    "UI_MinidoracatMiniMap_PlacesEmpty": "Nenhum favorito ainda. Clique com o botão direito no mapa e escolha “Adicionar aos favoritos…” ou selecione um resultado da busca e use Favoritos.",
+    "UI_MinidoracatMiniMap_PlacesEmpty": "Nenhum favorito ainda. Clique com o botão direito no mapa e escolha “Favoritos” › “Adicionar aos favoritos…” ou selecione um resultado da busca e use Favoritos.",
     "UI_MinidoracatMiniMap_SearchKindPlace": "Favorito",
     "UI_MinidoracatMiniMap_PlaceError_unsupported": "Os favoritos foram salvos por uma versão mais nova deste mod. Atualize o mod para editá-los."
 }

@@ -176,7 +176,7 @@ Core.navGateAllows = function(playerNum, context)
     return true
 end
 -- test:nav-gate:end
--- 雙地圖右鍵的導航項鎖定（原版 notAvailable＋ISToolTip 慣例，同 _Places 未設家）：
+-- 雙地圖右鍵選單共用 helper。導航項鎖定（原版 notAvailable＋ISToolTip 慣例，同 _Places 未設家）：
 -- 建選單時問一次 set 閘門，被擋回原因文字（同點下去被擋時的那句）、放行回 nil。
 -- 閘門拋錯＝不鎖：點擊時 navSetTarget 的 set 檢查仍是安全網
 -- test:nav-menu-lock:start
@@ -194,6 +194,18 @@ Core.navMenuLock = function(option, text)
     tip:setVisible(false)
     tip.description = text
     option.toolTip = tip
+end
+-- 子選單：父項＋原版 getNew／addSubMenu（ISContextMenu.lua:1199／1075；getNew 走 player 單例的
+-- subMenuPool，前手一定先呼叫過 ISContextMenu.get 才有那張池子）。第三方選單缺方法或不是 player
+-- 單例時回 nil，呼叫端改平鋪，不讓別人的選單連坐壞掉
+Core.mapSubMenu = function(context, key)
+    if type(context.addSubMenu) ~= "function" or type(context.player) ~= "number"
+        or type(context.subMenuPool) ~= "table" or not (ISContextMenu and ISContextMenu.getNew) then
+        return nil
+    end
+    local sub = ISContextMenu:getNew(context)
+    context:addSubMenu(context:addOption(getText(key)), sub)
+    return sub
 end
 -- test:nav-menu-lock:end
 Core.navShareTarget = function(pn)
@@ -564,7 +576,55 @@ function ISMiniMapInner:onMinidoracatCopyCoords(wx, wy)
     copyCoordsText(self, string.format("%d,%d,0", wx, wy))
 end
 
--- 右鍵選單追加導航選項：原版 onRightMouseUp 以 ISContextMenu.get 建選單
+-- 雙地圖右鍵選單（兩張地圖共用；2026-10-11 設計稿 minimap-rightclick-1011 作答）。第一層依序：
+-- 導航（有待前往站時叫「取代並導航」，點了照舊先確認）→加入行程（有待前往站才是子選單：先去這裡／
+-- 插在第 N 站之前／加到行程最後，_Search.lua navInsertSubMenu）→收藏（回家／設為家／加入收藏，
+-- _Places.lua placesAddMenu）→複製此處座標→行程（有行程或壞資料才有：行程規劃／停止導航／分享目標／
+-- 清空行程，會刪資料的清空排最後）→搜尋地圖。set 閘門擋住時會設導航的項變紅＋原因（建選單只問一次）。
+-- target＝地圖元件：回呼是它的 onMinidoracat* 方法，複製座標的回饋畫在該張地圖上
+-- test:map-menu:start
+Core.mapMenuFill = function(context, target, pn, wx, wy, playerObj)
+    local blocked, lock = Core.navMenuBlocked(pn), Core.navMenuLock
+    local first = Core.navInsertAnchors(pn) > 0 and "UI_MinidoracatMiniMap_SearchSetTarget"
+        or "UI_MinidoracatMiniMap_SetTarget"
+    lock(context:addOption(getText(first), target, target.onMinidoracatSetTarget, wx, wy), blocked)
+    if not Core.navInsertSubMenu(context, target, pn, wx, wy, nil, blocked) then
+        lock(context:addOption(getText("UI_MinidoracatMiniMap_TripAdd"), target,
+            target.onMinidoracatAddStop, wx, wy), blocked)
+    end
+    if Core.placesAddMenu then
+        Core.placesAddMenu(Core.mapSubMenu(context, "UI_MinidoracatMiniMap_PlaceMenu") or context,
+            pn, wx, wy, blocked)
+    end
+    -- 複製此處座標：選項文字即時帶座標（先看到再決定點不點）
+    local cx, cy = math.floor(wx), math.floor(wy)
+    context:addOption(getText("UI_MinidoracatMiniMap_CopyHere", string.format("%d, %d, 0", cx, cy)),
+        target, target.onMinidoracatCopyCoords, cx, cy)
+    if Core.navItineraryState(pn) or Core.navItineraryError(pn) then
+        local trip = Core.mapSubMenu(context, "UI_MinidoracatMiniMap_TripManage") or context
+        trip:addOption(getText("UI_MinidoracatMiniMap_TripTitle"), target,
+            target.onMinidoracatItinerary)
+        if Core.navGetTarget(pn) then
+            trip:addOption(getText("UI_MinidoracatMiniMap_TripPause"), target,
+                target.onMinidoracatPauseNav)
+            -- 分享四閘：MP＋陣營（Faction.getPlayerFaction 用例 ISFactionUI.lua:408）＋沙盒＋功能閘門
+            -- share（_FeatureGate.lua；缺檔＝放行）。⚠ navShareAllowed 不傳 pn＝AllowNavShare 永不列入
+            -- 管理員旁路白名單（會影響其他玩家、需伺服器轉送的功能閘；主檔 navShareGateTick 註解同義）
+            local fa = Core.featureAllowed
+            if isClient() and Faction and Faction.getPlayerFaction(playerObj)
+                and Core.navShareAllowed and Core.navShareAllowed() and (not fa or fa(pn, "share")) then
+                trip:addOption(getText("UI_MinidoracatMiniMap_ShareTarget"), target,
+                    target.onMinidoracatShareTarget)
+            end
+        end
+        trip:addOption(getText("UI_MinidoracatMiniMap_TripClear"), target,
+            target.onMinidoracatClearTarget)
+    end
+    context:addOption(getText("UI_MinidoracatMiniMap_SearchMenu"), target, target.onMinidoracatSearch)
+end
+-- test:map-menu:end
+
+-- 右鍵選單追加本 MOD 的地圖選單：原版 onRightMouseUp 以 ISContextMenu.get 建選單
 -- （ISMiniMap.lua:280-298），get 會 clear（ISContextMenu.lua:1166-1170）——
 -- 故以 getPlayerContextMenu 取同一單例追加（用例 ISContextMenu.lua:1167），
 -- 不重呼 get、保住 debug 傳送選項；空選單原版以 numOptions==1 判定隱藏
@@ -584,43 +644,9 @@ if ISMiniMapInner and ISMiniMapInner.onRightMouseUp then
         -- 取 player 0 的單例：原版 onRightMouseUp 硬編碼 ISContextMenu.get(0,...)
         -- （ISMiniMap.lua:284-287），追加必須跟它同一個 menu
         local context = getPlayerContextMenu(0)
-        local worldX = self.mapAPI:uiToWorldX(x, y) -- uiToWorld 用例 ISMiniMap.lua:289-290
-        local worldY = self.mapAPI:uiToWorldY(x, y)
-        -- 加點入口順序（兩張地圖一致）：加到行程最後（主要）→插在指定停靠點之前
-        -- （子選單列出待前往站，Core.navInsertSubMenu 共用同一份錨點防線）→
-        -- 先去這裡→取代整趟（會立刻出發，故排在後面；會丟待前往站時先確認）→行程管理。
-        -- set 閘門擋住時會設導航的項變灰＋說明原因（只問一次，下面共用）
-        local blocked, lock = Core.navMenuBlocked(pn), Core.navMenuLock
-        lock(context:addOption(getText("UI_MinidoracatMiniMap_TripAdd"), self,
-            self.onMinidoracatAddStop, worldX, worldY), blocked)
-        Core.navInsertSubMenu(context, self, pn, worldX, worldY, nil, blocked)
-        lock(context:addOption(getText("UI_MinidoracatMiniMap_TripPriority"), self,
-            self.onMinidoracatPriorityStop, worldX, worldY), blocked)
-        lock(context:addOption(getText("UI_MinidoracatMiniMap_SetTarget"), self,
-            self.onMinidoracatSetTarget, worldX, worldY), blocked)
-        context:addOption(getText("UI_MinidoracatMiniMap_TripManage"), self,
-            self.onMinidoracatItinerary)
-        if Core.placesAddMenu then Core.placesAddMenu(context, pn, worldX, worldY, blocked) end
-        -- 複製此處座標：選項文字即時帶座標（先看到再決定點不點）
-        local cwx, cwy = math.floor(worldX), math.floor(worldY)
-        context:addOption(getText("UI_MinidoracatMiniMap_CopyHere",
-            string.format("%d, %d, 0", cwx, cwy)), self, self.onMinidoracatCopyCoords, cwx, cwy)
-        context:addOption(getText("UI_MinidoracatMiniMap_SearchMenu"), self,
-            self.onMinidoracatSearch)
-        if Core.navItineraryState(pn) or Core.navItineraryError(pn) then
-            context:addOption(getText("UI_MinidoracatMiniMap_TripClear"), self,
-                self.onMinidoracatClearTarget)
-        end
-        if Core.navGetTarget(pn) then
-            context:addOption(getText("UI_MinidoracatMiniMap_TripPause"), self,
-                self.onMinidoracatPauseNav)
-            if isClient() and Faction and Faction.getPlayerFaction(playerObj)
-                and Core.navShareAllowed() and (not fa or fa(pn, "share")) then
-                -- Faction.getPlayerFaction 用例 ISFactionUI.lua:408
-                context:addOption(getText("UI_MinidoracatMiniMap_ShareTarget"), self,
-                    self.onMinidoracatShareTarget)
-            end
-        end
+        -- uiToWorld 用例 ISMiniMap.lua:289-290；選單內容兩張地圖共用（Core.mapMenuFill）
+        Core.mapMenuFill(context, self, pn, self.mapAPI:uiToWorldX(x, y), self.mapAPI:uiToWorldY(x, y),
+            playerObj)
         if context.numOptions > 1 then context:setVisible(true) end
     end
 end

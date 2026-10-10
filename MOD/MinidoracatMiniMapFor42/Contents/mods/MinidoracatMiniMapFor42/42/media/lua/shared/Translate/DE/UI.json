@@ -85,6 +85,7 @@
     "UI_MinidoracatMiniMap_TripAdd": "Ans Ende der Tour",
     "UI_MinidoracatMiniMap_TripPriority": "Zuerst hierhin",
     "UI_MinidoracatMiniMap_TripInsert": "Vor einem Stopp einfügen...",
+    "UI_MinidoracatMiniMap_TripAddMenu": "Zur Tour hinzufügen",
     "UI_MinidoracatMiniMap_TripInsertBefore": "Vor %1. %2 einfügen",
     "UI_MinidoracatMiniMap_TripStart": "Navigation starten",
     "UI_MinidoracatMiniMap_TripContinue": "Zum nächsten Stopp",
@@ -452,7 +453,7 @@
     "UI_MinidoracatMiniMap_GoHome": "Nach Hause",
     "UI_MinidoracatMiniMap_SetHome": "Als Zuhause festlegen",
     "UI_MinidoracatMiniMap_BtnGoHome": "Nach Hause: aktuelle Tour durch Zuhause ersetzen und Navigation starten",
-    "UI_MinidoracatMiniMap_HomeNotSet": "Noch kein Zuhause festgelegt. Klicke mit rechts auf einen Punkt der Karte und wähle „Als Zuhause festlegen“.",
+    "UI_MinidoracatMiniMap_HomeNotSet": "Noch kein Zuhause festgelegt. Klicke mit rechts auf einen Punkt der Karte und wähle „Favoriten“ › „Als Zuhause festlegen“.",
     "UI_MinidoracatMiniMap_AlreadyHome": "Du bist schon zu Hause.",
     "UI_MinidoracatMiniMap_HomeSet": "Zuhause festgelegt",
     "UI_MinidoracatMiniMap_PlaceAdd": "Zu Favoriten hinzufügen…",
@@ -463,7 +464,7 @@
     "UI_MinidoracatMiniMap_PlaceConfirmRemove": "„%1“ aus Favoriten entfernen?",
     "UI_MinidoracatMiniMap_PlaceMenu": "Favoriten",
     "UI_MinidoracatMiniMap_PlaceMenuSetHome": "Als Zuhause festlegen",
-    "UI_MinidoracatMiniMap_PlacesEmpty": "Noch keine Favoriten. Klicke mit rechts auf die Karte und wähle „Zu Favoriten hinzufügen…“ oder wähle ein Suchergebnis und nutze Favoriten.",
+    "UI_MinidoracatMiniMap_PlacesEmpty": "Noch keine Favoriten. Klicke mit rechts auf die Karte und wähle „Favoriten“ › „Zu Favoriten hinzufügen…“ oder wähle ein Suchergebnis und nutze Favoriten.",
     "UI_MinidoracatMiniMap_SearchKindPlace": "Favorit",
     "UI_MinidoracatMiniMap_PlaceError_unsupported": "Die Favoriten wurden von einer neueren Version dieser Mod gespeichert. Aktualisiere die Mod, um sie zu bearbeiten."
 }

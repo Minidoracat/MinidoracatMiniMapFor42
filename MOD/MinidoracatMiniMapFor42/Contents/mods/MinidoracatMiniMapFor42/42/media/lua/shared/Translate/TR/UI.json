@@ -85,6 +85,7 @@
     "UI_MinidoracatMiniMap_TripAdd": "Yolculuğun sonuna ekle",
     "UI_MinidoracatMiniMap_TripPriority": "Önce buraya git",
     "UI_MinidoracatMiniMap_TripInsert": "Bir duraktan önce ekle...",
+    "UI_MinidoracatMiniMap_TripAddMenu": "Yolculuğa ekle",
     "UI_MinidoracatMiniMap_TripInsertBefore": "Önüne ekle: %1. %2",
     "UI_MinidoracatMiniMap_TripStart": "Navigasyonu başlat",
     "UI_MinidoracatMiniMap_TripContinue": "Sonraki durağa git",
@@ -452,7 +453,7 @@
     "UI_MinidoracatMiniMap_GoHome": "Eve git",
     "UI_MinidoracatMiniMap_SetHome": "Ev olarak ayarla",
     "UI_MinidoracatMiniMap_BtnGoHome": "Eve git: mevcut yolculuğu ev ile değiştir ve navigasyonu başlat",
-    "UI_MinidoracatMiniMap_HomeNotSet": "Henüz ev ayarlanmadı. Haritada bir noktaya sağ tıklayıp \"Ev olarak ayarla\" seçeneğini seçin.",
+    "UI_MinidoracatMiniMap_HomeNotSet": "Henüz ev ayarlanmadı. Haritada bir noktaya sağ tıklayıp \"Favoriler\" › \"Ev olarak ayarla\" seçeneğini seçin.",
     "UI_MinidoracatMiniMap_AlreadyHome": "Zaten evdesiniz.",
     "UI_MinidoracatMiniMap_HomeSet": "Ev ayarlandı",
     "UI_MinidoracatMiniMap_PlaceAdd": "Favorilere ekle...",
@@ -463,7 +464,7 @@
     "UI_MinidoracatMiniMap_PlaceConfirmRemove": "\"%1\" favorilerden kaldırılsın mı?",
     "UI_MinidoracatMiniMap_PlaceMenu": "Favoriler",
     "UI_MinidoracatMiniMap_PlaceMenuSetHome": "Ev olarak ayarla",
-    "UI_MinidoracatMiniMap_PlacesEmpty": "Henüz favori yok. Haritaya sağ tıklayıp \"Favorilere ekle...\" seçeneğini seçin ya da bir arama sonucunu seçip Favoriler'i kullanın.",
+    "UI_MinidoracatMiniMap_PlacesEmpty": "Henüz favori yok. Haritaya sağ tıklayıp \"Favoriler\" › \"Favorilere ekle...\" seçeneğini seçin ya da bir arama sonucunu seçip Favoriler'i kullanın.",
     "UI_MinidoracatMiniMap_SearchKindPlace": "Favori",
     "UI_MinidoracatMiniMap_PlaceError_unsupported": "Favoriler bu modun daha yeni bir sürümüyle kaydedildi. Düzenlemek için modu güncelleyin."
 }

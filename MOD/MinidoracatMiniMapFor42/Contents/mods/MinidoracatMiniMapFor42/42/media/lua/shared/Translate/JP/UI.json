@@ -83,6 +83,7 @@
     "UI_MinidoracatMiniMap_TripAdd": "行程の最後に追加",
     "UI_MinidoracatMiniMap_TripPriority": "先にここへ",
     "UI_MinidoracatMiniMap_TripInsert": "指定の経由地の前に挿入…",
+    "UI_MinidoracatMiniMap_TripAddMenu": "行程に追加",
     "UI_MinidoracatMiniMap_TripInsertBefore": "%1 番目「%2」の前に挿入",
     "UI_MinidoracatMiniMap_TripStart": "案内を開始",
     "UI_MinidoracatMiniMap_TripContinue": "次の目的地へ",
@@ -452,7 +453,7 @@
     "UI_MinidoracatMiniMap_GoHome": "自宅へ帰る",
     "UI_MinidoracatMiniMap_SetHome": "自宅に設定",
     "UI_MinidoracatMiniMap_BtnGoHome": "自宅へ帰る：現在の行程を自宅に置き換えて案内を開始",
-    "UI_MinidoracatMiniMap_HomeNotSet": "自宅が未設定です。地図を右クリックして「自宅に設定」を選んでください。",
+    "UI_MinidoracatMiniMap_HomeNotSet": "自宅が未設定です。地図を右クリックして「お気に入り」￫「自宅に設定」を選んでください。",
     "UI_MinidoracatMiniMap_AlreadyHome": "すでに自宅にいます。",
     "UI_MinidoracatMiniMap_HomeSet": "自宅に設定しました",
     "UI_MinidoracatMiniMap_PlaceAdd": "お気に入りに追加…",
@@ -463,7 +464,7 @@
     "UI_MinidoracatMiniMap_PlaceConfirmRemove": "「%1」をお気に入りから削除しますか？",
     "UI_MinidoracatMiniMap_PlaceMenu": "お気に入り",
     "UI_MinidoracatMiniMap_PlaceMenuSetHome": "自宅に設定",
-    "UI_MinidoracatMiniMap_PlacesEmpty": "お気に入りはまだありません。地図を右クリックして「お気に入りに追加…」を選ぶか、検索結果を選んで「お気に入り」を使ってください。",
+    "UI_MinidoracatMiniMap_PlacesEmpty": "お気に入りはまだありません。地図を右クリックして「お気に入り」￫「お気に入りに追加…」を選ぶか、検索結果を選んで「お気に入り」を使ってください。",
     "UI_MinidoracatMiniMap_SearchKindPlace": "お気に入り",
     "UI_MinidoracatMiniMap_PlaceError_unsupported": "お気に入りは新しいバージョンの MOD で保存されています。MOD を更新してから編集してください。"
 }

@@ -9,15 +9,14 @@
 --       （原版 debug 硬編 0）也追加；都沒有 → ISContextMenu.get(self.playerNum, abs 座標)
 --       自建——分割畫面歸屬用 playerNum、不硬編 0；
 --   (3) 呼叫前手前把殘留舊選單藏掉：舊選單不會被誤判成「前手建的」；
---   (4) 選項組裝：TripAdd/TripPriority/SetTarget/TripManage/CopyHere/SearchMenu 恆有，
---       順序＝加到最後→（有待前往站才有的插入子選單）→先去這裡→取代整趟→行程管理；
---       TripClear 依行程狀態或載入錯誤（壞資料也要能清）；TripPause 依 navGetTarget；
---       ShareTarget 再疊 isClient＋Faction＋AllowNavShare 三閘；同一選單已有 SetTarget
---       就不再加（冪等）；
---   (5) 回呼分流：TripAdd→append／TripPriority→priority／SetTarget→replace 的
---       navPromptTarget（沒有舊的 next 語意），插入位置一律委派 Core.navInsertSubMenu
---       共用同一份錨點防線，TripManage→行程頁、TripPause→navPauseItinerary
---       （點選單不得自動出發）；
+--   (4) 選項組裝（真 Core.mapMenuFill，_Nav.lua test:map-menu）：沒有行程＝設定導航目標／加到
+--       行程最後／收藏▸／複製座標／搜尋地圖；有待前往站時第一項改「取代並導航」、第二項委派
+--       Core.navInsertSubMenu（加入行程▸）；有行程或載入錯誤才有「行程▸」（行程規劃／停止導航／
+--       分享／清空，清空最後），停止與分享依 navGetTarget，分享再疊 isClient＋Faction＋
+--       AllowNavShare；同一選單已有本 MOD 第一項（兩種字都認）就不再加（冪等）；
+--   (5) 回呼分流：第一項→replace／TripAdd→append／先去這裡（onMinidoracatPriorityStop）→
+--       priority 的 navPromptTarget（沒有舊的 next 語意），行程規劃→行程頁、停止導航→
+--       navPauseItinerary（點選單不得自動出發）；
 --   (6) 開圖自癒：別的 MOD 整個覆寫 onRightMouseUp（不呼叫前手）→ ShowWorldMap 後
 --       重包一層，兩家選項都在；重包有上限；
 --   (7) prerender 加繪：先座標列後導航；各自 pcall＋實例旗標 log-once；
@@ -40,12 +39,17 @@ local rightBody = assert(source:match(
 local preBody = assert(source:match(
     "%-%- test:wm%-prerender:start\n(.-)\n%-%- test:wm%-prerender:end"),
     "找不到 wm-prerender 測試區段")
--- 右鍵導航項鎖定 helper（Core.navMenuBlocked／navMenuLock）：抽 _Nav.lua 真實作
+-- 右鍵選單共用 helper（Core.navMenuBlocked／navMenuLock／mapSubMenu）與選單組裝（Core.mapMenuFill）：
+-- 抽 _Nav.lua 真實作——選項組裝是本檔契約，不得在測試裡複製一份
 local lockFile = assert(io.open(navPath:gsub("_WorldMapNav%.lua$", "_Nav.lua"), "rb"))
-local lockBody = assert(lockFile:read("*a"):gsub("\r\n", "\n"):match(
+local navSource = lockFile:read("*a"):gsub("\r\n", "\n")
+lockFile:close()
+local lockBody = assert(navSource:match(
     "%-%- test:nav%-menu%-lock:start\n(.-)\n%-%- test:nav%-menu%-lock:end"),
     "找不到 _Nav nav-menu-lock 測試區段")
-lockFile:close()
+local menuBody = assert(navSource:match(
+    "%-%- test:map%-menu:start\n(.-)\n%-%- test:map%-menu:end"),
+    "找不到 _Nav map-menu 測試區段")
 
 local compile = loadstring or load
 
@@ -70,7 +74,7 @@ local menus = {}                 -- [pn] = 選單單例
 local gets = 0                   -- ISContextMenu.get 呼叫次數
 
 local function mkContext(pn)
-    local c = { pn = pn, options = {}, visible = false, hides = 0 }
+    local c = { pn = pn, player = pn, subMenuPool = {}, options = {}, visible = false, hides = 0 }
     function c:addOption(name, target, fn, a, b)
         local o = { name = name, target = target, fn = fn, a = a, b = b }
         self.options[#self.options + 1] = o
@@ -79,6 +83,7 @@ local function mkContext(pn)
     function c:isVisible() return self.visible end
     function c:hideAndChildren() self.visible = false; self.hides = self.hides + 1 end
     function c:clear() self.options = {} end
+    function c:addSubMenu(option, sub) option.sub = sub end -- ISContextMenu.lua:1075
     function c:getOptionFromName(name) -- 同原版 ISContextMenu.lua:889
         for _, o in ipairs(self.options) do if o.name == name then return o end end
     end
@@ -100,6 +105,8 @@ function ISContextMenu.get(pn, x, y)
     c:hideAndChildren(); c.visible = true; c:clear()
     return c
 end
+-- 子選單（ISContextMenu.lua:1199）：player 單例池裡的另一個實例，不是單例本身
+function ISContextMenu:getNew(parent) return mkContext(parent.pn) end
 
 local ISWorldMap = {}
 function ISWorldMap.onRightMouseUp(self, x, y)
@@ -149,18 +156,24 @@ end
 Core.navShareTarget = function(pn) calls[#calls + 1] = "navShare:" .. pn end
 Core.copyCoordsText = function(el, text) calls[#calls + 1] = "copy:" .. text end
 Core.navShareAllowed = function() return sandboxAllow end
--- 插入子選單：本體只負責委派給 Core（錨點、owner／revision 防線都在 _Search.lua，
--- 不在這裡複製一份）。有待前往站時才會掛上那一項；blocked＝鎖定原因（灰父項由 _Search 負責）
+-- 加入行程子選單與收藏：本體只負責委派給 Core（錨點、owner／revision 防線在 _Search.lua，回家說明
+-- 在 _Places.lua，不在這裡複製一份）。有待前往站時 _Search 掛「加入行程」並回 true；沒有回 nil，
+-- 由 mapMenuFill 放平的加到行程最後。blocked＝鎖定原因（紅父項由 _Search 負責）
 local insertAnchors = false
-local handoff = {} -- 委派給 navInsertSubMenu／placesAddMenu 的鎖定原因（"nil"＝放行）
+local handoff = {} -- 委派給 navInsertSubMenu／placesAddMenu 的鎖定原因（"nil"＝放行）與收到的選單
+Core.navInsertAnchors = function(pn) return insertAnchors and 2 or 0 end
 Core.navInsertSubMenu = function(context, target, pn, x, y, label, blocked)
     calls[#calls + 1] = string.format("insertSub:%s:%s:%s:%s", tostring(pn),
         tostring(x), tostring(y), tostring(label))
     handoff.insert = tostring(blocked)
     if not insertAnchors then return end
-    context:addOption("UI_MinidoracatMiniMap_TripInsert", target, nil)
+    context:addOption("UI_MinidoracatMiniMap_TripAddMenu", target, nil)
+    return true
 end
-Core.placesAddMenu = function(context, pn, wx, wy, blocked) handoff.places = tostring(blocked) end
+Core.placesAddMenu = function(context, pn, wx, wy, blocked)
+    handoff.places, handoff.placesMenu = tostring(blocked), context
+    context:addOption("UI_MinidoracatMiniMap_GoHome")
+end
 -- set 閘門（真 navGateAllows 在 _Nav.lua；這裡只控回傳）：gateMode＝allow／block／blockNoKey／throw
 local gateMode, gateCalls = "allow", {}
 Core.navGateAllows = function(pn, context)
@@ -261,8 +274,8 @@ return {
 }
 ]=]
 
-local mod = assert(compile(env .. "\n" .. lockBody .. "\n" .. callbackBody .. "\n" .. rightBody .. "\n"
-    .. preBody .. "\n" .. suffix, "wm-nav"))()
+local mod = assert(compile(env .. "\n" .. lockBody .. "\n" .. menuBody .. "\n" .. callbackBody .. "\n"
+    .. rightBody .. "\n" .. preBody .. "\n" .. suffix, "wm-nav"))()
 
 -- 假世界地圖實例（wrap 後的 method 以 ":" 呼叫）
 local function mkWM(pn)
@@ -289,15 +302,20 @@ local function countName(menu, name)
     return n
 end
 local SET = "UI_MinidoracatMiniMap_SetTarget"
--- 恆有的六項：加到行程最後／先去這裡／取代整趟／管理行程／複製座標／搜尋
--- （插入位置只在有待前往站時另掛一項，見 R10）
-local OURS = "UI_MinidoracatMiniMap_TripAdd"
-    .. ",UI_MinidoracatMiniMap_TripPriority"
-    .. "," .. SET
-    .. ",UI_MinidoracatMiniMap_TripManage"
+local REPLACE = "UI_MinidoracatMiniMap_SearchSetTarget"
+-- 沒有行程時第一層五項：設定導航目標／加到行程最後／收藏▸／複製座標／搜尋地圖
+-- （有待前往站見 R10；有行程才有的「行程▸」見 R6）
+local OURS = SET
+    .. ",UI_MinidoracatMiniMap_TripAdd"
+    .. ",UI_MinidoracatMiniMap_PlaceMenu"
     .. ",UI_MinidoracatMiniMap_CopyHere|12, 34, 0"
     .. ",UI_MinidoracatMiniMap_SearchMenu"
-local OURS_N = 6
+local function subNames(menu, parentName) -- 第一層某個父項掛的子選單
+    for _, o in ipairs(menu.options) do
+        if o.name == parentName then return o.sub and names(o.sub) or "(no submenu)" end
+    end
+    return "(no parent)"
+end
 
 --------------------------------------------------------------------------------
 -- R1/R2: symbols 工具作用中／down 快照旗標＝原樣透傳，不建選單、不碰單例
@@ -330,7 +348,7 @@ r = wm:onRightMouseUp(5, 6)
 assert(r == true, "R3: 追加路徑回 true")
 assert(mod.gets() == 1, "R3: 只有原版那一次 get，本 MOD 不得再 get（實得 " .. mod.gets() .. "）")
 assert(names(mod.menu(0)) == "vanilla-teleport," .. OURS,
-    "R3: debug 項保留＋追加六項（實得 " .. names(mod.menu(0)) .. "）")
+    "R3: debug 項保留＋追加本 MOD 選項（實得 " .. names(mod.menu(0)) .. "）")
 assert(mod.menu(0).visible, "R3: 選單維持可見")
 mod.clearCalls(); mod.resetMenus()
 
@@ -343,7 +361,7 @@ r = wm:onRightMouseUp(5, 6)
 assert(r == true, "N1: 追加路徑回 true（已消費）")
 assert(mod.gets() == 1, "N1: 前手建的選單不得被本 MOD 再 get 洗掉（實得 gets=" .. mod.gets() .. "）")
 assert(names(mod.menu(0)) == "debugmenu-root," .. OURS,
-    "N1: 前手選項保留＋追加六項（實得 " .. names(mod.menu(0)) .. "）")
+    "N1: 前手選項保留＋追加本 MOD 選項（實得 " .. names(mod.menu(0)) .. "）")
 mod.clearCalls(); mod.resetMenus()
 
 --------------------------------------------------------------------------------
@@ -359,50 +377,53 @@ local gotGet = false
 for _, c in ipairs(mod.calls) do if c == "ISContextMenu.get:1:105:206" then gotGet = true end end
 assert(gotGet, "R4: 須以 self.playerNum=1 與絕對座標自建（實得 " .. table.concat(mod.calls, ",") .. "）")
 local menu = mod.menu(1)
-assert(names(menu) == OURS, "R4: 自建選單六項（實得 " .. names(menu) .. "）")
+assert(names(menu) == OURS, "R4: 自建選單五項（實得 " .. names(menu) .. "）")
 assert(#mod.menu(0).options == 0, "R4: 不得碰 player 0 的單例")
+-- R4b: 回家／設為家／加入收藏交給 _Places，掛在「收藏」子選單（不是第一層）
+assert(subNames(menu, "UI_MinidoracatMiniMap_PlaceMenu") == "UI_MinidoracatMiniMap_GoHome"
+    and mod.handoff.placesMenu == menu.options[3].sub,
+    "R4b: 收藏項須掛在「收藏」子選單（實得 " .. subNames(menu, "UI_MinidoracatMiniMap_PlaceMenu") .. "）")
 -- R7: CopyHere 文字帶 floor 座標；回呼參數同值
-assert(menu.options[5].a == 12 and menu.options[5].b == 34, "R7: 回呼參數須為 floor 後座標")
--- R9: 回呼綁定走 playerNum，且三種目標操作分流正確（都不自動出發）
+assert(menu.options[4].a == 12 and menu.options[4].b == 34, "R7: 回呼參數須為 floor 後座標")
+-- R9: 回呼綁定走 playerNum，且目標操作分流正確（都不自動出發）
 menu.options[1].fn(menu.options[1].target, menu.options[1].a, menu.options[1].b)
+assert(mod.calls[#mod.calls] == "prompt:1:12.7:34.2:nil:replace", "R9: 設定導航目標須走 replace")
+menu.options[2].fn(menu.options[2].target, menu.options[2].a, menu.options[2].b)
 assert(mod.calls[#mod.calls] == "prompt:1:12.7:34.2:nil:append",
     "R9: TripAdd 須以 pn=1、原始世界座標走 append（實得 " .. tostring(mod.calls[#mod.calls]) .. "）")
-menu.options[2].fn(menu.options[2].target, menu.options[2].a, menu.options[2].b)
+wm1:onMinidoracatPriorityStop(12.7, 34.2) -- 「加入行程」子選單的先去這裡（_Search.lua 綁這個回呼）
 assert(mod.calls[#mod.calls] == "prompt:1:12.7:34.2:nil:priority",
-    "R9: TripPriority 須走 priority（舊的 next 已不存在）")
-menu.options[3].fn(menu.options[3].target, menu.options[3].a, menu.options[3].b)
-assert(mod.calls[#mod.calls] == "prompt:1:12.7:34.2:nil:replace", "R9: SetTarget 須走 replace")
-menu.options[4].fn(menu.options[4].target)
-assert(mod.calls[#mod.calls] == "toggle:1:itinerary", "R9: TripManage 須開行程頁")
-menu.options[6].fn(menu.options[6].target)
+    "R9: 先去這裡須走 priority（舊的 next 已不存在）")
+menu.options[5].fn(menu.options[5].target)
 assert(mod.calls[#mod.calls] == "toggle:1:nil", "R9: SearchMenu 維持原 toggle（不帶頁）")
--- R10: 有待前往站時另掛插入位置一項，且一律委派 Core 共用的錨點組裝
+-- R10: 有待前往站時第一項改「取代並導航」（同一個 replace 回呼，確認在 navPromptTarget），
+--      第二項一律委派 Core 共用的錨點組裝
 mod.clearCalls(); mod.resetMenus()
 mod.setInsertAnchors(true)
 r = wm1:onRightMouseUp(5, 6)
 local m10 = mod.menu(1)
-assert(names(m10) == "UI_MinidoracatMiniMap_TripAdd,UI_MinidoracatMiniMap_TripInsert"
-    .. ",UI_MinidoracatMiniMap_TripPriority," .. SET
-    .. ",UI_MinidoracatMiniMap_TripManage"
+assert(names(m10) == REPLACE .. ",UI_MinidoracatMiniMap_TripAddMenu"
+    .. ",UI_MinidoracatMiniMap_PlaceMenu"
     .. ",UI_MinidoracatMiniMap_CopyHere|12, 34, 0"
     .. ",UI_MinidoracatMiniMap_SearchMenu",
-    "R10: 插入位置須緊接在加到最後之後（實得 " .. names(m10) .. "）")
+    "R10: 有待前往站＝取代並導航＋加入行程（實得 " .. names(m10) .. "）")
+m10.options[1].fn(m10.options[1].target, m10.options[1].a, m10.options[1].b)
+assert(mod.calls[#mod.calls] == "prompt:1:12.7:34.2:nil:replace", "R10: 取代並導航仍走 replace")
 local delegated = false
 for _, c in ipairs(mod.calls) do
     if c == "insertSub:1:12.7:34.2:nil" then delegated = true end
 end
-assert(delegated, "R10: 插入子選單須以 pn 與原始世界座標委派 Core.navInsertSubMenu（實得 "
+assert(delegated, "R10: 加入行程須以 pn 與原始世界座標委派 Core.navInsertSubMenu（實得 "
     .. table.concat(mod.calls, ",") .. "）")
 mod.setInsertAnchors(false)
 mod.clearCalls(); mod.resetMenus()
 
 --------------------------------------------------------------------------------
 -- L1-L4: set 閘門擋住時會設導航的項變灰＋說明原因（原版 notAvailable＋ISToolTip）；
---        建一次選單只問一次閘門；行程管理／複製座標／搜尋不受影響；插入與回家把同一句
---        原因交給 _Search／_Places（灰父項與未設家說明各自的測試驗）
+--        建一次選單只問一次閘門；收藏／複製座標／搜尋不受影響；加入行程與回家把同一句
+--        原因交給 _Search／_Places（紅父項與未設家說明各自的測試驗）
 --------------------------------------------------------------------------------
-local LOCKED = { ["UI_MinidoracatMiniMap_TripAdd"] = true,
-    ["UI_MinidoracatMiniMap_TripPriority"] = true, [SET] = true }
+local LOCKED = { [SET] = true, ["UI_MinidoracatMiniMap_TripAdd"] = true }
 local function lockCheck(tag, want)
     for i = #mod.gateCalls, 1, -1 do mod.gateCalls[i] = nil end
     mod.clearCalls(); mod.resetMenus()
@@ -471,8 +492,12 @@ mod.clearCalls(); mod.resetMenus()
 mod.setPlayer(1, { name = "p1" })
 
 --------------------------------------------------------------------------------
--- R6: 有行程 → TripClear；有活動站 → TripPause；Share 三閘（isClient＋Faction＋沙盒）
+-- R6: 有行程或載入錯誤 → 第一層多「行程▸」（在搜尋地圖前）；子選單＝行程規劃／（有活動站）
+--     停止導航／（isClient＋Faction＋沙盒）分享目標／清空行程（會刪資料，排最後）
 --------------------------------------------------------------------------------
+local TRIP = "UI_MinidoracatMiniMap_TripManage"
+local WITH_TRIP = SET .. ",UI_MinidoracatMiniMap_TripAdd,UI_MinidoracatMiniMap_PlaceMenu"
+    .. ",UI_MinidoracatMiniMap_CopyHere|12, 34, 0," .. TRIP .. ",UI_MinidoracatMiniMap_SearchMenu"
 mod.setTrip({ count = 2, revision = 3 }, nil)
 mod.setNavTarget({ id = 1, x = 1, y = 2 })
 mod.setClient(true)
@@ -480,44 +505,48 @@ mod.setFaction({})
 mod.setSandbox(true)
 r = wm1:onRightMouseUp(5, 6)
 local m6 = mod.menu(1)
-assert(#m6.options == OURS_N + 3,
-    "R6: 行程＋活動站＋陣營＋沙盒允許＝九項（實得 " .. #m6.options .. "）")
-assert(m6.options[OURS_N + 1].name == "UI_MinidoracatMiniMap_TripClear", "R6: 第七項 TripClear")
-assert(m6.options[OURS_N + 2].name == "UI_MinidoracatMiniMap_TripPause", "R6: 第八項 TripPause")
-assert(m6.options[OURS_N + 3].name == "UI_MinidoracatMiniMap_ShareTarget", "R6: 第九項 ShareTarget")
--- 回呼：清空走確認對話框入口；暫停停導航（都不得直接改權威）
-m6.options[OURS_N + 1].fn(m6.options[OURS_N + 1].target)
-assert(mod.calls[#mod.calls] == "promptClear:1", "R6: TripClear 須走確認入口")
-m6.options[OURS_N + 2].fn(m6.options[OURS_N + 2].target)
-assert(mod.calls[#mod.calls] == "pause:1:cancelled", "R6: TripPause 須暫停行程")
+assert(names(m6) == WITH_TRIP, "R6: 有行程＝第一層六項（實得 " .. names(m6) .. "）")
+assert(subNames(m6, TRIP) == "UI_MinidoracatMiniMap_TripTitle,UI_MinidoracatMiniMap_TripPause"
+    .. ",UI_MinidoracatMiniMap_ShareTarget,UI_MinidoracatMiniMap_TripClear",
+    "R6: 行程子選單＝行程規劃／停止導航／分享／清空（實得 " .. subNames(m6, TRIP) .. "）")
+-- 回呼：行程規劃開行程頁；停止導航暫停；清空走確認對話框入口（都不得直接改權威）
+local tripMenu = m6.options[5].sub
+tripMenu.options[1].fn(tripMenu.options[1].target)
+assert(mod.calls[#mod.calls] == "toggle:1:itinerary", "R6: 行程規劃須開行程頁")
+tripMenu.options[2].fn(tripMenu.options[2].target)
+assert(mod.calls[#mod.calls] == "pause:1:cancelled", "R6: 停止導航須暫停行程")
+tripMenu.options[4].fn(tripMenu.options[4].target)
+assert(mod.calls[#mod.calls] == "promptClear:1", "R6: 清空行程須走確認入口")
 mod.clearCalls(); mod.resetMenus()
 
-mod.setSandbox(false) -- 伺服器禁分享：Share 消失、Clear/Pause 保留
+local NO_SHARE = "UI_MinidoracatMiniMap_TripTitle,UI_MinidoracatMiniMap_TripPause,UI_MinidoracatMiniMap_TripClear"
+mod.setSandbox(false) -- 伺服器禁分享：Share 消失、其餘保留
 r = wm1:onRightMouseUp(5, 6)
-assert(#mod.menu(1).options == OURS_N + 2, "R6: 沙盒禁分享＝八項（無 Share）")
+assert(subNames(mod.menu(1), TRIP) == NO_SHARE, "R6: 沙盒禁分享＝無 Share")
 mod.clearCalls(); mod.resetMenus()
 mod.setClient(false) -- 單機：無 Share
 mod.setSandbox(true)
 r = wm1:onRightMouseUp(5, 6)
-assert(#mod.menu(1).options == OURS_N + 2, "R6: 單機＝八項（無 Share）")
+assert(subNames(mod.menu(1), TRIP) == NO_SHARE, "R6: 單機＝無 Share")
 mod.clearCalls(); mod.resetMenus()
 
--- R6b: 暫停中（無活動站）只留 TripClear；無行程無錯誤＝六項
+-- R6b: 暫停中（無活動站）不得出現停止導航與分享
+local CLEAR_ONLY = "UI_MinidoracatMiniMap_TripTitle,UI_MinidoracatMiniMap_TripClear"
 mod.setNavTarget(nil)
 r = wm1:onRightMouseUp(5, 6)
-assert(names(mod.menu(1)) == OURS .. ",UI_MinidoracatMiniMap_TripClear",
-    "R6b: 暫停中不得出現 TripPause（實得 " .. names(mod.menu(1)) .. "）")
+assert(subNames(mod.menu(1), TRIP) == CLEAR_ONLY,
+    "R6b: 暫停中只剩行程規劃與清空（實得 " .. subNames(mod.menu(1), TRIP) .. "）")
 mod.clearCalls(); mod.resetMenus()
 
 -- R6c: 行程資料損壞（狀態讀不出來、只有錯誤）仍須能清除，否則玩家無法重建
 mod.setTrip(nil, "unsupported")
 r = wm1:onRightMouseUp(5, 6)
-assert(names(mod.menu(1)) == OURS .. ",UI_MinidoracatMiniMap_TripClear",
-    "R6c: 壞資料須保留 TripClear（實得 " .. names(mod.menu(1)) .. "）")
+assert(subNames(mod.menu(1), TRIP) == CLEAR_ONLY,
+    "R6c: 壞資料須保留清空（實得 " .. subNames(mod.menu(1), TRIP) .. "）")
 mod.clearCalls(); mod.resetMenus()
 mod.setTrip(nil, nil)
 r = wm1:onRightMouseUp(5, 6)
-assert(names(mod.menu(1)) == OURS, "R6c: 無行程無錯誤＝只有六項")
+assert(names(mod.menu(1)) == OURS, "R6c: 無行程無錯誤＝沒有「行程」子選單")
 mod.clearCalls(); mod.resetMenus()
 
 --------------------------------------------------------------------------------
@@ -545,7 +574,7 @@ mod.clearCalls()
 r = wm:onRightMouseUp(5, 6)
 assert(r == true, "N2: 重包後回 true")
 assert(names(mod.menu(0)) == "Teleport Here," .. OURS,
-    "N2: 劫持者選項保留＋本 MOD 六項（實得 " .. names(mod.menu(0)) .. "）")
+    "N2: 劫持者選項保留＋本 MOD 選項（實得 " .. names(mod.menu(0)) .. "）")
 assert(mod.gets() == 1, "N2: 劫持者建的選單不得被再 get")
 local relogs = 0
 for _, l in ipairs(mod.printed) do if l:find("re%-wrapping") then relogs = relogs + 1 end end
@@ -575,6 +604,13 @@ assert(countName(mod.menu(0), SET) == 1,
 assert(countName(mod.menu(0), "UI_MinidoracatMiniMap_TripAdd") == 1,
     "N3: 行程選項同樣不得重複")
 assert(countName(mod.menu(0), "polite-mod") == 1, "N3: 有禮貌的 MOD 選項保留")
+-- N3b: 有待前往站時第一項是「取代並導航」：冪等標記兩種字都要認，鏈裡兩層仍只得一組
+mod.clearCalls(); mod.resetMenus()
+mod.setInsertAnchors(true)
+r = wm:onRightMouseUp(5, 6)
+assert(countName(mod.menu(0), REPLACE) == 1 and countName(mod.menu(0), SET) == 0,
+    "N3b: 取代並導航也只得一組（實得 " .. names(mod.menu(0)) .. "）")
+mod.setInsertAnchors(false)
 mod.clearCalls(); mod.resetMenus()
 
 --------------------------------------------------------------------------------

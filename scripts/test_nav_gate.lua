@@ -61,19 +61,25 @@ local function fixture(rightClick)
         getSliderValue = function(_, default) return default end }, { __index = _G })))()
     local api = {}
     -- 小地圖右鍵：原版 onRightMouseUp 消耗 rightMouseDown 旗標、留下只有 debug 項的選單
-    -- （ISMiniMap.lua:280-298，numOptions 從 1 起算）；addOption 同原版回傳 option
+    -- （ISMiniMap.lua:280-298，numOptions 從 1 起算）；addOption 同原版回傳 option。player 單例有
+    -- subMenuPool，getNew 的子選單同形，addSubMenu 把子選單掛在父項上（ISContextMenu.lua:1075／1199）
     local innerClass, ctx = {}, nil
+    local function newMenu()
+        local m = { options = {}, numOptions = 1, player = 0, subMenuPool = {} }
+        function m:addOption(name, target, fn, a, b)
+            local o = { name = name, target = target, fn = fn, a = a, b = b }
+            self.options[#self.options + 1] = o
+            self.numOptions = self.numOptions + 1
+            return o
+        end
+        function m:addSubMenu(option, sub) option.sub = sub end
+        function m:setVisible(v) self.visible = v end
+        return m
+    end
     if rightClick then
         innerClass.onRightMouseUp = function(self)
             self.rightMouseDown = false
-            ctx = { options = {}, numOptions = 1 }
-            function ctx:addOption(name, target, fn, a, b)
-                local o = { name = name, target = target, fn = fn, a = a, b = b }
-                self.options[#self.options + 1] = o
-                self.numOptions = self.numOptions + 1
-                return o
-            end
-            function ctx:setVisible(v) self.visible = v end
+            ctx = newMenu()
         end
     end
     local textManager = {
@@ -83,6 +89,7 @@ local function fixture(rightClick)
     local env = setmetatable({
         MinidoracatMiniMapCore = core, MinidoracatMiniMapAPI = api, Events = events,
         ISMiniMapInner = innerClass, getPlayerContextMenu = function() return ctx end,
+        ISContextMenu = { getNew = function() return newMenu() end },
         ISToolTip = { new = function()
             return { initialise = function() end, setVisible = function(self, v) self.visible = v end }
         end },
@@ -618,21 +625,24 @@ do
 end
 
 --------------------------------------------------------------------------------
--- 七、小地圖右鍵導航項鎖定（真 _Nav 選單包裝＋真 navGateAllows／navErrorText）：
---     set 閘門擋住時加到最後／先去這裡／取代整趟變灰＋原因 tooltip，插入與回家收到
---     同一句原因（灰父項、未設家說明由 test_itinerary_ui／test_places 驗）；其餘照常
+-- 七、小地圖右鍵導航項鎖定（真 _Nav 選單包裝與 Core.mapMenuFill＋真 navGateAllows／navErrorText）：
+--     沒有行程時第一層＝設定導航目標／加到行程最後／收藏▸／複製座標／搜尋地圖；set 閘門擋住時
+--     前兩項變灰＋原因 tooltip，「加入行程」與回家收到同一句原因（紅父項、未設家說明由
+--     test_itinerary_ui／test_places 驗）；其餘照常
 --------------------------------------------------------------------------------
 do
     local t = fixture(true)
     local API, Core = t.api, t.core
     t.player(0)
     local handoff = {}
+    Core.navInsertAnchors = function() return 0 end -- 沒有待前往站（真實作在 _Search.lua）
     Core.navInsertSubMenu = function(_, _, _, _, _, _, blocked) handoff.insert = tostring(blocked) end
-    Core.placesAddMenu = function(_, _, _, _, blocked) handoff.places = tostring(blocked) end
-    local LOCKED = { ["T:UI_MinidoracatMiniMap_TripAdd"] = true,
-        ["T:UI_MinidoracatMiniMap_TripPriority"] = true, ["T:UI_MinidoracatMiniMap_SetTarget"] = true }
-    local OTHERS = { "T:UI_MinidoracatMiniMap_TripManage", "T:UI_MinidoracatMiniMap_CopyHere",
-        "T:UI_MinidoracatMiniMap_SearchMenu" }
+    Core.placesAddMenu = function(context, _, _, _, blocked)
+        handoff.places, handoff.placesMenu = tostring(blocked), context
+    end
+    local LOCKED = { ["T:UI_MinidoracatMiniMap_SetTarget"] = true, ["T:UI_MinidoracatMiniMap_TripAdd"] = true }
+    local ORDER = "T:UI_MinidoracatMiniMap_SetTarget,T:UI_MinidoracatMiniMap_TripAdd"
+        .. ",T:UI_MinidoracatMiniMap_PlaceMenu,T:UI_MinidoracatMiniMap_CopyHere,T:UI_MinidoracatMiniMap_SearchMenu"
     local setAsks = 0
     local gateMode = "allow"
     API.registerNavGate("Probe", function(_, context)
@@ -641,31 +651,27 @@ do
         if gateMode == "drawOnly" and context == "draw" then return false end
     end)
     local function rightClick(tag, want)
-        setAsks, handoff.insert, handoff.places = 0, nil, nil
+        setAsks, handoff.insert, handoff.places, handoff.placesMenu = 0, nil, nil, nil
         local mini = setmetatable({ playerNum = 0, rightMouseDown = true, mapAPI = {
             uiToWorldX = function() return 12.7 end, uiToWorldY = function() return 34.2 end,
         } }, { __index = t.innerClass })
         mini:onRightMouseUp(5, 6)
         local menu = assert(t.menu(), tag .. ": 原版選單")
         eq(menu.visible, true, tag .. " 追加後選單可見")
-        local seen = 0
+        local names = {}
+        for i, o in ipairs(menu.options) do names[i] = o.name end
+        eq(table.concat(names, ","), ORDER, tag .. " 沒有行程時第一層五項")
         for _, o in ipairs(menu.options) do
             if LOCKED[o.name] then
-                seen = seen + 1
                 eq(o.notAvailable, want and true or nil, tag .. " " .. o.name .. " 可用性")
                 eq(o.toolTip and o.toolTip.description, want, tag .. " " .. o.name .. " 原因 tooltip")
+            else
+                eq(o.notAvailable, nil, tag .. " " .. o.name .. " 不受閘門影響")
             end
         end
-        eq(seen, 3, tag .. " 三個會設導航的項都在")
-        for _, name in ipairs(OTHERS) do
-            local found
-            for _, o in ipairs(menu.options) do
-                if o.name:sub(1, #name) == name then found = o end
-            end
-            assert(found, tag .. " 缺 " .. name)
-            eq(found.notAvailable, nil, tag .. " " .. name .. " 不受閘門影響")
-        end
-        eq(handoff.insert, tostring(want), tag .. " 插入子選單收到同一句原因")
+        assert(menu.options[3].sub and handoff.placesMenu == menu.options[3].sub,
+            tag .. " 回家／設為家／加入收藏掛在「收藏」子選單")
+        eq(handoff.insert, tostring(want), tag .. " 加入行程收到同一句原因")
         eq(handoff.places, tostring(want), tag .. " 回家收到同一句原因")
     end
 
@@ -697,4 +703,4 @@ end
 
 print("test_nav_gate: OK（註冊/判定 G1-G9＋set 閘門 S1-S6＋分享撤回 H1-H3"
     .. "＋繪製閘門與繪製唯讀 D1-D7＋getNavTarget Q1-Q4＋功能閘門與行程撤銷 F1-F7"
-    .. "＋小地圖右鍵導航項鎖定 M1-M5）")
+    .. "＋小地圖右鍵選單與導航項鎖定 M1-M5）")

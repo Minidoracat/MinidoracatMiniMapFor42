@@ -62,8 +62,8 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 
 [h3]🏠 Home & favorites[/h3]
 [list]
-[*] Right-click the map: "Set as home" or "Add to favorites…" (named, unlimited).
-[*] "Go home" replaces the trip with home and starts navigating (house button, right-click menu or trip page).
+[*] Right-click the map → "Favorites": "Set as home" or "Add to favorites…" (named, unlimited). Setting a new home keeps the old one as a favorite.
+[*] "Go home" replaces the trip with home and starts navigating (house button, right-click → "Favorites", or trip page).
 [*] An empty search box lists favorites to rename, remove or set as home. Saved per character; not inherited after death.
 [*] To hide home and favorite icons on the maps, turn off "Show home & favorites" in "Players & navigation"; Go Home, the favorites list and the right-click menu still work.
 [/list]

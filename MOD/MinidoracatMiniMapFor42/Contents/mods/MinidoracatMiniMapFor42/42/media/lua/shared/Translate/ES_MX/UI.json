@@ -85,6 +85,7 @@
     "UI_MinidoracatMiniMap_TripAdd": "Añadir al final del viaje",
     "UI_MinidoracatMiniMap_TripPriority": "Ir aquí primero",
     "UI_MinidoracatMiniMap_TripInsert": "Insertar antes de una parada...",
+    "UI_MinidoracatMiniMap_TripAddMenu": "Añadir al viaje",
     "UI_MinidoracatMiniMap_TripInsertBefore": "Insertar antes de %1. %2",
     "UI_MinidoracatMiniMap_TripStart": "Iniciar navegación",
     "UI_MinidoracatMiniMap_TripContinue": "Ir a la siguiente parada",
@@ -452,7 +453,7 @@
     "UI_MinidoracatMiniMap_GoHome": "Ir a casa",
     "UI_MinidoracatMiniMap_SetHome": "Fijar como casa",
     "UI_MinidoracatMiniMap_BtnGoHome": "Ir a casa: reemplaza el viaje actual por la casa y empieza a navegar",
-    "UI_MinidoracatMiniMap_HomeNotSet": "Aún no hay casa fijada. Haz clic derecho en un punto del mapa y elige “Fijar como casa”.",
+    "UI_MinidoracatMiniMap_HomeNotSet": "Aún no hay casa fijada. Haz clic derecho en un punto del mapa y elige “Favoritos” › “Fijar como casa”.",
     "UI_MinidoracatMiniMap_AlreadyHome": "Ya estás en casa.",
     "UI_MinidoracatMiniMap_HomeSet": "Casa fijada",
     "UI_MinidoracatMiniMap_PlaceAdd": "Añadir a favoritos…",
@@ -463,7 +464,7 @@
     "UI_MinidoracatMiniMap_PlaceConfirmRemove": "¿Quitar “%1” de favoritos?",
     "UI_MinidoracatMiniMap_PlaceMenu": "Favoritos",
     "UI_MinidoracatMiniMap_PlaceMenuSetHome": "Fijar como casa",
-    "UI_MinidoracatMiniMap_PlacesEmpty": "Aún no hay favoritos. Haz clic derecho en el mapa y elige “Añadir a favoritos…”, o selecciona un resultado de búsqueda y usa Favoritos.",
+    "UI_MinidoracatMiniMap_PlacesEmpty": "Aún no hay favoritos. Haz clic derecho en el mapa y elige “Favoritos” › “Añadir a favoritos…”, o selecciona un resultado de búsqueda y usa Favoritos.",
     "UI_MinidoracatMiniMap_SearchKindPlace": "Favorito",
     "UI_MinidoracatMiniMap_PlaceError_unsupported": "Los favoritos se guardaron con una versión más reciente de este mod. Actualiza el mod para editarlos."
 }

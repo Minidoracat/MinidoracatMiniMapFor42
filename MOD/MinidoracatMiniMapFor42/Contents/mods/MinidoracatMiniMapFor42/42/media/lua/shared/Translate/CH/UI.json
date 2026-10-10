@@ -85,6 +85,7 @@
     "UI_MinidoracatMiniMap_TripAdd": "加到行程最後",
     "UI_MinidoracatMiniMap_TripPriority": "先去這裡",
     "UI_MinidoracatMiniMap_TripInsert": "插在指定停靠點之前...",
+    "UI_MinidoracatMiniMap_TripAddMenu": "加入行程",
     "UI_MinidoracatMiniMap_TripInsertBefore": "插在第 %1 站「%2」之前",
     "UI_MinidoracatMiniMap_TripStart": "開始導航",
     "UI_MinidoracatMiniMap_TripContinue": "前往下一站",
@@ -452,7 +453,7 @@
     "UI_MinidoracatMiniMap_GoHome": "回家",
     "UI_MinidoracatMiniMap_SetHome": "設為家",
     "UI_MinidoracatMiniMap_BtnGoHome": "回家：把目前行程換成家並開始導航",
-    "UI_MinidoracatMiniMap_HomeNotSet": "尚未設定家：在地圖上按右鍵，選「設為家」。",
+    "UI_MinidoracatMiniMap_HomeNotSet": "尚未設定家：在地圖上按右鍵，選「收藏」￫「設為家」。",
     "UI_MinidoracatMiniMap_AlreadyHome": "你已經在家了。",
     "UI_MinidoracatMiniMap_HomeSet": "已設為家",
     "UI_MinidoracatMiniMap_PlaceAdd": "加入收藏...",
@@ -463,7 +464,7 @@
     "UI_MinidoracatMiniMap_PlaceConfirmRemove": "要從收藏移除「%1」嗎？",
     "UI_MinidoracatMiniMap_PlaceMenu": "收藏",
     "UI_MinidoracatMiniMap_PlaceMenuSetHome": "設為家",
-    "UI_MinidoracatMiniMap_PlacesEmpty": "還沒有收藏。在地圖上按右鍵選「加入收藏...」，或選一筆搜尋結果後按「收藏」。",
+    "UI_MinidoracatMiniMap_PlacesEmpty": "還沒有收藏。在地圖上按右鍵選「收藏」￫「加入收藏...」，或選一筆搜尋結果後按「收藏」。",
     "UI_MinidoracatMiniMap_SearchKindPlace": "收藏",
     "UI_MinidoracatMiniMap_PlaceError_unsupported": "收藏是由較新版本的 MOD 儲存的，請更新 MOD 後再編輯。"
 }

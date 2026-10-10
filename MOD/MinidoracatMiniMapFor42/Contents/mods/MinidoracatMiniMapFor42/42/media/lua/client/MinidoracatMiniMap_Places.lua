@@ -214,15 +214,11 @@ local function setHome(pn, id)
     end)
     return done == true, why
 end
--- 已有家＝搬家（保留名稱）；沒有家＝新增一筆無名收藏並設為家
+-- 這裡新增一筆無名收藏並設為家；已有的家留在收藏（同搜尋視窗「設為家」只換哪一筆是家、不刪地點：
+-- 右鍵誤點不會弄丟舊家座標，2026-10-11 設計稿 minimap-rightclick-1011 作答）
 local function setHomeAt(pn, x, y)
     if not coordinate(x) or not coordinate(y) then return false, "badargs" end
     local done, why = mutate(pn, function(state)
-        local index = state.homeId and indexOf(state, state.homeId)
-        if index then
-            state.places[index].x, state.places[index].y = x, y
-            return true
-        end
         local id, reason = append(state, x, y, nil)
         if not id then return nil, reason end
         state.homeId = id
@@ -428,8 +424,9 @@ Core.placesPromptRename = function(pn, id)
         report(pn, ok, reason)
     end)
 end
--- 雙地圖右鍵共用：回家（依原版慣例 notAvailable＋說明：未設家優先說明設定方法，
--- 否則 navBlocked＝Core.navMenuBlocked 的導航被擋原因）、設為家、加入收藏
+-- 雙地圖右鍵「收藏」子選單（Core.mapMenuFill 傳子選單；不能掛子選單時是第一層）：回家（依原版慣例
+-- notAvailable＋說明：未設家優先說明設定方法，否則 navBlocked＝Core.navMenuBlocked 的導航被擋原因）、
+-- 設為家、加入收藏
 Core.placesAddMenu = function(context, pn, worldX, worldY, navBlocked)
     local option = context:addOption(getText("UI_MinidoracatMiniMap_GoHome"), pn, menuGoHome)
     Core.navMenuLock(option, not homeOf(pn) and getText("UI_MinidoracatMiniMap_HomeNotSet") or navBlocked)

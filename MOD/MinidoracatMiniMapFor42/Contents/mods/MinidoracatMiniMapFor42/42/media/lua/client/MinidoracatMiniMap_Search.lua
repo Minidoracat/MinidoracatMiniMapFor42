@@ -1000,7 +1000,7 @@ local function placeMenuApply(_, payload)
 end
 
 -- 收藏：選中收藏列＝設為家（已是家不列）／改名／移除；選中其他結果＝加入收藏。
--- 座標結果不帶預設名稱：名字寫成座標字串，搬家（setHomeAt 保留名稱）後會說謊
+-- 座標結果不帶預設名稱：無名收藏顯示即時座標、無名的家顯示「家」，寫死座標字串會蓋掉這兩種顯示
 local function winPlaceMenu(win)
     local it = winSelectedItem(win)
     if not it then return end
@@ -1375,24 +1375,23 @@ Core.navApplyInsert = function(_, payload)
     tripEdit(pn, payload.revision, "insert", payload.x, payload.y, payload.label, payload.before)
 end
 
--- 雙地圖右鍵用：掛「插在指定停靠點之前」子選單（原版 getNew／addSubMenu 出處
--- ISContextMenu.lua:1199／1075；getNew 走 player 單例的 subMenuPool，前手一定先
--- 呼叫過 ISContextMenu.get 才有那張池子）。沒有待前往站可當錨點時整項不加——
--- 插入等於加尾，不留一條死路；第三方選單缺方法或不是 player 單例時安靜略過，
--- 不得讓別人的選單連坐壞掉。blocked＝Core.navMenuBlocked 的原因文字：只加灰色父項
--- ＋說明、不掛子選單
+-- 雙地圖右鍵用（Core.mapMenuFill 第二項）：掛「加入行程」子選單——先去這裡、插在第 N 站之前與
+-- 加到行程最後（Core.navInsertOptions，同搜尋頁）。沒有待前往站可當錨點時整項不加：插入等於加尾，
+-- 呼叫端改放平的「加到行程最後」；不能掛子選單（Core.mapSubMenu 回 nil）時同樣交給呼叫端。
+-- blocked＝Core.navMenuBlocked 的原因文字：只加紅色父項＋說明、不掛子選單（停用父項的子選單照樣
+-- 點得到）。回 true＝已加這一項
 Core.navInsertSubMenu = function(context, target, pn, x, y, label, blocked)
-    if type(context.addSubMenu) ~= "function" or type(context.player) ~= "number" then return end
-    if type(context.subMenuPool) ~= "table" then return end
-    if not (ISContextMenu and ISContextMenu.getNew) then return end
     if Core.navInsertAnchors(pn) == 0 then return end
     if blocked then
-        Core.navMenuLock(context:addOption(getText("UI_MinidoracatMiniMap_TripInsert")), blocked)
-        return
+        Core.navMenuLock(context:addOption(getText("UI_MinidoracatMiniMap_TripAddMenu")), blocked)
+        return true
     end
-    local sub = ISContextMenu:getNew(context)
-    if Core.navInsertOptions(sub, target, pn, x, y, label) == 0 then return end
-    context:addSubMenu(context:addOption(getText("UI_MinidoracatMiniMap_TripInsert")), sub)
+    local sub = Core.mapSubMenu(context, "UI_MinidoracatMiniMap_TripAddMenu")
+    if not sub then return end
+    sub:addOption(getText("UI_MinidoracatMiniMap_TripPriority"), target,
+        target.onMinidoracatPriorityStop, x, y)
+    Core.navInsertOptions(sub, target, pn, x, y, label)
+    return true
 end
 
 --------------------------------------------------------------------------------

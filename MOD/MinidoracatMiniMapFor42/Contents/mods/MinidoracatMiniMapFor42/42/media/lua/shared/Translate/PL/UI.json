@@ -85,6 +85,7 @@
     "UI_MinidoracatMiniMap_TripAdd": "Dodaj na koniec podróży",
     "UI_MinidoracatMiniMap_TripPriority": "Najpierw tutaj",
     "UI_MinidoracatMiniMap_TripInsert": "Wstaw przed przystankiem...",
+    "UI_MinidoracatMiniMap_TripAddMenu": "Dodaj do podróży",
     "UI_MinidoracatMiniMap_TripInsertBefore": "Wstaw przed %1. %2",
     "UI_MinidoracatMiniMap_TripStart": "Rozpocznij nawigację",
     "UI_MinidoracatMiniMap_TripContinue": "Do następnego przystanku",
@@ -452,7 +453,7 @@
     "UI_MinidoracatMiniMap_GoHome": "Do domu",
     "UI_MinidoracatMiniMap_SetHome": "Ustaw jako dom",
     "UI_MinidoracatMiniMap_BtnGoHome": "Do domu: zastąp bieżącą podróż domem i rozpocznij nawigację",
-    "UI_MinidoracatMiniMap_HomeNotSet": "Nie ustawiono jeszcze domu. Kliknij prawym przyciskiem miejsce na mapie i wybierz „Ustaw jako dom”.",
+    "UI_MinidoracatMiniMap_HomeNotSet": "Nie ustawiono jeszcze domu. Kliknij prawym przyciskiem miejsce na mapie i wybierz „Ulubione” › „Ustaw jako dom”.",
     "UI_MinidoracatMiniMap_AlreadyHome": "Już jesteś w domu.",
     "UI_MinidoracatMiniMap_HomeSet": "Ustawiono dom",
     "UI_MinidoracatMiniMap_PlaceAdd": "Dodaj do ulubionych…",
@@ -463,7 +464,7 @@
     "UI_MinidoracatMiniMap_PlaceConfirmRemove": "Usunąć „%1” z ulubionych?",
     "UI_MinidoracatMiniMap_PlaceMenu": "Ulubione",
     "UI_MinidoracatMiniMap_PlaceMenuSetHome": "Ustaw jako dom",
-    "UI_MinidoracatMiniMap_PlacesEmpty": "Brak ulubionych. Kliknij mapę prawym przyciskiem i wybierz „Dodaj do ulubionych…” albo zaznacz wynik wyszukiwania i użyj Ulubionych.",
+    "UI_MinidoracatMiniMap_PlacesEmpty": "Brak ulubionych. Kliknij mapę prawym przyciskiem i wybierz „Ulubione” › „Dodaj do ulubionych…” albo zaznacz wynik wyszukiwania i użyj Ulubionych.",
     "UI_MinidoracatMiniMap_SearchKindPlace": "Ulubione",
     "UI_MinidoracatMiniMap_PlaceError_unsupported": "Ulubione zostały zapisane przez nowszą wersję tego moda. Zaktualizuj moda, aby je edytować."
 }

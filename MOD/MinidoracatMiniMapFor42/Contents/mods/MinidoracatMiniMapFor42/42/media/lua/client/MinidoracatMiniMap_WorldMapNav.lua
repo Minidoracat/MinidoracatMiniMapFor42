@@ -1,7 +1,7 @@
 -- MinidoracatMiniMap_WorldMapNav.lua
 -- 本檔範圍：世界地圖（M）的導航與座標整合——(1) 底部置中玩家座標列（ShowPlayerCoords
--- 同一開關管小地圖與世界地圖）；(2) 右鍵選單「設定/清除/分享導航目標」＋「複製此處
--- 座標」；(3) 導航旗標/邊緣箭頭同步畫在世界地圖上（WM-1 早退期間小地圖加繪整段
+-- 同一開關管小地圖與世界地圖）；(2) 右鍵選單（內容與小地圖共用 Core.mapMenuFill，_Nav.lua）；
+-- (3) 導航旗標/邊緣箭頭同步畫在世界地圖上（WM-1 早退期間小地圖加繪整段
 -- 停用，世界地圖側自繪補位）。
 -- 繪製與導航狀態全部共用主檔實作（Core.drawNavTargets/drawPlayerCoords/nav*），
 -- 兩表面相容依據：ISWorldMap.lua:268 與 ISMiniMap.lua:192 同走 getAPIv3()，
@@ -65,7 +65,7 @@ end
 -- 前手建沒建選單看 getPlayerContextMenu(pn) 的可見性，不信回傳值：DebugMenu 系建了選單
 -- 回 nil（DebugMenuCore.lua:244-250），只看 handled 會走自建、get 的 clear
 -- （ISContextMenu.lua:1166-1170）把它洗掉。呼叫前手前先藏殘留選單（原版 get 同樣先
--- hideAndChildren 再重顯，:1168），事後可見＝這一下建的。追加以「已有 SetTarget 項」冪等。
+-- hideAndChildren 再重顯，:1168），事後可見＝這一下建的。追加以「已有本 MOD 第一項」冪等。
 -- 開圖自癒：Cheat Menu Reborn 在 OnGameStart 整個覆寫且非 debug 不呼叫前手
 -- （CMR_MapTeleport.lua:27-55）、DebugMenu 系載入期直接賦值（DebugMenuCore.lua:304）——
 -- 後載即把本 wrap 踢掉；ShowWorldMap 是所有開圖路徑的匯合點（ISReadWorldMap.lua:25、
@@ -105,50 +105,15 @@ local function installWMRightMouseUp()
             context = ISContextMenu.get(pn, x + self:getAbsoluteX(), y + self:getAbsoluteY())
         end
         if not context then return handled end
-        local setLabel = getText("UI_MinidoracatMiniMap_SetTarget")
-        -- 鏈裡兩層都是我們：已加過（getOptionFromName＝ISContextMenu.lua:889）
-        if context:getOptionFromName(setLabel) then return true end
-        local worldX = self.mapAPI:uiToWorldX(x, y) -- 2 參 uiToWorld 用例 ISWorldMap.lua:939-940
-        local worldY = self.mapAPI:uiToWorldY(x, y)
-        -- 加點入口順序（與小地圖一致）：加到行程最後（主要）→插在指定停靠點之前
-        -- （子選單列出待前往站，Core.navInsertSubMenu 共用同一份錨點防線）→
-        -- 先去這裡→取代整趟（會立刻出發，故排在後面；會丟待前往站時先確認）→行程管理。
-        -- 冪等標記仍是 SetTarget 那一項（只是不再排第一個）。
-        -- set 閘門擋住時會設導航的項變灰＋說明原因（只問一次，下面共用；_Nav.lua）
-        local blocked, lock = Core.navMenuBlocked(pn), Core.navMenuLock
-        lock(context:addOption(getText("UI_MinidoracatMiniMap_TripAdd"), self,
-            self.onMinidoracatAddStop, worldX, worldY), blocked)
-        Core.navInsertSubMenu(context, self, pn, worldX, worldY, nil, blocked)
-        lock(context:addOption(getText("UI_MinidoracatMiniMap_TripPriority"), self,
-            self.onMinidoracatPriorityStop, worldX, worldY), blocked)
-        lock(context:addOption(setLabel, self, self.onMinidoracatSetTarget, worldX, worldY), blocked)
-        context:addOption(getText("UI_MinidoracatMiniMap_TripManage"), self,
-            self.onMinidoracatItinerary)
-        if Core.placesAddMenu then Core.placesAddMenu(context, pn, worldX, worldY, blocked) end
-        -- 複製此處座標：選項文字即時帶座標（先看到再決定點不點，同小地圖）
-        local cwx, cwy = math.floor(worldX), math.floor(worldY)
-        context:addOption(getText("UI_MinidoracatMiniMap_CopyHere",
-            string.format("%d, %d, 0", cwx, cwy)), self, self.onMinidoracatCopyCoords, cwx, cwy)
-        context:addOption(getText("UI_MinidoracatMiniMap_SearchMenu"), self,
-            self.onMinidoracatSearch)
-        if Core.navItineraryState(pn) or Core.navItineraryError(pn) then
-            context:addOption(getText("UI_MinidoracatMiniMap_TripClear"), self,
-                self.onMinidoracatClearTarget)
+        -- 鏈裡兩層都是我們：已加過（getOptionFromName＝ISContextMenu.lua:889）。冪等標記是本 MOD
+        -- 第一項，它的字隨有無待前往站換（Core.mapMenuFill），兩種都查
+        if context:getOptionFromName(getText("UI_MinidoracatMiniMap_SetTarget"))
+            or context:getOptionFromName(getText("UI_MinidoracatMiniMap_SearchSetTarget")) then
+            return true
         end
-        if Core.navGetTarget(pn) then
-            context:addOption(getText("UI_MinidoracatMiniMap_TripPause"), self,
-                self.onMinidoracatPauseNav)
-            if isClient() and Faction and Faction.getPlayerFaction(playerObj)
-                -- ⚠ 不傳 pn＝AllowNavShare 永不列入管理員旁路白名單（會影響其他
-                -- 玩家、需伺服器轉送的功能閘；主檔 navShareGateTick 註解同義）
-                and Core.navShareAllowed and Core.navShareAllowed()
-                -- 功能閘門 share（_FeatureGate.lua；缺檔＝放行）
-                and (not Core.featureAllowed or Core.featureAllowed(pn, "share")) then
-                -- Faction.getPlayerFaction 用例 ISFactionUI.lua:408
-                context:addOption(getText("UI_MinidoracatMiniMap_ShareTarget"), self,
-                    self.onMinidoracatShareTarget)
-            end
-        end
+        -- 2 參 uiToWorld 用例 ISWorldMap.lua:939-940；選單內容與小地圖共用（_Nav.lua）
+        Core.mapMenuFill(context, self, pn, self.mapAPI:uiToWorldX(x, y), self.mapAPI:uiToWorldY(x, y),
+            playerObj)
         -- 游標下是別人分享的標記：最後一項「隱藏 X 的標記」（_RemoteSymbols.lua；缺檔＝不加）
         if Core.remoteSymbolHideOption then Core.remoteSymbolHideOption(context, self, x, y) end
         return true
