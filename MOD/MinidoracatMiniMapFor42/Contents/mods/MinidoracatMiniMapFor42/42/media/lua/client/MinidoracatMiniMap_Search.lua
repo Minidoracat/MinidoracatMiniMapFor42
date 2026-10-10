@@ -869,8 +869,8 @@ local function openNativeMenu(win, button, fill)
 end
 
 -- 「動作…」鈕與清單右鍵共用同一份原生選單（可捲動、走原版鍵盤／手把路由）。
--- 按鈕只列次要動作（主要動作已在底部）；右鍵列出該頁全部動作。anchor＝相對視窗的
--- 定位框，後續二層選單（插入位置／收藏）沿用同一處
+-- 按鈕只列次要動作（主要動作已在底部）；右鍵列出該頁全部動作。d.shown(win) 回 false 的項
+-- 整項不列（不是灰掉）。anchor＝相對視窗的定位框，後續二層選單（插入位置／收藏）沿用同一處
 local function openActions(win, anchor, all)
     local trip = win.page == "itinerary"
     local defs = trip and win.tripBtns or win.searchBtns
@@ -879,7 +879,7 @@ local function openActions(win, anchor, all)
     openNativeMenu(win, win.actionAnchor, function(menu)
         for i = 1, #defs do
             local d = defs[i]
-            if d.btn ~= moreBtn and (all or d.group == "more") then
+            if d.btn ~= moreBtn and (all or d.group == "more") and (not d.shown or d.shown(win)) then
                 local intent = d.field == "manualBtn"
                     and { phase = win._tPhase, revision = win._tRev } or nil
                 local option = menu:addOption(d.btn.title, win, d.action, intent)
@@ -2429,7 +2429,7 @@ local function createSearchWindow(pn)
             action = function(target) setContinuation(target, false) end },
     }
     makeButtons(win, win.modeBtns)
-    -- 行程頁：主要＝開始/繼續、停止、回家（永遠可按）；次要＝手動前往、檢視與清單編輯
+    -- 行程頁：主要＝開始/繼續、停止、回家（永遠可按）；次要＝手動前往、檢視、分享與清單編輯
     win.tripBtns = {
         { key = "UI_MinidoracatMiniMap_TripStart", altKey = "UI_MinidoracatMiniMap_TripContinue",
             action = tripStart, field = "startBtn" },
@@ -2442,6 +2442,14 @@ local function createSearchWindow(pn)
             field = "mapBtn", group = "more" },
         { key = "UI_MinidoracatMiniMap_TripPreviewOn", altKey = "UI_MinidoracatMiniMap_TripPreviewOff",
             action = tripPreview, field = "previewBtn", group = "more" },
+        -- 分享目標給陣營：鍵盤與手把開不了地圖右鍵，這裡是它們的入口。列不列和地圖右鍵同一個
+        -- 判定（Core.navShareOk）；單機、沒有陣營或沒在導航時整項不出現
+        { key = "UI_MinidoracatMiniMap_ShareTarget", field = "shareBtn", group = "more",
+            action = function(w) Core.navShareTarget(w.playerNum or 0) end,
+            shown = function(w)
+                local pn = w.playerNum or 0
+                return Core.navShareOk(pn, getSpecificPlayer(pn))
+            end },
         { key = "UI_MinidoracatMiniMap_TripMoveUp", action = tripMoveUp,
             field = "upBtn", group = "more" },
         { key = "UI_MinidoracatMiniMap_TripMoveDown", action = tripMoveDown,

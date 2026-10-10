@@ -382,6 +382,13 @@ Core.navPreviewState = function()
     return p.state, p.done, p.total, p.distance
 end
 Core.navCanUndo = function() return result.canUndo end
+-- 分享：列不列的真判定在 _Nav.lua（Core.navShareOk，雙地圖右鍵共用）；這裡只控回傳、記下問了誰
+local share = { ok = false }
+Core.navShareOk = function(pn, playerObj)
+    share.pn, share.player = pn, playerObj
+    return share.ok
+end
+Core.navShareTarget = function(pn) record("share", { pn = pn }) end
 Core.navKickAvailable = function(pn) record("kick", { pn = pn }) end
 MinidoracatMiniMapAPI.startNavItinerary = function(pn, expectedRevision)
     record("start", { pn = pn, rev = expectedRevision })
@@ -2563,10 +2570,72 @@ do
     screen = { w = 1920, h = 1080 }
 end
 
+--------------------------------------------------------------------------------
+-- SH. 分享目標給陣營的鍵盤／手把入口＝行程頁「動作…」（地圖右鍵只有滑鼠開得了）。列不列只聽
+--     Core.navShareOk，不能分享就整項不出現（不是灰字）；選了送 Core.navShareTarget（視窗主人）
+--------------------------------------------------------------------------------
+do
+    local function shareRow(w) -- 選單列字＝按鈕標題（同 pressButton 的比法）
+        for i, option in ipairs(w.nativeMenu.options) do
+            if option.text == w.shareBtn.title then return i, option end
+        end
+    end
+    setTrip(0, "navigating", { stop(1, 10, 10, "pending", "A") }, 1, nil, 301)
+    share.ok = false
+    local win = openWindow(0, "itinerary")
+    win:prerender()
+    pressButton(win.tripMoreBtn)
+    falsy(shareRow(win), "SH1: 不能分享時「動作…」整項不列")
+    eq(share.pn, 0, "SH1: 判定問的是視窗主人")
+    eq(share.player, players[0], "SH1: 帶的是視窗主人的角色")
+    win.nativeMenu:closeAll()
+
+    -- 鍵盤：TAB 走到「動作…」→ Enter 開選單 → 方向鍵移到分享 → Enter（選單收的就是手把 A）
+    share.ok = true
+    clearCalls()
+    local function focused(w)
+        local entry = w.focus and w.tripFocus[w.focus]
+        return entry and entry.el
+    end
+    local guard = 0
+    while focused(win) ~= win.tripMoreBtn and guard < 30 do
+        key(win, Keyboard.KEY_TAB)
+        guard = guard + 1
+    end
+    eq(focused(win), win.tripMoreBtn, "SH2: 焦點環走得到「動作…」")
+    key(win, Keyboard.KEY_RETURN)
+    local menu = win.nativeMenu
+    truthy(menu and menu:isVisible(), "SH2: Enter 開出「動作…」")
+    local row, option = shareRow(win)
+    truthy(row and not option.notAvailable, "SH2: 能分享時列出可按的分享")
+    guard = 0
+    while menu.mouseOver ~= row and guard < #menu.options do
+        key(win, Keyboard.KEY_DOWN)
+        guard = guard + 1
+    end
+    key(win, Keyboard.KEY_RETURN)
+    eq(countCalls("share"), 1, "SH2: 鍵盤選到分享就送出一次")
+    eq(lastCall("share").pn, 0, "SH2: 分享的是視窗主人的目標")
+    falsy(menu:isVisible(), "SH2: 選了就關選單")
+    Core.toggleSearchWindow(0)
+
+    -- 分割畫面第二位玩家：判定與送出都帶 1，不是寫死 0
+    setTrip(1, "navigating", { stop(1, 510, 510, "pending", "B") }, 1, nil, 302)
+    clearCalls()
+    win = openWindow(1, "itinerary")
+    win:prerender()
+    pressButton(win.shareBtn)
+    eq(share.pn, 1, "SH3: 第二位玩家的視窗問自己的判定")
+    eq(share.player, players[1], "SH3: 帶第二位玩家的角色")
+    eq(lastCall("share").pn, 1, "SH3: 送出的是第二位玩家的目標")
+    Core.toggleSearchWindow(1)
+    share.ok = false
+end
+
 print("test_itinerary_ui: 全數通過（A 開窗切頁收合 / B 提示列防呆 / C 確認防線與防誤觸 / "
     .. "D 契約接線 / E 動作可用性 / F 色語與距離誠實 / G 鍵盤 / H 手把 / "
     .. "I 版面不超 viewport / J 實寬換行 / K 刷新與選取保留 / L 繪製路徑與文字不疊 / "
     .. "M 快捷鍵入口 / N 分割畫面 ping / Q 接續模式兩入口 / R 插入錨點防線 / "
     .. "S 逐站停等與認領鎖定 / T 搜尋頁動作可用性 / U 全文出口 / "
     .. "V 全文列逐行可讀 / W 插入錨點有界標籤與全文出口 / X 真 Core 接管與直線指引 / Y 按鈕錨定 / "
-    .. "Z 收藏清單與回家 / LK 右鍵「加入行程」子選單與鎖定、世界地圖 Toast）")
+    .. "Z 收藏清單與回家 / LK 右鍵「加入行程」子選單與鎖定、世界地圖 Toast / SH 分享的鍵盤與手把入口）")

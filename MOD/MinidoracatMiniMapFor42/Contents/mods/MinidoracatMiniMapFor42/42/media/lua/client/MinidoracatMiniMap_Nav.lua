@@ -576,13 +576,23 @@ function ISMiniMapInner:onMinidoracatCopyCoords(wx, wy)
     copyCoordsText(self, string.format("%d,%d,0", wx, wy))
 end
 
+-- test:map-menu:start
+-- 「分享目標給陣營」列不列（雙地圖右鍵「行程」子選單與行程頁「動作…」共用，兩處不得各寫一份）：
+-- 有活動站＋MP＋陣營（Faction.getPlayerFaction 用例 ISFactionUI.lua:408）＋沙盒＋功能閘門 share
+-- （_FeatureGate.lua；缺檔＝放行）。⚠ navShareAllowed 不傳 pn＝AllowNavShare 永不列入管理員旁路白名單
+-- （會影響其他玩家、需伺服器轉送的功能閘；主檔 navShareGateTick 註解同義）。點下去的 navShareTarget 照樣再檢查
+Core.navShareOk = function(pn, playerObj)
+    local fa = Core.featureAllowed
+    return playerObj ~= nil and Core.navGetTarget(pn) ~= nil and isClient() and Faction ~= nil
+        and Faction.getPlayerFaction(playerObj) ~= nil and Core.navShareAllowed()
+        and (not fa or fa(pn, "share"))
+end
 -- 雙地圖右鍵選單（兩張地圖共用；2026-10-11 設計稿 minimap-rightclick-1011 作答）。第一層依序：
 -- 導航（有待前往站時叫「取代並導航」，點了照舊先確認）→加入行程（有待前往站才是子選單：先去這裡／
 -- 插在第 N 站之前／加到行程最後，_Search.lua navInsertSubMenu）→收藏（回家／設為家／加入收藏，
 -- _Places.lua placesAddMenu）→複製此處座標→行程（有行程或壞資料才有：行程規劃／停止導航／分享目標／
 -- 清空行程，會刪資料的清空排最後）→搜尋地圖。set 閘門擋住時會設導航的項變紅＋原因（建選單只問一次）。
 -- target＝地圖元件：回呼是它的 onMinidoracat* 方法，複製座標的回饋畫在該張地圖上
--- test:map-menu:start
 Core.mapMenuFill = function(context, target, pn, wx, wy, playerObj)
     local blocked, lock = Core.navMenuBlocked(pn), Core.navMenuLock
     local first = Core.navInsertAnchors(pn) > 0 and "UI_MinidoracatMiniMap_SearchSetTarget"
@@ -607,15 +617,10 @@ Core.mapMenuFill = function(context, target, pn, wx, wy, playerObj)
         if Core.navGetTarget(pn) then
             trip:addOption(getText("UI_MinidoracatMiniMap_TripPause"), target,
                 target.onMinidoracatPauseNav)
-            -- 分享四閘：MP＋陣營（Faction.getPlayerFaction 用例 ISFactionUI.lua:408）＋沙盒＋功能閘門
-            -- share（_FeatureGate.lua；缺檔＝放行）。⚠ navShareAllowed 不傳 pn＝AllowNavShare 永不列入
-            -- 管理員旁路白名單（會影響其他玩家、需伺服器轉送的功能閘；主檔 navShareGateTick 註解同義）
-            local fa = Core.featureAllowed
-            if isClient() and Faction and Faction.getPlayerFaction(playerObj)
-                and Core.navShareAllowed and Core.navShareAllowed() and (not fa or fa(pn, "share")) then
-                trip:addOption(getText("UI_MinidoracatMiniMap_ShareTarget"), target,
-                    target.onMinidoracatShareTarget)
-            end
+        end
+        if Core.navShareOk(pn, playerObj) then
+            trip:addOption(getText("UI_MinidoracatMiniMap_ShareTarget"), target,
+                target.onMinidoracatShareTarget)
         end
         trip:addOption(getText("UI_MinidoracatMiniMap_TripClear"), target,
             target.onMinidoracatClearTarget)

@@ -606,6 +606,13 @@ do
     eq(#t.packets, sent, "F6 share 擋＝不送分享封包")
     setBlocked({})
     assert(Core.navGetShared(0) and Core.navGetShared(0).Bob, "F6 恢復後收過的分享再現")
+    -- F6b: 分享入口（雙地圖右鍵與行程頁「動作…」共用的 navShareOk）也吃 share：錶沒有通訊就整項不列
+    Faction = { getPlayerFaction = function(who) return who == p and {} or nil end }
+    eq(Core.navShareOk(0, p), true, "F6b 放行＋有陣營＝列分享")
+    setBlocked({ share = true })
+    eq(Core.navShareOk(0, p), false, "F6b share 擋＝不列分享")
+    setBlocked({})
+    Faction = nil
 
     -- F7: arrow 擋＝畫面外目標不畫箭頭與距離，畫面內旗標照畫
     p.x, p.y = 30, 30

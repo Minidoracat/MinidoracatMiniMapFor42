@@ -56,7 +56,7 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [*] New trips continue automatically; step mode or stopover targets wait for you. Existing trips stay step-by-step. In a vehicle, stop first. For a target on the road, stopping in the lane beside it counts as arrived; for an off-road target, you are told to walk the rest.
 [*] After the last stop, the numbered stop markers disappear from the maps (the trip page still lists the results); to keep them, turn on "Keep finished trip on map" in the "Players & navigation" category of Map Display Settings. Adding a stop or setting a navigation target after a trip has finished starts a new trip numbered from 1, no clearing needed.
 [*] Routes follow roads, preferring paved ones, and replan when you go off course.
-[*] In MP you can share your current stop with your faction; servers can disable this. To hide targets others share with you, turn off "Show faction-shared targets" in "Players & navigation" (received shares are kept).
+[*] In MP you can share your current stop with your faction: right-click the map → "Itinerary", or "Actions…" on the trip page of the search window (the keyboard and controller way); servers can disable this. To hide targets others share with you, turn off "Show faction-shared targets" in "Players & navigation" (received shares are kept).
 [*] Hands-free driving: [url=https://steamcommunity.com/workshop/filedetails/discussion/3792675881/586187095760051144/]AutoDrive Guide[/url].
 [/list]
 

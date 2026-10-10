@@ -524,6 +524,12 @@ mod.setSandbox(false) -- 伺服器禁分享：Share 消失、其餘保留
 r = wm1:onRightMouseUp(5, 6)
 assert(subNames(mod.menu(1), TRIP) == NO_SHARE, "R6: 沙盒禁分享＝無 Share")
 mod.clearCalls(); mod.resetMenus()
+mod.setSandbox(true)
+mod.setFaction(nil) -- 多人但沒加入陣營：伺服器只轉給同陣營，列了也送不出去
+r = wm1:onRightMouseUp(5, 6)
+assert(subNames(mod.menu(1), TRIP) == NO_SHARE, "R6: 沒有陣營＝無 Share")
+mod.clearCalls(); mod.resetMenus()
+mod.setFaction({})
 mod.setClient(false) -- 單機：無 Share
 mod.setSandbox(true)
 r = wm1:onRightMouseUp(5, 6)
