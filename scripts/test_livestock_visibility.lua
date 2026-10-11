@@ -1035,6 +1035,37 @@ do
     MinidoracatSafehouse = nil
 end
 
+-- Safehouse MOD 的一間多塊（每塊一個原生、屋主同為 "@MSH:<id>"）：同一間只畫外緣、交界不畫，圖標與名稱只標一次
+-- （最大的那塊中心）；原版同一屋主的多間、不同標記的兩間照舊各畫各的
+do
+    local H = safehouseHarness
+    H.setMode(3); H.setNameMode(3); H.setView(nil); H.setDistance(nil); H.setNameDistance(nil)
+    H.setOption("Safehouses", true); H.setOption("SafehouseIcons", true); H.setOption("SafehouseNames", true)
+    -- L：直條 (10,10)-(14,22) 48 格＋右下 (14,18)-(22,22) 32 格，共用 x＝14 的 y 18..22
+    local function L(ownerA, ownerB)
+        H.setHouses({ H.safehouse(10, 10, 14, 22, true, ownerA, "Base"), H.safehouse(14, 18, 22, 22, true, ownerB, "Base") })
+    end
+    L("@MSH:9", "@MSH:9")
+    local edges, icons, names = H.draw()
+    local log = H.edges()
+    assert(edges == 7, "多塊：L 形兩塊畫 7 段外緣（交界不畫），實際 " .. edges)
+    assert(not string.find(log, "14,18,14,22", 1, true) and not string.find(log, "14,22,14,18", 1, true),
+        "多塊：塊與塊的交界不畫")
+    assert(string.find(log, "14,10,14,18", 1, true) and string.find(log, "14,18,22,18", 1, true),
+        "多塊：直條的右緣只畫到交界上方、橫條的上緣照畫")
+    assert(icons == 1 and names == 1, "多塊：同一間只標一次圖標與名稱")
+    local icon = H.lastIcon()
+    assert(icon.x + icon.size / 2 == 12 and icon.y + icon.size / 2 == 16, "多塊：標在最大那塊（直條）的中心")
+    -- 對照：原版屋主（同一人相鄰的兩間）與不同標記的兩間不合併
+    L("Bob", "Bob")
+    edges, icons, names = H.draw()
+    assert(edges == 8 and icons == 2 and names == 2, "原版同一屋主的兩間各畫各的")
+    L("@MSH:9", "@MSH:10")
+    edges, icons, names = H.draw()
+    assert(edges == 8 and icons == 2 and names == 2, "不同標記的兩間不合併")
+    H.setOption("SafehouseIcons", false); H.setOption("SafehouseNames", false)
+end
+
 -- 候選列（shCandidates，2026-10-07：數百間安全屋逐幀全掃）：沿用候選與每幀重篩的繪製逐筆相同
 -- （框線座標序列、圖標數、名稱序列）。視野裁切與純距離閘兩種模式，玩家／視窗沿路徑移動、半徑中途改變
 do

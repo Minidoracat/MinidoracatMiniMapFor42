@@ -97,6 +97,67 @@ end
 local SH_CACHE_MS = 1000
 local shCache = { at = nil, size = -1, user = nil, faction = nil, rows = {} }
 
+-- 一段區間 [s, e) 的扁平清單扣掉 [c, d)；沒交集原樣保留
+local function subtractSpan(spans, c, d)
+    local out, n = {}, 0
+    for k = 1, #spans, 2 do
+        local s, e = spans[k], spans[k + 1]
+        if d <= s or c >= e then
+            out[n + 1], out[n + 2], n = s, e, n + 2
+        else
+            if c > s then out[n + 1], out[n + 2], n = s, c, n + 2 end
+            if d < e then out[n + 1], out[n + 2], n = d, e, n + 2 end
+        end
+    end
+    return out
+end
+
+-- row 的一條邊（horizontal：y＝at、x 從 a 到 b；否則 x＝at、y 從 a 到 b）扣掉同一間別塊從外側貼著的部分，
+-- 剩下的段照 x1, y1, x2, y2 接到 segs。side＝-1 是上緣／左緣，+1 是下緣／右緣
+local function outerEdge(segs, row, group, horizontal, at, a, b, side)
+    local spans = { a, b }
+    for i = 1, #group do
+        local o = group[i]
+        if o ~= row then
+            if horizontal then
+                if (side < 0 and o.y2 == at) or (side > 0 and o.y1 == at) then spans = subtractSpan(spans, o.x1, o.x2) end
+            elseif (side < 0 and o.x2 == at) or (side > 0 and o.x1 == at) then
+                spans = subtractSpan(spans, o.y1, o.y2)
+            end
+        end
+    end
+    for k = 1, #spans, 2 do
+        local n = #segs
+        if horizontal then
+            segs[n + 1], segs[n + 2], segs[n + 3], segs[n + 4] = spans[k], at, spans[k + 1], at
+        else
+            segs[n + 1], segs[n + 2], segs[n + 3], segs[n + 4] = at, spans[k], at, spans[k + 1]
+        end
+    end
+end
+
+-- 安全屋 MOD 的一間可以有多塊（每塊一個原生，屋主同為 "@MSH:<id>"，不重疊、塊與塊共用邊）：同一間只畫外緣
+-- （row.segs），圖標與名稱只標在最大的那塊（其他塊 row.noMark）。原版屋主（同一人的多間）照舊各畫各的
+local function mergeSafehousePieces(groups)
+    for _, group in pairs(groups) do
+        if #group > 1 then
+            local main, best = nil, -1
+            for i = 1, #group do
+                local row = group[i]
+                local segs = {}
+                outerEdge(segs, row, group, true, row.y1, row.x1, row.x2, -1)
+                outerEdge(segs, row, group, false, row.x2, row.y1, row.y2, 1)
+                outerEdge(segs, row, group, true, row.y2, row.x1, row.x2, 1)
+                outerEdge(segs, row, group, false, row.x1, row.y1, row.y2, -1)
+                row.segs, row.noMark = segs, true
+                local area = (row.x2 - row.x1) * (row.y2 - row.y1)
+                if area > best then main, best = row, area end
+            end
+            main.noMark = nil
+        end
+    end
+end
+
 local function refreshSafehouseRows(list, size, username, faction)
     local c = shCache
     local now = getTimestampMs()
@@ -104,12 +165,20 @@ local function refreshSafehouseRows(list, size, username, faction)
         and c.user == username and c.faction == faction then
         return c.rows
     end
-    local rows = {}
+    local rows, groups = {}, nil
     for i = 0, size - 1 do
         local sh = list:get(i)
         -- 安全屋幾何 getter＝SafeHouse.java:596-633；getX2/getY2 回 x+w/y+h
-        rows[i + 1] = { sh = sh, x1 = sh:getX(), y1 = sh:getY(), x2 = sh:getX2(), y2 = sh:getY2() }
+        local row = { sh = sh, x1 = sh:getX(), y1 = sh:getY(), x2 = sh:getX2(), y2 = sh:getY2() }
+        rows[i + 1] = row
+        local owner = sh:getOwner()
+        if owner and string.find(owner, "^@MSH:") then
+            groups = groups or {}
+            local group = groups[owner]
+            if group then group[#group + 1] = row else groups[owner] = { row } end
+        end
     end
+    if groups then mergeSafehousePieces(groups) end
     c.at, c.size, c.user, c.faction, c.rows = now, size, username, faction, rows
     return rows
 end
@@ -308,8 +377,8 @@ local function drawSafehouses(inner)
                 end
             end
             local showRect = nearRI and wantRect and safehouseModeAllows(shMode, mine, ally)
-            local showIcon = nearRI and wantIcon and safehouseModeAllows(shMode, mine, ally)
-            local showName = nearName and safehouseModeAllows(nameMode, mine, ally)
+            local showIcon = nearRI and wantIcon and not row.noMark and safehouseModeAllows(shMode, mine, ally)
+            local showName = nearName and not row.noMark and safehouseModeAllows(nameMode, mine, ally)
             if showRect or showIcon or showName then
                 -- 四角投影（worldToUIX/Y 同殭屍點位；等軸測下矩形成菱形故逐邊畫線）
                 local ux1, uy1 = mapAPI:worldToUIX(x1, y1), mapAPI:worldToUIY(x1, y1)
@@ -319,6 +388,16 @@ local function drawSafehouses(inner)
                 local r, g, b = 1.0, 0.25, 0.2             -- 他人＝紅
                 if mine then r, g, b = 0.25, 0.95, 0.35     -- 自己＝綠
                 elseif ally then r, g, b = 0.35, 0.8, 1.0 end -- 同陣營＝青
+                -- 多塊安全屋的一塊：只畫外緣那幾段（mergeSafehousePieces），不畫四條完整的邊
+                local segs = row.segs
+                if segs and showRect then
+                    for k = 1, #segs, 4 do
+                        local ax, ay, bx, by = segs[k], segs[k + 1], segs[k + 2], segs[k + 3]
+                        drawClippedEdge(inner, mapAPI:worldToUIX(ax, ay), mapAPI:worldToUIY(ax, ay),
+                            mapAPI:worldToUIX(bx, by), mapAPI:worldToUIY(bx, by), r, g, b)
+                    end
+                    showRect = false
+                end
                 -- 標籤隨列快取（1 秒重建）：省每幀 getTitle／getOwner 跨界與字串串接
                 local name = nil
                 if showName then
