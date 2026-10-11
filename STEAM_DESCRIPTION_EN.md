@@ -33,7 +33,7 @@ Keep every Minidoracat MiniMap series mod up to date and restart the game after 
 [*] [b]Server sandbox controls[/b]: disable icons and cap display distances; changes apply live
 [*] [b]Singleplayer & multiplayer[/b]: only shows data the client already receives
 [/list]
-📖 [b]Full details, settings and FAQ for every feature:[/b] [url=https://steamcommunity.com/workshop/filedetails/discussion/3763913359/586187095760051259/]MiniMap Guide: Features, Navigation & Road Data[/url]
+📖 [b]Full details, settings and FAQ for every feature:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817841972]MiniMap Mod Guide: Features, Navigation & Road Data[/url]
 
 [h2]🔗 Minidoracat MiniMap series[/h2]
 [list]

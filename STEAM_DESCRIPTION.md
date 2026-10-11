@@ -33,7 +33,7 @@
 [*] [b]伺服器沙盒管理[/b]：可禁用圖標、限制顯示距離，改動即時生效
 [*] [b]單機與多人皆可用[/b]：只顯示客戶端本來就收到的資料
 [/list]
-📖 [b]每項功能的詳細說明、設定與常見問題：[/b][url=https://steamcommunity.com/workshop/filedetails/discussion/3763913359/569297034317714443/]小地圖完整說明：功能、導航與道路資料[/url]
+📖 [b]每項功能的詳細說明、設定與常見問題：[/b][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817841920]小地圖 MiniMap MOD 完整說明：功能、導航與道路資料[/url]
 
 [h2]🔗 Minidoracat 小地圖系列[/h2]
 [list]

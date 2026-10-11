@@ -33,7 +33,7 @@
 [*] [b]サーバーのサンドボックス管理[/b]：アイコンの無効化や表示距離の上限を設定でき、変更は即時反映されます
 [*] [b]シングル・マルチ対応[/b]：クライアントが元々受信しているデータだけを表示します
 [/list]
-📖 [b]各機能の詳しい説明・設定・よくある質問：[/b][url=https://steamcommunity.com/workshop/filedetails/discussion/3763913359/586187095760051259/]MiniMap Guide: Features, Navigation & Road Data[/url]（英語）
+📖 [b]各機能の詳しい説明・設定・よくある質問：[/b][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817841972]MiniMap Mod Guide: Features, Navigation & Road Data[/url]（英語）
 
 [h2]🔗 Minidoracat ミニマップ シリーズ[/h2]
 [list]

@@ -103,7 +103,7 @@ Both go by the room names inside buildings, which are also what decides the loot
 [list]
 [*] [b]Roads[/b]: routes follow roads and slightly prefer paved ones when there is a reasonable alternative; places reachable only by gravel or dirt roads are still reachable.
 [*] [b]Off course[/b]: routes replan automatically when you go off course.
-[*] [b]Hands-free driving[/b]: [url=https://steamcommunity.com/workshop/filedetails/discussion/3792675881/586187095760051144/]AutoDrive Guide[/url].
+[*] [b]Hands-free driving[/b]: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817845953]AutoDrive Guide[/url].
 [/list]
 [h3]Sharing with your faction (MP)[/h3]
 [list]
@@ -263,7 +263,7 @@ MiniMap doesn't detect the real road surface to correct coordinates; it only has
 [*] [b]Without it[/b]: the image still shows, but that area has no street names, search or navigation — it's not a missing translation in the map pack.
 [*] [b]Accuracy[/b]: road coordinates, widths, bends and junctions must match the real surface; gaps, breaks or offsets can mean no route, detours or going off-road.
 [*] [b]Overlapping maps[/b]: roads follow map priority (in MP, the server Map= order); streets in lower-priority areas can drop out, so neither original nor translated names are found.
-[*] [b]Which maps have road data[/b]: which maps have author road data and which had roads added by the map pack: [url=https://steamcommunity.com/workshop/filedetails/discussion/3763914102/586187095760050601/]MOD Maps supported map list & requests[/url].
+[*] [b]Which maps have road data[/b]: which maps have author road data and which had roads added by the map pack: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817840392]MOD Maps supported map list[/url].
 [/list]
 === ❓ FAQ
 [h3]The mod won't load / a dependency is missing?[/h3]

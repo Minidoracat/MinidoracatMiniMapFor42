@@ -106,7 +106,7 @@ https://steamcommunity.com/sharedfiles/filedetails/?id=3763913359
 [list]
 [*] [b]沿道路規劃[/b]：偏離路線會自動重算。
 [*] [b]路面[/b]：有合理替代時會稍微偏好鋪裝道路，只有碎石路或土路時仍照常可達。
-[*] [b]自動開車[/b]：請加裝 AutoDrive：[url=https://steamcommunity.com/workshop/filedetails/discussion/3792675881/569297034317714529/]AutoDrive 完整說明[/url]。
+[*] [b]自動開車[/b]：請加裝 AutoDrive：[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817845856]AutoDrive 完整說明[/url]。
 [/list]
 [h3]分享給陣營（多人）[/h3]
 {{img:06-nav-route-shared.jpg}}
@@ -267,7 +267,7 @@ https://steamcommunity.com/sharedfiles/filedetails/?id=3763913359
 [*] [b]作者沒附時[/b]：圖片照常顯示，但該區域沒有路名、搜不到路，也無法導航——這不是地圖包漏做翻譯。
 [*] [b]資料要準[/b]：道路座標、路寬、彎道與路口必須符合實際路面；缺漏、斷路或錯位可能造成無路線、繞路或偏離道路。
 [*] [b]地圖重疊時[/b]：依地圖優先序採用道路：多人遊戲依伺服器 Map= 的順序，低優先區域的街道可能被排除，原名與譯名都搜不到。
-[*] [b]哪些地圖有道路資料[/b]：哪些地圖有作者道路資料、哪些由地圖包補過路，請看 [url=https://steamcommunity.com/workshop/filedetails/discussion/3763914102/568165880361411088/]MOD Maps 支援地圖清單＆許願[/url]。
+[*] [b]哪些地圖有道路資料[/b]：哪些地圖有作者道路資料、哪些由地圖包補過路，請看 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817840347]MOD 地圖擴充的支援地圖清單[/url]。
 [/list]
 === ❓ 常見問題
 [h3]MOD 無法載入，或提示缺少前置？[/h3]
