@@ -1,5 +1,5 @@
 -- MinidoracatMiniMap.lua
--- Minidoracat MiniMap — 世界地圖 ImagePyramid 疊加層（client 端，單機/多人皆同）
+-- Minidoracat MiniMap for B42 — 世界地圖 ImagePyramid 疊加層（client 端，單機/多人皆同）
 --
 -- 架構（manifest 驅動集合包 + 第三方 addon 相容，詳見專案 README.md）：
 --   (1) 本 MOD 的 media/minimap/ 集中放各地圖的 pyramid zip（檔名＝地圖原名，
