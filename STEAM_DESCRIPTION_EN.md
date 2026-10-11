@@ -1,4 +1,4 @@
-[h1]🗺️ Minidoracat MiniMap for B42[/h1]
+[h1]🗺️ Minidoracat MiniMap[/h1]
 [h3]By Minidoracat[/h3]
 
 [hr][/hr]
@@ -7,7 +7,7 @@ Turns the world map and the corner mini-map into full-color top-down images, wit
 
 [h2]📦 Requirements[/h2]
 [list]
-[*] Required: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url] (listed under Required Items; this mod cannot load without it)
+[*] Required: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library[/url] (listed under Required Items; this mod cannot load without it)
 [*] Optional: add the series mods below as needed; this mod works fully on its own
 [*] [b]Add/remove mid-save:[/b] safe either way; when removing it, also remove the MiniMap add-ons
 [*] [b]Languages:[/b] 繁體中文, 简体中文, English, 日本語, 한국어, Русский, Español, Português, Türkçe, Français, Polski, Deutsch (please report any translation issues)
@@ -37,7 +37,7 @@ Keep every Minidoracat MiniMap series mod up to date and restart the game after 
 
 [h2]🔗 Minidoracat MiniMap series[/h2]
 [list]
-[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763913359]MiniMap for B42[/url] (main mod, required) — image-based world map and minimap, search, navigation
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763913359]MiniMap[/url] (main mod, required) — image-based world map and minimap, search, navigation
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps[/url] — map images and street-name translations for map mods
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3792675881]AutoDrive[/url] — GPS navigation and autonomous driving
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones[/url] — custom server zones

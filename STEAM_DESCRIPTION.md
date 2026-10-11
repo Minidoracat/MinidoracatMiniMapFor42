@@ -1,4 +1,4 @@
-[h1]🗺️ Minidoracat MiniMap for B42[/h1]
+[h1]🗺️ Minidoracat MiniMap[/h1]
 [h3]By Minidoracat[/h3]
 
 [hr][/hr]
@@ -7,7 +7,7 @@
 
 [h2]📦 需要安裝[/h2]
 [list]
-[*] 必裝：[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url]（Required Items 會一併列出，缺少會無法載入）
+[*] 必裝：[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library[/url]（Required Items 會一併列出，缺少會無法載入）
 [*] 選裝：下方系列 MOD 依需求加裝；本 MOD 單獨就能完整使用
 [*] [b]中途加入／移除：[/b]都可以；移除時小地圖系列的附加 MOD 也要一起移除
 [*] [b]介面語言：[/b]繁體中文、简体中文、English、日本語、한국어、Русский、Español、Português、Türkçe、Français、Polski、Deutsch（翻譯有問題請回報）
@@ -37,7 +37,7 @@
 
 [h2]🔗 Minidoracat 小地圖系列[/h2]
 [list]
-[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763913359]MiniMap for B42[/url]（主 MOD，必裝）——圖片化世界地圖與小地圖、搜尋、導航
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763913359]MiniMap[/url]（主 MOD，必裝）——圖片化世界地圖與小地圖、搜尋、導航
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps[/url]——地圖 MOD 的地圖圖片與路名翻譯
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3792675881]AutoDrive[/url]——GPS 導航與自動駕駛
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones[/url]——伺服器自訂區域

@@ -6,7 +6,7 @@
 
 [h2]🚀 快速上手[/h2]
 [list]
-[*] 需要遊戲 Build 42.21.0 以上，並一併訂閱必要前置 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url]。多人遊戲需要伺服器啟用本 MOD。
+[*] 需要遊戲 Build 42.21.0 以上，並一併訂閱必要前置 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library[/url]。多人遊戲需要伺服器啟用本 MOD。
 [*] 系列 MOD 請都更新到最新版，更新後完整重新啟動遊戲。齒輪的「地圖顯示設定」視窗需要 UI Library 同步更新；還沒更新時按齒輪只會提示更新，設定仍可在 ESC → 選項 → MOD 修改。
 [*] 介面語言：繁體中文、简体中文、English、日本語、한국어、Русский、Español、Português、Türkçe、Français、Polski、Deutsch（翻譯有問題請回報）。
 [/list]
@@ -144,7 +144,7 @@
 
 [h2]❓ 常見問題[/h2]
 [b]Q：MOD 無法載入，或提示缺少前置？[/b]
-A：請訂閱並啟用 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library for B42[/url]，然後重啟遊戲。
+A：請訂閱並啟用 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library[/url]，然後重啟遊戲。
 
 [b]Q：按齒輪只出現「設定視窗需要較新的 Minidoracat UI Framework」？[/b]
 A：Minidoracat UI Library 還是舊版。請更新它並重啟遊戲；更新前所有設定仍可在 ESC → 選項 → MOD 修改，小地圖照常運作。

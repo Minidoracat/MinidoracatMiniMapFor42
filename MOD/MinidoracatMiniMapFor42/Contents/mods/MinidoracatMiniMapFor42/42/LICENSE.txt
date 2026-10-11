@@ -1,4 +1,4 @@
-Minidoracat MiniMap for B42 - Licensing and source notices
+Minidoracat MiniMap - Licensing and source notices
 
 1. Original code, documentation and POI icons
 

@@ -135,7 +135,7 @@ MiniMap doesn't auto-correct roads; it only fixes a few vanilla ones.
 
 [h2]❓ FAQ[/h2]
 [b]Q: The mod won't load / a dependency is missing?[/b]
-A: Subscribe to and enable Minidoracat UI Library for B42, then restart.
+A: Subscribe to and enable Minidoracat UI Library, then restart.
 
 [b]Q: The gear only says "The settings window needs a newer Minidoracat UI Framework"?[/b]
 A: Your Minidoracat UI Library is outdated. Update it and restart; until then every setting is in ESC → Options → MOD and the mini-map works as usual.

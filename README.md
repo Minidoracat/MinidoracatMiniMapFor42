@@ -1,4 +1,4 @@
-# Minidoracat MiniMap for B42
+# Minidoracat MiniMap
 
 **By Minidoracat**
 
@@ -12,7 +12,7 @@ Project Zomboid Build 42 遊戲內世界地圖圖片化 MOD。
 原始碼以 MIT 開源；遊戲衍生資料與素材的授權範圍見下方「授權」。
 
 > **必要前置 MOD（0.20.0 起）**：本 MOD 的視窗外觀改由家族共用介面函式庫提供，
-> 需一併訂閱 [Minidoracat UI Library for B42](https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701)
+> 需一併訂閱 [Minidoracat UI Library](https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701)
 > （`require=MinidoracatUIFor42`）。只更新本 MOD 而未訂閱該函式庫會導致本 MOD 不載入。
 
 ## 功能
