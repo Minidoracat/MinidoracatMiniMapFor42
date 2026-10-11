@@ -92,6 +92,7 @@ https://steamcommunity.com/sharedfiles/filedetails/?id=3763913359
 === 🧰 多目標導航
 {{img:04-nav-route-worldmap.jpg}}
 [h3]行程[/h3]
+{{img:03-nav-menu-zh.jpg}}
 [list]
 [*] [b]最多 16 個目標[/b]：可加到最後、指定插入位置或「先去這裡」。
 [*] [b]行程頁[/b]：可排序、移除／復原、略過，並預覽剩餘路線。

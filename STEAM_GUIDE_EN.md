@@ -29,6 +29,7 @@ https://steamcommunity.com/sharedfiles/filedetails/?id=3763913359
 [*] [b]Pre-rendered[/b]: the images don't update live, so player building, demolition and tree cutting don't show.
 [*] [b]Icons that update[/b]: zombie, animal and vehicle icons update from the data your client has already received.
 [/list]
+{{img:07-minimap-frame.jpg}}
 === 🧰 Built-in POIs
 {{img:01-settings-poi.jpg}}
 [list]
@@ -88,8 +89,11 @@ Both go by the room names inside buildings, which are also what decides the loot
 [*] [b]Results[/b]: show a result on the map, navigate to it or add it to your trip. Right-click results or trip stops for more actions.
 [*] [b]"MOD map: name" tag[/b]: a street result with this tag only marks a confirmed data source — not an error, and not an AutoDrive certification.
 [/list]
+{{img:11-search-basement.jpg}}
 === 🧰 Multi-target navigation
+{{img:08-nav-route-worldmap.jpg}}
 [h3]Trips[/h3]
+{{img:03-nav-menu.jpg}}
 [list]
 [*] [b]Up to 16 targets[/b]: add to the end, insert before a stop or "Go here first".
 [*] [b]Trip page[/b]: reorder, remove/undo, skip and preview the remaining route.
@@ -99,6 +103,7 @@ Both go by the room names inside buildings, which are also what decides the loot
 [*] [b]After the last stop[/b]: the numbered stop markers disappear from the maps (the trip page still lists the results); to keep them, turn on "Keep finished trip on map" in the "Players & navigation" category of Map Display Settings.
 [*] [b]New trip[/b]: adding a stop or setting a navigation target after a trip has finished starts a new trip numbered from 1, no clearing needed.
 [/list]
+{{img:09-nav-route-minimap.jpg}}
 [h3]Routes[/h3]
 [list]
 [*] [b]Roads[/b]: routes follow roads and slightly prefer paved ones when there is a reasonable alternative; places reachable only by gravel or dirt roads are still reachable.
@@ -106,6 +111,7 @@ Both go by the room names inside buildings, which are also what decides the loot
 [*] [b]Hands-free driving[/b]: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817845953]AutoDrive Guide[/url].
 [/list]
 [h3]Sharing with your faction (MP)[/h3]
+{{img:10-nav-route-shared.jpg}}
 [list]
 [*] [b]What[/b]: your current target (only the current stop is shared).
 [*] [b]How[/b]: right-click the map → "Itinerary", or "Actions…" on the trip page of the search window (the keyboard and controller way).
