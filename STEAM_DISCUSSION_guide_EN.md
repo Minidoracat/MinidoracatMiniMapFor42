@@ -75,6 +75,7 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [*] [b]Ghost mode[/b] (hotkey [b]'[/b]): clicks and wheel pass through to the game; the map turns semi-transparent with an amber border.
 [*] [b]Free look[/b]: drag to inspect; click once to snap back to the player.
 [*] [b]Coordinates[/b]: x, y, z under both maps; the copy icon in the mini-map's button row copies yours, right-click "Copy coordinates" copies any spot.
+[*] [b]Teleport Here[/b] (MP server staff only): right-click the mini-map → "Teleport Here" is the first item, same as on the world map; only roles that can use /teleportto (admin, moderator, GM, observer) see it.
 [/list]
 
 [h3]👁️ Icons & display[/h3]
@@ -83,7 +84,7 @@ Requires Build 42.21.0+ and [url=https://steamcommunity.com/sharedfiles/filedeta
 [*] [b]Animal icons[/b] (off by default): wild/livestock toggles and species filters; MOD Compatibility adds dogs, horses and more.
 [*] [b]Vehicle icons[/b] (off by default): standard / heavy / performance / emergency filters. Two icon styles, colorblind-friendly palette.
 [*] [b]Also show on the world map[/b]: the zombie, animal (wild/livestock) and vehicle categories each have this toggle for the world map (M); style, colors and filters are shared with the mini-map.
-[*] [b]Street names & safehouses[/b]: street names on the mini-map (hidden when zoomed far out); safehouse outline/icon/name toggles; custom names add the owner.
+[*] [b]Street names & safehouses[/b]: street names on the mini-map (hidden when zoomed far out); safehouse outline/icon/name toggles; custom names add the owner (for safehouses managed by a safehouse mod, the real owner instead of the mod's service account, also used by the "Own and faction" setting).
 [*] [b]Chunk grid[/b] (off by default, in "Base map & text"): marks each 8x8-tile chunk and your chunk's number and range.
 [*] [b]Sizes[/b]: icon size sliders for resource points, zombies, animals, vehicles, safehouses and custom zones, plus "Marker size (home, favorites, nav, search)" (also other mods' markers that have no layer yet) and "Map text size" (50–300%). Game-drawn street/place names don't scale. Search "size" in the settings window to find them all.
 [*] [b]Display distance[/b]: the zombie, animal, vehicle, resource point and safehouse categories each have one, shown as "your value / server cap"; the lower applies, 0 = no limit.

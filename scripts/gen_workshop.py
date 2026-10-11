@@ -19,7 +19,7 @@ OUT = os.path.join(ROOT, "MOD", "MinidoracatMiniMapFor42", "workshop.txt")
 META_HEAD = [
     "version=1",
     "id=3763913359",
-    "title=Minidoracat MiniMap for B42",
+    "title=[B42] Minidoracat MiniMap",
 ]
 META_TAIL = [
     "tags=Build 42;Interface;Map;Multiplayer",
