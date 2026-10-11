@@ -13,9 +13,9 @@
         "japanese": "STEAM_DESCRIPTION_JP.md"
     },
     "titles": {
-        "english": "[B42] Minidoracat MiniMap",
-        "tchinese": "[B42] Minidoracat 小地圖 MiniMap",
-        "schinese": "[B42] Minidoracat 小地图 MiniMap",
-        "japanese": "[B42] Minidoracat ミニマップ MiniMap"
+        "english": "[B42] MiniMap by Minidoracat",
+        "tchinese": "[B42] 小地圖 MiniMap by Minidoracat",
+        "schinese": "[B42] 小地图 MiniMap by Minidoracat",
+        "japanese": "[B42] ミニマップ MiniMap by Minidoracat"
     }
 }
