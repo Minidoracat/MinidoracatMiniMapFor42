@@ -41,7 +41,7 @@
     "UI_MinidoracatMiniMap_ZombieDots": "Canlı zombi noktalarını göster",
     "UI_MinidoracatMiniMap_ZombieDots_tooltip": "Mini haritada gerçek zamanlı zombi konumları için turuncu noktalar çizer (kırmızı oyuncu işaretçisinden ayırt edilsin diye turuncu). Yalnızca mini harita görünümündeki zombiler gösterilir (ayarlanabilir sınır, varsayılan 200; sınır aşılınca size en yakın zombilere öncelik verilir; 0,3 sn'de bir örneklenir). Performans maliyeti nokta sınırı ayarı ve yakındaki zombi sayısıyla artar; kapalı = sıfır maliyet.",
     "UI_MinidoracatMiniMap_Safehouses": "Güvenli ev alanlarını göster",
-    "UI_MinidoracatMiniMap_Safehouses_tooltip": "Mini haritada güvenli ev alanlarının dış hatlarını çizer: ait olduğunuz güvenli evler (sahip veya davetli üye) yeşil, grup üyelerininkiler camgöbeği, diğer oyuncularınkiler kırmızı. Kısıtlı alanları fark etmenize yardımcı olur. Yalnızca güvenli ev varsa çizilir (çoğunlukla çok oyunculu).",
+    "UI_MinidoracatMiniMap_Safehouses_tooltip": "Mini haritada ve dünya haritasında güvenli ev alanlarının dış hatlarını çizer: ait olduğunuz güvenli evler (sahip veya davetli üye) yeşil, grup üyelerininkiler camgöbeği, diğer oyuncularınkiler kırmızı. Kısıtlı alanları fark etmenize yardımcı olur. Yalnızca güvenli ev varsa çizilir (çoğunlukla çok oyunculu).",
     "UI_MinidoracatMiniMap_SafehouseIcons": "Güvenli ev simgelerini göster",
     "UI_MinidoracatMiniMap_SafehouseIcons_tooltip": "Her güvenli ev alanının ortasına bir ev simgesi çizer: kendinizinki yeşil, grup üyelerininki camgöbeği, diğer oyuncularınki kırmızı. Sunucunun güvenli ev alanı gösterim modunu ve mesafesini dış hatlarla paylaşır.",
     "UI_MinidoracatMiniMap_SafehouseNames": "Güvenli ev adlarını göster",

@@ -2379,7 +2379,7 @@ end
 --------------------------------------------------------------------------------
 -- 框線共用工具（安全屋／地圖包範圍／zone 框線同用）：明確線段裁切＋畫邊。
 -- 安全屋圖層本體（範圍框／圖標／名稱）已拆至 MinidoracatMiniMap_Safehouse.lua
--- （2026-09-03，主 chunk locvar 上限對策），主檔 prerender 經 Core.drawSafehouses 呼叫。
+-- （2026-09-03，主 chunk locvar 上限對策），主檔雙地圖 prerender 經 Core.drawSafehouses 呼叫。
 --------------------------------------------------------------------------------
 -- test:clipped-edge:start
 local SH_EDGE_A = 0.85
@@ -2532,6 +2532,13 @@ if ISWorldMap and ISWorldMap.prerender then
         if not cgOk and not self._minidoracatWMChunkGridErrLogged then
             self._minidoracatWMChunkGridErrLogged = true
             log("world map chunk grid draw failed: " .. tostring(cgErr))
+        end
+        -- 安全屋圖層（_Safehouse.lua，同小地圖：格線之上、其餘加繪之下；在原版 prerender 之前畫，
+        -- 註記編輯預覽才不被框線蓋住）；模組缺席 pcall(nil) 回 false，同走 log-once
+        local shOk, shErr = pcall(Core.drawSafehouses, self)
+        if not shOk and not self._minidoracatWMSafehouseErrLogged then
+            self._minidoracatWMSafehouseErrLogged = true
+            log("world map safehouse layer draw failed: " .. tostring(shErr))
         end
         -- 世界地圖圖標：獨立 WM* 開關（統一視窗「世界地圖圖標」區），
         -- 風格/顏色/篩選與小地圖共用。客戶端只知道已載入區域的個體，

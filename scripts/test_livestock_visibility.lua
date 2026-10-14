@@ -348,9 +348,12 @@ function getTextManager()
     return { MeasureStringX = function() return 20 end, getFontHeight = function() return 10 end }
 end
 UIFont = { Small = "Small" }
+-- worldScale＝px/格（拉遠 LOD 用）：預設 4，測試裡最小的屋（3 格）以外都比 16px 圖標大，既有斷言不受 LOD 影響
+local worldScale = 4
 local mapAPI = {
     worldToUIX = function(_, x) return x end,
     worldToUIY = function(_, _, y) return y end,
+    getWorldScale = function() return worldScale end,
 }
 local inner = { playerNum = 0, mapAPI = mapAPI, width = 100, height = 100,
     drawRect = function() end,
@@ -407,6 +410,7 @@ return {
     setMode = function(value) shMode = value end,
     setNameMode = function(value) nameMode = value end,
     setOption = function(id, value) opts[id] = value end,
+    setScale = function(value) worldScale = value end,
     setFaction = function(members) factionMembers = members end,
     modeAllows = safehouseModeAllows,
     safehouse = safehouse,
@@ -852,11 +856,12 @@ safehouseHarness.setSlider("SafehouseIconSize", nil)
 safehouseHarness.setSlider("MapTextScale", nil)
 safehouseHarness.setPlayerPosition(0, 10)
 safehouseHarness.setDistance(10)
+-- 三間：(10..20) 別人的在距內、(30..40) 自己的在距外、(50..60) 別人的在距外
 rects, icons, names = safehouseHarness.draw()
-assert(icons == 1 and names == 3, "範圍距離只裁圖標，不裁名稱")
+assert(icons == 2 and names == 3, "範圍距離只裁圖標（自己的屋不裁），不裁名稱")
 safehouseHarness.setNameDistance(10)
 rects, icons, names = safehouseHarness.draw()
-assert(icons == 1 and names == 1, "名稱距離應獨立裁名稱")
+assert(icons == 2 and names == 2, "名稱距離應獨立裁名稱（自己的屋不裁）")
 safehouseHarness.setDistance(nil)
 safehouseHarness.setNameDistance(nil)
 safehouseHarness.setNameMode(2)
@@ -879,7 +884,7 @@ safehouseHarness.setOption("Safehouses", true)
 safehouseHarness.setOption("SafehouseIcons", false)
 safehouseHarness.setOption("SafehouseNames", false)
 
--- 快取與距離先行（2026-09-25）：幾何／成員 1 秒快取、距離閘先於 playerAllowed
+-- 快取與距離閘（2026-09-25）：幾何／成員 1 秒快取（重建時每列查一次成員）、距離閘先於陣營判定
 do
     local H = safehouseHarness
     local mutable = { x1 = 10 }
@@ -910,21 +915,19 @@ do
     assert(H.allowedCalls() == 2, "帳號變動應重建並重查成員（2 間各 1 次）")
     H.setUsername("A")
 
-    -- 距離先行：遠處安全屋不呼叫 playerAllowed
+    -- 距離閘：遠處別人的屋不畫
     local far = H.safehouse(900, 900, 910, 910, false)
     local near = H.safehouse(10, 10, 20, 20, true)
     H.setHouses({ far, near })
-    H.resetAllowedCalls()
-    assert(H.draw() == 4, "距離先行：只畫近的那間")
-    assert(H.allowedCalls() == 1, "距離先行：只有通過距離閘的列才查成員")
+    assert(H.draw() == 4, "距離閘：只畫近的那間")
 
-    -- 成員判定 lazy 快取：同一快取窗內重畫不再查
+    -- 成員判定隨列快取：同一快取窗內重畫不再查，過期後每列重查一次
     H.resetAllowedCalls()
     H.drawSame(); H.drawSame()
     assert(H.allowedCalls() == 0, "快取窗內成員結果應重用")
     H.advance(1000)
     H.drawSame()
-    assert(H.allowedCalls() == 1, "快取過期後成員應重查")
+    assert(H.allowedCalls() == 2, "快取過期後每列重查一次成員")
 
     -- 名稱距離獨立：框線超距但名稱距離內，仍要查成員並畫名稱
     H.setOption("Safehouses", true); H.setOption("SafehouseNames", true)
@@ -936,7 +939,7 @@ do
     rects, _, names = H.draw()
     assert(rects == 4 and names == 0, "框線在距內、名稱超距：只畫框線")
 
-    -- 視野裁切（不限距離時）：畫面外整列跳過且不查成員；相接／部分重疊仍畫
+    -- 視野裁切（不限距離時）：畫面外整列跳過；相接／部分重疊仍畫
     H.setOption("SafehouseNames", false)
     H.setDistance(nil); H.setNameDistance(nil)
     H.setView(0, 100, 0, 100)
@@ -949,9 +952,7 @@ do
     local touchTop = H.safehouse(50, -10, 60, 0, false)     -- y2 == minY：相接
     local touchBottom = H.safehouse(50, 100, 60, 110, false) -- y1 == maxY：相接
     H.setHouses({ inView, outView, touching, straddle, touchLeft, belowView, touchTop, touchBottom })
-    H.resetAllowedCalls()
     assert(H.draw() == 24, "視野裁切：畫面內、四邊相接、跨邊各畫 4 邊，X 或 Y 超出不畫")
-    assert(H.allowedCalls() == 6, "視野裁切：畫面外的安全屋不查成員")
     H.setView(200, 300, 200, 300)
     assert(H.draw() == 0, "視野移走後全部裁掉")
     -- 所有已開圖層都有距離閘：不計算可見範圍（省 8 次 uiToWorld）
@@ -966,13 +967,71 @@ do
     assert(H.viewCalls() == 1, "名稱不限距離時應計算可見範圍")
     H.setOption("SafehouseNames", false); H.setDistance(nil)
 
-    -- 無距離限制：全部查成員（行為同改寫前）
+    -- 無距離限制：全部畫，每間各查一次成員
     H.setDistance(nil); H.setNameDistance(nil)
     H.setOption("SafehouseNames", false)
     H.setHouses({ far, near })
     H.resetAllowedCalls()
     assert(H.draw() == 8, "無距離限制應畫全部")
     assert(H.allowedCalls() == 2, "無距離限制時每間各查一次成員")
+end
+
+-- 自己的屋（屋主或成員）不受距離閘（2026-10-14 Safehouse 交辦：正式服距離 20 格，離家稍遠就在世界地圖
+-- 找不到自己家）：框、圖標、名稱照畫；別人的與同陣營的照距離閘；視野外照樣裁掉。
+-- 座標都放在 100x100 畫面內（harness 投影＝恆等），圖標與名稱才畫得出來
+do
+    local H = safehouseHarness
+    H.setMode(3); H.setNameMode(3); H.setView(nil); H.setFaction(nil)
+    H.setOption("Safehouses", true); H.setOption("SafehouseIcons", true); H.setOption("SafehouseNames", true)
+    H.setPlayerPosition(20, 20); H.setDistance(6); H.setNameDistance(6)
+    H.setHouses({ H.safehouse(24, 24, 34, 34, false, "Z", "Near"), H.safehouse(60, 20, 70, 30, true, "A", "Home"),
+        H.safehouse(20, 60, 30, 70, false, "F", "Ally"), H.safehouse(60, 60, 70, 70, false, "Z", "Far") })
+    local edges, icons, names = H.draw()
+    assert(edges == 8 and icons == 2 and names == 2, "距離閘：自己遠處的屋照畫框、圖標、名稱，別人遠處的不畫")
+    assert(table.concat(H.names(), "|") == "Near (Z)|Home (A)", "名稱：近的別人＋遠的自己：" .. table.concat(H.names(), "|"))
+    assert(H.candidateCount() == 2, "候選列：距離閘之外只多留自己的屋（得 " .. tostring(H.candidateCount()) .. "）")
+    H.setMode(2); H.setNameMode(2)
+    edges, icons, names = H.draw()
+    assert(edges == 4 and icons == 1 and names == 1, "模式2＋距離閘：自己遠處的屋照畫")
+    H.setMode(4); H.setNameMode(4); H.setFaction({ F = true })
+    edges, icons, names = H.draw()
+    assert(edges == 4 and names == 1 and H.names()[1] == "Home (A)", "模式4：同陣營遠處的屋照距離閘，只剩自己的")
+    H.setDistance(nil); H.setNameDistance(nil)
+    assert(H.draw() == 8, "模式4 不限距離：同陣營遠處的屋也畫（對照：上一條是距離閘擋的）")
+    H.setFaction(nil); H.setMode(3); H.setNameMode(3)
+    -- 名稱不限距離＝要算可見範圍：視野裁切照樣作用在自己的屋
+    H.setDistance(6)
+    H.setView(0, 50, 0, 50)
+    edges, icons, names = H.draw()
+    assert(edges == 4 and icons == 1 and names == 1, "視野外的自己的屋照樣裁掉")
+    H.setView(55, 100, 0, 100)
+    edges, icons, names = H.draw()
+    assert(edges == 4 and icons == 1 and names == 2, "視野內：自己的屋不看距離；別人的框照距離、名稱不限距離照畫")
+    H.setView(nil); H.setDistance(nil); H.setPlayerPosition(0, 10)
+    H.setOption("SafehouseIcons", false); H.setOption("SafehouseNames", false)
+end
+
+-- 拉遠 LOD（2026-10-14 世界地圖整張入鏡實測每幀 11.7ms）：別人的屋在畫面上比圖標小只畫框，
+-- 小於 4px 整間不畫；自己的屋多小都全畫
+do
+    local H = safehouseHarness
+    H.setMode(3); H.setNameMode(3); H.setView(nil); H.setDistance(nil); H.setNameDistance(nil)
+    H.setOption("Safehouses", true); H.setOption("SafehouseIcons", true); H.setOption("SafehouseNames", true)
+    H.setHouses({ H.safehouse(10, 10, 20, 20, false, "Z", "Big"), H.safehouse(40, 40, 42, 42, true, "A", "Tiny"),
+        H.safehouse(60, 10, 63, 13, false, "Z", "Small") })
+    local function at(scale)
+        H.setScale(scale)
+        local e, i, n = H.draw()
+        return e .. "/" .. i .. "/" .. n .. " " .. table.concat(H.names(), "|")
+    end
+    -- 4px/格：Big 40px 全畫、Small 12px 只畫框、自己 8px 全畫
+    assert(at(4) == "12/2/2 Big (Z)|Tiny (A)", "LOD 4px/格：" .. at(4))
+    -- 1px/格：Big 10px 只畫框、Small 3px 不畫
+    assert(at(1) == "8/1/1 Tiny (A)", "LOD 1px/格：" .. at(1))
+    -- 0.3px/格：別人的全不畫，自己的照畫
+    assert(at(0.3) == "4/1/1 Tiny (A)", "LOD 0.3px/格：" .. at(0.3))
+    H.setScale(4)
+    H.setOption("SafehouseIcons", false); H.setOption("SafehouseNames", false)
 end
 
 -- 名稱標籤：標題＝屋主帳號（原版右鍵認領的預設標題）照原樣；自訂標題後綴「(屋主)」；
@@ -1077,10 +1136,11 @@ do
         seed = (seed * 1103515245 + 12345) % 2147483648
         return seed % n
     end
+    -- 自己的屋（約 1/20）不看距離、一律在候選裡；比例太高，下方「候選只剩附近」的斷言就量不出篩選
     local houses = {}
     for i = 1, 300 do
         local x, y = rnd(600), rnd(600)
-        houses[i] = H.safehouse(x, y, x + 3 + rnd(12), y + 3 + rnd(12), rnd(3) == 0, "O" .. (i % 9), "T" .. i)
+        houses[i] = H.safehouse(x, y, x + 3 + rnd(12), y + 3 + rnd(12), rnd(20) == 0, "O" .. (i % 9), "T" .. i)
     end
     H.setHouses(houses)
     H.draw()

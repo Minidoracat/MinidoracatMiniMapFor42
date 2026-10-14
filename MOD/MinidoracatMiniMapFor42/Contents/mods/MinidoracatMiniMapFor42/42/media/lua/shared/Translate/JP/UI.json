@@ -35,7 +35,7 @@
     "UI_MinidoracatMiniMap_RemotePlayers": "仲間のマーカーを表示",
     "UI_MinidoracatMiniMap_RemotePlayers_tooltip": "ミニマップに他のプレイヤーと名前を表示します。マルチプレイ専用。サーバー設定 MapRemotePlayerVisibility の制限も受けます。",
     "UI_MinidoracatMiniMap_Safehouses": "セーフハウス範囲を表示",
-    "UI_MinidoracatMiniMap_Safehouses_tooltip": "セーフハウスの範囲をミニマップに枠で表示します。自分が所属するもの（所有者または招待メンバー）は緑枠、同じ陣営のものは水色枠、他のプレイヤーのものは赤枠。立入制限区域の識別に便利です。セーフハウスが存在する場合のみ表示（主にマルチプレイ）。",
+    "UI_MinidoracatMiniMap_Safehouses_tooltip": "セーフハウスの範囲をミニマップとワールドマップに枠で表示します。自分が所属するもの（所有者または招待メンバー）は緑枠、同じ陣営のものは水色枠、他のプレイヤーのものは赤枠。立入制限区域の識別に便利です。セーフハウスが存在する場合のみ表示（主にマルチプレイ）。",
     "UI_MinidoracatMiniMap_SafehouseIcons": "セーフハウスアイコンを表示",
     "UI_MinidoracatMiniMap_SafehouseIcons_tooltip": "各セーフハウス範囲の中心に家アイコンを描画：自分のものは緑、同じ陣営は水色、他のプレイヤーは赤。範囲枠とサーバーのセーフハウス範囲表示モード・表示距離を共有します。",
     "UI_MinidoracatMiniMap_SafehouseNames": "セーフハウス名を表示",

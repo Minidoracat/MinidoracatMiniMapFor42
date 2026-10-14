@@ -41,7 +41,7 @@
     "UI_MinidoracatMiniMap_ZombieDots": "Pokaż kropki zombie na żywo",
     "UI_MinidoracatMiniMap_ZombieDots_tooltip": "Rysuje na minimapie pomarańczowe kropki w miejscach, gdzie w czasie rzeczywistym są zombie (pomarańczowe, by odróżniały się od czerwonego znacznika gracza). Widoczne są tylko zombie w widoku minimapy (limit regulowany, domyślnie 200; po przekroczeniu limitu pierwszeństwo mają zombie najbliżej ciebie; próbkowanie co 0,3 s). Koszt wydajności rośnie z ustawionym limitem kropek i liczbą zombie w pobliżu; wyłączone = zero kosztu.",
     "UI_MinidoracatMiniMap_Safehouses": "Pokaż obszary schronień",
-    "UI_MinidoracatMiniMap_Safehouses_tooltip": "Obrysowuje obszary schronień na minimapie: zielone - schronienia, do których należysz (właściciel lub zaproszony członek), błękitne - członków frakcji, czerwone - innych graczy. Pomaga zauważyć obszary z ograniczeniami. Rysowane tylko, gdy schronienia istnieją (głównie w grze wieloosobowej).",
+    "UI_MinidoracatMiniMap_Safehouses_tooltip": "Obrysowuje obszary schronień na minimapie i mapie świata: zielone - schronienia, do których należysz (właściciel lub zaproszony członek), błękitne - członków frakcji, czerwone - innych graczy. Pomaga zauważyć obszary z ograniczeniami. Rysowane tylko, gdy schronienia istnieją (głównie w grze wieloosobowej).",
     "UI_MinidoracatMiniMap_SafehouseIcons": "Pokaż ikony schronień",
     "UI_MinidoracatMiniMap_SafehouseIcons_tooltip": "Rysuje ikonę domu na środku każdego obszaru schronienia: zielona - twoje, błękitna - członków frakcji, czerwona - innych graczy. Korzysta z tego samego trybu wyświetlania obszarów schronień i zasięgu serwera co obrysy.",
     "UI_MinidoracatMiniMap_SafehouseNames": "Pokaż nazwy schronień",

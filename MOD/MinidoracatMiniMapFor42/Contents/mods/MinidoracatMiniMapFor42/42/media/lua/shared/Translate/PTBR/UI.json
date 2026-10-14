@@ -41,7 +41,7 @@
     "UI_MinidoracatMiniMap_ZombieDots": "Mostrar pontos de zumbis ao vivo",
     "UI_MinidoracatMiniMap_ZombieDots_tooltip": "Desenha pontos laranja no minimapa nas posições dos zumbis em tempo real (laranja para se destacar do marcador vermelho do jogador). Só aparecem zumbis dentro da área do minimapa (limite ajustável, 200 por padrão; acima do limite, os zumbis mais próximos de você têm prioridade; amostragem a cada 0,3s). O custo de desempenho cresce com o limite de pontos e o número de zumbis por perto; desligado = custo zero.",
     "UI_MinidoracatMiniMap_Safehouses": "Mostrar áreas das bases",
-    "UI_MinidoracatMiniMap_Safehouses_tooltip": "Contorna as áreas das bases no minimapa: verde para bases às quais você pertence (dono ou membro convidado), ciano para as de membros da facção, vermelho para as de outros jogadores. Ajuda a ver áreas restritas. Só é desenhado quando há bases (principalmente no multijogador).",
+    "UI_MinidoracatMiniMap_Safehouses_tooltip": "Contorna as áreas das bases no minimapa e no mapa do mundo: verde para bases às quais você pertence (dono ou membro convidado), ciano para as de membros da facção, vermelho para as de outros jogadores. Ajuda a ver áreas restritas. Só é desenhado quando há bases (principalmente no multijogador).",
     "UI_MinidoracatMiniMap_SafehouseIcons": "Mostrar ícones das bases",
     "UI_MinidoracatMiniMap_SafehouseIcons_tooltip": "Desenha um ícone de casa no centro de cada área de base: verde para as suas, ciano para as de membros da facção, vermelho para as de outros jogadores. Usa o mesmo modo de exibição e a mesma distância de área de base do servidor que os contornos.",
     "UI_MinidoracatMiniMap_SafehouseNames": "Mostrar nomes das bases",

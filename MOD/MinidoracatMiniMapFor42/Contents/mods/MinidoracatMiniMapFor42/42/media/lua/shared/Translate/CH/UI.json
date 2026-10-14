@@ -41,7 +41,7 @@
     "UI_MinidoracatMiniMap_ZombieDots": "顯示即時殭屍點位",
     "UI_MinidoracatMiniMap_ZombieDots_tooltip": "在小地圖上以橘點顯示殭屍即時位置（橘色與紅色玩家點作區分）。僅顯示小地圖可視範圍內的殭屍（視窗內上限可調、預設 200 隻，超過上限時優先顯示離自己較近的；每 0.3 秒取樣一次）。效能成本隨上限檔位與周遭殭屍數增加，關閉＝零成本。",
     "UI_MinidoracatMiniMap_Safehouses": "顯示安全屋範圍",
-    "UI_MinidoracatMiniMap_Safehouses_tooltip": "在小地圖上框出安全屋範圍：自己所屬（擁有或受邀成員）為綠框、同陣營成員的為青框、其他玩家的為紅框，方便辨識禁入區域。僅在有安全屋時顯示（多人為主）。",
+    "UI_MinidoracatMiniMap_Safehouses_tooltip": "在小地圖與世界地圖上框出安全屋範圍：自己所屬（擁有或受邀成員）為綠框、同陣營成員的為青框、其他玩家的為紅框，方便辨識禁入區域。僅在有安全屋時顯示（多人為主）。",
     "UI_MinidoracatMiniMap_SafehouseIcons": "顯示安全屋圖標",
     "UI_MinidoracatMiniMap_SafehouseIcons_tooltip": "在安全屋範圍中心畫房屋圖標：自己所屬為綠、同陣營為青、其他玩家為紅。與範圍框共用伺服器的安全屋範圍顯示模式與顯示距離。",
     "UI_MinidoracatMiniMap_SafehouseNames": "顯示安全屋名稱",

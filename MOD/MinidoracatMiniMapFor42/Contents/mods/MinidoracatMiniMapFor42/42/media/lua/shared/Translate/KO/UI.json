@@ -41,7 +41,7 @@
     "UI_MinidoracatMiniMap_ZombieDots": "실시간 좀비 점 표시",
     "UI_MinidoracatMiniMap_ZombieDots_tooltip": "실시간 좀비 위치를 미니맵에 주황색 점으로 그립니다(빨간 플레이어 표시와 구분되도록 주황색). 미니맵 화면 안의 좀비만 표시합니다(상한 조절 가능, 기본값 200, 상한을 넘으면 가까운 좀비 우선, 0.3초마다 샘플링). 성능 비용은 점 상한 설정과 주변 좀비 수에 따라 늘어나며, 끄면 비용이 없습니다.",
     "UI_MinidoracatMiniMap_Safehouses": "은신처 영역 표시",
-    "UI_MinidoracatMiniMap_Safehouses_tooltip": "미니맵에 은신처 영역의 외곽선을 그립니다: 내가 속한 은신처(소유자 또는 초대받은 구성원)는 녹색, 조직원의 은신처는 청록색, 다른 플레이어의 은신처는 빨간색입니다. 출입이 제한된 지역을 알아보는 데 도움이 됩니다. 은신처가 있을 때만 그려집니다(주로 멀티플레이).",
+    "UI_MinidoracatMiniMap_Safehouses_tooltip": "미니맵과 세계 지도에 은신처 영역의 외곽선을 그립니다: 내가 속한 은신처(소유자 또는 초대받은 구성원)는 녹색, 조직원의 은신처는 청록색, 다른 플레이어의 은신처는 빨간색입니다. 출입이 제한된 지역을 알아보는 데 도움이 됩니다. 은신처가 있을 때만 그려집니다(주로 멀티플레이).",
     "UI_MinidoracatMiniMap_SafehouseIcons": "은신처 아이콘 표시",
     "UI_MinidoracatMiniMap_SafehouseIcons_tooltip": "각 은신처 영역의 중앙에 집 아이콘을 그립니다: 내 것은 녹색, 조직원의 것은 청록색, 다른 플레이어의 것은 빨간색입니다. 서버의 은신처 영역 표시 모드와 거리를 외곽선과 함께 사용합니다.",
     "UI_MinidoracatMiniMap_SafehouseNames": "은신처 이름 표시",

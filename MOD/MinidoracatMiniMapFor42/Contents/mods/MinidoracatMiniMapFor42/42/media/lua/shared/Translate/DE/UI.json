@@ -41,7 +41,7 @@
     "UI_MinidoracatMiniMap_ZombieDots": "Live-Zombiepunkte zeigen",
     "UI_MinidoracatMiniMap_ZombieDots_tooltip": "Zeichnet orange Punkte für Zombiepositionen in Echtzeit auf die Minimap (orange, um sich von der roten Spielermarkierung abzuheben). Nur Zombies im Sichtbereich der Minimap werden gezeigt (einstellbares Limit, Standard 200; über dem Limit haben die Zombies am nächsten zu dir Vorrang; Abtastung alle 0,3 s). Die Leistungskosten steigen mit dem Punkte-Limit und der Zahl naher Zombies; aus = keine Kosten.",
     "UI_MinidoracatMiniMap_Safehouses": "Safehouse-Bereiche zeigen",
-    "UI_MinidoracatMiniMap_Safehouses_tooltip": "Umrandet Safehouse-Bereiche auf der Minimap: grün für Safehouses, zu denen du gehörst (Eigentümer oder eingeladenes Mitglied), cyan für die von Fraktionsmitgliedern, rot für die anderer Spieler. Hilft, gesperrte Bereiche zu erkennen. Wird nur gezeichnet, wenn es Safehouses gibt (vor allem im Mehrspieler).",
+    "UI_MinidoracatMiniMap_Safehouses_tooltip": "Umrandet Safehouse-Bereiche auf der Minimap und der Weltkarte: grün für Safehouses, zu denen du gehörst (Eigentümer oder eingeladenes Mitglied), cyan für die von Fraktionsmitgliedern, rot für die anderer Spieler. Hilft, gesperrte Bereiche zu erkennen. Wird nur gezeichnet, wenn es Safehouses gibt (vor allem im Mehrspieler).",
     "UI_MinidoracatMiniMap_SafehouseIcons": "Safehouse-Icons zeigen",
     "UI_MinidoracatMiniMap_SafehouseIcons_tooltip": "Zeichnet ein Haus-Icon in die Mitte jedes Safehouse-Bereichs: grün für deine eigenen, cyan für die von Fraktionsmitgliedern, rot für die anderer Spieler. Nutzt denselben Server-Anzeigemodus und dieselbe Anzeigeweite wie die Umrisse.",
     "UI_MinidoracatMiniMap_SafehouseNames": "Safehouse-Namen zeigen",

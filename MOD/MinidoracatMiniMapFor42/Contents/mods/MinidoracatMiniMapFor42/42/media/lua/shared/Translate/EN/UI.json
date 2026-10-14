@@ -41,7 +41,7 @@
     "UI_MinidoracatMiniMap_ZombieDots": "Show live zombie dots",
     "UI_MinidoracatMiniMap_ZombieDots_tooltip": "Draw orange dots on the mini-map for real-time zombie positions (orange to stand apart from the red player marker). Only zombies within the mini-map view are shown (adjustable limit, 200 by default; zombies nearest to you are prioritized when over the limit; sampled every 0.3s). Performance cost grows with the dot limit setting and nearby zombie count; off = zero cost.",
     "UI_MinidoracatMiniMap_Safehouses": "Show safehouse areas",
-    "UI_MinidoracatMiniMap_Safehouses_tooltip": "Outline safehouse areas on the mini-map: green for safehouses you belong to (owner or invited member), cyan for faction members', red for other players'. Helps you spot restricted areas. Only drawn when safehouses exist (mainly multiplayer).",
+    "UI_MinidoracatMiniMap_Safehouses_tooltip": "Outline safehouse areas on the mini-map and world map: green for safehouses you belong to (owner or invited member), cyan for faction members', red for other players'. Helps you spot restricted areas. Only drawn when safehouses exist (mainly multiplayer).",
     "UI_MinidoracatMiniMap_SafehouseIcons": "Show safehouse icons",
     "UI_MinidoracatMiniMap_SafehouseIcons_tooltip": "Draw a house icon at the centre of each safehouse area: green for your own, cyan for faction members', red for other players'. Shares the server's safehouse area display mode and distance with the outlines.",
     "UI_MinidoracatMiniMap_SafehouseNames": "Show safehouse names",

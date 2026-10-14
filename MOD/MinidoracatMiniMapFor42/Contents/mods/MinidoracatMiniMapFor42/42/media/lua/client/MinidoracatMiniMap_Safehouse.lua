@@ -3,7 +3,7 @@
 -- 三件套的繪製與「伺服器模式 × 距離閘 × 玩家開關」合成。
 -- 載入順序假設：PZ 依字母序載入同目錄 lua，'.'(0x2E) < '_'(0x5F) → 主檔必先載入並
 -- 建好 MinidoracatMiniMapCore；本檔載入期只讀取其「一次性賦值」的穩定引用。主檔的
--- 小地圖 prerender wrap 經 Core.drawSafehouses 呼叫（本檔缺席＝pcall(nil) 回 false，
+-- 小地圖與世界地圖 prerender wrap 都經 Core.drawSafehouses 呼叫（本檔缺席＝pcall(nil) 回 false，
 -- 主檔 log-once 可診斷，不炸 prerender）。
 -- 拆檔緣由（2026-09-03）：安全屋分類獨立（圖標／名稱／陣營模式）讓本段從主檔的
 -- 一個函式長成一組，主檔主 chunk locvar 貼 Kahlua 200 上限（verify 警戒 190）；
@@ -33,9 +33,12 @@ local Policy = Core.policy
 -- 代管的屋換成真正屋主：safehouseOwner）；名稱與屋主帳號不同時附上「(屋主)」（safehouseLabel）。
 -- 陣營判定：Faction.getPlayerFaction(username)（Faction.java:123，原版用例
 -- ISFactionUI.lua:408 為 IsoPlayer 版）→ faction:isOwner/isMember(屋主)（:150/:154）。
--- 每幀成本：幾何與成員身分走 1 秒快取（refreshSafehouseRows），距離閘與視野裁切先於成員判定——
+-- 每幀成本：幾何與成員身分走 1 秒快取（refreshSafehouseRows），距離閘與視野裁切先於陣營判定——
 -- 大型伺服器上安全屋可達數百，原本每幀每間 4 個座標 getter＋playerAllowed 都是跨界呼叫
 -- （2026-09-25 正式服實測 drawSafehouses 佔客戶端 Lua 取樣 1.67%）。單機無安全屋＝零成本。
+-- 自己的屋（屋主或成員）不受距離閘（雙地圖同一條）：距離閘擋的是別人的屋（Policy 把安全屋距離
+-- 歸隱私層）與遠處雜訊，自己家兩者都不是；正式服距離 20 格時，玩家離家稍遠就在世界地圖找不到
+-- 自己家（2026-10-14 Safehouse 交辦，Discord 回報）。小地圖拉遠同理，兩張地圖看到的才一致。
 --------------------------------------------------------------------------------
 -- 沙盒模式：1=關閉、2=僅自己的、3=全部（預設；缺表視為 3）、4=自己與陣營。
 -- 管理員隱私檢視生效時 Policy 回 3 且距離閘一併放行——旁路只影響「這台客戶端畫什麼」
@@ -92,8 +95,8 @@ end
 -- 重建條件：逾 SH_CACHE_MS、清單筆數變、玩家帳號變、陣營物件變（含時鐘倒退）。
 -- 容忍：同筆數的增刪、範圍、成員或名稱異動最多延遲 1 秒反映；列（row）持有的 SafeHouse
 -- 參照在延遲窗內可能已被移除，仍是有效 Java 物件，最多多畫 1 秒。
--- 成員身分與名稱標籤 lazy：只有通過距離閘的列才呼叫 playerAllowed／陣營判定、才組標籤，
--- 結果存到下次重建。
+-- 成員身分（row.mine）在重建時每列查一次：自己的屋要穿過距離閘與候選列，得先知道哪幾列是自己的。
+-- 陣營判定與名稱標籤 lazy：只有通過距離閘的列才判、才組標籤，結果存到下次重建。
 local SH_CACHE_MS = 1000
 local shCache = { at = nil, size = -1, user = nil, faction = nil, rows = {} }
 
@@ -169,7 +172,10 @@ local function refreshSafehouseRows(list, size, username, faction)
     for i = 0, size - 1 do
         local sh = list:get(i)
         -- 安全屋幾何 getter＝SafeHouse.java:596-633；getX2/getY2 回 x+w/y+h
-        local row = { sh = sh, x1 = sh:getX(), y1 = sh:getY(), x2 = sh:getX2(), y2 = sh:getY2() }
+        -- 成員判定走 String 版 playerAllowed（SafeHouse.java:288-290）——IsoPlayer 版
+        -- （:282-285）含管理員 CanGoInsideSafehouses 後門，admin 測試會全判綠
+        local row = { sh = sh, x1 = sh:getX(), y1 = sh:getY(), x2 = sh:getX2(), y2 = sh:getY2(),
+            mine = username ~= nil and sh:playerAllowed(username) }
         rows[i + 1] = row
         local owner = sh:getOwner()
         if owner and string.find(owner, "^@MSH:") then
@@ -189,6 +195,7 @@ end
 --   全由距離閘決定（reach＝各已開圖層的距離取大）：候選＝與「建構時玩家 ±(reach＋SH_MOVE_PAD)」
 --     相交的列，玩家移動不超過 SH_MOVE_PAD、reach 不變就沿用——最近點距離 ≤ reach ⇒ 矩形與
 --     玩家 ±reach 方框相交，故候選是逐列判定通過者的超集。
+--   自己的屋（row.mine）不看距離，一律在候選裡；視野外的照樣在逐列判定被裁掉。
 -- rows 每次重建（1 秒快取）都重篩。
 local SH_VIEW_PAD = 64
 local SH_MOVE_PAD = 16
@@ -224,7 +231,7 @@ local function shCandidates(inner, rows, vMinX, vMaxX, vMinY, vMaxY, px, py, rea
     local list, n = c.list, 0
     for i = 1, #rows do
         local row = rows[i]
-        if row.x2 >= minX and row.x1 <= maxX and row.y2 >= minY and row.y1 <= maxY then
+        if row.mine or (row.x2 >= minX and row.x1 <= maxX and row.y2 >= minY and row.y1 <= maxY) then
             n = n + 1
             list[n] = i
         end
@@ -283,6 +290,11 @@ local function drawSafehouseAt(inner, ux1, uy1, ux2, uy2, ux3, uy3, ux4, uy4, r,
     end
 end
 
+-- 拉遠 LOD（只管別人的屋，自己的屋一律全畫）：畫面上最長邊比圖標小＝只畫框，不標圖標與名稱；
+-- 小於 SH_LOD_HIDE_PX＝整間不畫（框也只剩一個色點）。2026-10-14 實機：世界地圖整張入鏡、305 間、
+-- 不限距離時逐間投影＋圖標＋名稱每幀 11.7ms（-debug），那時每間只有 1-2px，名稱全疊在一起
+local SH_LOD_HIDE_PX = 4
+
 local function drawSafehouses(inner)
     if not (SafeHouse and SafeHouse.getSafehouseList) then return end
     local wantRect = getBoolOption("Safehouses", true)
@@ -316,8 +328,8 @@ local function drawSafehouses(inner)
         faction = Faction.getPlayerFaction(username)
     end
     local rows = refreshSafehouseRows(list, size, username, faction)
-    -- 視野裁切：只在某個已開圖層沒有距離閘時才需要（有距離閘時距離先行已篩掉遠處，
-    -- 不為它多付每幀 8 次 uiToWorld 跨界）。visibleWorldAABB＝小地圖四角反投影的外接框
+    -- 視野裁切：只在某個已開圖層沒有距離閘時才需要（有距離閘時距離先行已篩掉遠處的別人的屋，
+    -- 不為它多付每幀 8 次 uiToWorld 跨界）。visibleWorldAABB＝地圖元件四角反投影的外接框
     -- （主檔，等軸測下是可見菱形的超集）：矩形與它不相交＝四邊、圖標、名稱都不可能在
     -- 視窗內，整列跳過。成本從「全服安全屋數」降為「畫面內安全屋數」
     local vMinX, vMaxX, vMinY, vMaxY
@@ -329,6 +341,8 @@ local function drawSafehouses(inner)
     -- 圖標大小（px，滑條 SafehouseIconSize）與地圖文字倍率：每幀讀值，拖動即時生效
     local iconSize = getSliderValue("SafehouseIconSize", 16, 8, 48)
     local tz = mapTextZoom()
+    -- 拉遠 LOD 用：getWorldScale＝px/格（UIWorldMapV1.java:274），每幀一次跨界
+    local scale = mapAPI:getWorldScale()
     -- 候選列（shCandidates）：有視野裁切，或全部已開圖層都有距離閘時才篩；
     -- 兩者皆無（缺 visibleWorldAABB）＝逐列全走
     local reach
@@ -344,13 +358,14 @@ local function drawSafehouses(inner)
     for ci = 1, cn or #rows do
         local row = rows[cand and cand[ci] or ci]
         local x1, y1, x2, y2 = row.x1, row.y1, row.x2, row.y2
-        -- 距離先行：超出兩個距離閘的列不做成員判定（最近點＝玩家夾進矩形）。
+        local mine = row.mine
+        -- 距離先行：超出兩個距離閘的列不做陣營判定（最近點＝玩家夾進矩形）；自己的屋不看距離。
         -- 夾值用比較式而非 math.max/min：Kahlua 的 math.* 每次都是跨界 Java 呼叫，
         -- 每幀×全服安全屋數就是本段熱點（x1<=x2、y1<=y2：SafeHouse w/h 非負）
         local nearRI, nearName = wantRect or wantIcon, wantName
         if vMinX and (x2 < vMinX or x1 > vMaxX or y2 < vMinY or y1 > vMaxY) then
             nearRI, nearName = false, false
-        elseif dist2 or ndist2 then
+        elseif (dist2 or ndist2) and not mine then
             local nx = px < x1 and x1 or (px > x2 and x2 or px)
             local ny = py < y1 and y1 or (py > y2 and y2 or py)
             local dx, dy = px - nx, py - ny
@@ -358,15 +373,18 @@ local function drawSafehouses(inner)
             if dist2 and d2 > dist2 then nearRI = false end
             if ndist2 and d2 > ndist2 then nearName = false end
         end
+        -- 拉遠 LOD（別人的屋）：最長邊換成畫面 px，太小整間不畫、比圖標小只畫框（small）
+        local small = false
+        if (nearRI or nearName) and not mine then
+            local ext = (x2 - x1 > y2 - y1 and x2 - x1 or y2 - y1) * scale
+            if ext < SH_LOD_HIDE_PX then
+                nearRI, nearName = false, false
+            elseif ext < iconSize then
+                small = true
+            end
+        end
         if nearRI or nearName then
             local sh = row.sh
-            -- 成員判定走 String 版 playerAllowed（SafeHouse.java:288-290）——IsoPlayer 版
-            -- （:282-285）含管理員 CanGoInsideSafehouses 後門，admin 測試會全判綠
-            local mine = row.mine
-            if mine == nil then
-                mine = username ~= nil and sh:playerAllowed(username)
-                row.mine = mine
-            end
             local ally = false
             if faction and not mine then
                 ally = row.ally
@@ -377,10 +395,13 @@ local function drawSafehouses(inner)
                 end
             end
             local showRect = nearRI and wantRect and safehouseModeAllows(shMode, mine, ally)
-            local showIcon = nearRI and wantIcon and not row.noMark and safehouseModeAllows(shMode, mine, ally)
-            local showName = nearName and not row.noMark and safehouseModeAllows(nameMode, mine, ally)
+            local showIcon = nearRI and wantIcon and not (row.noMark or small) and safehouseModeAllows(shMode, mine, ally)
+            local showName = nearName and not (row.noMark or small) and safehouseModeAllows(nameMode, mine, ally)
             if showRect or showIcon or showName then
-                -- 四角投影（worldToUIX/Y 同殭屍點位；等軸測下矩形成菱形故逐邊畫線）
+                -- 四角投影（worldToUIX/Y 同殭屍點位；等軸測下矩形成菱形故逐邊畫線）。
+                -- ponytail: 每間 4 條邊＋圖標 6 次＋名稱各一串跨界與 Lua 包裝，-debug 實測只畫框約 25µs／間、
+                -- 全畫約 60µs／間（2026-10-15 世界地圖同畫面 300 間）；改仿射投影量不出差別，成本在繪製呼叫。
+                -- 不限距離＋同畫面上百間時要再省，改 chunk 格線的做法（javaObject 直畫＋整層 stencil 裁切）
                 local ux1, uy1 = mapAPI:worldToUIX(x1, y1), mapAPI:worldToUIY(x1, y1)
                 local ux2, uy2 = mapAPI:worldToUIX(x2, y1), mapAPI:worldToUIY(x2, y1)
                 local ux3, uy3 = mapAPI:worldToUIX(x2, y2), mapAPI:worldToUIY(x2, y2)
@@ -415,7 +436,7 @@ local function drawSafehouses(inner)
 end
 -- test:safehouse-distance:end
 
--- 跨檔匯出：主檔小地圖 prerender wrap 經 Core.drawSafehouses 呼叫（載入序在本檔之後）；
+-- 跨檔匯出：主檔小地圖與世界地圖 prerender wrap 經 Core.drawSafehouses 呼叫（載入序在本檔之後）；
 -- 設定視窗（_Settings.lua，載入序在本檔之後）讀兩個模式做「伺服器已關閉」提示
 Core.drawSafehouses = drawSafehouses
 Core.safehouseDisplayMode = safehouseDisplayMode
