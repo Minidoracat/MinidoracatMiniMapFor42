@@ -277,6 +277,10 @@ local safehouseBody = assert(safehouseSource:match(
 local mapTextBody = assert(source:match(
     "%-%- test:map%-text:start\n(.-)\n%-%- test:map%-text:end"),
     "找不到主檔 map-text 測試區段")
+-- 仿射投影（主檔 deriveAffine）抽真實作：安全屋四角用它投影
+local affineBody = assert(source:match(
+    "%-%- test:derive%-affine:start\n(.-)\n%-%- test:derive%-affine:end"),
+    "找不到主檔 derive-affine 測試區段")
 local safehousePrelude = [=[
 local distance, ndistance, playerPresent, px, py = nil, nil, true, 0, 10
 local houses, drawCount, iconCount, nameCount, drawnNames = {}, 0, 0, 0, {}
@@ -324,12 +328,27 @@ local defaultPlayer = {
     getY = function() return py end,
     getUsername = function() return username end,
 }
-local function getSpecificPlayer() return playerPresent and defaultPlayer or nil end
-local edgeLog = {} -- 框線座標序列（候選列等價測試比對繪製順序用）
-local function drawClippedEdge(_, x1, y1, x2, y2)
-    drawCount = drawCount + 1
-    edgeLog[drawCount] = x1 .. "," .. y1 .. "," .. x2 .. "," .. y2
+-- 分割畫面第二位本機玩家（pn 1）：同位置、不同帳號
+local username1 = "B"
+local player1 = {
+    getX = function() return px end,
+    getY = function() return py end,
+    getUsername = function() return username1 end,
+}
+local function getSpecificPlayer(pn)
+    if not playerPresent then return nil end
+    return pn == 1 and player1 or defaultPlayer
 end
+local edgeLog = {} -- 框線座標序列（候選列等價測試比對繪製順序用）
+local function recordEdge(x1, y1, x2, y2)
+    drawCount = drawCount + 1
+    -- %g：仿射投影算出的是浮點（Lua 5.3+ 串接成 "14.0"），Kahlua 全是 double 且印成 "14"
+    edgeLog[drawCount] = string.format("%g,%g,%g,%g", x1, y1, x2, y2)
+end
+local function drawClippedEdge(_, x1, y1, x2, y2) recordEdge(x1, y1, x2, y2) end
+local SH_EDGE_A = 0.85
+-- stencil：地圖框線直畫時整層開一次、外層無條件清除；stencilOpen 留著＝洩漏
+local stencilOpen, stencilSets = false, 0
 local function adotsTexture() return "tex" end
 -- 視野外接框（主檔 visibleWorldAABB）：view＝nil 時回全世界；viewCalls 數跨界次數
 local view, viewCalls = nil, 0
@@ -353,16 +372,24 @@ local worldScale = 4
 local mapAPI = {
     worldToUIX = function(_, x) return x end,
     worldToUIY = function(_, _, y) return y end,
+    uiToWorldX = function(_, x) return x end,
+    uiToWorldY = function(_, _, y) return y end,
     getWorldScale = function() return worldScale end,
 }
-local inner = { playerNum = 0, mapAPI = mapAPI, width = 100, height = 100,
-    drawRect = function() end,
-    drawText = function(_, text, x, y)
-        nameCount = nameCount + 1; drawnNames[nameCount] = text; lastName = { x = x, y = y, zoom = 1 }
-    end,
-    drawTextZoomed = function(_, text, x, y, zoom)
-        nameCount = nameCount + 1; drawnNames[nameCount] = text; lastName = { x = x, y = y, zoom = zoom }
-    end }
+local function newInner(pn)
+    return { playerNum = pn, mapAPI = mapAPI, width = 100, height = 100,
+        javaObject = { DrawLine = function(_, _, x1, y1, x2, y2) recordEdge(x1, y1, x2, y2) end },
+        setStencilRect = function() stencilOpen = true; stencilSets = stencilSets + 1 end,
+        clearStencilRect = function() stencilOpen = false end,
+        drawRect = function() end,
+        drawText = function(_, text, x, y)
+            nameCount = nameCount + 1; drawnNames[nameCount] = text; lastName = { x = x, y = y, zoom = 1 }
+        end,
+        drawTextZoomed = function(_, text, x, y, zoom)
+            nameCount = nameCount + 1; drawnNames[nameCount] = text; lastName = { x = x, y = y, zoom = zoom }
+        end }
+end
+local inner, inner1 = newInner(0), newInner(1)
 local function safehouse(x1, y1, x2, y2, mine, owner, title)
     return {
         getX = function() return x1 end,
@@ -388,6 +415,13 @@ return {
         drawSafehouses(inner)
         return drawCount, iconCount, nameCount
     end,
+    -- 分割畫面：第二位本機玩家（pn 1）的地圖，不前進時鐘
+    drawSame1 = function()
+        drawCount, iconCount, nameCount, drawnNames = 0, 0, 0, {}
+        drawSafehouses(inner1)
+        return drawCount, iconCount, nameCount
+    end,
+    stencil = function() return stencilOpen, stencilSets end,
     names = function() return drawnNames end,
     edges = function() return table.concat(edgeLog, ";", 1, drawCount) end,
     resetCandidates = function() inner._minidoracatShCand = nil end,
@@ -411,6 +445,7 @@ return {
     setNameMode = function(value) nameMode = value end,
     setOption = function(id, value) opts[id] = value end,
     setScale = function(value) worldScale = value end,
+    setUsername1 = function(value) username1 = value end,
     setFaction = function(members) factionMembers = members end,
     modeAllows = safehouseModeAllows,
     safehouse = safehouse,
@@ -418,7 +453,7 @@ return {
 ]=]
 local safehouseChunk, safehouseErr = compile(safehousePrelude .. "\n" .. mapTextBody
     .. "\nlocal mapTextZoom, drawMapText = Core.mapTextZoom, Core.drawMapText\n"
-    .. safehouseBody .. "\n" .. safehouseSuffix)
+    .. affineBody .. "\n" .. safehouseBody .. "\n" .. safehouseSuffix)
 assert(safehouseChunk, safehouseErr)
 local safehouseHarness = safehouseChunk()
 
@@ -915,8 +950,8 @@ do
     assert(H.allowedCalls() == 2, "帳號變動應重建並重查成員（2 間各 1 次）")
     H.setUsername("A")
 
-    -- 距離閘：遠處別人的屋不畫
-    local far = H.safehouse(900, 900, 910, 910, false)
+    -- 距離閘：遠處別人的屋不畫（放在 100x100 畫面內：整條在畫面外的邊本來就不畫）
+    local far = H.safehouse(80, 80, 90, 90, false)
     local near = H.safehouse(10, 10, 20, 20, true)
     H.setHouses({ far, near })
     assert(H.draw() == 4, "距離閘：只畫近的那間")
@@ -952,7 +987,13 @@ do
     local touchTop = H.safehouse(50, -10, 60, 0, false)     -- y2 == minY：相接
     local touchBottom = H.safehouse(50, 100, 60, 110, false) -- y1 == maxY：相接
     H.setHouses({ inView, outView, touching, straddle, touchLeft, belowView, touchTop, touchBottom })
-    assert(H.draw() == 24, "視野裁切：畫面內、四邊相接、跨邊各畫 4 邊，X 或 Y 超出不畫")
+    -- 逐列看有沒有畫（整條落在畫面外的邊本來就不畫，邊數不能拿來判列）
+    H.draw()
+    local log = H.edges()
+    local function has(s) return string.find(log, s, 1, true) ~= nil end
+    assert(has("10,10,20,10") and has("100,50,110,50") and has("5,-5,5,5") and has("-10,50,0,50")
+        and has("60,-10,60,0") and has("50,100,60,100"), "視野裁切：畫面內、四邊相接、跨邊的列都畫：" .. log)
+    assert(not has("500,500") and not has(",150,"), "視野裁切：X 或 Y 超出的列不畫")
     H.setView(200, 300, 200, 300)
     assert(H.draw() == 0, "視野移走後全部裁掉")
     -- 所有已開圖層都有距離閘：不計算可見範圍（省 8 次 uiToWorld）
@@ -1032,6 +1073,42 @@ do
     assert(at(0.3) == "4/1/1 Tiny (A)", "LOD 0.3px/格：" .. at(0.3))
     H.setScale(4)
     H.setOption("SafehouseIcons", false); H.setOption("SafehouseNames", false)
+end
+
+-- 框線直畫的整層 stencil：畫了就開、畫完一定清（含中途丟錯）；漏清會讓當幀後續 UI 全被裁到地圖矩形
+do
+    local H = safehouseHarness
+    H.setMode(3); H.setNameMode(3); H.setView(nil); H.setDistance(nil); H.setNameDistance(nil)
+    H.setOption("Safehouses", true); H.setOption("SafehouseIcons", false); H.setOption("SafehouseNames", true)
+    local bad = H.safehouse(10, 10, 20, 20, false, "Z", "Bad")
+    H.setHouses({ bad })
+    local _, sets0 = H.stencil()
+    H.draw()
+    local open, sets = H.stencil()
+    assert(sets == sets0 + 1 and not open, "畫了框線：stencil 開一次、畫完清掉")
+    bad.getTitle = function() error("injected title failure") end
+    local ok = pcall(H.draw)
+    open = H.stencil()
+    assert(not ok and not open, "畫到一半丟錯：錯誤照樣往外丟，stencil 仍清掉")
+    H.setOption("SafehouseNames", false)
+end
+
+-- 分割畫面：每位本機玩家各一份列快取。兩位帳號不同時輪流畫，不得每幀互相觸發重建（重查成員）
+do
+    local H = safehouseHarness
+    H.setMode(3); H.setNameMode(3); H.setView(nil); H.setDistance(nil); H.setNameDistance(nil)
+    H.setHouses({ H.safehouse(10, 10, 20, 20, false), H.safehouse(30, 30, 40, 40, false) })
+    H.draw()
+    H.drawSame1()
+    H.resetAllowedCalls()
+    for _ = 1, 3 do H.drawSame(); H.drawSame1() end
+    assert(H.allowedCalls() == 0, "兩位本機玩家輪流畫：快取窗內都不重建（實際 " .. H.allowedCalls() .. "）")
+    H.setUsername1("C")
+    H.drawSame1()
+    assert(H.allowedCalls() == 2, "第二位玩家換帳號只重建他自己那份")
+    H.drawSame()
+    assert(H.allowedCalls() == 2, "第一位玩家的快取不受影響")
+    H.setUsername1("B")
 end
 
 -- 名稱標籤：標題＝屋主帳號（原版右鍵認領的預設標題）照原樣；自訂標題後綴「(屋主)」；

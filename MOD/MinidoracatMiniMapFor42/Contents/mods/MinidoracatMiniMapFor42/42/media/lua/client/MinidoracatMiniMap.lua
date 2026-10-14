@@ -2979,6 +2979,7 @@ Core.applyChromeOpacity = applyChromeOpacity -- _Ghost.lua 切換穿透時重套
 Core.resizeMax = resizeMax -- _Resize.lua：尺寸上限（玩家螢幕短邊 85%）
 Core.clipSegment = clipSegment -- _NavRoute.lua：路線裁剪（共用零配置 Liang-Barsky 單一實作）
 Core.drawClippedEdge = drawClippedEdge -- _Zones.lua／_Safehouse.lua：框線裁切畫線（共用 Liang-Barsky 單一實作）
+Core.edgeAlpha = SH_EDGE_A -- _Safehouse.lua：地圖框線直畫（javaObject:DrawLine）用同一個 alpha
 Core.getLoadedMapDirs = getLoadedMapDirs -- _NavRoute.lua：cell 勝出閘門的地圖優先序來源
 Core.visibleWorldAABB = visibleWorldAABB -- _NavRoute.lua：路線繪製的世界視窗剔除（共用單一實作）
 Core.copyCoordsText = copyCoordsText -- _WorldMapNav.lua：右鍵複製座標（共用剪貼簿＋琥珀回饋）

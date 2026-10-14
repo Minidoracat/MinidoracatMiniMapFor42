@@ -161,7 +161,9 @@ Both go by the room names inside buildings, which are also what decides the loot
 [h3]Street names, safehouses and chunk grid[/h3]
 [list]
 [*] [b]Street names[/b]: also on the corner mini-map (vanilla doesn't show them there; hidden when zoomed far out).
-[*] [b]Safehouses[/b]: outline/icon/name toggles; yours in green, your faction's in cyan, others' in red.
+[*] [b]Safehouses[/b]: drawn on both the mini-map and the world map; outline/icon/name toggles; yours in green, your faction's in cyan, others' in red.
+[*] [b]Your own safehouses[/b]: always shown, however far away you are, regardless of the server's safehouse display distance; faction and other players' safehouses still follow it.
+[*] [b]When zoomed out[/b]: other players' safehouses smaller than their icon on screen are drawn as an outline only, and ones down to a dot are skipped; yours are always shown in full.
 [*] [b]Safehouse names[/b]: custom names add the owner's account in brackets (for safehouses managed by a safehouse mod, the real owner instead of the mod's service account; the "Own and faction" setting also judges factions by the real owner).
 [*] [b]Safehouses split into pieces[/b]: when a safehouse mod builds one safehouse from several pieces (an L shape, say), it is drawn as one outline with a single name and icon.
 [*] [b]Chunk grid[/b] (off by default, in "Base map & text"): alternating shading and grid lines mark each chunk (the 8x8-tile save unit); your chunk gets an amber frame with its number and coordinate range, and every cell is numbered when the mini-map is zoomed in. The text can be turned off separately and hides itself when zoomed out too far.

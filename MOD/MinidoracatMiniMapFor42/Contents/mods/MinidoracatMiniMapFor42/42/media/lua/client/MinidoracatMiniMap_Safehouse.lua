@@ -15,6 +15,8 @@ local getBoolOption = Core.getBoolOption
 local displayDist = Core.displayDist
 local sandboxGate = Core.sandboxGate
 local drawClippedEdge = Core.drawClippedEdge
+local SH_EDGE_A = Core.edgeAlpha
+local deriveAffine = Core.deriveAffine
 local adotsTexture = Core.adotsTexture
 local getSliderValue = Core.getSliderValue
 local mapTextZoom = Core.mapTextZoom
@@ -97,8 +99,9 @@ end
 -- 參照在延遲窗內可能已被移除，仍是有效 Java 物件，最多多畫 1 秒。
 -- 成員身分（row.mine）在重建時每列查一次：自己的屋要穿過距離閘與候選列，得先知道哪幾列是自己的。
 -- 陣營判定與名稱標籤 lazy：只有通過距離閘的列才判、才組標籤，結果存到下次重建。
+-- 每位本機玩家（pn）各一份：分割畫面兩位玩家帳號、陣營不同，共用一份會每幀互相觸發重建
 local SH_CACHE_MS = 1000
-local shCache = { at = nil, size = -1, user = nil, faction = nil, rows = {} }
+local shCaches = {}
 
 -- 一段區間 [s, e) 的扁平清單扣掉 [c, d)；沒交集原樣保留
 local function subtractSpan(spans, c, d)
@@ -161,8 +164,12 @@ local function mergeSafehousePieces(groups)
     end
 end
 
-local function refreshSafehouseRows(list, size, username, faction)
-    local c = shCache
+local function refreshSafehouseRows(pn, list, size, username, faction)
+    local c = shCaches[pn]
+    if not c then
+        c = { at = nil, size = -1 }
+        shCaches[pn] = c
+    end
     local now = getTimestampMs()
     if c.at and now >= c.at and now - c.at < SH_CACHE_MS and c.size == size
         and c.user == username and c.faction == faction then
@@ -295,7 +302,23 @@ end
 -- 不限距離時逐間投影＋圖標＋名稱每幀 11.7ms（-debug），那時每間只有 1-2px，名稱全疊在一起
 local SH_LOD_HIDE_PX = 4
 
-local function drawSafehouses(inner)
+-- 地圖上的框線直接呼叫 javaObject:DrawLine（chunk 格線同法），裁切交給整層 stencil（ISUIElement.lua:459）：
+-- 舊路徑每條邊經 drawClippedEdge→clipSegment→ISUIElement.drawLine→checkGetTexture 四層 Lua，
+-- 2026-10-15 實機同畫面 300 間只畫框時每間約 12µs（非 debug）；改直畫＋下方仿射投影後約 5µs。整條在畫面外的邊不呼叫。
+-- 設定視窗預覽仍走 drawSafehouseAt 的 drawClippedEdge（預覽沒有 stencil 配對）。DrawLine 自加元件絕對座標
+-- （UIElement.java:509-512），參數順序 r, g, b, a（同 ISUIElement.drawLine 的 Java 本體）
+local stencilOn = false -- 本幀已開 stencil：外層 drawSafehouses 無條件配對清除
+local function shEdge(inner, x1, y1, x2, y2, r, g, b)
+    local w, h = inner.width, inner.height
+    if (x1 < 0 and x2 < 0) or (x1 > w and x2 > w) or (y1 < 0 and y2 < 0) or (y1 > h and y2 > h) then return end
+    if not stencilOn then
+        inner:setStencilRect(0, 0, w, h)
+        stencilOn = true
+    end
+    inner.javaObject:DrawLine(nil, x1, y1, x2, y2, 1, r, g, b, SH_EDGE_A)
+end
+
+local function drawSafehousesBody(inner)
     if not (SafeHouse and SafeHouse.getSafehouseList) then return end
     local wantRect = getBoolOption("Safehouses", true)
     local wantIcon = getBoolOption("SafehouseIcons", true)
@@ -327,7 +350,7 @@ local function drawSafehouses(inner)
     if (shMode == 4 or nameMode == 4) and username and Faction and Faction.getPlayerFaction then
         faction = Faction.getPlayerFaction(username)
     end
-    local rows = refreshSafehouseRows(list, size, username, faction)
+    local rows = refreshSafehouseRows(pn, list, size, username, faction)
     -- 視野裁切：只在某個已開圖層沒有距離閘時才需要（有距離閘時距離先行已篩掉遠處的別人的屋，
     -- 不為它多付每幀 8 次 uiToWorld 跨界）。visibleWorldAABB＝地圖元件四角反投影的外接框
     -- （主檔，等軸測下是可見菱形的超集）：矩形與它不相交＝四邊、圖標、名稱都不可能在
@@ -355,6 +378,7 @@ local function drawSafehouses(inner)
     if vMinX or reach then
         cand, cn = shCandidates(inner, rows, vMinX, vMaxX, vMinY, vMaxY, px, py, reach)
     end
+    local acx, acy, p0x, p0y, sxx, sxy, syx, syy -- 仿射投影：本幀第一間要畫時才導出（見下方）
     for ci = 1, cn or #rows do
         local row = rows[cand and cand[ci] or ci]
         local x1, y1, x2, y2 = row.x1, row.y1, row.x2, row.y2
@@ -398,14 +422,19 @@ local function drawSafehouses(inner)
             local showIcon = nearRI and wantIcon and not (row.noMark or small) and safehouseModeAllows(shMode, mine, ally)
             local showName = nearName and not (row.noMark or small) and safehouseModeAllows(nameMode, mine, ally)
             if showRect or showIcon or showName then
-                -- 四角投影（worldToUIX/Y 同殭屍點位；等軸測下矩形成菱形故逐邊畫線）。
-                -- ponytail: 每間 4 條邊＋圖標 6 次＋名稱各一串跨界與 Lua 包裝，-debug 實測只畫框約 25µs／間、
-                -- 全畫約 60µs／間（2026-10-15 世界地圖同畫面 300 間）；改仿射投影量不出差別，成本在繪製呼叫。
-                -- 不限距離＋同畫面上百間時要再省，改 chunk 格線的做法（javaObject 直畫＋整層 stencil 裁切）
-                local ux1, uy1 = mapAPI:worldToUIX(x1, y1), mapAPI:worldToUIY(x1, y1)
-                local ux2, uy2 = mapAPI:worldToUIX(x2, y1), mapAPI:worldToUIY(x2, y1)
-                local ux3, uy3 = mapAPI:worldToUIX(x2, y2), mapAPI:worldToUIY(x2, y2)
-                local ux4, uy4 = mapAPI:worldToUIX(x1, y2), mapAPI:worldToUIY(x1, y2)
+                -- 四角投影：仿射係數（主檔 deriveAffine，錨在畫面中心避開 float32 遠錨消去）本幀第一間要畫時
+                -- 才導出（2＋6 次跨界），之後每間純 Lua 乘加，不逐角 worldToUIX/Y。等軸測下矩形成菱形
+                if not acx then
+                    local cx, cy = inner.width / 2, inner.height / 2
+                    acx, acy = mapAPI:uiToWorldX(cx, cy), mapAPI:uiToWorldY(cx, cy)
+                    acx, acy = acx - acx % 1, acy - acy % 1
+                    p0x, p0y, sxx, sxy, syx, syy = deriveAffine(mapAPI, acx, acy)
+                end
+                local ax1, ay1, ax2, ay2 = x1 - acx, y1 - acy, x2 - acx, y2 - acy
+                local ux1, uy1 = p0x + ax1 * sxx + ay1 * syx, p0y + ax1 * sxy + ay1 * syy
+                local ux2, uy2 = p0x + ax2 * sxx + ay1 * syx, p0y + ax2 * sxy + ay1 * syy
+                local ux3, uy3 = p0x + ax2 * sxx + ay2 * syx, p0y + ax2 * sxy + ay2 * syy
+                local ux4, uy4 = p0x + ax1 * sxx + ay2 * syx, p0y + ax1 * sxy + ay2 * syy
                 local r, g, b = 1.0, 0.25, 0.2             -- 他人＝紅
                 if mine then r, g, b = 0.25, 0.95, 0.35     -- 自己＝綠
                 elseif ally then r, g, b = 0.35, 0.8, 1.0 end -- 同陣營＝青
@@ -413,11 +442,15 @@ local function drawSafehouses(inner)
                 local segs = row.segs
                 if segs and showRect then
                     for k = 1, #segs, 4 do
-                        local ax, ay, bx, by = segs[k], segs[k + 1], segs[k + 2], segs[k + 3]
-                        drawClippedEdge(inner, mapAPI:worldToUIX(ax, ay), mapAPI:worldToUIY(ax, ay),
-                            mapAPI:worldToUIX(bx, by), mapAPI:worldToUIY(bx, by), r, g, b)
+                        local ax, ay, bx, by = segs[k] - acx, segs[k + 1] - acy, segs[k + 2] - acx, segs[k + 3] - acy
+                        shEdge(inner, p0x + ax * sxx + ay * syx, p0y + ax * sxy + ay * syy,
+                            p0x + bx * sxx + by * syx, p0y + bx * sxy + by * syy, r, g, b)
                     end
-                    showRect = false
+                elseif showRect then
+                    shEdge(inner, ux1, uy1, ux2, uy2, r, g, b)
+                    shEdge(inner, ux2, uy2, ux3, uy3, r, g, b)
+                    shEdge(inner, ux3, uy3, ux4, uy4, r, g, b)
+                    shEdge(inner, ux4, uy4, ux1, uy1, r, g, b)
                 end
                 -- 標籤隨列快取（1 秒重建）：省每幀 getTitle／getOwner 跨界與字串串接
                 local name = nil
@@ -428,11 +461,25 @@ local function drawSafehouses(inner)
                         row.label = name
                     end
                 end
-                drawSafehouseAt(inner, ux1, uy1, ux2, uy2, ux3, uy3, ux4, uy4, r, g, b,
-                    showRect, showIcon, name, iconSize, tz)
+                if showIcon or (name and name ~= "") then
+                    drawSafehouseAt(inner, ux1, uy1, ux2, uy2, ux3, uy3, ux4, uy4, r, g, b,
+                        false, showIcon, name, iconSize, tz)
+                end
             end
         end
     end
+end
+
+-- 入口：body 整段 pcall，stencil 無條件配對清除——漏 clear 會讓引擎全域 stencil 洩漏、當幀後續 UI
+-- 都被裁到地圖矩形（同 chunk 格線、zone 填色 A1），錯誤再交回呼叫端 log-once
+local function drawSafehouses(inner)
+    stencilOn = false
+    local ok, err = pcall(drawSafehousesBody, inner)
+    if stencilOn then
+        stencilOn = false
+        inner:clearStencilRect()
+    end
+    if not ok then error(err, 0) end
 end
 -- test:safehouse-distance:end
 
