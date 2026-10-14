@@ -1,5 +1,6 @@
 -- 家／收藏點回歸：真 _Itinerary.lua＋真 _Places.lua 同環境載入，驗回家取代行程、
--- 確認門檻、自駕 claim、持久化、壞資料、分割畫面與角色切換、MP 傳回與右鍵選單。
+-- 確認門檻、自駕 claim、帳號檔持久化與格式相容、壞檔與寫入失敗、舊版 modData 搬移、
+-- 分割畫面與死亡重生、檔名轉義與右鍵選單。
 -- 用法：lua scripts/test_places.lua [places.lua] [itinerary.lua]
 local dir = "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/"
 local placesPath = arg[1] or (dir .. "MinidoracatMiniMap_Places.lua")
@@ -16,7 +17,14 @@ local menuLockSource = assert(readFile(dir .. "MinidoracatMiniMap_Nav.lua"):gsub
     "%-%- test:nav%-menu%-lock:start\n(.-)\n%-%- test:nav%-menu%-lock:end"), "找不到 _Nav nav-menu-lock 測試區段")
 local placeSliders, placeOpts = {}, {}
 
-local function fixture()
+-- 假的 Zomboid/Lua 目錄，語意照 LuaManager.java：路徑含 ".." 回 nil（hasRelativePath）、寫入只收
+-- 白名單副檔名、開寫就截斷（FileOutputStream append=false）、readLine 剝行尾。broken＝檔在卻打不開；
+-- lossy＝寫入被吞掉（PrintWriter 不拋例外）。
+local function newFs() return { files = {}, broken = {}, lossy = false } end
+local DEFAULT_WORLD = { mode = "Sandbox", name = "Save1" }
+local function fixture(opts)
+    opts = opts or {}
+    local fs, world = opts.fs or newFs(), opts.world or DEFAULT_WORLD
     local handlers, players, client = {}, {}, false
     local events = {}
     for _, name in ipairs({ "OnCreatePlayer", "OnGameStart", "OnTick" }) do
@@ -70,6 +78,29 @@ local function fixture()
             return { getFontHeight = function() return 10 end,
                 MeasureStringX = function(_, _, s) return #s * 5 end }
         end,
+        getWorld = function()
+            return { getGameMode = function() return world.mode end, getWorld = function() return world.name end }
+        end,
+        cacheFileExists = function(path) return fs.files[path] ~= nil end,
+        getFileReader = function(path)
+            local text = fs.files[path]
+            if path:find("..", 1, true) or fs.broken[path] or text == nil then return nil end
+            local pos = 1
+            return { close = function() end, readLine = function()
+                if pos > #text then return nil end
+                local nl = text:find("\n", pos, true) or #text + 1
+                local line = text:sub(pos, nl - 1)
+                pos = nl + 1
+                return line
+            end }
+        end,
+        getFileWriter = function(path)
+            if path:find("..", 1, true) or not path:match("%.txt$") then return nil end
+            fs.files[path] = ""
+            local buf = {}
+            return { write = function(_, s) buf[#buf + 1] = s end,
+                close = function() fs.files[path] = fs.lossy and "" or table.concat(buf) end }
+        end,
     }, { __index = _G })
     for i, source in ipairs(sources) do
         local chunk
@@ -91,7 +122,7 @@ local function fixture()
         core.navLoadItinerary(pn)
         return p
     end
-    return { core = core, api = api, player = player, players = players, log = log,
+    return { core = core, api = api, player = player, players = players, log = log, fs = fs,
         client = function(v) client = v end,
         fire = function(event, ...) for _, fn in ipairs(handlers[event]) do fn(...) end end }
 end
@@ -249,7 +280,7 @@ end
 
 -- 收藏：新增／改名／移除／設為家；超過 16 筆可保存載回；移除家清掉家；長度與空白。
 do
-    local t = fixture(); local p = t.player(0)
+    local t = fixture(); t.player(0)
     local a = assert(t.core.placesAdd(0, 1, 2, "  Base  "))
     local s = t.core.placesState(0)
     eq(s.places[1].label, "Base", "名稱去頭尾空白")
@@ -263,7 +294,7 @@ do
     eq((t.api.getNavHome(0)), 1, "把既有收藏設為家")
     eq(select(3, t.api.getNavHome(0)), "Base", "有名稱的家顯示名稱")
     for i = 3, 64 do assert(t.core.placesAdd(0, i, i, "Place " .. i)) end
-    local restored = fixture(); restored.player(0, p.md)
+    local restored = fixture({ fs = t.fs }); restored.player(0)
     local loaded = restored.core.placesState(0)
     eq(loaded.count, 64, "超過 16 筆完整載回")
     eq(loaded.homeId, a, "載回保留家")
@@ -284,33 +315,125 @@ do
     eq(ok, false, "重複移除"); eq(why, "stale", "已不存在")
 end
 
--- 持久化：寫入角色 modData，換 fixture 同份 modData 可完整載回；壞資料當空清單且可覆寫；
--- 較新 schema 拒絕寫入、原資料不動。
+-- 持久化：寫進帳號檔 places/<模式>/<世界>_p<序號>.txt，不寫角色 modData；同存檔的新 fixture 完整
+-- 載回（小數座標、名稱裡的 tab／%／換行原樣回來）；寫到一半的壞檔（沒有 END）當空清單且可覆寫；
+-- 較新版本只讀、原檔不動。
 do
     local t = fixture(); local p = t.player(0)
-    local id = assert(t.core.placesAdd(0, 11, 12, "Shop"))
+    local id = assert(t.core.placesAdd(0, 11.5, 12, "Shop\t1%\n2"))
     assert(t.core.placesSetHome(0, id))
-    local saved = p.md.MinidoracatMiniMapPlaces
-    eq(saved.schemaVersion, 1, "schema"); eq(saved.homeId, id, "存 homeId")
-    local t2 = fixture(); t2.player(0, p.md)
+    local path = "MinidoracatMiniMap/places/Sandbox/Save1_p0.txt"
+    local text = assert(t.fs.files[path], "寫進帳號檔")
+    eq(p.md.MinidoracatMiniMapPlaces, nil, "不寫角色 modData")
+    local t2 = fixture({ fs = t.fs }); t2.player(0)
     local x, y, label = t2.api.getNavHome(0)
-    eq(x, 11, "載回 x"); eq(y, 12, "載回 y"); eq(label, "Shop", "載回名稱")
-    local bad = { MinidoracatMiniMapPlaces = { schemaVersion = 1, nextId = 2, homeId = 9,
-        places = { { id = 1, x = 0, y = 0 } } } }
-    local t3 = fixture(); t3.player(0, bad)
-    eq(t3.core.placesError(0), "invalid", "homeId 指向不存在者＝壞資料")
-    eq(t3.core.placesState(0).count, 0, "壞資料當空清單")
+    eq(x, 11.5, "載回 x"); eq(y, 12, "載回 y"); eq(label, "Shop\t1%\n2", "名稱原樣載回")
+    t.fs.files[path] = text:gsub("\nEND\t%d+$", "")
+    local t3 = fixture({ fs = t.fs }); t3.player(0)
+    eq(t3.core.placesError(0), "invalid", "沒有 END＝寫到一半的壞檔")
+    eq(t3.core.placesState(0).count, 0, "壞檔當空清單")
     assert(t3.core.placesAdd(0, 1, 1, "New"))
     eq(t3.core.placesError(0), nil, "成功寫入後清錯誤")
-    local future = { schemaVersion = 2, whatever = true }
-    local t4 = fixture(); local p4 = t4.player(0, { MinidoracatMiniMapPlaces = future })
-    eq(t4.core.placesError(0), "unsupported", "較新 schema")
+    local future = "MMPLACES\t2\tnew-format"
+    t.fs.files[path] = future
+    local t4 = fixture({ fs = t.fs }); t4.player(0)
+    eq(t4.core.placesError(0), "unsupported", "較新版本")
     local ok, why = t4.core.placesSetHomeAt(0, 1, 1)
-    eq(ok, false, "較新 schema 拒絕寫入"); eq(why, "unsupported", "原因")
-    eq(p4.md.MinidoracatMiniMapPlaces, future, "原資料未被覆寫")
+    eq(ok, false, "較新版本拒絕寫入"); eq(why, "unsupported", "原因")
+    eq(t.fs.files[path], future, "原檔未被覆寫")
 end
 
--- 分割畫面各自一份；同槽位換角色（死亡重生）不把前一位的收藏帶過去。
+-- 格式相容：這一版寫出的檔，往後的版本都要讀得懂（要改格式就升版本、舊檔照讀）。
+do
+    local fs = newFs()
+    fs.files["MinidoracatMiniMap/places/Sandbox/Save1_p0.txt"] = table.concat({ "MMPLACES\t1\t4\t2",
+        "1\t10\t20\tFarm %25 %09tab", "2\t30.5\t-40\t", "3\t50\t60\tShop", "END\t3" }, "\n")
+    local t = fixture({ fs = fs }); t.player(0)
+    local s = t.core.placesState(0)
+    eq(t.core.placesError(0), nil, "既有格式沒有錯誤")
+    eq(s.count, 3, "三筆"); eq(s.homeId, 2, "家")
+    eq(s.places[1].label, "Farm % \ttab", "名稱解轉義")
+    eq(s.places[2].x, 30.5, "小數座標"); eq(s.places[2].label, nil, "無名")
+    eq(select(3, t.api.getNavHome(0)), "UI_MinidoracatMiniMap_PlaceHome", "無名的家顯示「家」")
+    assert(t.core.placesAdd(0, 1, 1))
+    eq(t.core.placesState(0).places[4].id, 4, "新筆接續 nextId")
+end
+
+-- 檔在卻打不開（被鎖、權限）：不當成沒有檔，寫入回 failed 且不蓋掉；打得開後下一次寫入先重讀再寫。
+-- 寫入被吞掉（讀回不符）：回 failed，畫面與 revision 不變。
+do
+    local t = fixture(); t.player(0)
+    assert(t.core.placesAdd(0, 1, 1, "Keep"))
+    local path = "MinidoracatMiniMap/places/Sandbox/Save1_p0.txt"
+    local before = t.fs.files[path]
+    t.fs.broken[path] = true
+    local t2 = fixture({ fs = t.fs }); t2.player(0)
+    eq(t2.core.placesError(0), "unreadable", "打不開不是沒有檔")
+    local ok, why = t2.core.placesAdd(0, 2, 2, "New")
+    eq(ok, nil, "打不開時不寫"); eq(why, "failed", "原因")
+    eq(t.fs.files[path], before, "沒有蓋掉打不開的檔")
+    t.fs.broken[path] = nil
+    assert(t2.core.placesAdd(0, 2, 2, "New"))
+    local s = t2.core.placesState(0)
+    eq(s.count, 2, "重讀後原本的收藏還在"); eq(s.places[1].label, "Keep", "原本那筆")
+    local rev = s.revision
+    t.fs.lossy = true
+    ok, why = t2.core.placesAdd(0, 3, 3)
+    eq(ok, nil, "讀回不符不套用"); eq(why, "failed", "原因")
+    eq(t2.core.placesState(0).count, 2, "畫面維持原狀"); eq(t2.core.placesState(0).revision, rev, "revision 不變")
+end
+
+-- 舊版收藏（角色 modData）：第一次載入搬進帳號檔並清掉舊鍵，MP 等有 onlineID 才傳回伺服器一次，
+-- 之後一般寫入不再傳；寫檔失敗保留舊鍵、照樣顯示，下一次寫入成功再清；已有帳號檔時舊鍵只清不用；
+-- 舊鍵是壞資料照舊可覆寫，是較新版本只讀。
+do
+    local legacy = { schemaVersion = 1, nextId = 3, homeId = 2,
+        places = { { id = 1, x = 5, y = 6, label = "Farm" }, { id = 2, x = 7, y = 8 } } }
+    local t = fixture(); t.client(true)
+    local p = t.player(0, { MinidoracatMiniMapPlaces = legacy })
+    eq(t.core.placesState(0).count, 2, "舊收藏載入"); eq((t.api.getNavHome(0)), 7, "舊的家")
+    eq(p.md.MinidoracatMiniMapPlaces, nil, "搬完清掉舊鍵")
+    assert(t.fs.files["MinidoracatMiniMap/places/Sandbox/Save1_p0.txt"], "搬進帳號檔")
+    t.fire("OnTick"); eq(p.sync, 0, "尚無 onlineID 不傳")
+    p.online = 2
+    t.fire("OnTick"); eq(p.sync, 1, "清掉舊鍵後傳回伺服器一次")
+    t.fire("OnTick"); eq(p.sync, 1, "之後不重傳")
+    assert(t.core.placesAdd(0, 9, 9)); t.fire("OnTick")
+    eq(p.sync, 1, "一般寫入只寫帳號檔、不傳角色資料")
+    local sp = fixture(); local sp0 = sp.player(0, { MinidoracatMiniMapPlaces = legacy }); sp0.online = 1
+    sp.core.placesState(0); sp.fire("OnTick")
+    eq(sp0.sync, 0, "單機不傳"); eq(sp0.md.MinidoracatMiniMapPlaces, nil, "單機也清掉舊鍵")
+    local t2 = fixture(); t2.fs.lossy = true
+    local p2 = t2.player(0, { MinidoracatMiniMapPlaces = legacy })
+    eq(t2.core.placesState(0).count, 2, "搬移失敗仍顯示舊收藏")
+    eq(p2.md.MinidoracatMiniMapPlaces, legacy, "搬移失敗保留舊鍵")
+    -- 寫入失敗留下截斷的空檔：下次載入當壞檔（不是打不開），照樣改用角色上的舊收藏
+    eq(t2.fs.files["MinidoracatMiniMap/places/Sandbox/Save1_p0.txt"], "", "寫入失敗留下空檔")
+    local t2b = fixture({ fs = t2.fs }); t2b.player(0, { MinidoracatMiniMapPlaces = legacy })
+    eq(t2b.core.placesError(0), nil, "空檔不是打不開"); eq(t2b.core.placesState(0).count, 2, "空檔時仍用舊收藏")
+    t2.fs.lossy = false
+    assert(t2.core.placesAdd(0, 1, 1))
+    eq(p2.md.MinidoracatMiniMapPlaces, nil, "寫入成功後清掉舊鍵")
+    eq(t2.core.placesState(0).count, 3, "舊收藏連同新增的都在")
+    local stale = { schemaVersion = 1, nextId = 2, places = { { id = 1, x = 0, y = 0, label = "Stale" } } }
+    local t3 = fixture({ fs = t.fs }); local p3 = t3.player(0, { MinidoracatMiniMapPlaces = stale })
+    eq(t3.core.placesState(0).count, 3, "已有帳號檔時以帳號檔為準")
+    eq(p3.md.MinidoracatMiniMapPlaces, nil, "角色上的舊鍵清掉")
+    local bad = { schemaVersion = 1, nextId = 2, homeId = 9, places = { { id = 1, x = 0, y = 0 } } }
+    local t4 = fixture(); local p4 = t4.player(0, { MinidoracatMiniMapPlaces = bad })
+    eq(t4.core.placesError(0), "invalid", "舊鍵 homeId 指向不存在者＝壞資料")
+    eq(t4.core.placesState(0).count, 0, "壞資料當空清單")
+    assert(t4.core.placesAdd(0, 1, 1, "New"))
+    eq(p4.md.MinidoracatMiniMapPlaces, nil, "覆寫成功後清掉壞的舊鍵")
+    local future = { schemaVersion = 2, whatever = true }
+    local t5 = fixture(); local p5 = t5.player(0, { MinidoracatMiniMapPlaces = future })
+    eq(t5.core.placesError(0), "unsupported", "舊鍵是較新版本")
+    eq(select(2, t5.core.placesSetHomeAt(0, 1, 1)), "unsupported", "較新版本拒絕寫入")
+    eq(p5.md.MinidoracatMiniMapPlaces, future, "原資料未被覆寫")
+end
+
+-- 分割畫面各自一份；同槽位換角色（死亡重生）讀同一份；另一個存檔（多人＝另一個伺服器帳號）是另一份，
+-- 檔名就是存檔資料夾名稱。
 do
     local t = fixture(); t.player(0); t.player(1)
     assert(t.core.placesSetHomeAt(0, 10, 10))
@@ -318,22 +441,29 @@ do
     assert(t.core.placesSetHomeAt(1, 20, 20))
     eq((t.api.getNavHome(0)), 10, "P1 的家不受影響")
     t.player(0, {})
-    eq(select(2, t.api.getNavHome(0)), "nohome", "新角色不繼承舊角色的家")
+    eq((t.api.getNavHome(0)), 10, "死亡重生的新角色看得到原本的家")
+    local account = "127.0.0.1_16261_098f6bcd4621d373cade4e832627b4f6"
+    local mp = fixture({ fs = t.fs, world = { mode = "Multiplayer", name = account } }); mp.player(0)
+    eq(select(2, mp.api.getNavHome(0)), "nohome", "另一個存檔沒有這份")
+    assert(mp.core.placesSetHomeAt(0, 30, 30))
+    assert(t.fs.files["MinidoracatMiniMap/places/Multiplayer/" .. account .. "_p0.txt"], "多人檔名＝存檔資料夾名")
+    local again = fixture({ fs = t.fs }); again.player(0)
+    eq((again.api.getNavHome(0)), 10, "單機那份不受影響")
     eq(select(2, t.api.goNavHome(4)), "badargs", "壞槽位")
 end
 
--- MP：寫入後等取得 onlineID 的 tick 才傳回伺服器；單機不傳。
+-- 檔名轉義：% / \ 與 ".." 轉成 %xx；路徑不含 ".."（否則 getFileWriter 回 nil）、不多出子目錄，
+-- 不同世界名不撞檔。
 do
-    local t = fixture(); local p = t.player(0)
-    t.client(true)
-    assert(t.core.placesAdd(0, 1, 1))
-    t.fire("OnTick"); eq(p.sync, 0, "尚無 onlineID 不傳")
-    p.online = 3
-    t.fire("OnTick"); eq(p.sync, 1, "取得 onlineID 後傳一次")
-    t.fire("OnTick"); eq(p.sync, 1, "沒有新變更不重傳")
-    local t2 = fixture(); local p2 = t2.player(0); p2.online = 1
-    assert(t2.core.placesAdd(0, 1, 1)); t2.fire("OnTick")
-    eq(p2.sync, 0, "單機不傳")
+    local seen = {}
+    for _, name in ipairs({ "a..b", "a.%2eb", "a%b", "a%25b", "a/b", "a\\b", "a...b", "a.b" }) do
+        local t = fixture({ world = { mode = "Sandbox", name = name } }); t.player(0)
+        assert(t.core.placesAdd(0, 1, 1), "可寫入: " .. name)
+        local path = next(t.fs.files)
+        assert(path:match("^MinidoracatMiniMap/places/Sandbox/[^/\\]+_p0%.txt$") and not path:find("..", 1, true),
+            "安全路徑: " .. path)
+        assert(not seen[path], "不撞檔: " .. name); seen[path] = true
+    end
 end
 
 -- 命名對話框：OK 才寫入；取消或換角色後才按 OK 都不寫。
@@ -356,7 +486,7 @@ do
     local stale = t.log.dialogs[3]
     t.player(0, {})
     stale:press("OK", "Hijack")
-    eq(t.core.placesState(0).count, 0, "換角色後舊對話框不寫入新角色")
+    eq(t.core.placesState(0).count, 1, "換角色後舊對話框不寫入（新角色讀同一份，仍只有原本 1 筆）")
 end
 
 -- 地圖標記：圖示邊長跟「標記大小」滑條（預設 16），名稱跟「地圖文字大小」並掛在圖示正下方。

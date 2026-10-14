@@ -1,14 +1,16 @@
 -- MinidoracatMiniMap_Places.lua
--- 家與收藏點：每位本機角色一份（角色 modData，MP 沿用 transmitModData 傳回），
--- 「家」是收藏中被標記的那一筆。回家＝把行程取代成單站並立即導航，只有會丟掉
--- 2 個以上待前往站（或行程資料損壞）時才經既有確認面板。
+-- 家與收藏點：每位本機玩家一份，存在玩家電腦的帳號檔（多人每個伺服器帳號一份、單機每個存檔
+-- 一份，見 placesPath），角色死亡後新角色照樣讀得到。「家」是收藏中被標記的那一筆。回家＝
+-- 把行程取代成單站並立即導航，只有會丟掉 2 個以上待前往站（或行程資料損壞）時才經既有確認面板。
 -- 行程寫入仍只走 Core.navSetTarget／navPromptTarget；本檔不碰行程內部。
--- PZ API：getModData/transmitModData（同 _Itinerary.lua）；ISTextBox（ISAnimalUI.lua:459-469
--- 改名用例，maxChars 由 ISTextBox.lua:178 擋 OK）；ISToolTip＋notAvailable（原版右鍵慣例）。
+-- PZ API：cacheFileExists／getFileReader／getFileWriter（LuaManager.java:5544-5550、5936-5964、
+-- 6727-6763）；getWorld():getGameMode()／getWorld()（IsoWorld.java:541、3208）；舊版搬移用
+-- getModData／transmitModData（同 _Itinerary.lua）；ISTextBox（ISAnimalUI.lua:459-469 改名用例，
+-- maxChars 由 ISTextBox.lua:178 擋 OK）；ISToolTip＋notAvailable（原版右鍵慣例）。
 local Core = MinidoracatMiniMapCore
 if not (Core and Core.ready) or Core.placesState then return end
 local API = MinidoracatMiniMapAPI
-local DATA_KEY = "MinidoracatMiniMapPlaces"
+local DATA_KEY = "MinidoracatMiniMapPlaces" -- 舊版存在角色 modData 的鍵：只剩搬移用（loadState）
 local SCHEMA, MAX_LABEL = 1, 128
 local MAX_COORD, MAX_INTEGER = 1e9, 9007199254740991
 local HOME_RADIUS2 = 25 -- 與行程到站判定同為 5 格
@@ -90,28 +92,143 @@ local function validate(value)
     state.homeId = homeId
     return state
 end
-local function payload(state)
-    local rows = {}
-    for i = 1, state.count do
+
+-- 帳號檔（2026-10-14 設計稿 minimap-account-places-1014 作答：存在玩家電腦、只存家與收藏、
+-- 單機每個存檔一份）：Zomboid/Lua/MinidoracatMiniMap/places/<模式>/<世界>_p<pn>.txt。
+-- <模式>/<世界> 就是存檔資料夾 Saves/<模式>/<世界>（ZomboidFileSystem.getCurrentSaveDir）；MP 客戶端
+-- 的世界名是 <IP>_<埠>_<帳號 MD5>（GameClient.doConnect，ConnectToServerState 經 createWorld 消毒），
+-- 所以多人每個伺服器帳號一份，同原版私人地圖標記 map_symbols.bin；死亡重生的新角色讀同一檔。
+-- getFileReader／getFileWriter 把 \ 也當分隔、路徑含 ".." 就回 nil（LuaManager.java:5937-5942、
+-- 6728-6731）：先轉 %，再轉 / \ 與 ".."，可逆＝不同存檔不會撞名。
+local KEY_ESC = { ["%"] = "%25", ["/"] = "%2f", ["\\"] = "%5c" }
+local function fileKey(s)
+    return (tostring(s):gsub("[%%/\\]", KEY_ESC):gsub("%.%.", ".%%2e"))
+end
+local function placesPath(pn)
+    local world = getWorld()
+    return "MinidoracatMiniMap/places/" .. fileKey(world:getGameMode()) .. "/"
+        .. fileKey(world:getWorld()) .. string.format("_p%d.txt", pn)
+end
+
+-- 檔案格式（UTF-8，tab 分欄）：第一行 MMPLACES、版本、nextId、家的 id（無家留空）；每筆一行
+-- id、x、y、名稱（名稱的 % tab CR LF 寫成 %25 %09 %0d %0a）；最後一行 END 與筆數。讀回交給
+-- validate()：缺 END 或筆數不符（寫到一半）＝壞資料；版本較新只看第一行＝unsupported。
+-- gsub 查表用整段比對、不用 capture：Kahlua 查不到時換成 capture 而不是原字串（StringLib.java:1434-1451）。
+-- table.concat 一律給範圍（Kahlua # 不可信）。
+local FILE_TAG = "MMPLACES"
+local LABEL_ESC = { ["%"] = "%25", ["\t"] = "%09", ["\r"] = "%0d", ["\n"] = "%0a" }
+local LABEL_UNESC = { ["%25"] = "%", ["%09"] = "\t", ["%0d"] = "\r", ["%0a"] = "\n" }
+local function encodeState(state)
+    local n = state.count
+    local lines = { FILE_TAG .. "\t" .. SCHEMA .. "\t" .. state.nextId .. "\t" .. (state.homeId or "") }
+    for i = 1, n do
         local p = state.places[i]
-        rows[i] = { id = p.id, x = p.x, y = p.y, label = p.label }
+        lines[i + 1] = p.id .. "\t" .. tostring(p.x) .. "\t" .. tostring(p.y) .. "\t"
+            .. (p.label and p.label:gsub("[%%\t\r\n]", LABEL_ESC) or "")
     end
-    return { schemaVersion = SCHEMA, nextId = state.nextId, homeId = state.homeId, places = rows }
+    lines[n + 2] = "END\t" .. n
+    return table.concat(lines, "\n", 1, n + 2)
 end
-local function writeData(player, value)
-    local md = player:getModData()
-    if type(md) ~= "table" then error("player modData unavailable") end
-    md[DATA_KEY] = value
+local function decodeLines(lines, n)
+    local head = n > 0 and lines[1] or ""
+    local schema = tonumber(head:match("^" .. FILE_TAG .. "\t(%d+)"))
+    if not schema then return nil end
+    if schema > SCHEMA then return { schemaVersion = schema } end
+    local nextId, homeId = head:match("^" .. FILE_TAG .. "\t%d+\t([^\t]*)\t([^\t]*)$")
+    if not nextId or n < 2 or lines[n] ~= "END\t" .. (n - 2) then return nil end
+    local rows = {}
+    for i = 2, n - 1 do
+        local id, x, y, label = lines[i]:match("^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
+        if not id then return nil end
+        -- 數字欄壞了留原字串，交給 validate() 判 invalid
+        rows[i - 1] = { id = tonumber(id) or id, x = tonumber(x) or x, y = tonumber(y) or y,
+            label = label ~= "" and label:gsub("%%%x%x", LABEL_UNESC) or nil }
+    end
+    return { schemaVersion = schema, nextId = tonumber(nextId) or nextId,
+        homeId = homeId ~= "" and (tonumber(homeId) or homeId) or nil, places = rows }
 end
-local function readData(player)
+-- 逐行讀回（getFileReader 對「不存在」與 IOException 都回 nil；readLine 剝行尾，同 POIExport
+-- readBackMatches）；pcall 確保讀到一半拋錯也會 close
+local function readLines(path)
+    local reader = getFileReader(path, false)
+    if not reader then return nil end
+    local lines, n = {}, 0
+    local ok = pcall(function()
+        local line = reader:readLine()
+        while line ~= nil do
+            n = n + 1
+            lines[n] = line
+            line = reader:readLine()
+        end
+    end)
+    reader:close()
+    if ok then return lines, n end
+    return nil
+end
+-- 讀回全等才算寫成：LuaFileWriter 走 PrintWriter，磁碟錯誤不拋例外（同 POIExport）
+local function writeFile(path, text)
+    local writer = getFileWriter(path, true, false)
+    if not writer then return false end
+    if not pcall(function() writer:write(text); writer:close() end) then
+        pcall(function() writer:close() end)
+    end
+    local lines, n = readLines(path)
+    return lines ~= nil and table.concat(lines, "\n", 1, n) == text
+end
+-- 回 state／nil（沒有檔）／nil, reason：invalid、unsupported，或 unreadable（檔在卻打不開：
+-- 不能當成沒有檔，否則下一次寫入會蓋掉它；cacheFileExists 只看 File.exists）
+local function readFile(path)
+    if not cacheFileExists(path) then return nil end
+    local lines, n = readLines(path)
+    if not lines then return nil, "unreadable" end
+    local value = decodeLines(lines, n)
+    if not value then return nil, "invalid" end
+    return validate(value)
+end
+local function readLegacy(player)
     local md = player:getModData()
-    if type(md) ~= "table" then return nil, "invalid" end
-    local data = rawget(md, DATA_KEY)
+    local data = type(md) == "table" and rawget(md, DATA_KEY) or nil
     if data == nil then return nil end
     return validate(data)
 end
+local function dropLegacy(slot)
+    local md = slot.player:getModData()
+    if type(md) ~= "table" or rawget(md, DATA_KEY) == nil then return end
+    md[DATA_KEY] = nil
+    -- MP 要讓伺服器那份角色資料也清掉，否則下次登入舊收藏又回來；OnCreatePlayer 時可能還沒有
+    -- onlineID，下一個可送出的 tick 才傳（檔尾 OnTick）
+    slot.syncDirty = isClient()
+end
+-- 帳號檔為準，角色上的舊鍵只剩待清；沒有帳號檔（或壞檔）才搬角色上的舊收藏，寫檔成功才清舊鍵
+-- （失敗就保留，下一次寫入成功再清）。檔打不開或版本較新：只讀，舊鍵也不動。
+local function loadState(slot)
+    local path = placesPath(slot.pn)
+    local state, reason = readFile(path)
+    if reason == "unreadable" or reason == "unsupported" then return nil, reason end
+    if not state then
+        local legacy, why = readLegacy(slot.player)
+        if not legacy then return nil, why or reason end
+        state = legacy
+        if not writeFile(path, encodeState(state)) then return state end
+    end
+    dropLegacy(slot)
+    return state
+end
+-- 例外一律當 unreadable：寧可只讀，也不蓋掉讀不到的檔
+local function reload(slot)
+    local ok, state, reason = pcall(loadState, slot)
+    if not ok then
+        warn(slot.pn, "load", state)
+        state, reason = nil, "unreadable"
+    elseif reason then
+        warn(slot.pn, "load", reason)
+    end
+    slot.error = reason
+    slot.state = state or emptyState()
+    slot.state.revision = serial()
+end
 
--- 角色生命週期：同槽位換角色（死亡重生、換世界）即重載，不把前一位的收藏帶給下一位
+-- 角色生命週期：同槽位換角色（死亡重生、換世界）就重讀；同一帳號／存檔讀到同一個帳號檔
 local function ensure(pn)
     if not validPlayerNum(pn) then return nil end
     local player = getSpecificPlayer(pn)
@@ -123,22 +240,19 @@ local function ensure(pn)
     end
     slot = { pn = pn, player = player }
     slots[pn] = slot
-    local ok, state, reason = pcall(readData, player)
-    if not ok then state, reason = nil, "invalid" end
-    if reason then warn(pn, "load", reason) end
-    slot.error = reason
-    slot.state = state or emptyState()
-    slot.state.revision = serial()
+    reload(slot)
     return slot
 end
 local function writable(pn)
     if not validPlayerNum(pn) then return nil, "badargs" end
     local slot = ensure(pn)
     if not slot or slot.player:isDead() then return nil, "noplayer" end
+    if slot.error == "unreadable" then reload(slot) end
+    if slot.error == "unreadable" then return nil, "failed" end
     if slot.error == "unsupported" then return nil, "unsupported" end
     return slot
 end
--- 單筆原子變更：先在複本上改、存檔成功才換上（失敗不套用、不留半套）
+-- 單筆原子變更：先在複本上改、寫檔並讀回成功才換上（失敗不套用、不留半套）
 local function mutate(pn, change)
     local slot, reason = writable(pn)
     if not slot then return nil, reason end
@@ -146,14 +260,13 @@ local function mutate(pn, change)
     local result, why = change(draft)
     if result == nil then return nil, why end
     draft.revision = serial()
-    local ok, err = pcall(writeData, slot.player, payload(draft))
-    if not ok then
-        warn(pn, "save", err)
+    local ok, saved = pcall(function() return writeFile(placesPath(pn), encodeState(draft)) end)
+    if not (ok and saved) then
+        warn(pn, "save", ok and "read-back mismatch" or saved)
         return nil, "failed"
     end
     slot.state, slot.error = draft, nil
-    -- MP OnCreatePlayer 時可能尚無 onlineID；下一個可送出的 tick 才傳回伺服器
-    slot.syncDirty = isClient()
+    dropLegacy(slot)
     return result
 end
 local function append(state, x, y, label)
@@ -448,6 +561,7 @@ Events.OnGameStart.Add(function()
     for pn = 0, 3 do slots[pn], labelCache[pn] = nil, nil end
     for key in pairs(warned) do warned[key] = nil end
 end)
+-- 只有清掉角色上的舊版收藏時要傳（dropLegacy）；收藏本身存在帳號檔，不經伺服器
 Events.OnTick.Add(function()
     for pn = 0, 3 do
         local slot = slots[pn]

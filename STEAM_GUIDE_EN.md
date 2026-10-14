@@ -125,7 +125,7 @@ Both go by the room names inside buildings, which are also what decides the loot
 [*] [b]New home[/b]: setting a new home keeps the old one as a favorite.
 [*] [b]Go home[/b]: replaces the trip with a single stop home and starts navigating (the mini-map's house button, right-click → "Favorites", or the trip page).
 [*] [b]Favorites list[/b]: an empty search box lists favorites to rename, remove or set as home.
-[*] [b]Saved[/b]: home and favorites are saved per character; not inherited after death.
+[*] [b]Saved[/b]: kept on your PC per account (one set per server account in multiplayer, one per save in single player), so a new character still has them after death; to move them to another PC, copy the Zomboid/Lua/MinidoracatMiniMap/places folder.
 [*] [b]Hide icons[/b]: turn off "Show home & favorites" in "Players & navigation"; Go Home, the favorites list and the right-click menu still work.
 [/list]
 === 🧰 Mini-map controls
