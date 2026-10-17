@@ -320,6 +320,8 @@ end
 
 local function drawSafehousesBody(inner)
     if not (SafeHouse and SafeHouse.getSafehouseList) then return end
+    -- 「顯示在」這張地圖的格（SafehouseOnMini／SafehouseOnWorld；世界地圖另看選項面板的「地圖圖層」）
+    if not Core.layerOn("safehouse", inner == ISWorldMap_instance and "world" or "mini") then return end
     local wantRect = getBoolOption("Safehouses", true)
     local wantIcon = getBoolOption("SafehouseIcons", true)
     local wantName = getBoolOption("SafehouseNames", true)

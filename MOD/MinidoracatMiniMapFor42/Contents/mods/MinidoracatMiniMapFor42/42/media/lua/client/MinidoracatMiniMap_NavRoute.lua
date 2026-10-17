@@ -2651,7 +2651,8 @@ local function previewStep(pn, pv)
     -- NavRoute 選項與既有導航 gate（GPS 道具）：路線本身被擋時預覽照算＝白燒
     -- A*，且畫面上也不該出現。兩者都是可恢復的外部條件，故用 disabled 而非
     -- failed（failed 專指本場尋路真的壞了）；條件一恢復下個 tick 就重排。
-    if getBoolOption("NavRoute", true) ~= true
+    -- 預覽兩張地圖共用：「顯示在」任一格開就照算，哪張地圖畫由 drawNavRoute 判
+    if not Core.layerOn("navRoute")
         or (Core.navGateAllows and not Core.navGateAllows(pn, "draw"))
     then
         if pv.segs then previewReset(pv) end
@@ -2809,9 +2810,11 @@ end
 -- 主入口（主檔 drawNavTargets 開頭呼叫＝畫在旗標/箭頭之下；inner＝小地圖 inner
 -- 或 ISWorldMap，共用 mapAPI/width/height/playerNum——相容論證同主檔 nav 一節）。
 -- own＝自己的行程（預覽＋活動路線）可畫；false＝功能閘門 nav 擋下，只畫分享路線
--- （分享另經 navGetShared 判 share）。nil 視同 true
+-- （分享另經 navGetShared 判 share）。nil 視同 true。「顯示在」這張地圖的格（NavRoute／
+-- WMNavRoute）關＝這張地圖不畫路線，也不在這張地圖觸發建圖
 local function drawNavRoute(inner, own)
-    if getBoolOption("NavRoute", true) ~= true then return end
+    local surface = inner == ISWorldMap_instance and "world" or "mini"
+    if not Core.layerOn("navRoute", surface) then return end
     local pn = inner.playerNum or 0
     local playerObj = getSpecificPlayer(pn)
     if not playerObj then return end
@@ -2823,17 +2826,17 @@ local function drawNavRoute(inner, own)
     if own ~= false then drawPreview(inner, mapAPI, pn) end
     local target = Core.navGetTarget and Core.navGetTarget(pn) or nil
     -- 陣營分享目標的路線（接收方本地各自算路，零網路增量；沙盒閘門在
-    -- navGetShared 內；玩家關 SharedTargets＝不畫，同 _Nav 分享旗）。key 掃除：
-    -- 桶裡消失的作者，其殘留 route 一併清
-    local shared = getBoolOption("SharedTargets", true)
-        and Core.navGetShared and Core.navGetShared(pn) or nil
+    -- navGetShared 內；「顯示在」這張地圖的分享格關＝不畫，同 _Nav 分享旗）。key 掃除看資料
+    -- 不看顯示：桶裡消失的作者，其殘留 route 一併清；只是這張地圖不畫的不清，換到另一張地圖不重算
+    local bucket = Core.navGetShared and Core.navGetShared(pn) or nil
     local prefix = pn .. ":"
     for k in pairs(navRoutes) do
         if type(k) == "string" and k:sub(1, #prefix) == prefix then
             local author = k:sub(#prefix + 1)
-            if not (shared and shared[author]) then navRoutes[k] = nil end
+            if not (bucket and bucket[author]) then navRoutes[k] = nil end
         end
     end
+    local shared = Core.layerOn("shared", surface) and bucket or nil
     if shared then
         if engine.state == "idle" then kickEngine(inner) end
         for author, st in pairs(shared) do

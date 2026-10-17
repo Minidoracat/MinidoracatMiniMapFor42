@@ -279,6 +279,88 @@ assert(pwb.state().files[pwb.marker] == nil, "W6: failWrite 下不應有 marker"
 assert(#pwb.state().logs == 1, "W6: 應 log 一筆 skip 訊息")
 
 --------------------------------------------------------------------------------
+-- 一次性播種：圖層分開小地圖與世界地圖（2026-10-18）：世界地圖那格從舊鍵複製、
+-- 安全屋兩格看三顆內容、只開區塊的人資源點兩格都開；marker-first＋讀回（同 pwb）
+--------------------------------------------------------------------------------
+local seedBody = assert(source:match(
+    "%-%- test:layer%-maps%-seed:start\n(.-)\n%-%- test:layer%-maps%-seed:end"),
+    "找不到 layer-maps-seed 測試區段")
+local seedSuffix = pwbSuffix:gsub("forceWholeBuildingOnOnce", "seedLayerMapsOnce")
+    :gsub("wholeBuildingDefaultV1", "layerMapsV1")
+local seed = assert(compile(pwbPrelude .. "\n" .. seedBody .. "\n" .. seedSuffix))()
+-- 一套全部選項（舊鍵＋新格＋安全屋三顆＋區塊）；over 覆寫個別存值
+local function seedOptions(over)
+    local o = {}
+    for _, id in ipairs({ "PoiIcons", "WMPoiIcons", "ParkingLayer", "WMParkingLayer", "ZoneLayer", "WMZoneLayer",
+        "Places", "WMPlaces", "NavRoute", "WMNavRoute", "SharedTargets", "WMSharedTargets",
+        "SafehouseOnMini", "SafehouseOnWorld", "Safehouses", "SafehouseIcons", "SafehouseNames" }) do
+        o[id] = mkTick(true)
+    end
+    o.PoiBlocks = mkTick(false)
+    for id, v in pairs(over or {}) do o[id].value = v end
+    return o
+end
+
+-- S1. 舊鍵關的，世界地圖那格跟著關（兩張地圖畫的東西不變）；save 一次、log 一筆、寫 marker
+local s1 = seedOptions({ ZoneLayer = false, NavRoute = false, Places = false })
+seed.setup({ options = s1 })
+seed.run()
+assert(s1.WMZoneLayer.value == false and s1.WMNavRoute.value == false and s1.WMPlaces.value == false,
+    "S1: 世界地圖那格未從舊鍵複製")
+assert(s1.WMPoiIcons.value == true and s1.WMSharedTargets.value == true, "S1: 舊鍵開的不得被關")
+assert(seed.state().saveCalls == 1 and #seed.state().logs == 1, "S1: 應 save 一次、log 一筆")
+assert(seed.state().files[seed.marker] == "v1", "S1: 未寫 marker")
+
+-- S2. marker 已存在 → 完全不動（玩家之後把世界地圖那格單獨關掉，不得被舊鍵蓋回來）
+local s2 = seedOptions({ WMZoneLayer = false })
+seed.setup({ files = { [seed.marker] = "v1" }, options = s2 })
+seed.run()
+assert(s2.WMZoneLayer.value == false and seed.state().saveCalls == 0, "S2: marker 存在仍有動作")
+
+-- S3. 全部舊值都是預設 → 不 save，仍寫 marker
+seed.setup({ options = seedOptions() })
+seed.run()
+assert(seed.state().saveCalls == 0 and seed.state().files[seed.marker] == "v1", "S3: 無差異不應 save、仍應寫 marker")
+
+-- S4. 安全屋三顆內容都關 → 兩格關、三顆內容回到開（之後打開分類才有東西可畫）
+local s4 = seedOptions({ Safehouses = false, SafehouseIcons = false, SafehouseNames = false })
+seed.setup({ options = s4 })
+seed.run()
+assert(s4.SafehouseOnMini.value == false and s4.SafehouseOnWorld.value == false, "S4: 安全屋兩格應關")
+assert(s4.Safehouses.value and s4.SafehouseIcons.value and s4.SafehouseNames.value, "S4: 三顆內容應回到開")
+-- 只開名稱 → 兩格開、內容不動
+local s4b = seedOptions({ Safehouses = false, SafehouseIcons = false })
+seed.setup({ options = s4b })
+seed.run()
+assert(s4b.SafehouseOnMini.value and s4b.SafehouseOnWorld.value and s4b.Safehouses.value == false,
+    "S4: 有一顆內容開＝兩格開、內容不動")
+
+-- S5. 只開區塊、沒開資源點圖標 → 資源點兩格都開（分類開關今後也收區塊）；圖標開或區塊關的人不動
+local s5 = seedOptions({ PoiIcons = false, PoiBlocks = true })
+seed.setup({ options = s5 })
+seed.run()
+assert(s5.PoiIcons.value == true and s5.WMPoiIcons.value == true, "S5: 只開區塊應打開資源點兩格")
+local s5b = seedOptions({ PoiIcons = false })
+seed.setup({ options = s5b })
+seed.run()
+assert(s5b.PoiIcons.value == false and s5b.WMPoiIcons.value == false, "S5: 圖標與區塊都關的人照舊全關")
+
+-- S6. marker 寫入失敗 → 不改值、不 save、log 一筆 skip（下次重試）
+local s6 = seedOptions({ ZoneLayer = false })
+seed.setup({ options = s6, failWrite = true })
+seed.run()
+assert(s6.WMZoneLayer.value == true and seed.state().saveCalls == 0 and #seed.state().logs == 1,
+    "S6: marker 未落地仍改了值")
+
+-- S7. 新選項未註冊 → 不寫 marker（下次重試）、不炸；無 PZAPI 同
+seed.setup({ options = { ZoneLayer = mkTick(false) } })
+seed.run()
+assert(seed.state().files[seed.marker] == nil, "S7: 新選項缺失仍寫了 marker")
+seed.setup({ noModOptions = true })
+seed.run()
+assert(seed.state().files[seed.marker] == nil, "S7: 無 PZAPI 仍寫了 marker")
+
+--------------------------------------------------------------------------------
 -- 圖片化開關 apply 決策矩陣（computeApplyPlan，主檔）：世界地圖/小地圖分側動作
 --------------------------------------------------------------------------------
 local mainPath = arg[3]
@@ -343,4 +425,4 @@ assert(p.live and not p.recreate and not p.reapplyWorldMap and not p.clearCustom
 p = plan(planSnap({ worldImagery = false, imagery = false }), planCur())
 assert(p.reapplyWorldMap and p.recreate, "P9")
 
-print("[OK] scripts/test_key_migration.lua 全部通過（選項遷移 M1-M5、強制圖片化 V1-V5、整棟預設翻轉 W1-W6、apply 決策 P1-P9；拖曳門檻情境已遷移至框架 harness）")
+print("[OK] scripts/test_key_migration.lua 全部通過（選項遷移 M1-M5、強制圖片化 V1-V5、整棟預設翻轉 W1-W6、圖層分地圖播種 S1-S7、apply 決策 P1-P9；拖曳門檻情境已遷移至框架 harness）")

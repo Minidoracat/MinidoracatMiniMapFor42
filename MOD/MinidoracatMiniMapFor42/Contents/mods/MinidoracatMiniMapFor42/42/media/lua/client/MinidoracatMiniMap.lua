@@ -166,24 +166,26 @@ end
 --       未設＝一律畫全部 rects、圖標不去重疊，既有 addon 行為不變),
 --     category=string|nil }
 -- 選配第三參 optionLabelKey：有給時本 MOD 於統一視窗動態追加一顆 per-provider 母開關，
--- 關＝渲染時整個跳過該 provider；與 ZoneLayer 總開關是 AND 關係（皆開才畫）。
+-- 關＝渲染時整個跳過該 provider；與「顯示在」那張地圖的格（自訂區域：ZoneLayer／WMZoneLayer）
+-- 是 AND 關係（皆開才畫）。
 -- 單一外部 provider 時母開關與總開關作用範圍 100% 重疊——家族 Zones addon 自其
 -- 0.5.0 起不再傳此參（兩顆相鄰等效開關令人困惑，實測回饋）；機制保留給第三方／
 -- 未來多 addon。⚠ 主 MOD 端勿以「provider 數」動態隱藏已註冊的母開關——會產生
 -- 雙向幽靈（玩家關過的 ini 值被靜默翻回顯示、日後第二個 addon 裝上時又復活——
 -- codex review 裁決）；要不要母開關由 addon 端「傳或不傳」靜態決定。
--- 選配第四參 internal：true＝本體內部 provider（如內建 POI），不受 ZoneLayer 總閘連坐、
--- 由自家開關（PoiIcons/PoiBlocks/類別）控制；外部 addon 一律省略（受 ZoneLayer 總閘）。
--- internal 必須整表替換、不原地改表：_Zones.lua 的候選快取與衍生清單只在回傳表換了才重建。
+-- 選配第四參 internal：本體內部 provider 傳 Core.LAYER_MAPS 的圖層名（"poi"／"parking"），
+-- 不受自訂區域的開關連坐、由該圖層的「顯示在」格與自家開關控制；外部 addon 一律省略
+-- （受自訂區域「顯示在」兩格）。internal 必須整表替換、不原地改表：_Zones.lua 的候選快取與
+-- 衍生清單只在回傳表換了才重建。
 -- ⚠ 傳 internal 者受 POI 顯示距離閘（沙盒 PoiDisplayDistance/AllInfoDistance＋
 -- 玩家自訂距離）連坐；外部 provider 另受自訂區域顯示距離閘（沙盒
 -- ZoneDisplayDistance/AllInfoDistance＋玩家 ClientZoneDisplayDistance，預設 0＝
 -- 不裁）——任一距離閘啟用時 zone 依玩家距離被靜默裁掉（fill/框線/名稱/圖標
 -- 一致顯隱），addon 勿依賴「恆全圖可見」。
-local registeredZoneProviders = {} -- { { owner=, fn=, optionLabelKey=, optionKey=, internal= }, ... }
--- ZoneLayer 總開關的 UI 出現條件＝「有『外部』provider」：內建 POI（internal=true）
--- 繞過 ZoneLayer 閘門（見 drawZoneFill/Lines/Icons 的 gating），若把 internal 也計入，
--- 純本體安裝會出現一顆對任何東西都無作用的死開關（codex review 抓出）。
+local registeredZoneProviders = {} -- { { owner=, fn=, optionLabelKey=, optionKey=, internal=, layer= }, ... }
+-- 自訂區域分類（「顯示在」兩格）的出現條件＝「有『外部』provider」：內建 POI 與停車場（internal）
+-- 不吃那兩格（見 _Zones.lua providerShown），若把 internal 也計入，
+-- 純本體安裝會出現一組對任何東西都無作用的死開關（codex review 抓出）。
 -- test:has-external-provider:start
 local function hasExternalZoneProvider()
     for i = 1, #registeredZoneProviders do
@@ -198,7 +200,10 @@ function MinidoracatMiniMapAPI.registerZoneProvider(ownerModId, providerFn, opti
         print("[MinidoracatMiniMap] registerZoneProvider bad arguments (need ownerModId string, providerFn function)")
         return
     end
-    local entry = { owner = ownerModId, fn = providerFn, internal = internal and true or nil }
+    -- layer＝這個 provider 吃哪一層的「顯示在」格（_Zones.lua providerShown）：外部一律自訂區域
+    local layer = "zones"
+    if internal then layer = type(internal) == "string" and Core.LAYER_MAPS[internal] and internal or nil end
+    local entry = { owner = ownerModId, fn = providerFn, internal = internal and true or nil, layer = layer }
     if type(optionLabelKey) == "string" and optionLabelKey ~= "" then
         entry.optionLabelKey = optionLabelKey
         -- per-provider ModOptions key（ini 用；非字母數字換底線求穩定合法）
@@ -873,6 +878,73 @@ Core.markerIconSize = function()
 end
 -- test:map-text:end
 
+-- 地圖圖層的「顯示在」兩格：[1]＝小地圖、[2]＝世界地圖（2026-10-18 使用者裁定）。設定視窗的「顯示在」列、
+-- 分類開關、搜尋、ESC 頁註冊、一次性遷移與各圖層繪製端都讀這一張。每格：id＝ModOptions 鍵、
+-- label＝ESC 頁與設定搜尋的標籤、default＝新安裝的值、on＝分類開關打開時寫入的值（關＝兩格都清），
+-- gate／livestock／mpOnly／shAll 同設定視窗 tick 的停用條件。layer＝屬於「地圖圖層」：世界地圖選項面板的
+-- 「地圖圖層」（WMLayers）取消時這一層在世界地圖不畫；玩家與導航三項不算（不是圖層）
+-- test:layer-maps:start
+Core.LAYER_MAPS = {
+    poi = { layer = true,
+        { id = "PoiIcons", label = "UI_MinidoracatMiniMap_PoiIcons", default = true, on = true },
+        { id = "WMPoiIcons", label = "UI_MinidoracatMiniMap_WMPoiIcons", default = true, on = true } },
+    parking = { layer = true,
+        { id = "ParkingLayer", label = "UI_MinidoracatMiniMap_ParkingLayer", default = true, on = true },
+        { id = "WMParkingLayer", label = "UI_MinidoracatMiniMap_WMParkingLayer", default = true, on = true } },
+    zones = { layer = true,
+        { id = "ZoneLayer", label = "UI_MinidoracatMiniMap_ZoneLayer", default = true, on = true },
+        { id = "WMZoneLayer", label = "UI_MinidoracatMiniMap_WMZoneLayer", default = true, on = true } },
+    zombie = { layer = true,
+        { id = "ZombieDots", label = "UI_MinidoracatMiniMap_ZombieDots", default = false, on = true,
+            gate = "AllowZombieDots" },
+        { id = "WMZombieDots", label = "UI_MinidoracatMiniMap_WMZombieDots", default = false, on = false,
+            gate = "AllowZombieDots" } },
+    wild = { layer = true,
+        { id = "AnimalWild", label = "UI_MinidoracatMiniMap_AnimalWild", default = false, on = true,
+            gate = "AllowAnimalDots" },
+        { id = "WMAnimalWild", label = "UI_MinidoracatMiniMap_WMAnimalWild", default = false, on = false,
+            gate = "AllowAnimalDots" } },
+    livestock = { layer = true,
+        { id = "AnimalLivestock", label = "UI_MinidoracatMiniMap_AnimalLivestock", default = false, on = true,
+            gate = "AllowAnimalDots", livestock = true },
+        { id = "WMAnimalLivestock", label = "UI_MinidoracatMiniMap_WMAnimalLivestock", default = false, on = false,
+            gate = "AllowAnimalDots", livestock = true } },
+    vehicles = { layer = true,
+        { id = "VehicleDots", label = "UI_MinidoracatMiniMap_VehicleDots", default = false, on = true,
+            gate = "AllowVehicleDots" },
+        { id = "WMVehicleDots", label = "UI_MinidoracatMiniMap_WMVehicleDots", default = false, on = false,
+            gate = "AllowVehicleDots" } },
+    safehouse = { layer = true,
+        { id = "SafehouseOnMini", label = "UI_MinidoracatMiniMap_SafehouseOnMini", default = true, on = true,
+            shAll = true },
+        { id = "SafehouseOnWorld", label = "UI_MinidoracatMiniMap_SafehouseOnWorld", default = true, on = true,
+            shAll = true } },
+    places = {
+        { id = "Places", label = "UI_MinidoracatMiniMap_Places", default = true, on = true },
+        { id = "WMPlaces", label = "UI_MinidoracatMiniMap_WMPlaces", default = true, on = true } },
+    navRoute = {
+        { id = "NavRoute", label = "UI_MinidoracatMiniMap_NavRoute", default = true, on = true },
+        { id = "WMNavRoute", label = "UI_MinidoracatMiniMap_WMNavRoute", default = true, on = true } },
+    shared = {
+        { id = "SharedTargets", label = "UI_MinidoracatMiniMap_SharedTargets", default = true, on = true,
+            mpOnly = true },
+        { id = "WMSharedTargets", label = "UI_MinidoracatMiniMap_WMSharedTargets", default = true, on = true,
+            mpOnly = true } },
+}
+-- 這一層畫不畫：surface＝"mini"／"world"（同功能閘門與 marker 的表面名）；nil＝任一張地圖有開
+-- （資料要不要建、路線要不要算；不看 WMLayers——那只收起世界地圖上的繪製）。每幀被呼叫：兩次選項查找
+function Core.layerOn(name, surface)
+    local cells = Core.LAYER_MAPS[name]
+    if surface == "world" then
+        if cells.layer and not getBoolOption("WMLayers", true) then return false end
+        return getBoolOption(cells[2].id, cells[2].default) == true
+    end
+    local mini = getBoolOption(cells[1].id, cells[1].default) == true
+    if surface == "mini" or mini then return mini end
+    return getBoolOption(cells[2].id, cells[2].default) == true
+end
+-- test:layer-maps:end
+
 -- 顯示距離合成（取樣/繪製端一律經此取距離）：伺服器個別值（sandboxDist 內已
 -- 併全域上限 AllInfoDistance，並套管理員戰術旁路）與玩家自訂值（Client<沙盒
 -- 選項名>，ESC 頁與設定視窗各圖層分類的「顯示距離」同一滑條）取較小正值——玩家只能
@@ -1072,6 +1144,10 @@ if PZAPI and PZAPI.ModOptions then
     -- 顯示原版樣式（多數地圖 MOD 自帶向量 worldmap 資料），關閉後同理
     modOptions:addTickBox("MapImagery", "UI_MinidoracatMiniMap_MapImagery", true,
         "UI_MinidoracatMiniMap_MapImagery_tooltip")
+    -- 世界地圖上的 MiniMap 地圖圖層總開關（預設開；世界地圖選項面板也有一顆「地圖圖層」）：取消＝世界地圖
+    -- 不畫 Core.LAYER_MAPS 裡 layer 的那幾層，各層自己的「顯示在」格不動（Core.layerOn、ISWorldMap prerender 包裝）
+    modOptions:addTickBox("WMLayers", "UI_MinidoracatMiniMap_WMLayersEsc", true,
+        "UI_MinidoracatMiniMap_WMLayers_tooltip")
     modOptions:addTickBox("PlaceNames", "UI_MinidoracatMiniMap_PlaceNames", true,
         "UI_MinidoracatMiniMap_PlaceNames_tooltip")
     -- 街名：原版只有世界地圖載入街道資料（ISWorldMap.lua:1450→
@@ -1101,12 +1177,16 @@ if PZAPI and PZAPI.ModOptions then
         "UI_MinidoracatMiniMap_Players_tooltip")
     modOptions:addTickBox("RemotePlayers", "UI_MinidoracatMiniMap_RemotePlayers", true,
         "UI_MinidoracatMiniMap_RemotePlayers_tooltip")
-    -- 家與收藏點標記（預設開）：關＝地圖不畫，回家與收藏清單照常（_Places.lua drawPlaces）
+    -- 家與收藏點標記（兩格預設開，Core.LAYER_MAPS.places）：關＝那張地圖不畫，回家與收藏清單照常（_Places.lua drawPlaces）
     modOptions:addTickBox("Places", "UI_MinidoracatMiniMap_Places", true,
         "UI_MinidoracatMiniMap_Places_tooltip")
-    -- 陣營分享的目標（預設開）：關＝分享旗與分享路線都不畫（_Nav.lua／_NavRoute.lua）
+    modOptions:addTickBox("WMPlaces", "UI_MinidoracatMiniMap_WMPlaces", true,
+        "UI_MinidoracatMiniMap_WMCell_tooltip")
+    -- 陣營分享的目標（兩格預設開）：關＝那張地圖不畫分享旗與分享路線（_Nav.lua／_NavRoute.lua）
     modOptions:addTickBox("SharedTargets", "UI_MinidoracatMiniMap_SharedTargets", true,
         "UI_MinidoracatMiniMap_SharedTargets_tooltip")
+    modOptions:addTickBox("WMSharedTargets", "UI_MinidoracatMiniMap_WMSharedTargets", true,
+        "UI_MinidoracatMiniMap_WMCell_tooltip")
     -- 其他玩家標記（預設開，多人才有作用）：原版齒輪與世界地圖選項各有一顆、原版都不存。
     -- 本 MOD 存這裡，兩張地圖與兩個原版面板都跟它同步（applyToggleOptions、Core.syncRemoteSymbols）
     modOptions:addTickBox("RemoteSymbols", "IGUI_MapOption_RemoteSymbols", true,
@@ -1115,12 +1195,14 @@ if PZAPI and PZAPI.ModOptions then
     -- （_RemoteSymbols.lua；設定視窗、世界地圖選項面板也各有一顆）
     modOptions:addTickBox("RemoteTrustedOnly", "UI_MinidoracatMiniMap_RemoteTrustedOnly", false,
         "UI_MinidoracatMiniMap_RemoteTrustedOnly_tooltip")
-    -- 導航路線（0.17.0，預設開）：右鍵目標後沿道路畫路線（_NavRoute.lua 全套
-    -- 引擎）。純顯示功能不設沙盒 gate；關閉＝退回直線旗標、設目標不觸發建圖。
+    -- 導航路線（0.17.0，兩格預設開）：右鍵目標後沿道路畫路線（_NavRoute.lua 全套引擎）。純顯示功能
+    -- 不設沙盒 gate；那張地圖的格關＝那裡不畫路線；兩格都關＝退回直線旗標、設目標不觸發建圖、行程預覽停算。
     -- 例外：開啟搜尋視窗（_Search.lua）仍會 kick 引擎——街名搜尋需要索引，
     -- 索引與 graph 同一條建置流水線（一次性背景成本，非每幀）
     modOptions:addTickBox("NavRoute", "UI_MinidoracatMiniMap_NavRoute", true,
         "UI_MinidoracatMiniMap_NavRoute_tooltip")
+    modOptions:addTickBox("WMNavRoute", "UI_MinidoracatMiniMap_WMNavRoute", true,
+        "UI_MinidoracatMiniMap_WMCell_tooltip")
     -- 走完的行程留在地圖上（預設關）：關＝最後一站到達後，站號標記從小地圖與世界地圖
     -- 消失（_Nav.lua drawTripTargets）；行程頁仍列出結果，下一次加點或設目標就開新行程
     modOptions:addTickBox("KeepFinishedTrip", "UI_MinidoracatMiniMap_KeepFinishedTrip", false,
@@ -1140,13 +1222,18 @@ if PZAPI and PZAPI.ModOptions then
     combo:addItem("UI_MinidoracatMiniMap_PoiSource_Server", true)
     combo:addItem("UI_MinidoracatMiniMap_PoiSource_Minimap", false)
     combo:addItem("UI_MinidoracatMiniMap_PoiSource_Rooms", false)
+    -- 資源點兩格（Core.LAYER_MAPS.poi）：任一格開就建圖標，區塊另看 PoiBlocks；關的那張地圖整層不畫
     modOptions:addTickBox("PoiIcons", "UI_MinidoracatMiniMap_PoiIcons", true,
         "UI_MinidoracatMiniMap_PoiIcons_tooltip")
+    modOptions:addTickBox("WMPoiIcons", "UI_MinidoracatMiniMap_WMPoiIcons", true,
+        "UI_MinidoracatMiniMap_WMCell_tooltip")
     modOptions:addTickBox("PoiBlocks", "UI_MinidoracatMiniMap_PoiBlocks", false,
         "UI_MinidoracatMiniMap_PoiBlocks_tooltip")
-    -- 停車場圖層（預設開；繪製與 provider 在 MinidoracatMiniMapParking.lua，跟 POI 同一道距離閘）
+    -- 停車場圖層（兩格預設開；繪製與 provider 在 MinidoracatMiniMapParking.lua，跟 POI 同一道距離閘）
     modOptions:addTickBox("ParkingLayer", "UI_MinidoracatMiniMap_ParkingLayer", true,
         "UI_MinidoracatMiniMap_ParkingLayer_tooltip")
+    modOptions:addTickBox("WMParkingLayer", "UI_MinidoracatMiniMap_WMParkingLayer", true,
+        "UI_MinidoracatMiniMap_WMCell_tooltip")
     -- 20 類別勾選（預設全開）：ORDER 定順序，逐鍵到 CATEGORIES 取 nameKey，缺鍵略過。
     local poiCats = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.CATEGORIES
     local poiOrder = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.ORDER
@@ -1255,10 +1342,13 @@ if PZAPI and PZAPI.ModOptions then
 
     -- 安全屋 ----------------------------------------------------------------------
     -- 安全屋圖層（範圍框／圖標／名稱；本 MOD 純 Lua 自繪，_Safehouse.lua）：
-    -- 繪製端每幀讀值即時生效。伺服器沙盒 SafehouseDisplay／SafehouseNameDisplay
-    -- 為天花板，這三顆只能再收緊
+    -- 繪製端每幀讀值即時生效。前兩顆＝畫在哪張地圖（Core.LAYER_MAPS.safehouse），後三顆＝畫哪些內容；
+    -- 伺服器沙盒 SafehouseDisplay／SafehouseNameDisplay 為天花板，這幾顆只能再收緊
     modOptions:addSeparator()
     modOptions:addTitle("UI_MinidoracatMiniMap_SecSafehouse")
+    modOptions:addTickBox("SafehouseOnMini", "UI_MinidoracatMiniMap_SafehouseOnMini", true)
+    modOptions:addTickBox("SafehouseOnWorld", "UI_MinidoracatMiniMap_SafehouseOnWorld", true,
+        "UI_MinidoracatMiniMap_WMCell_tooltip")
     modOptions:addTickBox("Safehouses", "UI_MinidoracatMiniMap_Safehouses", true,
         "UI_MinidoracatMiniMap_Safehouses_tooltip")
     modOptions:addTickBox("SafehouseIcons", "UI_MinidoracatMiniMap_SafehouseIcons", true,
@@ -2524,44 +2614,51 @@ if ISWorldMap and ISWorldMap.prerender then
         -- 功能閘門 share 被擋：每幀壓掉引擎隊友圖層；放行後還原玩家期望值（_FeatureGate.lua，
         -- 世界地圖期望值追蹤原版選項面板勾選；缺檔＝不壓）
         if Core.gateRemotePlayers then Core.gateRemotePlayers(self, self.playerNum or 0, true) end
+        -- 世界地圖選項面板的「地圖圖層」（WMLayers）取消＝本 wrap 的圖層加繪整段不畫（資源點、停車場、
+        -- 自訂區域、安全屋、殭屍／動物／載具圖標、擴充圖層）；各層自己的「顯示在」格不動。chunk 格線與
+        -- MOD 地圖邊界屬底圖、家／收藏與導航在外層 _WorldMapNav，都不受它影響
+        local layers = getBoolOption("WMLayers", true)
         -- Zone 填色置於 wrap 最前端＝最底層：Java 地圖本體早在 Lua prerender 前畫完
         -- （UIWorldMap.java:152→317），置頂即壓在 base map 之上、動物圖標與框線之下
-        Core.drawZonePass(self, "drawZoneFill", "_minidoracatWMZoneFillErrLogged")
+        if layers then Core.drawZonePass(self, "drawZoneFill", "_minidoracatWMZoneFillErrLogged") end
         -- chunk 格線（_ChunkGrid.lua，預設關）：zone 填色之上、其餘加繪之下；錯誤 log-once
         local cgOk, cgErr = pcall(Core.drawChunkGrid, self)
         if not cgOk and not self._minidoracatWMChunkGridErrLogged then
             self._minidoracatWMChunkGridErrLogged = true
             log("world map chunk grid draw failed: " .. tostring(cgErr))
         end
-        -- 安全屋圖層（_Safehouse.lua，同小地圖：格線之上、其餘加繪之下；在原版 prerender 之前畫，
-        -- 註記編輯預覽才不被框線蓋住）；模組缺席 pcall(nil) 回 false，同走 log-once
-        local shOk, shErr = pcall(Core.drawSafehouses, self)
-        if not shOk and not self._minidoracatWMSafehouseErrLogged then
-            self._minidoracatWMSafehouseErrLogged = true
-            log("world map safehouse layer draw failed: " .. tostring(shErr))
-        end
-        -- 世界地圖圖標：獨立 WM* 開關（統一視窗「世界地圖圖標」區），
-        -- 風格/顏色/篩選與小地圖共用。客戶端只知道已載入區域的個體，
-        -- 拉遠不會鋪滿全圖——圖標天然只出現在玩家周邊。
-        -- 畫在 original prerender「之前」：引擎地圖本體在 Java 層早已畫完
-        -- （UIWorldMap.java:152→317 才進 Lua prerender），而 original 內含
-        -- 註記編輯預覽（ISWorldMapSymbols.lua:1459）——先畫圖標，預覽才不被反蓋。
-        -- 持久繪製錯誤首次記 log（同小地圖動物繪製的 log-once 策略）。
-        -- 點雲本體在 _Dots.lua（主 chunk locvar 上限拆檔），Core.* 動態查：
-        -- 模組缺席（載入失敗）時 pcall(nil) 回 false，照走 log-once 可診斷
-        local adOk, adErr = pcall(Core.drawAnimalDots, self, "WMAnimalWild", "WMAnimalLivestock", "WMVehicleDots", "world")
-        if not adOk and not self._minidoracatWMADotsErrLogged then
-            self._minidoracatWMADotsErrLogged = true
-            log("world map animal icons draw failed: " .. tostring(adErr))
-        end
-        local zdOk, zdErr = pcall(Core.drawZombieDotsOn, self, "WMZombieDots", "world")
-        if not zdOk and not self._minidoracatWMZDotsErrLogged then
-            self._minidoracatWMZDotsErrLogged = true
-            log("world map zombie dots draw failed: " .. tostring(zdErr))
+        if layers then
+            -- 安全屋圖層（_Safehouse.lua，同小地圖：格線之上、其餘加繪之下；在原版 prerender 之前畫，
+            -- 註記編輯預覽才不被框線蓋住）；模組缺席 pcall(nil) 回 false，同走 log-once
+            local shOk, shErr = pcall(Core.drawSafehouses, self)
+            if not shOk and not self._minidoracatWMSafehouseErrLogged then
+                self._minidoracatWMSafehouseErrLogged = true
+                log("world map safehouse layer draw failed: " .. tostring(shErr))
+            end
+            -- 世界地圖圖標：「顯示在」的世界地圖格（WM* 鍵，Core.LAYER_MAPS），
+            -- 風格/顏色/篩選與小地圖共用。客戶端只知道已載入區域的個體，
+            -- 拉遠不會鋪滿全圖——圖標天然只出現在玩家周邊。
+            -- 畫在 original prerender「之前」：引擎地圖本體在 Java 層早已畫完
+            -- （UIWorldMap.java:152→317 才進 Lua prerender），而 original 內含
+            -- 註記編輯預覽（ISWorldMapSymbols.lua:1459）——先畫圖標，預覽才不被反蓋。
+            -- 持久繪製錯誤首次記 log（同小地圖動物繪製的 log-once 策略）。
+            -- 點雲本體在 _Dots.lua（主 chunk locvar 上限拆檔），Core.* 動態查：
+            -- 模組缺席（載入失敗）時 pcall(nil) 回 false，照走 log-once 可診斷
+            local adOk, adErr = pcall(Core.drawAnimalDots, self, "WMAnimalWild", "WMAnimalLivestock", "WMVehicleDots", "world")
+            if not adOk and not self._minidoracatWMADotsErrLogged then
+                self._minidoracatWMADotsErrLogged = true
+                log("world map animal icons draw failed: " .. tostring(adErr))
+            end
+            local zdOk, zdErr = pcall(Core.drawZombieDotsOn, self, "WMZombieDots", "world")
+            if not zdOk and not self._minidoracatWMZDotsErrLogged then
+                self._minidoracatWMZDotsErrLogged = true
+                log("world map zombie dots draw failed: " .. tostring(zdErr))
+            end
         end
         originalWorldMapPrerender(self)
         self._minidoracatFrame = self._minidoracatFrame + 1
         pcall(drawMapBounds, self)
+        if not layers then return end
         Core.drawZonePass(self, "drawZoneLines", "_minidoracatWMZoneLineErrLogged") -- 與 MapBounds 同層
         Core.drawZonePass(self, "drawZoneIcons", "_minidoracatWMZoneIconErrLogged") -- POI 圖標，同層
         -- addon marker（_Markers.lua）：壓在 zone 圖標與本 wrap 開頭的載具／動物／殭屍點之上，
@@ -2574,8 +2671,8 @@ if ISWorldMap and ISWorldMap.prerender then
     end
 end
 
--- 世界地圖按鈕列加「爪印」鈕＝開統一設定視窗（實測回饋：玩家在世界地圖上
--- 找不到圖標開關——入口必須在人所在的表面）。原版按鈕鏈狀排列後 shrinkWrap
+-- 世界地圖按鈕列加三顆鈕：「MiniMap 圖層」切換、放大鏡搜尋、「爪印」＝開統一設定視窗（實測回饋：玩家在
+-- 世界地圖上找不到圖標開關與搜尋——入口必須在人所在的表面）。原版按鈕鏈狀排列後 shrinkWrap
 -- 右貼齊（ISWorldMap.lua:299-356），事後插入須重算：新鈕接在 forget(?) 之後、
 -- 關閉鈕前，closeBtn 右移、面板重新縮包＋右貼齊
 if ISWorldMap and ISWorldMap.createChildren then
@@ -2590,8 +2687,24 @@ if ISWorldMap and ISWorldMap.createChildren then
             -- Core.toggleSettingsWindow＝Settings 模組檔提供；缺席（模組缺失）就不插鈕
             if not (modOptions and Core.toggleSettingsWindow and self.buttonPanel and self.closeBtn) then return end
             local btnSize = self.closeBtn.height
+            -- 「MiniMap」鈕：開本 MOD 的世界地圖面板（_WorldPanel.lua：圖片化地圖、地圖圖層與各圖層的世界地圖那格）。
+            -- 獨立成鈕、不往原版齒輪面板加勾選（2026-10-18 使用者裁定：debug 與多人管理員在那裡看到全部原版選項，已經很長）
+            local layersBtn = ISButton:new(self.closeBtn.x, 0, btnSize, btnSize, "", self,
+                function(target, button)
+                    if Core.toggleWorldPanel then Core.toggleWorldPanel(target, button) end
+                end)
+            layersBtn:initialise()
+            local texLayers = Core.Skin and Core.Skin.iconTexture("layers")
+            if texLayers then
+                layersBtn:setImage(texLayers)
+                layersBtn:forceImageSize(math.floor(btnSize * 0.6), math.floor(btnSize * 0.6))
+            else
+                layersBtn:setTitle("L") -- 缺框架：同原版 C／S／P 單字母鈕
+            end
+            layersBtn.tooltip = getText("UI_MinidoracatMiniMap_WMPanelBtn")
+            self.buttonPanel:addChild(layersBtn)
             -- 放大鏡搜尋鈕（實測回饋：大地圖找不到搜尋入口——右鍵選單之外補按鈕）
-            local searchBtn = ISButton:new(self.closeBtn.x, 0, btnSize, btnSize, "", self,
+            local searchBtn = ISButton:new(layersBtn:getRight() + 10, 0, btnSize, btnSize, "", self,
                 function(target)
                     if Core.toggleSearchWindow then
                         Core.toggleSearchWindow(target.playerNum or 0)
@@ -2624,83 +2737,30 @@ if ISWorldMap and ISWorldMap.createChildren then
             self.buttonPanel:setX(self.width - 10 - self.buttonPanel.width)
             self._minidoracatWMBtn = btn
             self._minidoracatWMSearchBtn = searchBtn
-            -- ponytail: 未登記手把導航列（同小地圖新鈕的取捨——事後補列會亂序），
-            -- 手把用戶走 ESC 選項頁（PZAPI ModOptions 已列全部開關；引擎原生三項
-            -- 原版世界地圖選項面板本就可及），需要時再補登記
+            self._minidoracatWMPanelBtn = layersBtn
+            -- 手把：原版按鈕列只有一列，手把在 joypadButtonsY[1] 裡左右移（ISWorldMap.lua:358
+            -- insertNewListOfButtons；方向鍵找鄰居看 allJoypadButtons，ISPanelJoypad.lua:613）。
+            -- 三顆插在關閉鈕前面＝和畫面上的順序一致
+            local row = self.buttonPanel.joypadButtonsY and self.buttonPanel.joypadButtonsY[1]
+            if row then
+                for i = 1, #row do
+                    if row[i] == self.closeBtn then
+                        table.insert(row, i, btn)
+                        table.insert(row, i, searchBtn)
+                        table.insert(row, i, layersBtn)
+                        break
+                    end
+                end
+                local all = self.buttonPanel.allJoypadButtons
+                if all then
+                    all[#all + 1] = layersBtn
+                    all[#all + 1] = searchBtn
+                    all[#all + 1] = btn
+                end
+            end
         end)
         if not ok then
             log("world map paw button install failed: " .. tostring(err))
-        end
-    end
-end
-
--- 世界地圖（M）選項面板注入「圖片化地圖」勾選（與統一視窗/ESC 選項頁同一 MapImagery 選項，
--- 三面同源），多人另加「只看陣營與安全屋成員的標記」（RemoteTrustedOnly，看地圖時的快速切換）。
--- 面板屬世界地圖單例、非每次開圖重建——tick 以 prerender 每幀讀值同步（setSelected 不觸發回呼），
--- 統一視窗/ESC 改動不脫鉤。原版 synchUI 只動自己 tickBoxes 表裡的勾選（ISWorldMap.lua:164-189）。
--- 佈局沿原版 WorldMapOptions:createChildren 尾段做法：附加於最底、重算視窗尺寸
--- （BUTTON_HGT/UI_BORDER_SPACING 是 ISWorldMap.lua 檔內 local，這裡自算字高/間距）
-if WorldMapOptions and WorldMapOptions.createChildren then
-    local originalWMOptCreateChildren = WorldMapOptions.createChildren
-    function WorldMapOptions:createChildren()
-        originalWMOptCreateChildren(self)
-        -- pcall 邊界：同爪印鈕——例外外洩會沿 createChildren 炸掉世界地圖，
-        -- 失敗只該損失這幾顆勾選（統一視窗/ESC 仍是入口）
-        local ok, err = pcall(function()
-            -- 冪等以「現任子元件」為準：原版 synchUI 於螢幕高度/debug 狀態變化時
-            -- 清空 children 重跑 createChildren，self 欄位會殘留、以欄位判斷會
-            -- 漏重插（codex review 抓出）
-            for _, child in pairs(self:getChildren()) do
-                if child._minidoracatImageryTick then return end
-            end
-            if not modOptions then return end
-            local fontH = getTextManager():getFontHeight(UIFont.Small)
-            local bottom = 0
-            for _, child in pairs(self:getChildren()) do
-                bottom = math.max(bottom, child:getBottom())
-            end
-            -- 一顆 ModOptions 布林勾選，接在目前最底下
-            local function addTick(id, labelKey, default)
-                local tick = ISTickBox:new(11, bottom + 6, self.width, fontH + 4, "", self,
-                    function(target, index, selected)
-                        -- settingsApply 同構（該函式是 Settings 模組內 local）：
-                        -- setValue → apply（雙表面重建/卸載、其他玩家標記重套）→ save 落盤
-                        local opt = modOptions:getOption(id)
-                        if not opt then return end
-                        opt:setValue(selected and true or false)
-                        if modOptions.apply then modOptions:apply() end
-                        PZAPI.ModOptions:save()
-                    end)
-                tick:initialise()
-                tick:addOption(getText(labelKey))
-                tick:setSelected(1, getBoolOption(id, default) and true or false)
-                tick:setWidthToFit()
-                self:addChild(tick)
-                local origTickPrerender = tick.prerender
-                function tick:prerender()
-                    self:setSelected(1, getBoolOption(id, default) and true or false)
-                    origTickPrerender(self)
-                end
-                bottom = tick:getBottom()
-                return tick
-            end
-            -- 冪等標記（掛在子元件上，見上方掃描）
-            addTick("MapImagery", "UI_MinidoracatMiniMap_MapImagery", true)._minidoracatImageryTick = true
-            if isClient() then
-                addTick("RemoteTrustedOnly", "UI_MinidoracatMiniMap_RemoteTrustedOnly", false)
-                    ._minidoracatRemoteTrustedTick = true
-            end
-            -- 重算視窗尺寸（沿原版 createChildren 尾段：取子元件最大右/下緣）
-            local w, h = 0, 0
-            for _, child in pairs(self:getChildren()) do
-                w = math.max(w, child:getRight())
-                h = math.max(h, child:getBottom())
-            end
-            self:setWidth(w + 11)
-            self:setHeight(h + self:resizeWidgetHeight())
-        end)
-        if not ok then
-            log("world map options panel toggle injection failed: " .. tostring(err))
         end
     end
 end

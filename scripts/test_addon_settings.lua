@@ -396,38 +396,53 @@ check(not table.concat(s.sections, ","):find("addon_WatchAdmin", 1, true), "W4 v
 env.Core.toggleSettingsWindow(env.minimap(1))
 s = env.open(0)
 
--- ── v5 圖層區塊：開關／世界地圖／大小／名稱都寫 Core.setMarkerLayer（MarkerLayers）──────
+-- ── v5 圖層區塊：開關（兩格合計）／「顯示在」兩顆 chip／大小／名稱都寫 Core.setMarkerLayer（MarkerLayers）──
 s.selectSection("addon_VM")
 do
     local function box(label)
         return env.controls(function(el) return el.label == label and el._field ~= nil end)[1]
     end
+    local function chip(field)
+        return env.controls(function(el) return el._field == field and env.type(el) == "MinidoracatUIButton" end)[1]
+    end
     local sw = env.byKey("layer:bound")
-    check(sw and sw._field == "showMini" and sw.checked == true and sw.label == "", "L1 layer header switch = show.mini")
+    check(sw and sw._field == "show" and sw.checked == true and sw.label == "", "L1 layer header switch = both maps")
     check(env.controls(function(el) return el._lines and el._lines[1] == "UI_VMBound" end)[1] ~= nil,
         "L1 layer header shows the layer label")
+    check(chip("showMini"):isActive() and chip("showWorld"):isActive(), "L1 Show on chips mirror show.mini/show.world")
+    checkEq(chip("showWorld").title, T("UI_MinidoracatMiniMap_MapWorld"), "L1 world chip text")
     sw:forceClick()
-    checkEq(env.values.MarkerLayers, "VM/bound=0,1,16,1,1", "L2 header switch writes MarkerLayers via setMarkerLayer")
-    check(Core.markerLayer("VM", "bound").show.mini == false, "L2 marker layer prefs follow")
-    local world = box(T("UI_MinidoracatMiniMap_WorldAlso"))
-    check(world and world.checked == true, "L3 world-map checkbox bound to show.world")
-    world:forceClick()
-    checkEq(env.values.MarkerLayers, "VM/bound=0,0,16,1,1", "L3 world checkbox writes show.world")
+    checkEq(env.values.MarkerLayers, "VM/bound=0,0,16,1,1", "L2 switch off clears both maps")
+    local prefs = Core.markerLayer("VM", "bound")
+    check(prefs.show.mini == false and prefs.show.world == false, "L2 marker layer prefs follow")
+    env.frame() -- 開關改兩格＝重建，chip 跟上
+    check(not chip("showMini"):isActive() and not chip("showWorld"):isActive(), "L2 chips rebuilt off")
+    chip("showWorld"):forceClick()
+    checkEq(env.values.MarkerLayers, "VM/bound=0,1,16,1,1", "L3 world chip writes show.world")
+    check(chip("showWorld"):isActive() and env.byKey("layer:bound").checked == true, "L3 one chip on = switch on")
+    chip("showWorld"):forceClick()
+    check(env.byKey("layer:bound").checked == false, "L3 both chips off = switch off")
+    env.byKey("layer:bound"):forceClick()
+    checkEq(env.values.MarkerLayers, "", "L3 switch on restores the addon's default maps (override dropped)")
+    env.frame()
+    chip("showMini"):forceClick()
+    checkEq(env.values.MarkerLayers, "VM/bound=0,1,16,1,1", "L3 mini chip writes show.mini")
     local namesMini = box("UI_VMNamesMini")
     local namesWorld = box(T("UI_MinidoracatMiniMap_LayerNamesWorld"))
     check(namesMini and namesWorld, "L4 custom names-mini label and default names-world label")
     namesWorld:forceClick()
-    checkEq(env.values.MarkerLayers, "VM/bound=0,0,16,1,0", "L4 names checkbox writes namesWorld")
+    checkEq(env.values.MarkerLayers, "VM/bound=0,1,16,1,0", "L4 names checkbox writes namesWorld")
     local size = env.controls(function(el) return el._layerId == "bound" and env.type(el) == "MinidoracatUISliderRow" end)[1]
     check(size and size.min == 8 and size.max == 48 and size:getValue() == 16, "L5 size slider 8-48 at the layer size")
     env.mouseDown = true
     size:setValue(30)
     env.frame()
-    checkEq(env.values.MarkerLayers, "VM/bound=0,0,16,1,0", "L5 size not written while dragging")
+    checkEq(env.values.MarkerLayers, "VM/bound=0,1,16,1,0", "L5 size not written while dragging")
     -- 預覽讀滑條現值（拖曳中即時），表面關閉＝不畫
     local pv = env.controls(function(el) return env.type(el) == "MinidoracatUIPreview" end)[1]
     check(pv ~= nil, "L6 layer block has a preview")
-    sw:forceClick() -- 小地圖再開
+    chip("showMini"):forceClick() -- 小地圖再開
+    chip("showWorld"):forceClick() -- 世界地圖關
     pv.draws = {}
     pv:prerender()
     local texSizes, labels = {}, 0

@@ -74,7 +74,11 @@ local hasExtBody = assert(source:match(
 local mapTextBody = assert(source:match(
     "%-%- test:map%-text:start\n(.-)\n%-%- test:map%-text:end"),
     "找不到主檔 map-text 測試區段")
-zoneBody = csvBody .. "\n" .. hasExtBody .. "\n" .. affineBody .. "\n" .. mapTextBody
+-- 「顯示在」兩格（Core.LAYER_MAPS／Core.layerOn）：zoneFrame 依表面判 provider 能不能畫；讀 prelude 的 getBoolOption
+local layerMapsBody = assert(source:match(
+    "%-%- test:layer%-maps:start\n(.-)\n%-%- test:layer%-maps:end"),
+    "找不到主檔 layer-maps 測試區段")
+zoneBody = csvBody .. "\n" .. hasExtBody .. "\n" .. affineBody .. "\n" .. mapTextBody .. "\n" .. layerMapsBody
     .. "\nlocal mapTextZoom, drawMapText = Core.mapTextZoom, Core.drawMapText\n"
     .. zoneBody .. "\n" .. zcatBody
 local zonePrelude = [=[
@@ -174,8 +178,9 @@ return {
     setTextScale = function(v) textScale = v end,
     setPointer = function(x, y) pointer = x and { x, y } or nil end,
     basementBadge = drawBasementBadge,
-    addProvider = function(owner, fn, internal)
-        registeredZoneProviders[#registeredZoneProviders + 1] = { owner = owner, fn = fn, internal = internal }
+    addProvider = function(owner, fn, internal, layer)
+        registeredZoneProviders[#registeredZoneProviders + 1] = { owner = owner, fn = fn, internal = internal,
+            layer = layer }
     end,
     clearProviders = function()
         for i = #registeredZoneProviders, 1, -1 do registeredZoneProviders[i] = nil end
@@ -251,6 +256,39 @@ do
     assert(inner.polyCount == 1, "ZoneLayer 關閉時內部 POI provider 的可見 zone 仍應填色")
     zone.clearProviders()
     zone.setZoneLayer(true)
+    zone.resetLogs()
+end
+
+-- A4-1b：「顯示在」兩格依表面判（小地圖 inner／世界地圖＝ISWorldMap_instance）；外部 provider 吃自訂區域兩格，
+-- 內部 provider 吃自己那層（layer），世界地圖另看「MiniMap 圖層」按鈕（WMLayers）
+do
+    local calls = { poi = 0, park = 0, ext = 0 }
+    zone.addProvider("poi", function() calls.poi = calls.poi + 1; return visibleZone() end, true, "poi")
+    zone.addProvider("park", function() calls.park = calls.park + 1; return visibleZone() end, true, "parking")
+    zone.addProvider("ext", function() calls.ext = calls.ext + 1; return visibleZone() end)
+    local function run(surfaceWorld)
+        calls.poi, calls.park, calls.ext = 0, 0, 0
+        local inner = makeInner()
+        ISWorldMap_instance = surfaceWorld and inner or nil
+        zone.fill(inner)
+        ISWorldMap_instance = nil
+        return calls.poi, calls.park, calls.ext
+    end
+    zone.setBoolOverride("PoiIcons", false) -- 資源點只關小地圖
+    zone.setBoolOverride("WMZoneLayer", false) -- 自訂區域只關世界地圖
+    local p, k, e = run(false)
+    assert(p == 0 and k == 1 and e == 1, "小地圖：資源點那格關＝不畫，停車場與自訂區域照畫")
+    p, k, e = run(true)
+    assert(p == 1 and k == 1 and e == 0, "世界地圖：資源點照畫，自訂區域的世界地圖格關＝不畫")
+    zone.setBoolOverride("WMLayers", false)
+    p, k, e = run(true)
+    assert(p == 0 and k == 0 and e == 0, "世界地圖收起地圖圖層＝三者都不畫")
+    p, k, e = run(false)
+    assert(k == 1 and e == 1, "收起地圖圖層只管世界地圖，小地圖照畫")
+    zone.setBoolOverride("PoiIcons", nil)
+    zone.setBoolOverride("WMZoneLayer", nil)
+    zone.setBoolOverride("WMLayers", nil)
+    zone.clearProviders()
     zone.resetLogs()
 end
 
@@ -1447,7 +1485,9 @@ return {
     legend = function() return poiLegend end,
 }
 ]=]
-local convChunk, convErr = compile(convPrelude .. "\n" .. convBody .. "\n" .. convSuffix)
+-- 「顯示在」兩格（Core.layerOn("poi")）：真實作讀上面 prelude 的 opts
+local convChunk, convErr = compile(convPrelude .. "\nlocal Core = {}\n" .. layerMapsBody .. "\n"
+    .. convBody .. "\n" .. convSuffix)
 assert(convChunk, convErr)
 local conv = convChunk()
 
@@ -1507,7 +1547,15 @@ conv.setOpt("Cat_police", nil)
 conv.setOpt("PoiIcons", false)
 conv.setOpt("PoiBlocks", false)
 conv.build()
-assert(#conv.zones() == 0, "poi-convert：icons+blocks 全關應為空")
+assert(#conv.zones() > 0, "poi-convert：世界地圖那格還開著就照建（哪張地圖畫由 _Zones 判）")
+conv.setOpt("WMPoiIcons", false)
+conv.build()
+assert(#conv.zones() == 0, "poi-convert：兩張地圖都關＋blocks 關應為空")
+-- 兩張地圖都關時區塊也不建（改前區塊自己成立：關資源點開關後區塊照畫）
+conv.setOpt("PoiBlocks", true)
+conv.build()
+assert(#conv.zones() == 0, "poi-convert：資源點兩格都關＝區塊也不畫")
+conv.setOpt("WMPoiIcons", nil)
 
 -- 整棟外框模式（PoiWholeBuilding）：rects 換成單一 b、lodRect 跟著變整棟，
 -- 圖標另走 iconRect 釘住原最大房間（整棟框中心對商場類建物離實際店面數十格）
@@ -1652,10 +1700,12 @@ assert(lg.count == 2 and lg[1].name == "T_K_Police" and lg[2].name == "T_K_Pharm
 assert(lg[1].r == 1 and lg[1].g == 1 and lg[1].b == 1, "彩色模式圖例不染色（同地圖）")
 assert(lg.basement == false, "唯一的地下設施類別取消勾選後不應再有地下列")
 conv.setOpt("PoiIcons", false)
+conv.setOpt("WMPoiIcons", false)
 conv.setOpt("PoiBlocks", true)
 conv.build()
-assert(conv.legend().count == 0, "只開區塊、不開圖標時圖例應為空（地圖上沒有圖標可對照）")
+assert(conv.legend().count == 0, "資源點兩張地圖都關時圖例應為空（區塊也不畫，地圖上沒有東西可對照）")
 conv.setOpt("PoiIcons", nil)
+conv.setOpt("WMPoiIcons", nil)
 conv.setOpt("PoiBlocks", true)
 conv.setOpt("PoiColorIcons", false)
 conv.setOpt("Cat_gas", nil)

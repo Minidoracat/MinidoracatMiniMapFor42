@@ -141,11 +141,29 @@ do
     env.frame()
     header = env.controls(function(el) return el._sec and el._sec.id == "zombie" and env.type(el) == "MinidoracatUICheckbox" end)[1]
     check(env.values.ZombieDots == false and header.checked == false, "D2 nav switch rebuilds the header")
-    local wm = env.byKey("WMZombieDots")
-    checkEq(wm.label, T("UI_MinidoracatMiniMap_WMZombieDots"), "D3 world-map tick lives in the zombie category")
-    checkEq(wm.tooltip, T("UI_MinidoracatMiniMap_WM_tooltip"), "D3 world-map tick carries the ESC tooltip")
+    -- 「顯示在」兩顆 chip：世界地圖那格是獨立選項，標題列與導覽列的分類開關＝兩格合計
+    local mini, wm = env.byKey("ZombieDots"), env.byKey("WMZombieDots")
+    checkEq(env.type(wm), "MinidoracatUIButton", "D3 world-map cell is a chip on the Show on row")
+    checkEq(wm.title, T("UI_MinidoracatMiniMap_MapWorld"), "D3 world-map chip text")
+    checkEq(wm.tooltip, T("UI_MinidoracatMiniMap_WMZombieDots"), "D3 world-map chip names its map in the tooltip")
+    checkEq(mini.title, T("UI_MinidoracatMiniMap_MapMini"), "D3 mini-map chip text")
+    check(wm.x > mini.x and wm.y == mini.y, "D3 mini-map chip before world-map chip on one row")
+    check(mini:isActive() == false and wm:isActive() == false, "D3 chips mirror both cells (off)")
     wm:forceClick()
-    checkEq(env.values.WMZombieDots, true, "D3 world-map tick writes its option")
+    checkEq(env.values.WMZombieDots, true, "D3 world-map chip writes its option")
+    check(wm:isActive() == true, "D3 world-map chip lights up")
+    header = env.controls(function(el) return el._sec and el._sec.id == "zombie" and env.type(el) == "MinidoracatUICheckbox" end)[1]
+    check(header.checked == true and navRow(s.nav, "zombie").on == true,
+        "D3 one cell on = category switch on (header and nav)")
+    -- 分類開關關＝兩張地圖都清（改前只清小地圖：世界地圖照畫殭屍點）
+    header:forceClick()
+    check(env.values.ZombieDots == false and env.values.WMZombieDots == false, "D3 switch off clears both maps")
+    -- 分類開關開＝回到預設顯示的地圖（殭屍：只開小地圖）
+    navRow(s.nav, "zombie").switch.set(true)
+    check(env.values.ZombieDots == true and env.values.WMZombieDots == false,
+        "D3 switch on restores the default maps (mini-map only)")
+    env.values.ZombieDots, env.values.WMZombieDots = nil, nil
+    env.frame()
     checkEq(env.byKey("ZombieIntensity").tooltip, T("UI_MinidoracatMiniMap_ZombieIntensity_tooltip"),
         "D4 checkbox tooltip = <label>_tooltip from ESC")
     local dd = env.byKey("ZombieDotColor")
@@ -163,18 +181,19 @@ do
     env.mouseDown = false
     env.frame()
     checkEq(env.saves, saves + 1, "D6 one save after release")
-    -- 控制項順序：標題 → 預覽 → 開關 → 樣式 → 大小 → 距離 → 重設
+    -- 控制項順序：標題 → 預覽 →「顯示在」→ 樣式 → 大小 → 距離 → 重設
     local order = {}
     for _, el in ipairs(env.studio().controls) do
         local t = env.type(el)
         if t == "MinidoracatUIPreview" then order[#order + 1] = "preview"
-        elseif el._findKey == "WMZombieDots" then order[#order + 1] = "tick"
+        elseif el._findKey == "WMZombieDots" then order[#order + 1] = "maps"
+        elseif el._findKey == "ZombieIntensity" then order[#order + 1] = "tick"
         elseif el._findKey == "ZombieDotColor" then order[#order + 1] = "combo"
         elseif el._findKey == "ZombieDotSize" then order[#order + 1] = "size"
         elseif el._findKey == "ClientZombieDotDistance" then order[#order + 1] = "distance"
         elseif el._sec and t == "MinidoracatUIButton" then order[#order + 1] = "reset" end
     end
-    checkEq(table.concat(order, ","), "preview,tick,combo,size,distance,reset", "D7 inspector control order")
+    checkEq(table.concat(order, ","), "preview,maps,tick,combo,size,distance,reset", "D7 inspector control order")
 end
 
 -- ── E 伺服器沙盒閘：開關停用＋橘字提示；不相干的勾選照常 ─────────────────────────
@@ -185,7 +204,8 @@ do
     local header = env.controls(function(el) return el._sec and el._sec.id == "zombie" and env.type(el) == "MinidoracatUICheckbox" end)[1]
     check(header and header._enabled == false, "E2 gated header switch disabled")
     check(textShown(env, T("UI_MinidoracatMiniMap_ServerDisabled")), "E3 inspector shows ServerDisabled note")
-    check(env.byKey("WMZombieDots")._enabled == false, "E4 gated world-map tick disabled")
+    check(env.byKey("WMZombieDots"):isEnabled() == false and env.byKey("ZombieDots"):isEnabled() == false,
+        "E4 gated Show on chips disabled")
     check(env.byKey("ZombieIntensity")._enabled == true, "E4 ungated heat-map tick stays enabled")
     checkEq(env.lastGatePn, 0, "E5 gates read for the owning player slot")
 end
@@ -338,8 +358,9 @@ do
     env.livestockMode = 4
     env.frame()
     s.selectSection("animals")
-    check(env.byKey("AnimalLivestock")._enabled == false and env.byKey("WMAnimalLivestock")._enabled == false,
-        "I1 livestock mode 4 disables livestock ticks")
+    check(env.byKey("AnimalLivestock"):isEnabled() == false and env.byKey("WMAnimalLivestock"):isEnabled() == false,
+        "I1 livestock mode 4 disables both livestock chips")
+    check(env.byKey("AnimalWild"):isEnabled() == true, "I1 wild animal chips stay enabled")
     check(textShown(env, T("UI_MinidoracatMiniMap_LivestockHiddenBySandbox")), "I1 livestock note")
     env.livestockMode = 1
     env.frame()
@@ -428,9 +449,12 @@ do
     env.values.SafehouseNames = false
     pv = previewOf("safehouse")
     check(count(pv, "line") == 4 and count(pv, "text") == 0, "J5 safehouse preview: rectangle, no name when off")
-    env.values.Places = false
+    env.values.Places, env.values.WMPlaces = false, false
     pv = previewOf("places")
-    checkEq(#pv.draws > 0 and count(pv, "tex"), 0, "J6 places preview hides markers when Places is off")
+    checkEq(#pv.draws > 0 and count(pv, "tex"), 0, "J6 places preview hides markers when both maps are off")
+    env.values.WMPlaces = nil
+    pv = previewOf("places")
+    check(count(pv, "tex") > 0, "J6 places preview stays while one map still shows them")
     env.values.Places = nil
     pv = previewOf("places")
     check(count(pv, "text", function(d) return d[1] == T("UI_MinidoracatMiniMap_PlaceHome") end) == 1,
@@ -482,6 +506,69 @@ do
     search:prerender()
     env.frame()
     check(textShown(env, T("UI_MinidoracatMiniMap_StudioNoResults")), "K5 no-results text")
+    search._entry:setText("")
+    search:prerender()
+    env.frame()
+end
+
+-- ── T 「顯示在」：分類開關＝兩格合計、內容勾選不受影響、重設、世界地圖圖層收起的說明 ──────────
+do
+    -- T1 資源點：開關關＝兩格都清（改前只清小地圖那格）；開＝兩格都回到開
+    s.selectSection("poicat")
+    local header = env.controls(function(el) return el._sec and el._sec.id == "poicat" and env.type(el) == "MinidoracatUICheckbox" end)[1]
+    check(header.checked == true and env.byKey("PoiIcons"):isActive() and env.byKey("WMPoiIcons"):isActive(),
+        "T1 resource points on both maps by default")
+    header:forceClick()
+    check(env.values.PoiIcons == false and env.values.WMPoiIcons == false, "T1 switch off clears both maps")
+    header:forceClick()
+    check(env.values.PoiIcons == true and env.values.WMPoiIcons == true, "T1 switch on restores both maps")
+    -- T2 安全屋：開關只管兩格，範圍框／圖標／名稱三顆照舊
+    s.selectSection("safehouse")
+    header = env.controls(function(el) return el._sec and el._sec.id == "safehouse" and env.type(el) == "MinidoracatUICheckbox" end)[1]
+    header:forceClick()
+    check(env.values.SafehouseOnMini == false and env.values.SafehouseOnWorld == false, "T2 switch off clears both maps")
+    check(env.values.Safehouses == nil and env.byKey("Safehouses").checked == true, "T2 content ticks untouched")
+    -- T3 重設此分類：兩格回預設
+    local reset = findControl(env, function(el) return el._sec and el._sec.id == "safehouse" and env.type(el) == "MinidoracatUIButton" end)
+    reset.onclick(reset.target, reset)
+    env.frame()
+    check(env.values.SafehouseOnMini == true and env.values.SafehouseOnWorld == true, "T3 reset restores both maps")
+    -- T4 伺服器把安全屋整層關了（範圍與名稱兩個模式都 1）：兩格停用；只關名稱不停用
+    env.safehouseMode, env.safehouseNameMode = 1, 1
+    env.frame()
+    s.selectSection("safehouse")
+    check(env.byKey("SafehouseOnWorld"):isEnabled() == false, "T4 both safehouse modes off disable the cells")
+    env.safehouseMode = nil
+    s.selectSection("safehouse")
+    check(env.byKey("SafehouseOnWorld"):isEnabled() == true, "T4 names-only off keeps the cells")
+    env.safehouseNameMode = nil
+    -- T5 玩家與導航：家與收藏、導航路線各一列；自己圖標仍是單顆勾選
+    s.selectSection("places")
+    check(env.byKey("Places"):isActive() and env.byKey("WMPlaces"):isActive()
+        and env.byKey("NavRoute") ~= nil and env.byKey("WMNavRoute") ~= nil, "T5 places and route rows")
+    checkEq(env.type(env.byKey("Players")), "MinidoracatUICheckbox", "T5 own marker stays a mini-map tick")
+    env.byKey("WMPlaces"):forceClick()
+    check(env.values.WMPlaces == false and env.values.Places == nil, "T5 world chip writes only its cell")
+    env.values.WMPlaces = nil
+    -- T6 世界地圖選項收起「地圖圖層」：圖層分類說明世界地圖那格暫時沒作用；玩家與導航不是圖層，不說明
+    env.values.WMLayers = false
+    s.selectSection("zombie")
+    check(textShown(env, T("UI_MinidoracatMiniMap_WMLayersOffNote")), "T6 layer category explains hidden world layers")
+    s.selectSection("places")
+    check(not textShown(env, T("UI_MinidoracatMiniMap_WMLayersOffNote")), "T6 places rows are not map layers")
+    env.values.WMLayers = nil
+    s.selectSection("zombie")
+    check(not textShown(env, T("UI_MinidoracatMiniMap_WMLayersOffNote")), "T6 note gone when layers are shown")
+    -- T7 搜尋找得到世界地圖那格，結果勾選寫那一格
+    local search = s.search
+    search._entry:setText(T("UI_MinidoracatMiniMap_WMParkingLayer"))
+    search:prerender()
+    env.frame()
+    local box = findControl(env, function(el) return el._hit and el._hit.entry and el._hit.entry.id == "WMParkingLayer" end)
+    check(box ~= nil, "T7 search lists the world-map cell")
+    box:forceClick()
+    checkEq(env.values.WMParkingLayer, false, "T7 search result writes the world-map cell")
+    env.values.WMParkingLayer = nil
     search._entry:setText("")
     search:prerender()
     env.frame()

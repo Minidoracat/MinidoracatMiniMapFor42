@@ -96,10 +96,12 @@ function LegendPanel:prerender()
     local key = map and map.keyUI
     local lg = Core.poiLegend and Core.poiLegend()
     self._layout = nil
-    -- 功能閘門 poi 被擋＝地圖上沒有資源點，圖例一併收起（_FeatureGate.lua；缺檔＝放行）
+    -- 功能閘門 poi 被擋＝地圖上沒有資源點，圖例一併收起（_FeatureGate.lua；缺檔＝放行）；
+    -- 世界地圖不畫資源點（「顯示在」世界地圖那格關、或選項面板收起地圖圖層）同樣收起
     local fa = Core.featureAllowed
     if not lg or lg.count == 0 or (key and not key:isVisible())
-        or (fa and map and not fa(map.playerNum or 0, "poi", "world")) then
+        or (fa and map and not fa(map.playerNum or 0, "poi", "world"))
+        or not Core.layerOn("poi", "world") then
         self:setBounds(self.x, self.y, 0, 0)
         return
     end

@@ -36,23 +36,25 @@ local hasExternalZoneProvider = Core.hasExternalZoneProvider
 local Policy = Core.policy
 
 --------------------------------------------------------------------------------
--- 分類資料：每個分類是一張表，欄位依「標題（主開關）→ 效果預覽 → 開關 → 篩選 →
+-- 分類資料：每個分類是一張表，欄位依「標題（主開關）→ 效果預覽 →「顯示在」列 → 開關 → 篩選 →
 -- 樣式 → 大小／透明度 → 名稱 → 顯示距離 → 額外 → 重設此分類」的順序畫出；
--- 重設與搜尋索引讀同一份欄位（ticks／chips／combos／sliders／nameTicks／nameSliders／
+-- 重設與搜尋索引讀同一份欄位（maps／ticks／chips／combos／sliders／nameTicks／nameSliders／
 -- distance），新增選項只改這裡。分類可帶 combosFirst（下拉放在開關之前）。
+--   maps：{ { label, cells＝Core.LAYER_MAPS 的一層, mpOnly? } }——每列一行標籤＋小地圖、世界地圖兩顆 chip
 --   tick：{ id, label, default, engine?（直寫引擎選項，重設不動）, mpOnly?, gate?（沙盒閘）,
---           livestock?（牲畜模式 4 停用）, shMode?（安全屋沙盒模式 1 停用）,
+--           livestock?（牲畜模式 4 停用）, shMode?（安全屋沙盒模式 1 停用）, shAll?（兩個安全屋模式都 1 才停用）,
 --           minimapOnly?（資源點房間資料版停用）, rebuild?, tooltip? }
 --   combo：{ id, label, default, items, rebuild?, tooltip?, poiLock?（伺服器鎖定資源版本時停用、顯示 default） }
 --   slider：{ id, label, default, min, max, step, fmt, zeroLabel?, capBy?（伺服器上限＝沙盒選項名） }
+--   master（標題列與導覽列的分類開關）：{ id, … } 單鍵，或 { label, members, tooltip? }＝成員 OR；
+--           圖層分類的 members＝「顯示在」各格，開＝每格寫自己的 on、關＝全清（studioMasterSet）
 -- 值即寫 ModOptions（同步 ESC 頁元件，ModOptions.lua:68-73）並走既有 modOptions:apply()。
 --------------------------------------------------------------------------------
-local ANIMAL_TICKS = {
-    { id = "AnimalWild", label = "UI_MinidoracatMiniMap_AnimalWild", default = false, gate = "AllowAnimalDots" },
-    { id = "AnimalLivestock", label = "UI_MinidoracatMiniMap_AnimalLivestock", default = false,
-        gate = "AllowAnimalDots", livestock = true },
-}
--- 安全屋三件套（範圍框／圖標／名稱）：導覽開關投影三者 OR（同動物母開關）
+local LM = Core.LAYER_MAPS
+-- 「顯示在」列的常數與函式（版面、回呼、分類段落在下方各段補上；主 chunk local 已近 Kahlua 上限，不另開 local）
+local MapRows = { SHOW_ON = "UI_MinidoracatMiniMap_ShowOn", TIP = "UI_MinidoracatMiniMap_LayerSwitch_tooltip",
+    CHIPS = { "UI_MinidoracatMiniMap_MapMini", "UI_MinidoracatMiniMap_MapWorld" } }
+-- 安全屋三件套（範圍框／圖標／名稱）：畫哪些內容；畫在哪張地圖由「顯示在」決定
 local SAFEHOUSE_TICKS = {
     { id = "Safehouses", label = "UI_MinidoracatMiniMap_Safehouses", default = true, shMode = "safehouseDisplayMode" },
     { id = "SafehouseIcons", label = "UI_MinidoracatMiniMap_SafehouseIcons", default = true, shMode = "safehouseDisplayMode" },
@@ -84,13 +86,16 @@ local SEC_BASE = { id = "base", label = "UI_MinidoracatMiniMap_SecBase", icon = 
     },
 }
 local SEC_PLACES = { id = "places", label = "UI_MinidoracatMiniMap_SecPlaces", icon = "markerFlag",
+    -- 家／收藏點、導航路線、陣營分享的目標（旗標＋路線）畫在哪張地圖：只管顯示，不影響回家與分享功能
+    maps = {
+        { label = "UI_MinidoracatMiniMap_RowPlaces", cells = LM.places },
+        { label = "UI_MinidoracatMiniMap_RowNavRoute", cells = LM.navRoute },
+        { label = "UI_MinidoracatMiniMap_RowShared", cells = LM.shared, mpOnly = true },
+    },
+    -- 自己與隊友圖標是引擎圖層：這兩顆只管小地圖，世界地圖的在原版世界地圖選項（齒輪）
     ticks = {
         { id = "Players", label = "UI_MinidoracatMiniMap_Players", default = true },
         { id = "RemotePlayers", label = "UI_MinidoracatMiniMap_RemotePlayers", default = true, mpOnly = true },
-        -- 家／收藏點標記與陣營分享的目標（旗標＋路線）：地圖上的顯示開關，不影響回家與分享功能
-        { id = "Places", label = "UI_MinidoracatMiniMap_Places", default = true },
-        { id = "SharedTargets", label = "UI_MinidoracatMiniMap_SharedTargets", default = true, mpOnly = true },
-        { id = "NavRoute", label = "UI_MinidoracatMiniMap_NavRoute", default = true },
         { id = "KeepFinishedTrip", label = "UI_MinidoracatMiniMap_KeepFinishedTrip", default = false },
     },
     -- 標記大小（家／收藏、導航旗與行程站、搜尋落點、未分層 addon marker）：繪製端每幀讀值
@@ -110,8 +115,9 @@ local SEC_REMOTE = { id = "remote", label = "IGUI_MapOption_RemoteSymbols", icon
     },
 }
 local SEC_POI = { id = "poicat", label = "UI_MinidoracatMiniMap_SecPOI", icon = "pin",
-    -- 母開關只控內部 POI provider（與 ZoneLayer 解耦）
-    master = { id = "PoiIcons", label = "UI_MinidoracatMiniMap_PoiIcons", default = true },
+    -- 分類開關＝「顯示在」兩格（只控內部 POI provider，與自訂區域無關）
+    master = { label = "UI_MinidoracatMiniMap_SecPOI", members = LM.poi, tooltip = MapRows.TIP },
+    maps = { { label = MapRows.SHOW_ON, cells = LM.poi } },
     -- 標示方式放在最上面（combosFirst），下面接「目前使用」一行與可展開的說明（addNotes）；
     -- rebuild＝換方式時「目前使用」與「整棟範圍」的可用狀態跟著重畫
     combosFirst = true,
@@ -140,19 +146,18 @@ local SEC_POI = { id = "poicat", label = "UI_MinidoracatMiniMap_SecPOI", icon = 
             zeroLabel = "UI_MinidoracatMiniMap_DistUnlimited", capBy = "PoiDisplayDistance" },
     },
 }
--- 停車場：只有母開關（MinidoracatMiniMapParking.lua 的內部 provider 讀它）；圖標大小、透明度與顯示距離
--- 跟資源點同一組設定，不另開。addNotes 補一段停車場怎麼判定的說明
+-- 停車場：分類開關＝「顯示在」兩格（MinidoracatMiniMapParking.lua 的內部 provider 讀它）；圖標大小、
+-- 透明度與顯示距離跟資源點同一組設定，不另開。addNotes 補一段停車場怎麼判定的說明
 local SEC_PARKING = { id = "parking", label = "UI_MinidoracatMiniMap_Parking", icon = "carSedan",
-    master = { id = "ParkingLayer", label = "UI_MinidoracatMiniMap_ParkingLayer", default = true,
-        tooltip = "UI_MinidoracatMiniMap_ParkingLayer_tooltip" },
+    master = { label = "UI_MinidoracatMiniMap_Parking", members = LM.parking, tooltip = MapRows.TIP },
+    maps = { { label = MapRows.SHOW_ON, cells = LM.parking } },
 }
 local SEC_ZOMBIE = { id = "zombie", label = "UI_MinidoracatMiniMap_SecZombie", icon = "skull",
     gate = "AllowZombieDots",
-    master = { id = "ZombieDots", label = "UI_MinidoracatMiniMap_ZombieDots", default = false, gate = "AllowZombieDots" },
+    -- 「顯示在」兩格：世界地圖（M）與小地圖獨立；風格/顏色/篩選共用小地圖設定
+    master = { label = "UI_MinidoracatMiniMap_SecZombie", members = LM.zombie, tooltip = MapRows.TIP },
+    maps = { { label = MapRows.SHOW_ON, cells = LM.zombie } },
     ticks = {
-        -- 世界地圖（M）開關與小地圖獨立；風格/顏色/篩選共用小地圖設定
-        { id = "WMZombieDots", label = "UI_MinidoracatMiniMap_WMZombieDots", default = false,
-            gate = "AllowZombieDots", tooltip = "UI_MinidoracatMiniMap_WM_tooltip" },
         { id = "ZombieIntensity", label = "UI_MinidoracatMiniMap_ZombieIntensity", default = false },
     },
     combos = {
@@ -178,13 +183,12 @@ local SEC_ZOMBIE = { id = "zombie", label = "UI_MinidoracatMiniMap_SecZombie", i
 }
 local SEC_ANIMALS = { id = "animals", label = "UI_MinidoracatMiniMap_SecAnimals", icon = "pawprint",
     gate = "AllowAnimalDots",
-    master = { label = "UI_MinidoracatMiniMap_SecAnimals", members = ANIMAL_TICKS },
-    ticks = {
-        ANIMAL_TICKS[1], ANIMAL_TICKS[2],
-        { id = "WMAnimalWild", label = "UI_MinidoracatMiniMap_WMAnimalWild", default = false,
-            gate = "AllowAnimalDots", tooltip = "UI_MinidoracatMiniMap_WM_tooltip" },
-        { id = "WMAnimalLivestock", label = "UI_MinidoracatMiniMap_WMAnimalLivestock", default = false,
-            gate = "AllowAnimalDots", livestock = true, tooltip = "UI_MinidoracatMiniMap_WM_tooltip" },
+    -- 野生、畜養各一列「顯示在」；分類開關＝四格 OR（開＝兩種都回到只開小地圖）
+    master = { label = "UI_MinidoracatMiniMap_SecAnimals", tooltip = MapRows.TIP,
+        members = { LM.wild[1], LM.wild[2], LM.livestock[1], LM.livestock[2] } },
+    maps = {
+        { label = "UI_MinidoracatMiniMap_RowWild", cells = LM.wild },
+        { label = "UI_MinidoracatMiniMap_RowLivestock", cells = LM.livestock },
     },
     combos = {
         -- 動物圖標風格切換＝物種 chip 小圖跟著換（符號↔彩圖），重建讓玩家立刻看到
@@ -220,11 +224,8 @@ local SEC_ANIMALS = { id = "animals", label = "UI_MinidoracatMiniMap_SecAnimals"
 }
 local SEC_VEHICLES = { id = "vehicles", label = "UI_MinidoracatMiniMap_SecVehicles", icon = "steeringwheel",
     gate = "AllowVehicleDots",
-    master = { id = "VehicleDots", label = "UI_MinidoracatMiniMap_VehicleDots", default = false, gate = "AllowVehicleDots" },
-    ticks = {
-        { id = "WMVehicleDots", label = "UI_MinidoracatMiniMap_WMVehicleDots", default = false,
-            gate = "AllowVehicleDots", tooltip = "UI_MinidoracatMiniMap_WM_tooltip" },
-    },
+    master = { label = "UI_MinidoracatMiniMap_SecVehicles", members = LM.vehicles, tooltip = MapRows.TIP },
+    maps = { { label = MapRows.SHOW_ON, cells = LM.vehicles } },
     combos = {
         { id = "VehicleIconColor", label = "UI_MinidoracatMiniMap_VehicleIconColor", default = 4,
             items = ADOTS_COLOR_ITEMS },
@@ -242,7 +243,9 @@ local SEC_VEHICLES = { id = "vehicles", label = "UI_MinidoracatMiniMap_SecVehicl
     },
 }
 local SEC_SAFEHOUSE = { id = "safehouse", label = "UI_MinidoracatMiniMap_SecSafehouse", icon = "house",
-    master = { label = "UI_MinidoracatMiniMap_SecSafehouse", members = SAFEHOUSE_TICKS },
+    -- 分類開關＝「顯示在」兩格；三顆開關照舊管畫哪些內容
+    master = { label = "UI_MinidoracatMiniMap_SecSafehouse", members = LM.safehouse, tooltip = MapRows.TIP },
+    maps = { { label = MapRows.SHOW_ON, cells = LM.safehouse } },
     ticks = SAFEHOUSE_TICKS,
     sliders = {
         { id = "SafehouseIconSize", label = "UI_MinidoracatMiniMap_SafehouseIconSize",
@@ -288,7 +291,8 @@ local SEC_PERF = { id = "perf", label = "UI_MinidoracatMiniMap_SecPerf", icon = 
 -- 擴充功能組的內建分類，OnGameBoot 補上 provider 開關、選項與 present 旗標
 local SEC_ZONES = { id = "zones", label = "UI_MinidoracatMiniMap_SecZones", icon = "zone",
     group = "addon", order = 1, seq = 0,
-    master = { id = "ZoneLayer", label = "UI_MinidoracatMiniMap_ZoneLayer", default = true },
+    master = { label = "UI_MinidoracatMiniMap_SecZones", members = LM.zones, tooltip = MapRows.TIP },
+    maps = { { label = MapRows.SHOW_ON, cells = LM.zones } },
     ticks = {}, -- per-provider 母開關（provider 註冊時給 optionKey 才有）
     sliders = {
         { id = "ZoneIconSize", label = "UI_MinidoracatMiniMap_ZoneIconSize",
@@ -358,7 +362,8 @@ Events.OnGameBoot.Add(function()
     SEC_MAPPACK.present = true
 end)
 
--- Zone 圖層總開關（有「外部」zone provider 註冊才出現；內建 POI 不算——它繞過此閘）
+-- 自訂區域的「顯示在」兩格（Core.LAYER_MAPS.zones；有「外部」zone provider 註冊才出現；內建 POI、停車場不算——
+-- 它們各有自己的圖層）
 Events.OnGameBoot.Add(function()
     if not hasExternalZoneProvider() or not modOptions then return end
     -- ESC 選項頁：接在最後，自成「自訂區域」一組（PZAPI 無中插 API）
@@ -366,9 +371,11 @@ Events.OnGameBoot.Add(function()
     modOptions:addTitle("UI_MinidoracatMiniMap_SecZones")
     modOptions:addTickBox("ZoneLayer", "UI_MinidoracatMiniMap_ZoneLayer", true,
         "UI_MinidoracatMiniMap_ZoneLayer_tooltip")
+    modOptions:addTickBox("WMZoneLayer", "UI_MinidoracatMiniMap_WMZoneLayer", true,
+        "UI_MinidoracatMiniMap_WMCell_tooltip")
     -- per-provider 母開關（provider 註冊時給了 optionLabelKey 才有）：渲染時
-    -- drawZoneFill/Lines/Icons 依 optionKey 讀值，關＝整個 provider 跳過（與 ZoneLayer
-    -- 總開關 AND）。家族 Zones addon 自 0.5.0 起不傳（與總開關重複）；機制留給第三方
+    -- drawZoneFill/Lines/Icons 依 optionKey 讀值，關＝整個 provider 跳過（與「顯示在」
+    -- 那張地圖的格 AND）。家族 Zones addon 自 0.5.0 起不傳（與總開關重複）；機制留給第三方
     -- addon——勿依 provider 數動態隱藏（雙向幽靈，見主檔 registerZoneProvider 契約註解）
     for i = 1, #registeredZoneProviders do
         local p = registeredZoneProviders[i]
@@ -614,7 +621,8 @@ end
 --------------------------------------------------------------------------------
 -- 狀態判定（inspector、導覽開關、搜尋結果共用同一份）
 --------------------------------------------------------------------------------
--- 控制項可否操作：伺服器沙盒閘、牲畜可見性模式 4、安全屋沙盒模式 1、資源點房間資料版、伺服器鎖定資源版本
+-- 控制項可否操作：伺服器沙盒閘、牲畜可見性模式 4、安全屋沙盒模式 1（shAll＝範圍與名稱兩個模式都 1，
+-- 「顯示在」格：伺服器把安全屋整層關了）、資源點房間資料版、伺服器鎖定資源版本
 local function entryEnabled(entry, pn)
     if entry.minimapOnly and Core.poiSource and Core.poiSource() == "rooms" then return false end
     if entry.poiLock and Core.poiSource then
@@ -625,6 +633,8 @@ local function entryEnabled(entry, pn)
     if entry.livestock and livestockVisibilityMode(pn) == 4 then return false end
     local modeFn = entry.shMode and Core[entry.shMode]
     if modeFn and modeFn(pn) == 1 then return false end
+    if entry.shAll and Core.safehouseDisplayMode and Core.safehouseDisplayMode(pn) == 1
+        and Core.safehouseNameMode and Core.safehouseNameMode(pn) == 1 then return false end
     return true
 end
 local function sectionEnabled(sec, pn)
@@ -641,13 +651,15 @@ local function studioMasterValue(entry)
     end
     return getBoolOption(entry.id, entry.default == true)
 end
--- 主開關寫入：members 全部寫成同一值後 apply 一次
+-- 主開關寫入：members 全部寫完後 apply 一次。關＝全清；開＝每個成員寫自己的 on（缺＝開）——
+-- 「顯示在」格靠它回到預設的地圖（例：殭屍只開小地圖）
 local function studioMasterSet(entry, value)
     if not entry.members then return settingsApply(entry, value) end
     if not modOptions then return end
     for i = 1, #entry.members do
-        local option = modOptions:getOption(entry.members[i].id)
-        if option then option:setValue(value) end
+        local member = entry.members[i]
+        local option = modOptions:getOption(member.id)
+        if option then option:setValue(value == true and member.on ~= false) end
     end
     studioApply()
 end
@@ -723,6 +735,13 @@ local function studioResetSection(sec, pn)
     if master then
         if master.members then changed = studioResetList(master.members)
         elseif studioResetId(master.id, master.default) then changed = true end
+    end
+    -- 「顯示在」各格回預設（有分類開關的分類上面已重設過同一批，再寫一次同值無妨）
+    local maps = sec.maps
+    if maps then
+        for i = 1, #maps do
+            if studioResetList(maps[i].cells) then changed = true end
+        end
     end
     local lists = { sec.ticks, sec.combos, sec.sliders, sec.nameTicks, sec.nameSliders, sec.distance }
     for i = 1, 6 do
@@ -870,9 +889,14 @@ local function studioBuildIndex(list)
         elseif sec == SEC_PERF then
             for j = 1, #PERF_ITEMS do studioIndexAdd(index, sec, PERF_ITEMS[j].name, "navigate") end
         else
-            -- 有 members 的主開關，成員本來就在 ticks 裡（同一 option 不給兩顆不同步的 checkbox）
+            -- 有 members 的主開關，成員本來就各有一顆（「顯示在」格或 tick；同一 option 不給兩顆不同步的 checkbox）
             if sec.master and not sec.master.members then
                 studioIndexAdd(index, sec, sec.master.label, "boolean", "mod", sec.master, sec.master.id)
+            end
+            -- 「顯示在」每格各一項，標籤寫明哪張地圖（搜「世界地圖」就列出全部世界地圖格；mpOnly 格自己帶旗標）
+            local maps = sec.maps
+            if maps then
+                for j = 1, #maps do studioIndexEntries(index, sec, maps[j].cells, "boolean", "mod") end
             end
             studioIndexEntries(index, sec, sec.ticks, "boolean", "mod")
             if sec.chips and not sec.chips.noSearch then
@@ -988,7 +1012,7 @@ local function previewSafehouse(self, x, y, w, h)
 end
 
 local function previewPlaces(self, x, y, w, h)
-    if not getBoolOption("Places", true) then return end
+    if not Core.layerOn("places") then return end -- 兩張地圖都不畫＝預覽也空白
     local p = self._pv
     local size = Core.markerIconSize()
     local tz = Core.mapTextZoom()
@@ -1228,6 +1252,27 @@ local function addSliderRow(ctx, labelText, entry, value, format, onChange, cap,
     return advance(ctx, put(ctx, row))
 end
 
+-- 「顯示在」一列：左側標籤（放不下截字）＋靠右兩顆 chip（[1] 小地圖、[2] 世界地圖），active／tips 同序。
+-- 回兩顆鈕，呼叫端掛欄位。chip 先 put 再移位：原版沒有父元件時會把位置夾在螢幕內（ISUIElement.lua:188-220）
+function MapRows.add(ctx, label, active, onClick, tips)
+    local h = ctx.fontH + 8
+    local btns = {}
+    local right = ctx.x + ctx.w
+    for i = 2, 1, -1 do
+        local btn = ctx.UI.Button.new{ x = ctx.x, y = ctx.y, height = h, title = getText(MapRows.CHIPS[i]),
+            style = "chip", active = active[i] == true, target = ctx.win, onClick = onClick,
+            tooltip = tips and tips[i] or nil, font = ctx.font }
+        put(ctx, btn)
+        right = right - btn.width
+        btn:setX(right)
+        right = right - 4
+        btns[i] = btn
+    end
+    textLine(ctx, ctx.x, ctx.y + math.floor((h - ctx.fontH) / 2), math.max(1, right - ctx.x - 4), label)
+    ctx.y = ctx.y + h + GAP
+    return btns
+end
+
 --------------------------------------------------------------------------------
 -- 控制項回呼（target＝視窗）。會改版面的變動（重建）一律延到下一幀的視窗 prerender，
 -- 不在元件自己的事件處理中途拆掉它
@@ -1260,6 +1305,14 @@ local function onModTick(win, checked, box)
     end
     if entry.rebuild then studioMarkDirty(win) end
     studioSyncMaster(win, entry)
+end
+
+-- 內建「顯示在」chip：寫自己那格；標題列與導覽列的分類開關跟著（格是分類開關的成員）
+function MapRows.onChip(win, btn)
+    local on = not btn:isActive()
+    settingsApply(btn._entry, on)
+    btn:setActive(on)
+    studioSyncMaster(win, btn._entry)
 end
 
 local function onModCombo(win, id, dd)
@@ -1338,8 +1391,23 @@ local function studioSetLayer(owner, id, field, value)
     pcall(Core.setMarkerLayer, owner, id, field, value)
     applyingFromWindow = false
 end
+-- 圖層區塊的勾選（名稱）與開關：開關的 field＝"show"（兩格合計：關＝兩格清、開＝回到 addon 給的預設），
+-- 寫完重建讓「顯示在」chip 跟上
 local function onLayerBox(win, checked, box)
     studioSetLayer(box._owner, box._layerId, box._field, checked)
+    if box._field == "show" then studioMarkDirty(win) end
+end
+-- 圖層區塊的「顯示在」chip：寫 showMini／showWorld，區塊開關跟著兩格合計
+function MapRows.onLayerChip(win, btn)
+    local on = not btn:isActive()
+    studioSetLayer(btn._owner, btn._layerId, btn._field, on)
+    local prefs = Core.markerLayer and Core.markerLayer(btn._owner, btn._layerId)
+    if not prefs then return end
+    -- 讀回存下的值（setMarkerLayer 失敗時 chip 不會亮錯）；不寫成 a and b or c：b 為 false 會掉到 c
+    local shown = prefs.show.world
+    if btn._field == "showMini" then shown = prefs.show.mini end
+    btn:setActive(shown)
+    if btn._switch then btn._switch:setChecked(prefs.show.mini or prefs.show.world, true) end
 end
 -- 大小滑條拖曳中只記待寫值，放開滑鼠才 setMarkerLayer（每次寫都落盤）；預覽讀滑條現值
 local function onLayerSize(win, value, row)
@@ -1590,10 +1658,38 @@ local function addNotes(ctx, sec)
     end
 end
 
--- 內建分類：標題 → 預覽 → 開關 → 篩選 → 樣式 → 大小／透明度 → 名稱 → 顯示距離 → 額外 → 重設
+-- 內建分類的「顯示在」列（sec.maps）：每格各寫自己的 ModOptions 鍵，停用條件同 tick（沙盒閘、牲畜模式 4、
+-- 安全屋整層關）。世界地圖選項面板收起了「地圖圖層」時，圖層列下面說明世界地圖那格暫時不起作用、去哪裡打開
+function MapRows.build(ctx, sec)
+    local rows = sec.maps
+    if not rows then return end
+    local enabled = sectionEnabled(sec, ctx.pn)
+    local layer = false
+    for i = 1, #rows do
+        local row = rows[i]
+        if not (row.mpOnly and not isClient()) then
+            local cells = row.cells
+            local btns = MapRows.add(ctx, getText(row.label),
+                { getBoolOption(cells[1].id, cells[1].default), getBoolOption(cells[2].id, cells[2].default) },
+                MapRows.onChip, { getText(cells[1].label), getText(cells[2].label) })
+            for j = 1, 2 do
+                local btn = btns[j]
+                btn._entry, btn._findKey = cells[j], cells[j].id
+                btn:setEnabled(enabled and entryEnabled(cells[j], ctx.pn))
+            end
+            layer = layer or cells.layer == true
+        end
+    end
+    if layer and not getBoolOption("WMLayers", true) then
+        addNote(ctx, getText("UI_MinidoracatMiniMap_WMLayersOffNote"))
+    end
+end
+
+-- 內建分類：標題 → 預覽 →「顯示在」→ 開關 → 篩選 → 樣式 → 大小／透明度 → 名稱 → 顯示距離 → 額外 → 重設
 local function buildSection(ctx, sec)
     addHeader(ctx, sec)
     if PREVIEWS[sec] then addPreview(ctx, sec, PREVIEWS[sec]) end
+    MapRows.build(ctx, sec)
     if sec.combosFirst then
         addCombos(ctx, sec.combos)
         addNotes(ctx, sec)
@@ -1617,8 +1713,8 @@ local function buildSection(ctx, sec)
     addResetButton(ctx, sec)
 end
 
--- addon 圖層區塊（v5）：外框內＝圖層名＋顯示開關（小地圖）→ 預覽 → 世界地圖也顯示 →
--- 大小 8–48 px →（有名稱時）兩張地圖的名稱開關；值全走 Core.setMarkerLayer
+-- addon 圖層區塊（v5）：外框內＝圖層名＋顯示開關（兩格合計）→ 預覽 →「顯示在」（小地圖 show.mini、
+-- 世界地圖 show.world）→ 大小 8–48 px →（有名稱時）兩張地圖的名稱開關；值全走 Core.setMarkerLayer
 local function addLayerBlock(ctx, sec, layer)
     local prefs = Core.markerLayer and Core.markerLayer(sec.owner, layer.id)
     if not prefs then return end
@@ -1636,9 +1732,10 @@ local function addLayerBlock(ctx, sec, layer)
     local label = getText(layer.label)
     textLine(ctx, ctx.x, ctx.y + math.floor((h - ctx.fontH) / 2), ctx.w - 48, label)
     local sw = ctx.UI.Checkbox.new{ x = ctx.x + ctx.w - 40, y = ctx.y + 2, width = 40, height = 20, label = "",
-        checked = prefs.show.mini, target = ctx.win, onChange = onLayerBox, tooltip = label, font = ctx.font }
+        checked = prefs.show.mini or prefs.show.world, target = ctx.win, onChange = onLayerBox, tooltip = label,
+        font = ctx.font }
     sw._findKey = "layer:" .. layer.id
-    put(ctx, layerBox(sw, "showMini"))
+    put(ctx, layerBox(sw, "show"))
     ctx.y = ctx.y + h + GAP
     local pv
     if type(layer.sample) == "table" then
@@ -1647,7 +1744,13 @@ local function addLayerBlock(ctx, sec, layer)
         local sl = layer.sample.label
         pv._label = type(sl) == "string" and sl ~= "" and (getTextOrNull(sl) or sl) or nil
     end
-    layerBox(addCheckbox(ctx, getText("UI_MinidoracatMiniMap_WorldAlso"), prefs.show.world, onLayerBox), "showWorld")
+    local chips = MapRows.add(ctx, getText(MapRows.SHOW_ON), { prefs.show.mini, prefs.show.world },
+        MapRows.onLayerChip)
+    layerBox(chips[1], "showMini")._switch = sw
+    layerBox(chips[2], "showWorld")._switch = sw
+    if not getBoolOption("WMLayers", true) then -- 擴充圖層也算 MiniMap 圖層（世界地圖 wrap 一起收起）
+        addNote(ctx, getText("UI_MinidoracatMiniMap_WMLayersOffNote"))
+    end
     local row = addSliderRow(ctx, getText("UI_MinidoracatMiniMap_LayerSize"),
         LAYER_SIZE, prefs.size, entryFormat(LAYER_SIZE), onLayerSize)
     row._owner, row._layerId = sec.owner, layer.id
@@ -1883,6 +1986,9 @@ local function studioMeasure(list, fontH, font)
             end
         end
     end
+    -- 「顯示在」列：標籤＋兩顆 chip（框架 chip 寬＝字寬＋20，間隔 4；標籤與 chip 之間留 8）
+    local chipsW = tw(MapRows.CHIPS[1]) + tw(MapRows.CHIPS[2]) + 44
+    local rowW = 0
     for i = 1, #list do
         local sec = list[i]
         navW = math.max(navW, tw(sec.label) + 30 + (sec.master and 48 or 0) + 16)
@@ -1893,11 +1999,16 @@ local function studioMeasure(list, fontH, font)
         labels(spec.sliders)
         labels(spec.nameSliders)
         labels(spec.distance)
+        if sec.maps then
+            for j = 1, #sec.maps do rowW = math.max(rowW, tw(sec.maps[j].label) + 8 + chipsW) end
+        elseif sec.addon and #sec.addon.layers > 0 then
+            rowW = math.max(rowW, tw(MapRows.SHOW_ON) + 8 + chipsW + 16) -- 圖層區塊外框內縮兩側各 8
+        end
     end
     -- 標籤欄放得下最長標籤（lane 為它保留 180 給滑桿）；下拉框放得下最寬選項：
     -- 下拉框寬＝lane－標籤欄－8，文字可用寬再扣框邊與箭頭 33，另留 4 餘量。
     -- 標籤欄若照 lane 比例夾，lane 為長標籤加寬也救不回截字（2026-10-09 八語 E2E，EN 也截）
-    local laneW = math.max(fontH * 21, tickW + 44 + 8, labelW + 180, labelW + 8 + optW + 33 + 4)
+    local laneW = math.max(fontH * 21, tickW + 44 + 8, labelW + 180, labelW + 8 + optW + 33 + 4, rowW)
     if laneW > fontH * 30 then laneW = fontH * 30 end
     return navW + 12, laneW, math.min(labelW, laneW - 180)
 end
@@ -2340,6 +2451,8 @@ local function toggleSettingsWindow(outer)
 end
 -- 主檔開窗入口（小地圖齒輪 onButton4 wrap／世界地圖爪印鈕）呼叫時查表＋nil 防呆
 Core.toggleSettingsWindow = toggleSettingsWindow
+-- 世界地圖 MiniMap 面板（_WorldPanel.lua）判「顯示在」格能不能操作：同設定視窗的伺服器閘門、牲畜與安全屋模式
+Core.settingsEntryEnabled = entryEnabled
 -- 外部改動引擎選項後的視窗刷新（小地圖視角鈕等）：視窗開著且屬同玩家才重建——
 -- 關著/他人視窗不動（開窗本就重建、他人視窗讀的是他自己的小地圖）
 Core.refreshSettingsWindow = function(pn)

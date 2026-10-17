@@ -98,6 +98,13 @@ assert(load(slice(mainSource, "map-text"), "=map-text", "t", setmetatable({ Core
         if sliders[id] == nil then return default end
         return sliders[id]
     end }, { __index = _G })))()
+-- 「顯示在」兩格（Core.layerOn）：抽主檔真實作，選項值由 opts 控制
+local opts = {}
+assert(load(slice(mainSource, "layer-maps"), "=layer-maps", "t", setmetatable({ Core = Core,
+    getBoolOption = function(id, default)
+        if opts[id] == nil then return default end
+        return opts[id]
+    end }, { __index = _G })))()
 local WorldMap = { createChildren = function() createCalls = createCalls + 1 end }
 local env = setmetatable({
     MinidoracatMiniMapCore = Core,
@@ -196,8 +203,23 @@ frame()
 check(panel.height > 0, "B7 放行後圖例恢復")
 Core.featureAllowed = nil
 
+-- B8 世界地圖不畫資源點（「顯示在」世界地圖那格關，或選項面板收起地圖圖層）：圖例一併收起；只關小地圖那格不影響
+opts.PoiIcons = false
+frame()
+check(panel.height > 0, "B8 只關小地圖那格：世界地圖圖例照畫")
+opts.WMPoiIcons = false
+frame()
+check(panel.width == 0 and panel.height == 0 and #drawn.tex == 0, "B8 世界地圖那格關：圖例收起")
+opts.WMPoiIcons = nil
+opts.WMLayers = false
+frame()
+check(panel.width == 0 and panel.height == 0, "B8 收起地圖圖層：圖例收起")
+opts.WMLayers, opts.PoiIcons = nil, nil
+frame()
+check(panel.height > 0, "B8 恢復後圖例照畫")
+
 if failures > 0 then
     print(("map legend: %d check(s) failed"):format(failures))
     os.exit(1)
 end
-print("map legend: layout A1-A7 + panel mount/visibility/position/content B1-B7 cases passed")
+print("map legend: layout A1-A7 + panel mount/visibility/position/content B1-B8 cases passed")

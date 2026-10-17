@@ -90,8 +90,14 @@ local function getSpecificPlayer(pn) return players[pn] end
 local trips, results, kicks = {}, {}, {}
 local activeTarget = nil
 local navRouteOption, gateAllows, sharedTargetsOption = true, true, nil
+-- 世界地圖那格（WMNavRoute）：nil＝跟小地圖那格同值（舊測試的「關閉」＝兩張地圖都關）
+local wmNavRouteOption = nil
 local function getBoolOption(name, default)
     if name == "NavRoute" then return navRouteOption end
+    if name == "WMNavRoute" then
+        if wmNavRouteOption == nil then return navRouteOption end
+        return wmNavRouteOption
+    end
     if name == "SharedTargets" and sharedTargetsOption ~= nil then return sharedTargetsOption end
     return default
 end
@@ -149,13 +155,20 @@ return {
     setNow = function(v) nowMs = v end,
     setTarget = function(t) activeTarget = t end,
     setOption = function(v) navRouteOption = v end,
+    setWorldOption = function(v) wmNavRouteOption = v end,
     setGate = function(v) gateAllows = v end,
     setSurfaces = function(mm, wm) getPlayerMiniMap = mm; ISWorldMap_instance = wm end,
 }
 ]=]
 
+-- 「顯示在」兩格（Core.layerOn）用主檔真實作，讀上面 prelude 的 getBoolOption
+local mainFile = assert(io.open(
+    "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua", "rb"))
+local layerMaps = assert(mainFile:read("*a"):gsub("\r\n", "\n"):match(
+    "%-%- test:layer%-maps:start\n(.-)\n%-%- test:layer%-maps:end"), "找不到主檔 layer-maps 測試區段")
+mainFile:close()
 local T = assert(compile(
-    prelude .. section("nav%-cache") .. "\n" .. section("nav%-preview") .. "\n"
+    prelude .. layerMaps .. "\n" .. section("nav%-cache") .. "\n" .. section("nav%-preview") .. "\n"
         .. section("nav%-preview%-draw") .. "\n" .. section("nav%-route%-draw") .. "\n" .. suffix,
     "itinerary-routes"))(NavCore, GRAPH)
 local Core = T.Core
@@ -345,6 +358,14 @@ assert(st == "disabled" and total == 0 and T.navPreview[0].segs == nil,
 T.setOption(true)
 T.tick()
 assert(select(2, Core.navPreviewState(0)) == 1, "P10: 選項恢復即重新排程")
+-- 只關小地圖那格：世界地圖還要畫，預覽照算
+T.setOption(false)
+T.setWorldOption(true)
+T.tick()
+assert(Core.navPreviewState(0) ~= "disabled", "P10: 只關小地圖那格＝世界地圖照畫，預覽不停")
+T.setOption(true)
+T.setWorldOption(nil)
+T.tick()
 
 -- 導航 gate（GPS 道具）擋住：同樣停算、可恢復
 T.setGate(false)
@@ -690,6 +711,21 @@ do
     own, shared, preview = summary()
     assert(own == 1 and shared == 0 and preview > 0, "P38: SharedTargets 關＝只藏分享路線")
     T.setSharedTargets(nil)
+    -- P39：「顯示在」小地圖那格關＝小地圖不畫自己的路線與分享路線；世界地圖照畫
+    T.setWorldOption(true)
+    T.setOption(false)
+    T.resetDraws()
+    T.drawNavRoute(inner)
+    own, shared, preview = summary()
+    assert(own == 0 and shared == 0 and preview == 0, "P39: 小地圖那格關＝小地圖不畫路線")
+    T.setSurfaces(nil, inner)
+    T.resetDraws()
+    T.drawNavRoute(inner)
+    own, shared, preview = summary()
+    assert(own == 1 and shared == 1 and preview > 0, "P39: 世界地圖那格開＝世界地圖照畫")
+    T.setSurfaces(nil, nil)
+    T.setOption(true)
+    T.setWorldOption(nil)
     T.setShared(nil)
     T.setTarget(nil)
 end
@@ -698,4 +734,4 @@ print("test_itinerary_routes: OK（預覽分段/真路網距離 P1-P3、快取�
     .. "失效條件 P5-P7、引擎/選項/gate P8-P10b、預覽例外 P11、零殘留 P12-P13、"
     .. "16 站上限 P14、回報邊界 P15-P17、非繪製維護 P18-P23、"
     .. "多站預設自動＋雙表面繪製 P24-P26、單站/追加/明確關閉 P27-P29、"
-    .. "換角色隔離與清空 P30-P32、活動段終錨 P33-P36、功能閘門 own 分流 P37、分享顯示開關 P38）")
+    .. "換角色隔離與清空 P30-P32、活動段終錨 P33-P36、功能閘門 own 分流 P37、分享顯示開關 P38、顯示在 P39）")

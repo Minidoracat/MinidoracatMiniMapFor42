@@ -3,21 +3,22 @@
 -- 20 類，加上地圖包用 registerMapResources 註冊的地圖；v3 逐房間矩形：r[1]=最大合併矩形為圖標錨點、
 -- 區塊畫主樓層各房間）轉成
 -- 主 MOD zone renderer 的 schema，並以「內部 provider」註冊
--- （registerZoneProvider("MinidoracatMiniMapFor42.POI", fn, nil, internal=true)——POI 有自己的
--- PoiIcons/PoiBlocks/類別勾選，不走 per-provider 母開關，且 internal 使其不受 ZoneLayer 總閘連坐）。
+-- （registerZoneProvider("MinidoracatMiniMapFor42.POI", fn, nil, "poi")——POI 有自己的「顯示在」兩格
+-- （PoiIcons／WMPoiIcons）、PoiBlocks 與類別勾選，不走 per-provider 母開關，也不受自訂區域的開關連坐）。
 --
 -- 檔名字母序在 MinidoracatMiniMap.lua 之後載入，故 registerZoneProvider 已就緒，
--- ModOptions（PoiIcons/PoiBlocks/Cat_*）也已由主檔在 MinidoracatMiniMap 命名空間註冊。
+-- ModOptions（PoiIcons/WMPoiIcons/PoiBlocks/Cat_*）也已由主檔在 MinidoracatMiniMap 命名空間註冊。
 --
 -- 資源版本（ModOptions PoiSource／沙盒 PoiSourceDefault、PoiSourceLock，effectiveSource 解析）：小地圖資源＝上述
 -- 烘焙資料（本檔原本的路徑；合併與地圖優先序過濾在 shared/MinidoracatMiniMapResources.lua）；房間資料＝
 -- 同一個 shared 檔執行期讀 RoomDef 的結果，含地圖 MOD，由 buildRoomConverted 轉成同一種 zone（說明見該函式）。
 --
--- 顯示模式（兩顆開關獨立）：
---   PoiIcons（預設開）→ zone 帶 icon = { tex, r, g, b }（圖標即識別，主檔 iconPass 繪）
---   PoiBlocks（預設關）→ zone 帶 fillAlpha（類別色半透明填色，無框線）＋
+-- 顯示模式（2026-10-18 起資源點分類開關也收區塊）：
+--   「顯示在」任一格開（Core.layerOn("poi")：PoiIcons＝小地圖、WMPoiIcons＝世界地圖）→ zone 帶
+--     icon = { tex, r, g, b }（圖標即識別，主檔 iconPass 繪）；哪張地圖畫由 _Zones 依表面再判一次
+--   再加 PoiBlocks（預設關）→ zone 帶 fillAlpha（類別色半透明填色，無框線）＋
 --     name（getText(nameKey)）
---   兩者皆關 or 該類別未勾 → 該 zone 不納入
+--   兩格都關 or 該類別未勾 → 該 zone 不納入（區塊也不畫）
 -- 區塊形狀（PoiWholeBuilding，預設開，0.14.2 起）：關＝逐房間矩形、開＝整棟一框（資料
 -- 的 e.b）。缺 b 或 b 尺寸非正的條目自動退回逐房間。
 -- 嚴格限定為「區塊模式的外觀選項」，三個隔離缺一即違反 UI 承諾：
@@ -63,6 +64,9 @@ if not (MinidoracatMiniMapAPI and MinidoracatMiniMapAPI.registerZoneProvider) th
     print("[" .. MODULE .. "] no registerZoneProvider, POI disabled")
     return
 end
+
+-- 主檔 Core（字母序先載；版本守衛已過＝Core.layerOn 已在）：「顯示在」兩格判斷
+local Core = MinidoracatMiniMapCore
 
 --------------------------------------------------------------------------------
 -- 狀態（module-level upvalue；closure 以參照捕捉）
@@ -206,8 +210,9 @@ local function buildRoomConverted()
     local legend = { count = 0, basement = false }
     local cats = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.CATEGORIES
     local order = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.ORDER
-    local iconsOn = getBoolOption("PoiIcons", true)
-    local blocksOn = getBoolOption("PoiBlocks", false)
+    -- 「顯示在」任一格開才建（哪張地圖畫由 _Zones 依表面判）；區塊跟著資源點開關，兩格都關＝區塊也不畫
+    local iconsOn = Core.layerOn("poi")
+    local blocksOn = iconsOn and getBoolOption("PoiBlocks", false)
     local API = MinidoracatMiniMapResourceAPI
     local list, n = nil, 0
     if API and API.buildingsIn then
@@ -301,8 +306,8 @@ local function buildPoiConverted(source)
     local cats = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.CATEGORIES
     -- iconsOn/blocksOn 宣告在資料檢查之外：檔尾的聚合旗標（ZR-1）要用——資料缺失
     -- 時 built 為空陣列、旗標仍照開關設定（空表怎麼設都不畫，語意一致）
-    local iconsOn = getBoolOption("PoiIcons", true)
-    local blocksOn = getBoolOption("PoiBlocks", false)
+    local iconsOn = Core.layerOn("poi")
+    local blocksOn = iconsOn and getBoolOption("PoiBlocks", false)
     if type(data) == "table" and type(cats) == "table" then
         local colorMode = getBoolOption("PoiColorIcons", false)
         local wholeOn = getBoolOption("PoiWholeBuilding", true)
@@ -427,9 +432,10 @@ local function buildPoiConverted(source)
 end
 -- test:poi-convert:end
 
--- 開關/類別勾選簽章：資源版本（房間資料版另帶掃描是否完成）、PoiIcons、PoiBlocks、
+-- 開關/類別勾選簽章：資源版本（房間資料版另帶掃描是否完成）、資源點有沒有任一張地圖開、PoiBlocks、
 -- PoiColorIcons、PoiWholeBuilding 與 20 類 Cat_ 的當前值串接。變動即重建（樣式與區塊
--- 形狀切換走此路，下一 tick 重載對應材質集/幾何）。房間資料版沒掃完時 prepare 會開始
+-- 形狀切換走此路，下一 tick 重載對應材質集/幾何）。只換「顯示在」哪一格不重建：快取兩張地圖共用，
+-- 哪張地圖畫由 _Zones 判。房間資料版沒掃完時 prepare 會開始
 -- 背景掃描；掃完那一次簽章從 P 變 R，觸發重建。回傳第二值＝生效的資源版本
 local function currentSig()
     local source = effectiveSource()
@@ -438,7 +444,7 @@ local function currentSig()
         local API = MinidoracatMiniMapResourceAPI
         ready = (API and API.prepare and API.prepare("rooms")) and "R" or "P"
     end
-    local parts = { source, ready, getBoolOption("PoiIcons", true) and "1" or "0",
+    local parts = { source, ready, Core.layerOn("poi") and "1" or "0",
         getBoolOption("PoiBlocks", false) and "1" or "0",
         getBoolOption("PoiColorIcons", false) and "1" or "0",
         getBoolOption("PoiWholeBuilding", true) and "1" or "0" }
@@ -452,14 +458,13 @@ local function currentSig()
 end
 
 -- providerFn（主 MOD 每幀呼叫：世界＋小地圖）：只回快取，不重建。
--- internal=true：本體內部 provider，不受主檔 ZoneLayer 總閘連坐，由自家開關控制；
+-- internal="poi"：本體內部 provider，不受自訂區域的開關連坐，由資源點的「顯示在」格與自家開關控制；
 -- 另受主檔的 POI 顯示距離閘連坐（沙盒 PoiDisplayDistance／全域上限 AllInfoDistance
 -- ＋玩家自訂距離，取最小正值）——距離啟用時 zone 依玩家距離被裁，非本檔可見的邏輯。
-MinidoracatMiniMapAPI.registerZoneProvider(OWN_PROVIDER_ID, function() return poiZones end, nil, true)
+MinidoracatMiniMapAPI.registerZoneProvider(OWN_PROVIDER_ID, function() return poiZones end, nil, "poi")
 
 -- 跨檔匯出（主檔先載、Core 已建好）：設定視窗類別格與世界地圖圖例都經此取圖，
 -- 彩色／單色與地圖同一套選擇（彩色缺檔回退單色時 isColor＝false，呼叫端照樣染類別色）
-local Core = MinidoracatMiniMapCore
 if Core then
     Core.poiIconTexture = iconTexture
     Core.poiLegend = function() return poiLegend end

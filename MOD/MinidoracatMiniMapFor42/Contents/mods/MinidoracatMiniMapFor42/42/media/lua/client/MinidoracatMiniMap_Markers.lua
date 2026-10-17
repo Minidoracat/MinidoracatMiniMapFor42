@@ -142,14 +142,23 @@ local function dropOverride(key)
     end
 end
 
--- field＝"showMini"｜"showWorld"｜"size"｜"namesMini"｜"namesWorld"；回 true＝已寫入。
--- 與預設相同的層從字串移除（只存玩家改過的層）
+-- field＝"show"｜"showMini"｜"showWorld"｜"size"｜"namesMini"｜"namesWorld"；回 true＝已寫入。
+-- "show"＝設定視窗圖層區塊的開關（兩格合計）：false＝兩張地圖都不畫；true＝回到 addon 給的預設
+-- （預設兩張都關的層改成兩張都開，免得打開了什麼都沒有）。與預設相同的層從字串移除（只存玩家改過的層）
 function Core.setMarkerLayer(owner, id, field, value)
     local p = markerLayer(owner, id)
     if not p then return false end
+    local d = layerDefs[owner][id].default
     local v = { p.show.mini, p.show.world, p.size,
         p.names and p.names.mini or false, p.names and p.names.world or false }
-    if field == "showMini" then v[1] = value == true
+    if field == "show" then
+        if value == true then
+            v[1], v[2] = d.show.mini, d.show.world
+            if not (v[1] or v[2]) then v[1], v[2] = true, true end
+        else
+            v[1], v[2] = false, false
+        end
+    elseif field == "showMini" then v[1] = value == true
     elseif field == "showWorld" then v[2] = value == true
     elseif field == "size" then
         if type(value) ~= "number" or value ~= value then return false end
@@ -158,7 +167,6 @@ function Core.setMarkerLayer(owner, id, field, value)
     elseif field == "namesMini" and p.names then v[4] = value == true
     elseif field == "namesWorld" and p.names then v[5] = value == true
     else return false end
-    local d = layerDefs[owner][id].default
     local key = owner .. "/" .. id
     if v[1] == d.show.mini and v[2] == d.show.world and v[3] == d.size
             and (not d.names or (v[4] == d.names.mini and v[5] == d.names.world)) then

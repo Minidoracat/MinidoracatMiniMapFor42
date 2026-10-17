@@ -475,8 +475,28 @@ local function zoneFrame(inner)
     f.acx, f.acy = acx, acy
     f.p0x, f.p0y, f.sxx, f.sxy, f.syx, f.syy = deriveAffine(mapAPI, acx, acy)
     f.ppx, f.ppy, f.pdist2, f.zdist2, f.poiBlocked, f.zoneBlocked = distGateParams(inner)
+    -- 「顯示在」這張地圖的格（Core.LAYER_MAPS）：provider.layer＝內部 provider 的圖層名（poi／parking），
+    -- 外部 provider 一律是自訂區域（zones）。表重用、不每幀配置
+    local on = f.layerOn
+    if not on then
+        on = {}
+        f.layerOn = on
+    end
+    local surface = inner == ISWorldMap_instance and "world" or "mini"
+    on.poi = Core.layerOn("poi", surface)
+    on.parking = Core.layerOn("parking", surface)
+    on.zones = Core.layerOn("zones", surface)
     f.tok = tok -- 最後才標記：中途拋錯的半套不會被同幀其他 pass 沿用
     return f
+end
+
+-- provider 這一幀能不能畫：「顯示在」這張地圖的格＋per-provider 母開關（optionKey 有給才 gate）。
+-- 沒有 layer 的內部 provider（離線測試直接塞的表）只看母開關
+local function providerShown(fr, provider)
+    local key = provider.layer
+    if key == nil and not provider.internal then key = "zones" end
+    if key ~= nil and not fr.layerOn[key] then return false end
+    return not provider.optionKey or getBoolOption(provider.optionKey, true)
 end
 
 local function drawZoneFillBody(inner)
@@ -490,18 +510,16 @@ local function drawZoneFillBody(inner)
         fr.ppx, fr.ppy, fr.pdist2, fr.zdist2, fr.poiBlocked, fr.zoneBlocked
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
-        -- 閘門：外部 provider 受 ZoneLayer 總閘（internal 不受）＋ per-provider 母開關
-        -- （optionKey 有給才 gate）；距離閘 per-provider——internal 走 POI 距離
-        -- （PoiDisplayDistance），外部走自訂區域距離（ZoneDisplayDistance），皆含
+        -- 閘門：「顯示在」這張地圖的格（內部 POI／停車場各自一層、外部 provider＝自訂區域）＋
+        -- per-provider 母開關（optionKey 有給才 gate）——providerShown；距離閘 per-provider——internal
+        -- 走 POI 距離（PoiDisplayDistance），外部走自訂區域距離（ZoneDisplayDistance），皆含
         -- 全域上限與玩家滑條（見 distGateParams；該類距離啟用但缺玩家＝fail closed
         -- 整段跳過）；任一關則 pok 留 nil、整段跳過
         local gd2, gBlocked
         if provider.internal then gd2, gBlocked = pdist2, poiBlocked
         else gd2, gBlocked = zdist2, zoneBlocked end
         local pok, zones
-        if not gBlocked
-            and (provider.internal or getBoolOption("ZoneLayer", true))
-            and (not provider.optionKey or getBoolOption(provider.optionKey, true)) then
+        if not gBlocked and providerShown(fr, provider) then
             -- A2：每個 provider 個別 pcall，壞的跳過續跑下一個（附 owner，log-once）
             pok, zones = pcall(provider.fn)
         end
@@ -650,16 +668,14 @@ local function drawZoneLines(inner)
         fr.ppx, fr.ppy, fr.pdist2, fr.zdist2, fr.poiBlocked, fr.zoneBlocked
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
-        -- 閘門（同 drawZoneFill）：外部受 ZoneLayer 總閘＋per-provider 母開關＋自訂
-        -- 區域距離閘；internal 不受，但另受 POI 顯示距離閘（皆含全域上限＋玩家
+        -- 閘門（同 drawZoneFill）：「顯示在」這張地圖的格＋per-provider 母開關（providerShown）＋
+        -- 距離閘：外部走自訂區域距離、internal 走 POI 顯示距離（皆含全域上限＋玩家
         -- 滑條；該類距離啟用但缺玩家＝fail closed）
         local gd2, gBlocked
         if provider.internal then gd2, gBlocked = pdist2, poiBlocked
         else gd2, gBlocked = zdist2, zoneBlocked end
         local pok, zones
-        if not gBlocked
-            and (provider.internal or getBoolOption("ZoneLayer", true))
-            and (not provider.optionKey or getBoolOption(provider.optionKey, true)) then
+        if not gBlocked and providerShown(fr, provider) then
             -- A2：每個 provider 個別 pcall，壞的跳過續跑下一個（附 owner，log-once）
             pok, zones = pcall(provider.fn)
         end
@@ -904,16 +920,14 @@ local function drawZoneIcons(inner)
         local provider = registeredZoneProviders[pi]
         s = provider.internal and sPoi or sZone
         half = s / 2
-        -- 閘門（同 drawZoneFill）：外部受 ZoneLayer 總閘＋per-provider 母開關＋自訂
-        -- 區域距離閘；internal 不受，但另受 POI 顯示距離閘（皆含全域上限＋玩家
+        -- 閘門（同 drawZoneFill）：「顯示在」這張地圖的格＋per-provider 母開關（providerShown）＋
+        -- 距離閘：外部走自訂區域距離、internal 走 POI 顯示距離（皆含全域上限＋玩家
         -- 滑條；該類距離啟用但缺玩家＝fail closed）
         local gd2, gBlocked
         if provider.internal then gd2, gBlocked = pdist2, poiBlocked
         else gd2, gBlocked = zdist2, zoneBlocked end
         local pok, zones
-        if not gBlocked
-            and (provider.internal or getBoolOption("ZoneLayer", true))
-            and (not provider.optionKey or getBoolOption(provider.optionKey, true)) then
+        if not gBlocked and providerShown(fr, provider) then
             pok, zones = pcall(provider.fn)
         end
         if pok == false then

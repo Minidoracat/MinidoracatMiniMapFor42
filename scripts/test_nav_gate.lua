@@ -29,9 +29,12 @@ local navSource = readFile(navPath)
 local itinerarySource = readFile(itineraryPath)
 local featureSource = readFile(featurePath)
 -- 主檔的文字／標記大小 helper（Core.mapTextZoom／drawMapText／markerIconSize）：抽真實作，
--- 滑條恆回預設值（本測試驗的是繪製閘門與唯讀，不是尺寸）
-local mapTextSource = assert(readFile(CLIENT .. "MinidoracatMiniMap.lua"):match(
+-- 滑條恆回預設值（本測試驗的是繪製閘門與唯讀，不是尺寸）；「顯示在」兩格（Core.layerOn）同樣抽真實作
+local mainSource = readFile(CLIENT .. "MinidoracatMiniMap.lua")
+local mapTextSource = assert(mainSource:match(
     "%-%- test:map%-text:start\n(.-)\n%-%- test:map%-text:end"), "找不到主檔 map-text 測試區段")
+local layerMapsSource = assert(mainSource:match(
+    "%-%- test:layer%-maps:start\n(.-)\n%-%- test:layer%-maps:end"), "找不到主檔 layer-maps 測試區段")
 local compile = loadstring or load
 
 --------------------------------------------------------------------------------
@@ -59,6 +62,8 @@ local function fixture(rightClick)
     }
     assert(load(mapTextSource, "map-text", "t", setmetatable({ Core = core,
         getSliderValue = function(_, default) return default end }, { __index = _G })))()
+    assert(load(layerMapsSource, "layer-maps", "t", setmetatable({ Core = core,
+        getBoolOption = core.getBoolOption }, { __index = _G })))()
     local api = {}
     -- 小地圖右鍵：原版 onRightMouseUp 消耗 rightMouseDown 旗標、留下只有 debug 項的選單
     -- （ISMiniMap.lua:280-298，numOptions 從 1 起算）；addOption 同原版回傳 option。player 單例有
@@ -467,6 +472,20 @@ do
     t.resetDraws()
     Core.drawNavTargets(inner)
     assert(hasText(t, "Bob"), "D7 重新開啟即再顯示")
+    -- D7b: 分享格分兩張地圖：世界地圖那格關＝世界地圖不畫分享旗，小地圖照畫
+    ISWorldMap_instance = inner
+    t.resetDraws()
+    Core.drawNavTargets(inner)
+    assert(hasText(t, "Bob"), "D7b 世界地圖那格開＝世界地圖畫分享旗")
+    t.opts.WMSharedTargets = false
+    t.resetDraws()
+    Core.drawNavTargets(inner)
+    assert(not hasText(t, "Bob"), "D7b 世界地圖那格關＝世界地圖不畫分享旗")
+    ISWorldMap_instance = nil
+    t.resetDraws()
+    Core.drawNavTargets(inner)
+    assert(hasText(t, "Bob"), "D7b 小地圖那格開＝小地圖照畫")
+    t.opts.WMSharedTargets = nil
 
     -- D5: 行程清空＝站點層不畫，分享旗與搜尋 ping 仍照畫（無行程不得吃掉其他層）
     t.draws.routeFail = false

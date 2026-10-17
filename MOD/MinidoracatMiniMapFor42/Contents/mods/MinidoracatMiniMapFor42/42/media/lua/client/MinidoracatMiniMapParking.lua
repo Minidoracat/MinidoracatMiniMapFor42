@@ -9,7 +9,7 @@
 -- 圖標大小、透明度跟資源點同一組設定（renderer 對 internal provider 一律用 PoiIconSize／PoiIconAlpha）。
 --
 -- 快取契約同 POI：providerFn 只回快取參照；OnGameStart 首建，之後 OnTick 每 15 tick 比對簽章
--- （ParkingLayer、PoiColorIcons、合併清單的表）變了才整表重建。
+-- （停車場有沒有任一張地圖開、PoiColorIcons、合併清單的表）變了才整表重建；哪張地圖畫由 _Zones 依「顯示在」判。
 -- provider 在 OnGameStart 才註冊：圖標去重疊是同一螢幕格先畫先贏，排在 POI provider 之後＝資源點圖標優先。
 
 local OWN_PROVIDER_ID = "MinidoracatMiniMapFor42.Parking"
@@ -42,7 +42,7 @@ end
 
 local function build(data)
     local built, icon = {}, nil
-    local on = Core.getBoolOption("ParkingLayer", true)
+    local on = Core.layerOn("parking")
     if on and type(data) == "table" then
         local tex, isColor
         if Core.poiIconTexture then tex, isColor = Core.poiIconTexture("parking", Core.getBoolOption("PoiColorIcons", false)) end
@@ -87,7 +87,7 @@ local function build(data)
 end
 
 local function currentSig(data)
-    return (Core.getBoolOption("ParkingLayer", true) and "1" or "0")
+    return (Core.layerOn("parking") and "1" or "0")
         .. (Core.getBoolOption("PoiColorIcons", false) and "1" or "0") .. tostring(data)
 end
 
@@ -105,7 +105,7 @@ Events.OnGameStart.Add(function()
     -- 同一次 Lua 載入再開第二局時 OnGameStart 會再觸發：provider 只註冊一次，否則每幀畫兩遍
     if not registered then
         registered = true
-        MinidoracatMiniMapAPI.registerZoneProvider(OWN_PROVIDER_ID, function() return zones end, nil, true)
+        MinidoracatMiniMapAPI.registerZoneProvider(OWN_PROVIDER_ID, function() return zones end, nil, "parking")
     end
     rebuildIfChanged()
 end)

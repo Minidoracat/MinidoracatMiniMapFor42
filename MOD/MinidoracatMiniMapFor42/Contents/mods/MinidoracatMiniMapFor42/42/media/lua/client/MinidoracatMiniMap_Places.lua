@@ -461,8 +461,8 @@ local function drawPlaceAt(inner, home, ux, uy, iconSize, text, textW, tz, lblH)
 end
 
 local function drawPlaces(inner)
-    -- 「顯示家與收藏點」關＝地圖不畫；回家、收藏清單與右鍵選單照常（只是顯示開關）
-    if Core.getBoolOption and not Core.getBoolOption("Places", true) then return end
+    -- 「顯示在」這張地圖的格（Places／WMPlaces）關＝這張地圖不畫；回家、收藏清單與右鍵選單照常（只是顯示開關）
+    if not Core.layerOn("places", inner == ISWorldMap_instance and "world" or "mini") then return end
     local pn = inner.playerNum or 0
     local slot = ensure(pn)
     local state = slot and slot.state

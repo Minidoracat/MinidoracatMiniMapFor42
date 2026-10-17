@@ -239,7 +239,13 @@ return {
     setOpt = function(k, v) opts[k] = v end,
 }
 ]=]
-local conv = assert((loadstring or load)(prelude .. "\n" .. body .. "\n" .. suffix))()
+-- 「顯示在」兩格（Core.layerOn("poi")）用主檔真實作，讀上面 prelude 的 opts
+fh = assert(io.open(ROOT .. "client/MinidoracatMiniMap.lua", "rb"))
+local layerMaps = assert(fh:read("*a"):gsub("\r\n", "\n"):match(
+    "%-%- test:layer%-maps:start\n(.-)\n%-%- test:layer%-maps:end"), "找不到主檔 layer-maps 測試區段")
+fh:close()
+local conv = assert((loadstring or load)(prelude .. "\nlocal Core = {}\n" .. layerMaps .. "\n" .. body .. "\n"
+    .. suffix))()
 
 local fixture = {
     { x = 0, y = 0, w = 40, h = 30, cats = { police = true, prison = true },
@@ -294,11 +300,15 @@ conv.setOpt("PoiBlocks", false)
 conv.build("rooms")
 z = conv.zones()
 check(#z == 3 and z[1].fillAlpha == 0 and z[1].name == nil and z.hasFill == false, "P8 區塊關：只有圖標")
--- 圖標也關：沒有 zone
+-- 資源點兩張地圖都關：沒有 zone；世界地圖那格還開著就照建（哪張地圖畫由 _Zones 判）
 conv.setOpt("PoiIcons", false)
 conv.build("rooms")
-eq(#conv.zones(), 0, "P8 圖標與區塊都關：沒有 zone")
+eq(#conv.zones(), 3, "P8 只關小地圖：照建")
+conv.setOpt("WMPoiIcons", false)
+conv.build("rooms")
+eq(#conv.zones(), 0, "P8 兩張地圖都關：沒有 zone")
 conv.setOpt("PoiIcons", nil)
+conv.setOpt("WMPoiIcons", nil)
 conv.setOpt("PoiBlocks", true)
 
 -- 還沒掃完：空白、不拋錯
@@ -549,12 +559,15 @@ do
         getBoolOption = function(id, default) if opts[id] == nil then return default end return opts[id] end,
         poiIconTexture = function(cat, color) return "TEX_" .. cat .. (color and "_c" or ""), color end,
     }
+    assert((loadstring or load)("local Core, getBoolOption = ...\n" .. layerMaps))(MinidoracatMiniMapCore,
+        MinidoracatMiniMapCore.getBoolOption)
     MinidoracatMiniMapResources = { parkingEntries = function() return entries end }
     getText = function(k) return k end
     assert(loadfile(ROOT .. "client/MinidoracatMiniMapParking.lua"))()
     eq(#providers, 0, "Z1 載入時不註冊（OnGameStart 才註冊，排在 POI 之後）")
     onStart()
-    check(#providers == 1 and providers[1].internal == true and providers[1].label == nil, "Z1 OnGameStart 註冊內部 provider")
+    check(#providers == 1 and providers[1].internal == "parking" and providers[1].label == nil,
+        "Z1 OnGameStart 註冊內部 provider（帶「顯示在」圖層名）")
     local z = providers[1].fn()
     eq(#z, 2, "Z2 一區一個 zone")
     check(z[1].rects[2].x1 == 20 and z[1].rects[2].x2 == 25 and z[1].lodRect.y1 == 8 and z[1].lodRect.y2 == 32,
@@ -571,9 +584,12 @@ do
     check(z[1].icon.tex == "TEX_parking_c" and z[1].icon.r == 1 and z[1].icon.b == 1, "Z5 彩色圖標染白")
     opts.ParkingLayer = false
     for _ = 1, 15 do onTick() end
+    eq(#providers[1].fn(), 2, "Z6 只關小地圖：照建（哪張地圖畫由 _Zones 判）")
+    opts.WMParkingLayer = false
+    for _ = 1, 15 do onTick() end
     z = providers[1].fn()
-    check(#z == 0 and z.hasFill == false and z.hasIcon == false, "Z6 ParkingLayer 關：空表")
-    opts.ParkingLayer = nil
+    check(#z == 0 and z.hasFill == false and z.hasIcon == false, "Z6 兩張地圖都關：空表")
+    opts.ParkingLayer, opts.WMParkingLayer = nil, nil
     entries = { count = 0 }
     for _ = 1, 15 do onTick() end
     eq(#providers[1].fn(), 0, "Z7 合併清單換了就重建")

@@ -449,11 +449,15 @@ return {
     setFaction = function(members) factionMembers = members end,
     modeAllows = safehouseModeAllows,
     safehouse = safehouse,
+    inner = function() return inner end,
 }
 ]=]
+-- 「顯示在」兩格（Core.layerOn）：抽主檔真實作，讀 prelude 的 opts
+local layerMapsBody = assert(source:match(
+    "%-%- test:layer%-maps:start\n(.-)\n%-%- test:layer%-maps:end"), "找不到主檔 layer-maps 測試區段")
 local safehouseChunk, safehouseErr = compile(safehousePrelude .. "\n" .. mapTextBody
     .. "\nlocal mapTextZoom, drawMapText = Core.mapTextZoom, Core.drawMapText\n"
-    .. affineBody .. "\n" .. safehouseBody .. "\n" .. safehouseSuffix)
+    .. layerMapsBody .. "\n" .. affineBody .. "\n" .. safehouseBody .. "\n" .. safehouseSuffix)
 assert(safehouseChunk, safehouseErr)
 local safehouseHarness = safehouseChunk()
 
@@ -596,17 +600,17 @@ assert(settingsSource:find('sandboxGate%("AllowZombieDots", true, pn%)')
 local stepOneCount = select(2, settingsSource:gsub('step = 1, fmt = "%%d"', ""))
 assert(stepOneCount == 8, "統一視窗距離滑條 step 應全為 1（得 " .. stepOneCount .. "）")
 
-local worldMapMappings = {
-    { "WMZombieDots", "AllowZombieDots" },
-    { "WMAnimalWild", "AllowAnimalDots" },
-    { "WMAnimalLivestock", "AllowAnimalDots" },
-    { "WMVehicleDots", "AllowVehicleDots" },
+local layerMappings = {
+    { "ZombieDots", "AllowZombieDots" }, { "WMZombieDots", "AllowZombieDots" },
+    { "AnimalWild", "AllowAnimalDots" }, { "WMAnimalWild", "AllowAnimalDots" },
+    { "AnimalLivestock", "AllowAnimalDots" }, { "WMAnimalLivestock", "AllowAnimalDots" },
+    { "VehicleDots", "AllowVehicleDots" }, { "WMVehicleDots", "AllowVehicleDots" },
 }
--- 死函式 unifiedWorldMapTickOn 已刪；綁定宣告守衛保留（builder 現場判等價邏輯
--- 在 Settings 的 tick.enable 與 studioBoolEnabled，id-gate 對應仍由此釘住）
-for _, mapping in ipairs(worldMapMappings) do
+-- 「顯示在」兩格的伺服器閘門宣告在主檔 Core.LAYER_MAPS（設定視窗 chip 的停用與分類開關都讀它）；
+-- 同一格（同一對大括號內）必須帶對的 gate
+for _, mapping in ipairs(layerMappings) do
     local id, gate = mapping[1], mapping[2]
-    assert(settingsSource:match('id = "' .. id .. '".-gate = "' .. gate .. '"'),
+    assert(source:match('{ id = "' .. id .. '"[^}]-gate = "' .. gate .. '"'),
         id .. " 未綁定正確伺服器閘門")
 end
 
@@ -846,6 +850,20 @@ safehouseHarness.setPlayerPresent(true)
 safehouseHarness.setPlayerPosition(15, 15)
 safehouseHarness.setDistance(1)
 assert(safehouseHarness.draw() == 4, "玩家位於安全屋矩形內時應顯示")
+-- 「顯示在」兩格：小地圖那格關＝小地圖不畫；世界地圖那格照畫；世界地圖選項收起地圖圖層＝世界地圖不畫
+safehouseHarness.setOption("SafehouseOnMini", false)
+assert(safehouseHarness.draw() == 0, "SafehouseOnMini 關＝小地圖不畫安全屋")
+ISWorldMap_instance = safehouseHarness.inner()
+assert(safehouseHarness.draw() == 4, "SafehouseOnWorld 開＝世界地圖照畫")
+safehouseHarness.setOption("WMLayers", false)
+assert(safehouseHarness.draw() == 0, "收起地圖圖層＝世界地圖不畫安全屋")
+safehouseHarness.setOption("WMLayers", nil)
+safehouseHarness.setOption("SafehouseOnWorld", false)
+assert(safehouseHarness.draw() == 0, "SafehouseOnWorld 關＝世界地圖不畫安全屋")
+ISWorldMap_instance = nil
+safehouseHarness.setOption("SafehouseOnMini", nil)
+safehouseHarness.setOption("SafehouseOnWorld", nil)
+assert(safehouseHarness.draw() == 4, "兩格恢復＝小地圖照畫")
 -- 顯示模式四檔（隱私旁路生效時 safehouseDisplayMode 回 3＝與此處模式3同路徑）
 safehouseHarness.setDistance(nil)
 safehouseHarness.setHouses({ safehouseHarness.safehouse(10, 10, 20, 20, false, "Z"),

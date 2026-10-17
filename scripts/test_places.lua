@@ -10,8 +10,12 @@ local function readFile(path)
 end
 local sources = { readFile(itineraryPath), readFile(placesPath) }
 -- 主檔地圖文字／標記大小 helper：抽 test:map-text 真實作，滑條值由 placeSliders 控制
-local mapTextSource = assert(readFile(dir .. "MinidoracatMiniMap.lua"):gsub("\r\n", "\n"):match(
+local mainSource = readFile(dir .. "MinidoracatMiniMap.lua"):gsub("\r\n", "\n")
+local mapTextSource = assert(mainSource:match(
     "%-%- test:map%-text:start\n(.-)\n%-%- test:map%-text:end"), "找不到主檔 map-text 測試區段")
+-- 「顯示在」兩格（Core.layerOn）：抽 test:layer-maps 真實作，選項值由 placeOpts 控制
+local layerMapsSource = assert(mainSource:match(
+    "%-%- test:layer%-maps:start\n(.-)\n%-%- test:layer%-maps:end"), "找不到主檔 layer-maps 測試區段")
 -- 右鍵導航項鎖定 helper（Core.navMenuLock）：抽 _Nav.lua 的真實作
 local menuLockSource = assert(readFile(dir .. "MinidoracatMiniMap_Nav.lua"):gsub("\r\n", "\n"):match(
     "%-%- test:nav%-menu%-lock:start\n(.-)\n%-%- test:nav%-menu%-lock:end"), "找不到 _Nav nav-menu-lock 測試區段")
@@ -42,6 +46,8 @@ local function fixture(opts)
             if placeSliders[id] == nil then return default end
             return placeSliders[id]
         end }, { __index = _G })))()
+    assert(load(layerMapsSource, "layer-maps", "t", setmetatable({ Core = core,
+        getBoolOption = core.getBoolOption }, { __index = _G })))()
     -- 白 glyph 染色畫法（_Dots.lua adotsDrawGlyph）：記錄邊長與左上角
     core.adotsDrawGlyph = function(inner, tex, x, y, size)
         inner.glyphs[#inner.glyphs + 1] = { tex = tex, x = x, y = y, size = size }
@@ -511,12 +517,22 @@ do
     -- 字寬 #"UI_MinidoracatMiniMap_PlaceHome"*5*2 置中於 x=500
     eq(s2.texts[1].x, 500 - #"UI_MinidoracatMiniMap_PlaceHome" * 5, "兩倍名稱置中")
     placeSliders.MarkerIconSize, placeSliders.MapTextScale = nil, nil
-    -- 「顯示家與收藏點」關＝地圖不畫標記與名稱；收藏資料不動
+    -- 「顯示在」小地圖那格關＝小地圖不畫標記與名稱；收藏資料不動；世界地圖那格照畫
     placeOpts.Places = false
     local s3 = surface(); t.core.drawPlaces(s3)
-    eq(#s3.glyphs + #s3.texts, 0, "Places 關＝不畫家與收藏點")
+    eq(#s3.glyphs + #s3.texts, 0, "Places 關＝小地圖不畫家與收藏點")
     eq(t.core.placesState(0).count, 1, "Places 關不動收藏資料")
-    placeOpts.Places = nil
+    local s4 = surface()
+    ISWorldMap_instance = s4
+    t.core.drawPlaces(s4)
+    eq(#s4.glyphs, 1, "世界地圖那格開＝世界地圖照畫")
+    placeOpts.WMPlaces = false
+    local s5 = surface()
+    ISWorldMap_instance = s5
+    t.core.drawPlaces(s5)
+    eq(#s5.glyphs + #s5.texts, 0, "WMPlaces 關＝世界地圖不畫")
+    ISWorldMap_instance = nil
+    placeOpts.Places, placeOpts.WMPlaces = nil, nil
 end
 
 print("test_places: ok")

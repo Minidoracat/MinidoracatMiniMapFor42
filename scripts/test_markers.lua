@@ -220,6 +220,16 @@ check(not Core.setMarkerLayer("VM", "plain", "namesMini", false) and not Core.se
     and not Core.setMarkerLayer("VM", "bound", "colour", 1), "names on a nameless layer, unknown layer or field rejected")
 check(Core.resetMarkerLayers("VM") and layerRaw == "Other/x=1,1,20,1,1", "reset drops only this owner's layers")
 check(not Core.resetMarkerLayers("VM"), "reset with nothing to drop does not write")
+-- 圖層區塊開關（"show"）：關＝兩張地圖都清；開＝回到 addon 給的預設（預設兩張都關的層改成兩張都開）
+check(Core.setMarkerLayer("VM", "plain", "show", false) and layerRaw == "Other/x=1,1,20,1,1;VM/plain=0,0,24,0,0",
+    "show=false clears both maps")
+check(Core.setMarkerLayer("VM", "plain", "show", true) and layerRaw == "Other/x=1,1,20,1,1",
+    "show=true restores the declared maps (mini only), override dropped")
+Core.registerMarkerLayers("Hid", { { id = "h", label = "H", size = 16, show = { mini = false, world = false } } })
+Core.setMarkerLayer("Hid", "h", "show", true)
+local hp = Core.markerLayer("Hid", "h")
+check(hp.show.mini == true and hp.show.world == true, "show=true on a layer hidden by default opens both maps")
+Core.resetMarkerLayers("Hid")
 
 local dm = inner(0)
 check(Core.drawMarkerAt(dm.el, mk("p"), 100, 100, "world", 16, "P") and dm.tex[1].w == 16 and dm.text[2].s == "P",

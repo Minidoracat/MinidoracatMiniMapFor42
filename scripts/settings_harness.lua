@@ -461,12 +461,15 @@ function H.load(opts)
     Core.poiIconTexture = function(key, colorMode) return { poi = key }, colorMode end
     Core.Skin = { iconTexture = function(key) return { icon = key } end }
 
-    -- 主檔 test:map-text 真實作（mapTextZoom／drawMapText／markerIconSize）
+    -- 主檔 test:map-text 真實作（mapTextZoom／drawMapText／markerIconSize）與 test:layer-maps（「顯示在」
+    -- 兩格的表與 Core.layerOn，讀上面的假 getBoolOption＝env.values）
     do
         local main = assert(readFile(REPO_CLIENT .. "MinidoracatMiniMap.lua"))
         local body = assert(main:match("%-%- test:map%-text:start\n(.-)\n%-%- test:map%-text:end"))
         local chunk = assert(compile("local Core, getSliderValue = ...\n" .. body))
         chunk(Core, Core.getSliderValue)
+        body = assert(main:match("%-%- test:layer%-maps:start\n(.-)\n%-%- test:layer%-maps:end"))
+        assert(compile("local Core, getBoolOption = ...\n" .. body))(Core, Core.getBoolOption)
     end
     Core.drawClippedEdge = function(inner, x1, y1, x2, y2, r, g, b, a)
         inner:drawLine(nil, x1, y1, x2, y2, 1, a or 0.9, r, g, b)

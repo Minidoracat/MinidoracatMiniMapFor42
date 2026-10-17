@@ -395,7 +395,8 @@ local function drawNavTargets(inner)
     local addonOk = Core.navAddonGateAllows(pn, "draw")
     local fa = Core.featureAllowed
     local allowed = addonOk and (not fa or fa(pn, "nav")) and true or false
-    local arrow = not fa or fa(pn, "arrow", inner == ISWorldMap_instance and "world" or "mini")
+    local surface = inner == ISWorldMap_instance and "world" or "mini"
+    local arrow = not fa or fa(pn, "arrow", surface)
     -- 路線層（_NavRoute.lua 掛 Core.drawNavRoute）：先畫＝墊在旗標/箭頭/分享旗
     -- 之下；第二參＝自己的路線與預覽是否可畫（分享路線另經 navGetShared 判 share）。
     -- 收 err＋實例旗標 log-once（同動物繪製/_WorldMapNav 慣例：主檔
@@ -415,9 +416,9 @@ local function drawNavTargets(inner)
     local tz = Core.mapTextZoom()
     -- 陣營分享來的：只畫「給這位玩家」的桶（青旗＋名字＋距離）；getUsername
     -- 原版用例 ISScoreboard.lua:108。已收到的目標仍受目前 AllowNavShare 閘門
-    -- 與功能閘門 share 即時控制（navGetShared 同源）；玩家關「顯示陣營分享的目標」
-    -- （SharedTargets）只是不畫，收到的分享照留（路線層 _NavRoute 讀同一開關）
-    local bucket = addonOk and getBoolOption("SharedTargets", true)
+    -- 與功能閘門 share 即時控制（navGetShared 同源）；「顯示在」這張地圖的格關（SharedTargets／
+    -- WMSharedTargets）只是不畫，收到的分享照留（路線層 _NavRoute 讀同一組格）
+    local bucket = addonOk and Core.layerOn("shared", surface)
         and Core.navGetShared and Core.navGetShared(pn) or nil
     if bucket and playerObj then
         for author, t in pairs(bucket) do

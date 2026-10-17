@@ -156,12 +156,12 @@ Both go by the room names inside buildings, which are also what decides the loot
 [*] [b]Animal icons[/b] (off by default): wild/livestock toggles and species filters; MOD Compatibility adds dogs, horses and more.
 [*] [b]Vehicle icons[/b] (off by default): standard / heavy / performance / emergency filters.
 [*] [b]Styles[/b]: animal and vehicle icons both have two icon styles and a colorblind-friendly palette.
-[*] [b]Also show on the world map[/b]: the zombie, animal (wild/livestock) and vehicle categories each have this toggle for the world map (M); style, colors and filters are shared with the mini-map.
+[*] [b]Mini-map or world map[/b]: every layer category has a "Show on" row with "Mini-map" and "World map" buttons to choose where it is drawn; the category switch turns both on or off. Zombies, animals and vehicles are off on the world map by default; style, colors and filters are shared with the mini-map.
 [/list]
 [h3]Street names, safehouses and chunk grid[/h3]
 [list]
 [*] [b]Street names[/b]: also on the corner mini-map (vanilla doesn't show them there; hidden when zoomed far out).
-[*] [b]Safehouses[/b]: drawn on both the mini-map and the world map; outline/icon/name toggles; yours in green, your faction's in cyan, others' in red.
+[*] [b]Safehouses[/b]: drawn on both the mini-map and the world map ("Show on" can keep just one); outline/icon/name toggles; yours in green, your faction's in cyan, others' in red.
 [*] [b]Your own safehouses[/b]: always shown, however far away you are, regardless of the server's safehouse display distance; faction and other players' safehouses still follow it.
 [*] [b]When zoomed out[/b]: other players' safehouses smaller than their icon on screen are drawn as an outline only, and ones down to a dot are skipped; yours are always shown in full.
 [*] [b]Safehouse names[/b]: custom names add the owner's account in brackets (for safehouses managed by a safehouse mod, the real owner instead of the mod's service account; the "Own and faction" setting also judges factions by the real owner).
@@ -188,6 +188,7 @@ Both go by the room names inside buildings, which are also what decides the loot
 {{img:02-settings-addons.jpg}}
 [list]
 [*] [b]Open[/b]: the gear on the mini-map, or the paw-print button in the world map (M) button row.
+[*] [b]MiniMap button on the world map[/b]: the MiniMap button (stacked-layers icon) in the world map button row opens this mod's small panel: map imagery, "Map layers" (hide or bring back everything this mod draws on the world map at once), and world-map toggles for each layer, home and favorites, and the navigation route; in multiplayer also faction-shared targets and "Only faction and safehouse members' symbols". Nothing is added to the vanilla gear options.
 [*] [b]Saving[/b]: changes apply and save instantly; no need to press ESC.
 [/list]
 [h3]Categories[/h3]
@@ -202,7 +203,7 @@ Both go by the room names inside buildings, which are also what decides the loot
 [*] [b]Side list[/b]: each category has an icon; categories with a master switch toggle right in the list.
 [*] [b]Search box[/b]: finds settings across categories.
 [*] [b]Add-on categories[/b]: Custom zones (Zones), Mod maps (MOD Maps) and series mods such as Vehicle Manager, Economy and AutoDrive each get one category, in a fixed order; an add-on shows its category once it is updated.
-[*] [b]Add-on map markers[/b]: can come in layers, each with its own on/off, size and separate mini-map / world-map name toggles.
+[*] [b]Add-on map markers[/b]: can come in layers, each with its own on/off, "Show on" (mini-map / world map), size and separate mini-map / world-map name toggles.
 [*] [b]Performance notes[/b]: the cost of each layer and what to do about it.
 [/list]
 [h3]Previews, filters and reset[/h3]

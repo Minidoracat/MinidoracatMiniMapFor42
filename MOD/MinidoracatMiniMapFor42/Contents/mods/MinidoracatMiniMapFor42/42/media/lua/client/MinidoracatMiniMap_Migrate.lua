@@ -153,3 +153,71 @@ local function forceWholeBuildingOnOnce()
 end
 -- test:pwb-default:end
 Events.OnMainMenuEnter.Add(forceWholeBuildingOnOnce) -- 同上：load() 之後、值已就緒
+
+-- ═══ 一次性播種：圖層分開小地圖與世界地圖（2026-10-18 使用者裁定） ═══
+-- 「顯示在」新增世界地圖那格（WM* 鍵）與安全屋的兩格；舊鍵本來同時管兩張地圖，新格從舊鍵複製，
+-- 更新後兩張地圖畫的東西不變。兩個例外照設計稿：只開區塊、沒開資源點圖標的人，資源點兩格都打開
+-- （分類開關今後也收區塊，圖標會一起出現）；安全屋三顆內容都關的人，兩格關、三顆內容回到開——
+-- 之後打開分類才有東西可畫。殭屍／動物／載具本來就分兩個鍵，不動。
+-- 同 forceWholeBuildingOnOnce：先寫 marker、讀回成功才改值（fail closed：寧可漏播，不重複干預）
+-- test:layer-maps-seed:start
+local LAYER_SEEDS = { WMPoiIcons = "PoiIcons", WMParkingLayer = "ParkingLayer", WMZoneLayer = "ZoneLayer",
+    WMPlaces = "Places", WMNavRoute = "NavRoute", WMSharedTargets = "SharedTargets" }
+local SAFEHOUSE_CONTENT = { "Safehouses", "SafehouseIcons", "SafehouseNames" }
+local function seedLayerMapsOnce()
+    if not modOptions then return end
+    local MARKER = "MinidoracatMiniMap/layerMapsV1.txt"
+    local reader = getFileReader(MARKER, false)
+    if reader then
+        reader:close()
+        return -- 已處理過
+    end
+    local onMini, onWorld = modOptions:getOption("SafehouseOnMini"), modOptions:getOption("SafehouseOnWorld")
+    if not (onMini and onWorld) then return end -- 選項未註冊（不應發生）：不寫 marker、下次進選單重試
+    local writer = getFileWriter(MARKER, true, false)
+    if writer then
+        local wok = pcall(function()
+            writer:write("v1")
+            writer:close()
+        end)
+        if not wok then pcall(function() writer:close() end) end
+    end
+    local back = getFileReader(MARKER, false)
+    if not back then
+        log("layer maps marker not persisted; skipping one-time seeding (will retry next session)")
+        return
+    end
+    back:close()
+    local changed = false
+    local function set(option, value)
+        if option and option:getValue() ~= value then
+            option:setValue(value)
+            changed = true
+        end
+    end
+    local function get(id)
+        local option = modOptions:getOption(id)
+        return option and option:getValue() == true
+    end
+    for newId, oldId in pairs(LAYER_SEEDS) do
+        local option = modOptions:getOption(oldId)
+        if option then set(modOptions:getOption(newId), option:getValue() == true) end
+    end
+    local shown = false
+    for i = 1, #SAFEHOUSE_CONTENT do shown = shown or get(SAFEHOUSE_CONTENT[i]) end
+    set(onMini, shown)
+    set(onWorld, shown)
+    if not shown then
+        for i = 1, #SAFEHOUSE_CONTENT do set(modOptions:getOption(SAFEHOUSE_CONTENT[i]), true) end
+    end
+    if get("PoiBlocks") and not get("PoiIcons") then
+        set(modOptions:getOption("PoiIcons"), true)
+        set(modOptions:getOption("WMPoiIcons"), true)
+    end
+    if changed then
+        PZAPI.ModOptions:save()
+        log("one-time split of map layers into mini-map / world map choices; what each map shows is unchanged")
+    end
+end
+-- test:layer-maps-seed:end
+Events.OnMainMenuEnter.Add(seedLayerMapsOnce) -- 同上：load() 之後、值已就緒
