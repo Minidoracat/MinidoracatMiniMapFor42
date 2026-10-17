@@ -1870,7 +1870,7 @@ do
             end
             assert(not hasPoint(r, 4171, 5833), "Long Branch Road：路線不再經過舊角點 (4171,5833)")
         end)
-        kept("Long Branch Road", findStreet(60, 5711, 5400), { 37, 38 }, 59)
+        kept("Long Branch Road", findStreet(60, 5711, 5400), { 21, 22, 23, 37, 38 }, 59)
         -- ④ Fiddler's Trail：官方唯一段 (8343,12323.5)→(10585,12324.5) 寫 width=15、中線偏北 0.5–1.5 格；
         -- 實際鋪面 y12320–12329 全程 10 格、中線 12325。整條換成人工線並以原名接手搜尋（見下方「帶名接手」）。
         local fiddlerOld = findStreet(2, 8343, 12323.5)
@@ -1998,6 +1998,59 @@ do
             assert(trail >= 2, "Flower Road：路線經過草地小徑段")
         end)
         kept("Flower Road", findStreet(4, 14145.5, 5005.5), { 1 }, 3)
+        -- 2026-10-17 AutoDrive 正式服復盤 R1–R3（route_faults＋pinned raster＋原版 topdown）。
+        -- R1 Merino St 北端 (2205,14012)、Webster Road 東端 (2202,14012)、Ed St 起點 (2203.5,14010.5) 互不相接，
+        -- 舊版代表點落在 Webster 東端、Merino 留 3 格短接線：Merino↔Ed St 走「西 3 格→折回東北」153° 反折。
+        -- Ed St 段0 改從 Merino 北端出發後，三條路共用 (2205,14012) 一個節點。
+        for _, c in ipairs({ { 2205, 14200, 2295, 13966 }, { 2100, 14012, 2295, 13966 }, { 2205, 14200, 2100, 14012 } }) do
+            both("Merino／Webster／Ed St 路口", c[1], c[2], c[3], c[4], function(r)
+                local inner = innerPoints(r, 2190, 14000, 2220, 14025)
+                assert(#inner == 1 and inner[1][1] == 2205 and inner[1][2] == 14012,
+                    "Merino／Webster／Ed St：路口內唯一頂點是 (2205,14012)，不經 Webster 端點與 3 格短接線")
+            end)
+        end
+        kept("Ed St", findStreet(5, 2203.5, 14010.5), { 1 }, 4)
+        kept("Merino St", findStreet(2, 2205, 14012), {}, 1)
+        kept("Webster Road", findStreet(10, 1893, 14194), {}, 9)
+        -- R2 Long Branch Road (4755.5,5753)→(4733,5753)→(4712,5774) 直角加 45° 斜切離碎石帶 4–6 格；
+        -- 碎石帶 y5747 以南是 2:1 斜帶（逐列 y5760 x4730–4741、y5767 x4716–4727）。
+        both("Long Branch Road 5750 彎", 4842.5, 5680, 4628, 5807, function(r)
+            for _, band in ipairs({ { "y", 5760.5, 4730, 4742 }, { "y", 5767.5, 4716, 4728 }, { "y", 5745.5, 4759, 4767 } }) do
+                local v, n = crossAt(r, band[1], band[2])
+                assert(n == 1 and v >= band[3] and v < band[4],
+                    "Long Branch Road 5750 彎：" .. band[1] .. "=" .. band[2] .. " 交點需在碎石帶，實得 " .. tostring(v))
+            end
+            assert(not hasPoint(r, 4755.5, 5753) and not hasPoint(r, 4733, 5753),
+                "Long Branch Road 5750 彎：路線不再經過舊角點")
+        end)
+        -- R3 Mayo St／Leitrim St 西端是死巷：x12308 有整排籬笆，舊版西端 T 吸附到 3rd St、接線穿籬笆。
+        -- 籬笆帶 x12305–12309、y1815–1868 不得有任何圖邊橫越；3rd St 與兩街之間只能繞東端。
+        for node = 1, g.nodeCount do
+            local e = g.adjHead[node]
+            while e ~= 0 do
+                local m = g.adjTo[e]
+                local lo, hi = math.min(g.nx[node], g.nx[m]), math.max(g.nx[node], g.nx[m])
+                local y0, y1 = g.ny[node], g.ny[m]
+                assert(not (lo < 12305 and hi > 12309 and math.max(y0, y1) > 1815 and math.min(y0, y1) < 1868),
+                    ("Mayo／Leitrim：圖邊 (%s,%s)→(%s,%s) 穿過 x12308 籬笆"):format(g.nx[node], y0, g.nx[m], y1))
+                e = g.adjNext[e]
+            end
+        end
+        for _, c in ipairs({ { 12300, 1700, 12340, 1829.5 }, { 12340, 1857, 12300, 1950 } }) do
+            both("3rd St↔Mayo／Leitrim", c[1], c[2], c[3], c[4], function(r)
+                for i = 1, #r.pts - 2, 2 do
+                    local x0, y0, x1, y1 = r.pts[i], r.pts[i + 1], r.pts[i + 2], r.pts[i + 3]
+                    assert(not (math.min(x0, x1) < 12307 and math.max(x0, x1) >= 12307
+                        and math.max(y0, y1) > 1815 and math.min(y0, y1) < 1868),
+                        "3rd St↔Mayo／Leitrim：路線不穿 x12308 籬笆、改由東端接入")
+                end
+            end)
+        end
+        for _, c in ipairs({ { 2, 12388, 1829.5, "Mayo St" }, { 2, 12388, 1857, "Leitrim St" } }) do
+            local old = findStreet(c[1], c[2], c[3])
+            assert(old and old.segRemoved[1] and not mod.streetSearchable(old),
+                c[4] .. "：唯一官方段由人工線取代（搜尋由同名人工線接手）")
+        end
         -- 帶名接手：整條被取代的官方街（Fiddler's Trail、Trail Link Road 全圖都只有一段官方段）由人工線以
         -- 官方原名接手搜尋。索引走 production streetIndexAnchor（與遊戲內同一 winnerOf），錨點落在人工線起點。
         local function patchStreetNamed(list, original)
@@ -2012,7 +2065,8 @@ do
             return hit
         end
         local wof = function(_, _, src) return src end
-        for _, c in ipairs({ { "Fiddler's Trail", 8343, 12325 }, { "Trail Link Road", 1430, 6891.5 } }) do
+        for _, c in ipairs({ { "Fiddler's Trail", 8343, 12325 }, { "Trail Link Road", 1430, 6891.5 },
+            { "Mayo St", 12388, 1829.5 }, { "Leitrim St", 12388, 1857 } }) do
             local st = patchStreetNamed(streets, c[1])
             assert(st and st.searchable == true and mod.streetSearchable(st), c[1] .. "：人工線可搜尋")
             local ax, ay = mod.streetIndexAnchor(st, wof, {})
@@ -2042,17 +2096,20 @@ do
             return "譯·" .. original
         end)
         assert(okT and stateT == "applied", "帶名接手：附翻譯重套成功")
-        assert(#dirs == 2 and dirs[1] == patch.targetSrc and dirs[2] == patch.targetSrc,
-            "帶名接手：只對帶名人工線查翻譯、目錄是官方容器")
+        assert(#dirs == 4, "帶名接手：只對帶名人工線查翻譯（4 條）")
+        for _, dir in ipairs(dirs) do assert(dir == patch.targetSrc, "帶名接手：翻譯目錄是官方容器") end
         local fid = patchStreetNamed(translated, "Fiddler's Trail")
         assert(fid.name == "譯·Fiddler's Trail" and fid.originalName == "Fiddler's Trail",
             "帶名接手：顯示譯名、原名留 originalName")
         local link = patchStreetNamed(translated, "Trail Link Road")
         assert(link.name == "Trail Link Road" and link.originalName == nil,
             "帶名接手：字典沒有就照原名顯示")
+        local mayo, leitrim = patchStreetNamed(translated, "Mayo St"), patchStreetNamed(translated, "Leitrim St")
+        assert(mayo.name == "譯·Mayo St" and leitrim.name == "譯·Leitrim St", "帶名接手：Mayo／Leitrim 顯示譯名")
         for i = patch.geometryCount + 1, #translated do
             local st = translated[i]
-            assert(st == fid or st == link or (st.name == "" and not mod.streetSearchable(st)),
+            assert(st == fid or st == link or st == mayo or st == leitrim
+                or (st.name == "" and not mod.streetSearchable(st)),
                 "帶名接手：其他人工線維持無名、不可搜尋")
         end
     end

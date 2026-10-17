@@ -164,7 +164,13 @@
     "4969d9dbf2d2c8ed5821888f05ba0249f82476e2e5012e938eada66dd3f5342b:0",
     "3973f24df4b4882ebd008b6ba18532d6c2d0ca2f45b5f0e5d3897b5338290a9d:0",
     "cac51bc6a2d1dc714ad9c4cfaed5577e194ca65efc252ba4eacfc7f197115bb4:0",
-    "cac51bc6a2d1dc714ad9c4cfaed5577e194ca65efc252ba4eacfc7f197115bb4:1"
+    "cac51bc6a2d1dc714ad9c4cfaed5577e194ca65efc252ba4eacfc7f197115bb4:1",
+    "49bcc19fb0176ec1ae76cf3c544a66b55b3bc72eb1bef05132e708b2a3bf9c6b:0",
+    "f958acf306935e957a5921f9e7d1216460c26768254063f1146bc97a59cf5a4c:20",
+    "f958acf306935e957a5921f9e7d1216460c26768254063f1146bc97a59cf5a4c:21",
+    "f958acf306935e957a5921f9e7d1216460c26768254063f1146bc97a59cf5a4c:22",
+    "e7cf287a21f4cb4e92a4415d303f105c6e968274cfadbecc00844b704516ab73:0",
+    "73e87c1c042b8744b98e3f6c57e4e16bdebe8e90611f156da123da90f9b5ea90:0"
   ],
   "width": [],
   "surface": [
@@ -688,6 +694,57 @@
       "surface": "gravel",
       "searchable": false,
       "reason": "KY-841 × Masons Lane 分隔帶缺口（2026-10-06，配合 m:muldraugh-ky841-north-lane-east 拿掉 (15144.5,3445) 的錯誤跨接後，這一帶兩條車道唯一的真實連通）：Masons Lane 北端 (15000,3459) T 接南線；pinned raster 分隔帶 y3448–3451 在 x14996–15003 是 8 格礫石缺口（兩側土＋樹），worldmap.xml 的 tertiary 多邊形從 Masons Lane 一路穿過缺口到北線。接線 (15000,3445)→(15000,3455) 寬 6（全落在缺口內），21 個取樣 13 paved、8 gravel。修前南線東行要掉頭走 x15137／15140.5／15144.5 的錯誤跨接（穿樹列）；修後在這裡掉頭，(15000,3455)→北線 (15100,3445) 110 格。不同於 0930 的「兩條支路同軸對望」接線：這是 T 字路口正對的分隔帶缺口，worldmap 與 raster 同時證實。北線在 (15000,3445) 的頂點離南線 10 格，沒有本接線時建圖也會把它 T 投影到南線、自動補一段沿用車道 paved／寬 6 的短接線；本接線把這條連通明確成缺口實測的 gravel。"
+    },
+    {
+      "id": "m:muldraugh-ed-st-merino-junction",
+      "operation": "add",
+      "points": [
+        2205, 14012,
+        2301.5, 13961.5
+      ],
+      "width": 6,
+      "surface": "paved",
+      "searchable": false,
+      "reason": "Merino St × Webster Road × Ed St 三端點路口（2026-10-17，AutoDrive 正式服復盤 R1：3 名玩家 4 趟，調頭迴圈 StopStuck）：官方三個端點互不相接——Merino St 北端 (2205,14012)（路中線）、Webster Road 東端 (2202,14012)（畫在 Merino 西路緣）、Ed St 起點 (2203.5,14010.5)（夾在中間，到兩者都是 2.12 格）。三者都是未宣告端點，同等身分以小 key 決勝，代表點落在 Webster 東端；Merino 端點被橫拖 3 格＝半寬，markKeep 保留原端點並補 3 格短接線，路線 Merino 北上→西 3 格→轉回東北上 Ed St，夾出 153° 反折。pinned raster：路口鋪面 x2202–2208、y14006–14014，Merino 北端在路中線。移除 Ed St 段0，以 (2205,14012)→(2301.5,13961.5) 取代：起點與 Merino 北端共用頂點成為共用路口，Webster 東端沿自身方向延伸 3 格接上（不橫拖、不留短接線）；尾點與段1 起點共用頂點，段1–3 保留供搜尋。218 個取樣全 paved、到路帶邊 ≥2.5 格。"
+    },
+    {
+      "id": "m:muldraugh-long-branch-road-5750-bend",
+      "operation": "add",
+      "points": [
+        4794.5, 5714,
+        4761, 5747.5,
+        4712, 5774
+      ],
+      "width": 5,
+      "surface": "gravel",
+      "searchable": false,
+      "reason": "Long Branch Road (4755.5,5753)→(4733,5753)→(4712,5774) 一段直角加 45° 斜切跑到碎石路外（2026-10-17，AutoDrive 正式服復盤 R2：4 名玩家 3 趟，拖車在 (4735,5754) 判堵命中路旁樹、StopStuck）：pinned raster 碎石帶在 y5747 以北沿官方 45° 段，之後轉成 2:1 斜帶（逐列中點 y5750 x4756、y5760 x4736、y5770 x4716），官方線在 y5753 橫走 22.5 格再 45° 斜下，離碎石帶 4–6 格、落在 dirt-candidate 與樹叢上（段21、22 以 0.5 格取樣 50 個 dirt-candidate）。worldmap tertiary 多邊形跟著官方線畫（同源，不能互證）。移除段20–22，以 (4794.5,5714)→(4761,5747.5)→(4712,5774) 取代：轉折點是官方 45° 線與 2:1 帶中線的交點，兩端與段19 尾點、段23 起點共用頂點，其餘段保留供搜尋。207 個取樣全 gravel、到路帶邊 ≥1.5 格。"
+    },
+    {
+      "id": "m:muldraugh-mayo-st",
+      "operation": "add",
+      "points": [
+        12388, 1829.5,
+        12314, 1829.5
+      ],
+      "width": 7,
+      "surface": "paved",
+      "searchable": true,
+      "name": "Mayo St",
+      "reason": "Mayo St 西端被吸附到 3rd St、接線穿過整排籬笆（2026-10-17，AutoDrive 正式服復盤 R3：與 Leitrim St 同一排籬笆，2 名玩家 3 趟，判堵命中 fencing_01_72）：官方唯一段 (12388,1829.5)→(12313,1829.5) 西端離 3rd St 中線 13 格＝兩半寬和＋ATTACH_SLACK，建圖 T 接到 3rd St (12300,1829.5)。原版 topdown 在 x12308 有一整排籬笆（y1815–1868 連續），pinned raster 3rd St 鋪面到 x12305、Mayo St 路面從 x12309 起，中間是 dirt／unknown；worldmap 兩個多邊形也不相連——Mayo St 西端是死巷，不通 3rd St。整條換成 (12388,1829.5)→(12314,1829.5)：西端離 3rd St 14 格，超出吸附距離 1 格；149 個取樣全 paved。全圖只有這一段官方段，本線帶官方原名接手搜尋。"
+    },
+    {
+      "id": "m:muldraugh-leitrim-st",
+      "operation": "add",
+      "points": [
+        12388, 1857,
+        12313.5, 1857
+      ],
+      "width": 6,
+      "surface": "paved",
+      "searchable": true,
+      "name": "Leitrim St",
+      "reason": "Leitrim St 西端被吸附到 3rd St、接線穿過整排籬笆（2026-10-17，AutoDrive 正式服復盤 R3，見 m:muldraugh-mayo-st；籬笆 fencing_01_72 (12308.05,1858.25)／(12308.05,1855.75) 兩位玩家各命中一次）：官方唯一段 (12388,1857)→(12309,1857) 西端離 3rd St 中線 9 格 < 兩半寬和＋ATTACH_SLACK＝12.5，建圖 T 接到 3rd St (12300,1857)，接線穿 x12308 的籬笆。Leitrim St 西端是死巷（原版 topdown 籬笆連續、worldmap 多邊形不相連）。整條換成 (12388,1857)→(12313.5,1857)：西端離 3rd St 13.5 格，超出吸附距離 1 格；150 個取樣全 paved。全圖只有這一段官方段，本線帶官方原名接手搜尋。"
     }
   ]
 }
