@@ -2009,7 +2009,7 @@ local function stepExtract(ex)
                         pts[pi * 2 + 1] = replacement and replacement[pi * 2 + 1] or st:getPointX(pi)
                         pts[pi * 2 + 2] = replacement and replacement[pi * 2 + 2] or st:getPointY(pi)
                     end
-                    local width = st:getWidth()
+                    local width = repair and repair.replacementWidth or st:getWidth()
                     local fingerprint, upgrade
                     if entry.cert then
                         fingerprint = fingerprintOf(pts, width)

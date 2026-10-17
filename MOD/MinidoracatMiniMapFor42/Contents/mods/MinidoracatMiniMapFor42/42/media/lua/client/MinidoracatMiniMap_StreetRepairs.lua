@@ -1,5 +1,6 @@
 -- 語系無關的 MOD 道路修正。僅套來源、原始點列及路寬完全符合的已核准資料。
 -- 資料由 addon streetRepairs 提供；不在此猜測道路、不依街名/語言決定幾何。
+-- replacementWidth 換路寬（點列不動）：WorldMapStreet.width 是 int，只收整數。
 local Core = MinidoracatMiniMapCore
 if not (Core and Core.ready) then return end
 local reported = {}
@@ -57,8 +58,11 @@ local function validOperation(op, validPoints, validWidth)
         end
         if not hasLength then return false end -- label mask 不能偽裝成刪除導航路段的 replacement。
     end
+    if op.replacementWidth ~= nil and (not validWidth(op.replacementWidth) or op.replacementWidth % 1 ~= 0) then
+        return false
+    end
     if op.hideLabel ~= nil and type(op.hideLabel) ~= "boolean" then return false end
-    if not op.replacementPoints and op.hideLabel ~= true then return false end
+    if not op.replacementPoints and op.replacementWidth == nil and op.hideLabel ~= true then return false end
     if op.hideLabel then
         local ref = op.reference
         if type(ref) ~= "table" or type(ref.index) ~= "number" or ref.index < 0 or ref.index % 1 ~= 0
@@ -130,7 +134,7 @@ local function currentReference(ref)
 end
 Core.canHideStreetLabel = function(op, mapUI, sourceDir, displayName)
     local ref = op.reference
-    if not ref or op.replacementPoints or op.expectedWidth ~= ref.width
+    if not ref or op.replacementPoints or op.replacementWidth or op.expectedWidth ~= ref.width
         or #op.expectedPoints ~= #ref.points then return false end
     for i = 1, #ref.points do
         if op.expectedPoints[i] ~= ref.points[i] then return false end
