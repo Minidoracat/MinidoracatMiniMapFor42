@@ -213,10 +213,13 @@ if type(origInit) ~= "function" then
     return
 end
 
+-- change.width＝套用後的路寬、originalWidth＝raw 路寬（省略＝不換路寬）；split 副本照抄路寬
+-- （WorldMapStreet.java:630），所以換路寬和改點列一樣只在窗口內做、結束還原。
 local function applyChange(change)
     local street = change.street
     if change.replacement then
         Core.replaceStreetPoints(street, change.replacement)
+        if street:getWidth() ~= change.width then street:setWidth(change.width) end
         change.pointsApplied = true
     end
     street:setUntranslatedText(change.translated)
@@ -236,6 +239,8 @@ local function restoreChanges(changes)
             if change.replacement and (not change.pointsApplied
                 or Core.matchesStreetRepair(change.street, change.width, change.replacement)) then
                 Core.replaceStreetPoints(change.street, change.originalPoints)
+                local width = change.originalWidth or change.width
+                if change.street:getWidth() ~= width then change.street:setWidth(width) end
             end
             if change.street:getUntranslatedText() == change.translated then
                 change.street:setUntranslatedText(change.original)
@@ -258,7 +263,8 @@ local function suspendWindow(parent, suspended)
             local change = {
                 street = old.street, original = current, translated = name,
                 replacement = ownsPoints and old.originalPoints,
-                originalPoints = ownsPoints and old.replacement, width = old.width,
+                originalPoints = ownsPoints and old.replacement,
+                width = old.originalWidth or old.width, originalWidth = old.width,
             }
             suspended[#suspended + 1] = change
             applyChange(change)
@@ -453,7 +459,9 @@ function MapUtils.initDirectoryStreetData(mapUI, directory)
             local street = streets:get(i)
             local original = street:getUntranslatedText() or ""
             local repair = Core.streetRepair and Core.streetRepair(street, dir, i)
-            local replacement = repair and repair.replacementPoints
+            local newWidth = repair and repair.replacementWidth
+            -- 只換路寬時以原點列當 replacement，沿用同一套套用／還原／巢狀窗口邏輯。
+            local replacement = repair and (repair.replacementPoints or (newWidth and repair.expectedPoints))
             local translated = translate and translateStreetName(original, names and names[original], getTextOrNull) or original
             local hidden = repair and repair.hideLabel and Core.canHideStreetLabel
                 and Core.canHideStreetLabel(repair, mapUI, dir, translated)
@@ -467,7 +475,8 @@ function MapUtils.initDirectoryStreetData(mapUI, directory)
                 local change = {
                     street = street, original = original, translated = translated,
                     replacement = replacement, originalPoints = replacement and repair.expectedPoints,
-                    width = replacement and repair.expectedWidth,
+                    width = replacement and (newWidth or repair.expectedWidth),
+                    originalWidth = replacement and repair.expectedWidth,
                 }
                 changes[#changes + 1] = change
                 applyChange(change)

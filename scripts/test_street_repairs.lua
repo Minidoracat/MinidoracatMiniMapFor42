@@ -28,6 +28,7 @@ local function rawStreet(points, name, width)
     function st:getPointX(i) return self.points[i * 2 + 1] end
     function st:getPointY(i) return self.points[i * 2 + 2] end
     function st:getWidth() return self.width end
+    function st:setWidth(w) self.width = w end
     function st:getUntranslatedText() return self.name end
     function st:setUntranslatedText(name) self.name = name:match("^%s*$") and "" or name end
     function st:getTranslatedText() return translatorText(self.name) end
@@ -38,7 +39,7 @@ local function rawStreet(points, name, width)
         -- 真 PZClipper probe 已驗證：兩重合點沒有 split，不會建立 hover 副本。
         if #self.points == 4 and self.points[1] == self.points[3] and self.points[2] == self.points[4] then
             self.split = nil
-        else self.split = { name = self:getTranslatedText(), points = copy(self.points) } end
+        else self.split = { name = self:getTranslatedText(), points = copy(self.points), width = self.width } end
     end
     st:clipToObscuredCells()
     return st
@@ -64,7 +65,7 @@ local function setup(op, lang, options)
                 if data[path] and not loaded[path] then
                     loaded[path] = data[path]; order[#order + 1] = data[path]
                     for _, st in ipairs(data[path]) do
-                        if st.split then shown[#shown + 1] = { name = st.split.name, points = copy(st.split.points) } end
+                        if st.split then shown[#shown + 1] = { name = st.split.name, points = copy(st.split.points), width = st.split.width } end
                     end
                 end
             end,
@@ -232,4 +233,40 @@ badTranslation.core.navKickEngine(badTranslation.ui)
 for _ = 1, 100 do badTranslation.ticks.fire() end
 local badTrRoute, badTrState = badTranslation.api.requestRoute(0, 200, 105)
 assert(badTrState == "ok" and badTrRoute.len == 100, "translation failure cannot disable navigation")
-print("test_street_repairs: PASS (four languages, live navigation, source drift, restore, independent dictionaries)")
+-- replacementWidth（換路寬、點列不動）：顯示副本與導航都吃新路寬，raw 還原；沒有欄位照舊路寬。
+local function routeWidth(w)
+    w.core.navKickEngine(w.ui)
+    for _ = 1, 100 do w.ticks.fire() end
+    local route, state = w.api.requestRoute(0, 200, 105)
+    assert(state == "ok", tostring(state))
+    return route.segWidth[#route.segWidth]
+end
+local widthOp = { expectedWidth = 8, expectedPoints = LINE, replacementWidth = 11 }
+for _, lang in ipairs({ "CH", "EN" }) do
+    local widened = setup(widthOp, lang, { points = LINE })
+    assert(widened.ok, widened.err)
+    assert(#widened.shown == 1 and widened.shown[1].width == 11 and same(widened.shown[1].points, LINE),
+        lang .. " display copy must use the replacement width with unchanged points")
+    assert(widened.street.width == 8 and same(widened.street.points, LINE), "raw width must be restored")
+    assert(routeWidth(widened) == 11, "navigation must use the replacement width")
+end
+local plain = setup(op, "EN")
+assert(plain.shown[1].width == 8 and routeWidth(plain) == 8, "repairs without replacementWidth keep the raw width")
+local both = setup({ expectedWidth = 8, expectedPoints = RECT, replacementPoints = LINE, replacementWidth = 12 }, "CH")
+assert(same(both.shown[1].points, LINE) and both.shown[1].width == 12, "points and width can be replaced together")
+assert(same(both.street.points, RECT) and both.street.width == 8 and routeWidth(both) == 12)
+for _, bad in ipairs({ 0, 65, 10.5, "11", 0 / 0 }) do
+    local w = setup({ expectedWidth = 8, expectedPoints = LINE, replacementWidth = bad }, "CH", { points = LINE })
+    assert(w.shown[1].width == 8, "invalid replacementWidth " .. tostring(bad) .. " must keep the raw width on display")
+    assert(w.core.streetRepair(w.street, "Fixture", 0) == nil, "Nav must reject replacementWidth " .. tostring(bad))
+end
+local wideHidden = setup({ expectedWidth = 8, expectedPoints = LINE, replacementWidth = 11, hideLabel = true,
+    reference = { index = 0, width = 8, points = LINE } }, "CH", { points = LINE, reference = LINE })
+assert(#wideHidden.shown == 2, "a width change is not an exact copy: never hide its label")
+local wideFailed = setup(widthOp, "JP", { points = LINE, loaderError = true })
+assert(not wideFailed.ok and wideFailed.street.width == 8, "loader failure must restore the raw width")
+local wideNested = setup(widthOp, "CH", { points = LINE, nestedNoReference = true })
+assert(wideNested.ok, wideNested.err)
+assert(wideNested.shown[1].width == 11 and wideNested.nestedShown[1].width == 11, "nested windows both get the new width")
+assert(wideNested.street.width == 8, "nested windows restore the raw width")
+print("test_street_repairs: PASS (four languages, live navigation, source drift, restore, independent dictionaries, replacement width)")
