@@ -2687,6 +2687,9 @@ if ISWorldMap and ISWorldMap.createChildren then
             -- Core.toggleSettingsWindow＝Settings 模組檔提供；缺席（模組缺失）就不插鈕
             if not (modOptions and Core.toggleSettingsWindow and self.buttonPanel and self.closeBtn) then return end
             local btnSize = self.closeBtn.height
+            -- 本 MOD 的兩顆鈕用自己的彩色卡通圖示（media/ui/minimap_wm_*.png，80×80，Codex 生成；2026-10-18 使用者要求
+            -- 比原版圖示顯眼）：畫成按鈕的 5/6（48px 鈕＝40px），80→40 剛好 2:1 縮小不糊
+            local iconPx = math.floor(btnSize * 5 / 6)
             -- 「MiniMap」鈕：開本 MOD 的世界地圖面板（_WorldPanel.lua：圖片化地圖、地圖圖層與各圖層的世界地圖那格）。
             -- 獨立成鈕、不往原版齒輪面板加勾選（2026-10-18 使用者裁定：debug 與多人管理員在那裡看到全部原版選項，已經很長）
             local layersBtn = ISButton:new(self.closeBtn.x, 0, btnSize, btnSize, "", self,
@@ -2694,12 +2697,12 @@ if ISWorldMap and ISWorldMap.createChildren then
                     if Core.toggleWorldPanel then Core.toggleWorldPanel(target, button) end
                 end)
             layersBtn:initialise()
-            local texLayers = Core.Skin and Core.Skin.iconTexture("layers")
+            local texLayers = getTexture("media/ui/minimap_wm_layers.png")
             if texLayers then
                 layersBtn:setImage(texLayers)
-                layersBtn:forceImageSize(math.floor(btnSize * 0.6), math.floor(btnSize * 0.6))
+                layersBtn:forceImageSize(iconPx, iconPx)
             else
-                layersBtn:setTitle("L") -- 缺框架：同原版 C／S／P 單字母鈕
+                layersBtn:setTitle("L") -- 缺圖：同原版 C／S／P 單字母鈕
             end
             layersBtn.tooltip = getText("UI_MinidoracatMiniMap_WMPanelBtn")
             self.buttonPanel:addChild(layersBtn)
@@ -2723,10 +2726,10 @@ if ISWorldMap and ISWorldMap.createChildren then
             local btn = ISButton:new(searchBtn:getRight() + 10, 0, btnSize, btnSize, "", self,
                 function(target) Core.toggleSettingsWindow(target) end)
             btn:initialise()
-            local paw = adotsTexture and adotsTexture("media/ui/LootableMaps/map_pawprint.png")
+            local paw = getTexture("media/ui/minimap_wm_paw.png") -- 白貓肉球
             if paw then
                 btn:setImage(paw) -- setImage/forceImageSize 用法同原版 optionBtn（:309-310）
-                btn:forceImageSize(math.floor(btnSize * 0.6), math.floor(btnSize * 0.6))
+                btn:forceImageSize(iconPx, iconPx)
             else
                 btn:setTitle("i")
             end

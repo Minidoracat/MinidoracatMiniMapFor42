@@ -187,8 +187,8 @@ Both go by the room names inside buildings, which are also what decides the loot
 === ⚙️ Map Display Settings (gear)
 {{img:02-settings-addons.jpg}}
 [list]
-[*] [b]Open[/b]: the gear on the mini-map, or the paw-print button in the world map (M) button row.
-[*] [b]MiniMap button on the world map[/b]: the MiniMap button (stacked-layers icon) in the world map button row opens this mod's small panel: map imagery, "Map layers" (hide or bring back everything this mod draws on the world map at once), and world-map toggles for each layer, home and favorites, and the navigation route; in multiplayer also faction-shared targets and "Only faction and safehouse members' symbols". Nothing is added to the vanilla gear options.
+[*] [b]Open[/b]: the gear on the mini-map, or the white cat paw button in the world map (M) button row.
+[*] [b]MiniMap button on the world map[/b]: the MiniMap button (colorful stacked-map icon) in the world map button row opens this mod's small panel: map imagery, "Map layers" (hide or bring back everything this mod draws on the world map at once), and world-map toggles for each layer, home and favorites, and the navigation route; in multiplayer also faction-shared targets and "Only faction and safehouse members' symbols". Nothing is added to the vanilla gear options.
 [*] [b]Saving[/b]: changes apply and save instantly; no need to press ESC.
 [/list]
 [h3]Categories[/h3]

@@ -1,15 +1,17 @@
 Minidoracat MiniMap for B42 - Licensing and source notices
 
-1. Original code, documentation and POI icons
+1. Original code, documentation, POI icons and toolbar icons
 
 The original program code and original documentation by Minidoracat are
 licensed under the MIT License reproduced below. Generated game-derived
 DATA is excluded as described in section 2, even when stored in a Lua file.
 
-The author reports creating the 40 POI category icons using Codex image
-generation:
+The author reports creating the 40 POI category icons and the two world map
+toolbar icons using Codex image generation:
   media/ui/poi_icons/poi_*.png
   media/ui/poi_icons/color/poi_*.png
+  media/ui/minimap_wm_layers.png
+  media/ui/minimap_wm_paw.png
 (except poi_parking.png). These icons are also offered under MIT to the
 extent that Minidoracat owns licensable rights in them. AI generation is not
 a warranty of originality, exclusive copyright or clearance of third-party
