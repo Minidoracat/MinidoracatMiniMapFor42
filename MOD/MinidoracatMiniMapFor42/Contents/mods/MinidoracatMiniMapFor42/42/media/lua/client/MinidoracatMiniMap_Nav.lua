@@ -197,14 +197,14 @@ Core.navMenuLock = function(option, text)
 end
 -- 子選單：父項＋原版 getNew／addSubMenu（ISContextMenu.lua:1199／1075；getNew 走 player 單例的
 -- subMenuPool，前手一定先呼叫過 ISContextMenu.get 才有那張池子）。第三方選單缺方法或不是 player
--- 單例時回 nil，呼叫端改平鋪，不讓別人的選單連坐壞掉
-Core.mapSubMenu = function(context, key)
+-- 單例時回 nil，呼叫端改平鋪，不讓別人的選單連坐壞掉。title＝已翻好的父項文字（省略＝getText(key)）
+Core.mapSubMenu = function(context, key, title)
     if type(context.addSubMenu) ~= "function" or type(context.player) ~= "number"
         or type(context.subMenuPool) ~= "table" or not (ISContextMenu and ISContextMenu.getNew) then
         return nil
     end
     local sub = ISContextMenu:getNew(context)
-    context:addSubMenu(context:addOption(getText(key)), sub)
+    context:addSubMenu(context:addOption(title or getText(key)), sub)
     return sub
 end
 -- test:nav-menu-lock:end
@@ -590,8 +590,9 @@ Core.navShareOk = function(pn, playerObj)
 end
 -- 雙地圖右鍵選單（兩張地圖共用；2026-10-11 設計稿 minimap-rightclick-1011 作答）。第一層依序：
 -- 導航（有待前往站時叫「取代並導航」，點了照舊先確認）→加入行程（有待前往站才是子選單：先去這裡／
--- 插在第 N 站之前／加到行程最後，_Search.lua navInsertSubMenu）→收藏（回家／設為家／加入收藏，
--- _Places.lua placesAddMenu）→複製此處座標→行程（有行程或壞資料才有：行程規劃／停止導航／分享目標／
+-- 插在第 N 站之前／加到行程最後，_Search.lua navInsertSubMenu）→收藏（回家／設為家／加入收藏；游標在收藏
+-- 圖標上時父項是「收藏：名稱」、子選單換成那一筆，_Places.lua placeAt／placesAddMenu）→複製此處座標→
+-- 行程（有行程或壞資料才有：行程規劃／停止導航／分享目標／
 -- 清空行程，會刪資料的清空排最後）→搜尋地圖。set 閘門擋住時會設導航的項變紅＋原因（建選單只問一次）。
 -- target＝地圖元件：回呼是它的 onMinidoracat* 方法，複製座標的回饋畫在該張地圖上
 Core.mapMenuFill = function(context, target, pn, wx, wy, playerObj)
@@ -604,8 +605,11 @@ Core.mapMenuFill = function(context, target, pn, wx, wy, playerObj)
             target.onMinidoracatAddStop, wx, wy), blocked)
     end
     if Core.placesAddMenu then
-        Core.placesAddMenu(Core.mapSubMenu(context, "UI_MinidoracatMiniMap_PlaceMenu") or context,
-            pn, wx, wy, blocked)
+        -- 游標下是收藏：父項帶名稱，子選單換成這一筆（_Places.lua placeAt；圖層關或沒點中＝nil）
+        local place = Core.placeAt and Core.placeAt(target, wx, wy)
+        local title = place and Core.placeMenuTitle(pn, place)
+        Core.placesAddMenu(Core.mapSubMenu(context, "UI_MinidoracatMiniMap_PlaceMenu", title) or context,
+            pn, wx, wy, blocked, place)
     end
     -- 複製此處座標：選項文字即時帶座標（先看到再決定點不點）
     local cx, cy = math.floor(wx), math.floor(wy)

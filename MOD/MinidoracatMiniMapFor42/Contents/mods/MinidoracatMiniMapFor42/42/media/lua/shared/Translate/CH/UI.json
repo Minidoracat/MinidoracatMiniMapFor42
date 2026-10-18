@@ -480,13 +480,15 @@
     "UI_MinidoracatMiniMap_HomeSet": "已設為家",
     "UI_MinidoracatMiniMap_PlaceAdd": "加入收藏...",
     "UI_MinidoracatMiniMap_PlaceAdded": "已加入收藏",
+    "UI_MinidoracatMiniMap_PlaceRemoved": "已從收藏移除",
     "UI_MinidoracatMiniMap_PlaceNameTitle": "收藏名稱（留空則顯示座標）",
     "UI_MinidoracatMiniMap_PlaceRename": "改名...",
     "UI_MinidoracatMiniMap_PlaceRemove": "從收藏移除",
     "UI_MinidoracatMiniMap_PlaceConfirmRemove": "要從收藏移除「%1」嗎？",
     "UI_MinidoracatMiniMap_PlaceMenu": "收藏",
+    "UI_MinidoracatMiniMap_PlaceMenuOf": "收藏：%1",
     "UI_MinidoracatMiniMap_PlaceMenuSetHome": "設為家",
-    "UI_MinidoracatMiniMap_PlacesEmpty": "還沒有收藏。在地圖上按右鍵選「收藏」￫「加入收藏...」，或選一筆搜尋結果後按「收藏」。",
+    "UI_MinidoracatMiniMap_PlacesEmpty": "還沒有收藏。在地圖上按右鍵選「收藏」￫「加入收藏...」，或在搜尋結果上按右鍵選「加入收藏...」。",
     "UI_MinidoracatMiniMap_SearchKindPlace": "收藏",
     "UI_MinidoracatMiniMap_PlaceError_unsupported": "收藏是由較新版本的 MOD 儲存的，請更新 MOD 後再編輯。"
 }

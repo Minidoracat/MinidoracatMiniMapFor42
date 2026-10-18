@@ -480,13 +480,15 @@
     "UI_MinidoracatMiniMap_HomeSet": "Home set",
     "UI_MinidoracatMiniMap_PlaceAdd": "Add to favorites…",
     "UI_MinidoracatMiniMap_PlaceAdded": "Added to favorites",
+    "UI_MinidoracatMiniMap_PlaceRemoved": "Removed from favorites",
     "UI_MinidoracatMiniMap_PlaceNameTitle": "Favorite name (leave blank to show coordinates)",
     "UI_MinidoracatMiniMap_PlaceRename": "Rename…",
     "UI_MinidoracatMiniMap_PlaceRemove": "Remove from favorites",
     "UI_MinidoracatMiniMap_PlaceConfirmRemove": "Remove “%1” from favorites?",
     "UI_MinidoracatMiniMap_PlaceMenu": "Favorites",
+    "UI_MinidoracatMiniMap_PlaceMenuOf": "Favorite: %1",
     "UI_MinidoracatMiniMap_PlaceMenuSetHome": "Set as home",
-    "UI_MinidoracatMiniMap_PlacesEmpty": "No favorites yet. Right-click the map and choose “Favorites” › “Add to favorites…”, or select a search result and use Favorites.",
+    "UI_MinidoracatMiniMap_PlacesEmpty": "No favorites yet. Right-click the map and choose “Favorites” › “Add to favorites…”, or right-click a search result and choose “Add to favorites…”.",
     "UI_MinidoracatMiniMap_SearchKindPlace": "Favorite",
     "UI_MinidoracatMiniMap_PlaceError_unsupported": "Favorites were saved by a newer version of this mod. Update the mod to edit them."
 }

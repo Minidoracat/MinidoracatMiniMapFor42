@@ -480,13 +480,15 @@
     "UI_MinidoracatMiniMap_HomeSet": "Ustawiono dom",
     "UI_MinidoracatMiniMap_PlaceAdd": "Dodaj do ulubionych…",
     "UI_MinidoracatMiniMap_PlaceAdded": "Dodano do ulubionych",
+    "UI_MinidoracatMiniMap_PlaceRemoved": "Usunięto z ulubionych",
     "UI_MinidoracatMiniMap_PlaceNameTitle": "Nazwa ulubionego (zostaw puste, by pokazać współrzędne)",
     "UI_MinidoracatMiniMap_PlaceRename": "Zmień nazwę…",
     "UI_MinidoracatMiniMap_PlaceRemove": "Usuń z ulubionych",
     "UI_MinidoracatMiniMap_PlaceConfirmRemove": "Usunąć „%1” z ulubionych?",
     "UI_MinidoracatMiniMap_PlaceMenu": "Ulubione",
+    "UI_MinidoracatMiniMap_PlaceMenuOf": "Ulubione: %1",
     "UI_MinidoracatMiniMap_PlaceMenuSetHome": "Ustaw jako dom",
-    "UI_MinidoracatMiniMap_PlacesEmpty": "Brak ulubionych. Kliknij mapę prawym przyciskiem i wybierz „Ulubione” › „Dodaj do ulubionych…” albo zaznacz wynik wyszukiwania i użyj Ulubionych.",
+    "UI_MinidoracatMiniMap_PlacesEmpty": "Brak ulubionych. Kliknij mapę prawym przyciskiem i wybierz „Ulubione” › „Dodaj do ulubionych…” albo kliknij prawym przyciskiem wynik wyszukiwania i wybierz „Dodaj do ulubionych…”.",
     "UI_MinidoracatMiniMap_SearchKindPlace": "Ulubione",
     "UI_MinidoracatMiniMap_PlaceError_unsupported": "Ulubione zostały zapisane przez nowszą wersję tego moda. Zaktualizuj moda, aby je edytować."
 }

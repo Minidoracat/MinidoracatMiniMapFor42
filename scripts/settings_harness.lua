@@ -519,7 +519,7 @@ function H.load(opts)
         src = table.concat({
             "local Core = ...",
             "local HOUSE_SYM, PIN_SYM = 'house.png', 'star.png'",
-            extractFn(places, "iconTexture"), extractFn(places, "drawPlaceAt"),
+            extractFn(places, "iconTexture"), extractFn(places, "labelBox"), extractFn(places, "drawPlaceAt"),
             "return drawPlaceAt",
         }, "\n")
         Core.drawPlaceAt = assert(compile(src))(Core)

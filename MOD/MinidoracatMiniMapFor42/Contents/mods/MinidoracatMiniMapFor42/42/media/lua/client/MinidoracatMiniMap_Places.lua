@@ -422,6 +422,11 @@ local function menuSetHome(pn, x, y)
     local ok, reason = setHomeAt(pn, x, y)
     report(pn, ok, reason, "UI_MinidoracatMiniMap_HomeSet")
 end
+-- 游標下的那筆設為家（雙地圖右鍵；同搜尋視窗「設為家」：只換哪一筆是家，不新增地點）
+local function menuSetHomeId(pn, id)
+    local ok, reason = setHome(pn, id)
+    report(pn, ok, reason, "UI_MinidoracatMiniMap_HomeSet")
+end
 local function menuAddPlace(pn, x, y) Core.placesPromptAdd(pn, x, y, nil) end
 
 --------------------------------------------------------------------------------
@@ -437,12 +442,18 @@ local function iconTexture(key, fallback)
     if tex then return tex end
     return Core.adotsTexture and Core.adotsTexture(fallback) or getTexture(fallback)
 end
+-- 名稱底框的位置（繪製與右鍵命中共用）：預設在圖示下方；靠左右邊夾回，碰到底改放上方
+local function labelBox(inner, ux, uy, half, lw, lblH)
+    local lx, ly = ux - lw / 2, uy + half + 2
+    if lx < 2 then lx = 2 elseif lx > inner.width - lw - 2 then lx = inner.width - lw - 2 end
+    if ly > inner.height - lblH - 2 then ly = uy - half - lblH - 2 end
+    return lx, ly
+end
 -- 一個家／收藏標記（圖示＋下方名稱；地圖與設定視窗預覽共用）：(ux, uy)＝UI 中心，
 -- text／textW＝名稱與未縮放字寬，lblH＝已乘倍率的字高
 local function drawPlaceAt(inner, home, ux, uy, iconSize, text, textW, tz, lblH)
     local drawGlyph = Core.adotsDrawGlyph
     if not drawGlyph then return end
-    local w, h = inner.width, inner.height
     local half = iconSize / 2
     local tex = home and iconTexture("house", HOUSE_SYM) or iconTexture("pin", PIN_SYM)
     if tex then
@@ -453,9 +464,7 @@ local function drawPlaceAt(inner, home, ux, uy, iconSize, text, textW, tz, lblH)
         end
     end
     local lw = textW * tz
-    local lx, ly = ux - lw / 2, uy + half + 2
-    if lx < 2 then lx = 2 elseif lx > w - lw - 2 then lx = w - lw - 2 end
-    if ly > h - lblH - 2 then ly = uy - half - lblH - 2 end
+    local lx, ly = labelBox(inner, ux, uy, half, lw, lblH)
     inner:drawRect(lx - 3, ly, lw + 6, lblH, 0.55, 0, 0, 0)
     Core.drawMapText(inner, text, lx, ly, 1, 1, 1, 0.95, UIFont.Small, tz)
 end
@@ -494,6 +503,41 @@ local function drawPlaces(inner)
             drawPlaceAt(inner, p.id == state.homeId, ux, uy, iconSize, lbl.text, lbl.w, tz, lblH)
         end
     end
+end
+
+-- 游標下的收藏（雙地圖右鍵用，Core.mapMenuFill）：圖標至少算 HIT_MIN 見方（WCAG 2.5.8 最小目標；
+-- 標記大小滑條最小 8px），名稱底框也算；重疊時取最後畫的那筆（最上層，同 _Zones.lua iconPointer）。
+-- 只認 drawPlaces 畫得出來的：這張地圖的「顯示在」那格關、或圖示在邊界外都沒有目標
+local HIT_MIN = 24
+Core.placeAt = function(inner, wx, wy)
+    if not Core.layerOn("places", inner == ISWorldMap_instance and "world" or "mini") then return nil end
+    local pn = inner.playerNum or 0
+    local slot = ensure(pn)
+    local state, api = slot and slot.state, inner.mapAPI
+    if not (state and api) then return nil end
+    local cx, cy = api:worldToUIX(wx, wy), api:worldToUIY(wx, wy)
+    local size = Core.markerIconSize()
+    local half, hit = size / 2, math.max(size, HIT_MIN) / 2
+    local fontH = getTextManager():getFontHeight(UIFont.Small)
+    local tz = Core.mapTextZoom()
+    local lblH = fontH * tz
+    -- 名稱字寬沿用 drawPlaces 的快取；快取還沒跟上（剛改名、換字級）就只認圖標
+    local cache = labelCache[pn]
+    if cache and (cache.revision ~= state.revision or cache.fontH ~= fontH) then cache = nil end
+    for i = state.count, 1, -1 do
+        local p = state.places[i]
+        local ux, uy = api:worldToUIX(p.x, p.y), api:worldToUIY(p.x, p.y)
+        if ux >= half and uy >= half and ux <= inner.width - half and uy <= inner.height - half then
+            if math.abs(cx - ux) <= hit and math.abs(cy - uy) <= hit then return p end
+            local lbl = cache and cache[i]
+            if lbl then
+                local lw = lbl.w * tz
+                local lx, ly = labelBox(inner, ux, uy, half, lw, lblH)
+                if cx >= lx - 3 and cx <= lx + lw + 3 and cy >= ly and cy <= ly + lblH then return p end
+            end
+        end
+    end
+    return nil
 end
 
 Core.placesState = function(pn)
@@ -537,12 +581,31 @@ Core.placesPromptRename = function(pn, id)
         report(pn, ok, reason)
     end)
 end
+-- 「收藏：名稱」父項（Core.mapMenuFill）：名稱太長就截短，完整名稱在地圖標籤與確認框
+local MENU_NAME_MAX = 20
+Core.placeMenuTitle = function(pn, place)
+    local name = labelOf(pn, place)
+    if #name > MENU_NAME_MAX then name = name:sub(1, MENU_NAME_MAX - 1) .. "..." end
+    return getText("UI_MinidoracatMiniMap_PlaceMenuOf", name)
+end
 -- 雙地圖右鍵「收藏」子選單（Core.mapMenuFill 傳子選單；不能掛子選單時是第一層）：回家（依原版慣例
 -- notAvailable＋說明：未設家優先說明設定方法，否則 navBlocked＝Core.navMenuBlocked 的導航被擋原因）、
--- 設為家、加入收藏
-Core.placesAddMenu = function(context, pn, worldX, worldY, navBlocked)
+-- 設為家、加入收藏。place＝游標下的收藏（Core.placeAt）時改成這一筆的設為家（已是家不列）／改名／
+-- 從收藏移除，不列加入收藏（同搜尋視窗收藏列；2026-10-18 設計稿 minimap-places-remove-1018 作答）
+Core.placesAddMenu = function(context, pn, worldX, worldY, navBlocked, place)
     local option = context:addOption(getText("UI_MinidoracatMiniMap_GoHome"), pn, menuGoHome)
     Core.navMenuLock(option, not homeOf(pn) and getText("UI_MinidoracatMiniMap_HomeNotSet") or navBlocked)
+    if place then
+        local home = homeOf(pn)
+        if not home or home.id ~= place.id then
+            context:addOption(getText("UI_MinidoracatMiniMap_SetHome"), pn, menuSetHomeId, place.id)
+        end
+        context:addOption(getText("UI_MinidoracatMiniMap_PlaceRename"), pn, Core.placesPromptRename, place.id)
+        if Core.navPromptPlaceRemove then -- 確認框在 _Search.lua（同搜尋視窗）
+            context:addOption(getText("UI_MinidoracatMiniMap_PlaceRemove"), pn, Core.navPromptPlaceRemove, place.id)
+        end
+        return
+    end
     context:addOption(getText("UI_MinidoracatMiniMap_SetHome"), pn, menuSetHome, worldX, worldY)
     context:addOption(getText("UI_MinidoracatMiniMap_PlaceAdd"), pn, menuAddPlace, worldX, worldY)
 end

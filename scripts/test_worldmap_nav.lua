@@ -170,8 +170,15 @@ Core.navInsertSubMenu = function(context, target, pn, x, y, label, blocked)
     context:addOption("UI_MinidoracatMiniMap_TripAddMenu", target, nil)
     return true
 end
-Core.placesAddMenu = function(context, pn, wx, wy, blocked)
-    handoff.places, handoff.placesMenu = tostring(blocked), context
+-- 收藏圖標命中（真 placeAt 在 _Places.lua，test_places 驗命中規則）：這裡只控回傳，看 mapMenuFill 怎麼接
+local placeHit = nil
+Core.placeAt = function(target, wx, wy)
+    handoff.placeAt = { target, wx, wy }
+    return placeHit
+end
+Core.placeMenuTitle = function(pn, place) return "UI_MinidoracatMiniMap_PlaceMenuOf|" .. place.label end
+Core.placesAddMenu = function(context, pn, wx, wy, blocked, place)
+    handoff.places, handoff.placesMenu, handoff.place = tostring(blocked), context, place
     context:addOption("UI_MinidoracatMiniMap_GoHome")
 end
 -- set 閘門（真 navGateAllows 在 _Nav.lua；這裡只控回傳）：gateMode＝allow／block／blockNoKey／throw
@@ -260,6 +267,7 @@ return {
     setNavTarget = function(v) navTarget = v end,
     setTrip = function(state, err) tripState, tripError = state, err end,
     setInsertAnchors = function(v) insertAnchors = v end,
+    setPlaceHit = function(v) placeHit = v end,
     setGate = function(v) gateMode = v end,
     gateCalls = gateCalls,
     handoff = handoff,
@@ -416,6 +424,23 @@ end
 assert(delegated, "R10: 加入行程須以 pn 與原始世界座標委派 Core.navInsertSubMenu（實得 "
     .. table.concat(mod.calls, ",") .. "）")
 mod.setInsertAnchors(false)
+mod.clearCalls(); mod.resetMenus()
+-- R4c: 游標在收藏圖標上（Core.placeAt 回那一筆）：父項換成「收藏：名稱」、第一層項數不變，
+--      同一筆交給 placesAddMenu；placeAt 收到的是這張地圖與原始世界座標
+mod.setPlaceHit({ id = 7, label = "Shop" })
+wm1:onRightMouseUp(5, 6)
+local m4c = mod.menu(1)
+assert(names(m4c) == SET .. ",UI_MinidoracatMiniMap_TripAdd,UI_MinidoracatMiniMap_PlaceMenuOf|Shop"
+    .. ",UI_MinidoracatMiniMap_CopyHere|12, 34, 0,UI_MinidoracatMiniMap_SearchMenu",
+    "R4c: 收藏上的父項帶名稱、第一層項數不變（實得 " .. names(m4c) .. "）")
+assert(mod.handoff.place and mod.handoff.place.id == 7 and mod.handoff.placesMenu == m4c.options[3].sub,
+    "R4c: 同一筆收藏交給 placesAddMenu 的子選單")
+assert(mod.handoff.placeAt[1] == wm1 and mod.handoff.placeAt[2] == 12.7 and mod.handoff.placeAt[3] == 34.2,
+    "R4c: placeAt 收到這張地圖與原始世界座標")
+mod.setPlaceHit(nil)
+mod.clearCalls(); mod.resetMenus()
+wm1:onRightMouseUp(5, 6)
+assert(names(mod.menu(1)) == OURS and mod.handoff.place == nil, "R4c: 沒點中收藏＝原本的「收藏」與子選單")
 mod.clearCalls(); mod.resetMenus()
 
 --------------------------------------------------------------------------------

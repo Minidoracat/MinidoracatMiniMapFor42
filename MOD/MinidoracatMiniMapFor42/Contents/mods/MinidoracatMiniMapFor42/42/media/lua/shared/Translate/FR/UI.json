@@ -480,13 +480,15 @@
     "UI_MinidoracatMiniMap_HomeSet": "Domicile défini",
     "UI_MinidoracatMiniMap_PlaceAdd": "Ajouter aux favoris...",
     "UI_MinidoracatMiniMap_PlaceAdded": "Ajouté aux favoris",
+    "UI_MinidoracatMiniMap_PlaceRemoved": "Retiré des favoris",
     "UI_MinidoracatMiniMap_PlaceNameTitle": "Nom du favori (laisser vide pour afficher les coordonnées)",
     "UI_MinidoracatMiniMap_PlaceRename": "Renommer...",
     "UI_MinidoracatMiniMap_PlaceRemove": "Retirer des favoris",
     "UI_MinidoracatMiniMap_PlaceConfirmRemove": "Retirer « %1 » des favoris ?",
     "UI_MinidoracatMiniMap_PlaceMenu": "Favoris",
+    "UI_MinidoracatMiniMap_PlaceMenuOf": "Favori : %1",
     "UI_MinidoracatMiniMap_PlaceMenuSetHome": "Définir comme domicile",
-    "UI_MinidoracatMiniMap_PlacesEmpty": "Aucun favori. Faites un clic droit sur la carte et choisissez « Favoris » › « Ajouter aux favoris... », ou sélectionnez un résultat de recherche et utilisez Favoris.",
+    "UI_MinidoracatMiniMap_PlacesEmpty": "Aucun favori. Faites un clic droit sur la carte et choisissez « Favoris » › « Ajouter aux favoris... », ou faites un clic droit sur un résultat de recherche et choisissez « Ajouter aux favoris... ».",
     "UI_MinidoracatMiniMap_SearchKindPlace": "Favori",
     "UI_MinidoracatMiniMap_PlaceError_unsupported": "Les favoris ont été enregistrés par une version plus récente de ce mod. Mettez le mod à jour pour les modifier."
 }

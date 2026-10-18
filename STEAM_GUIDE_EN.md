@@ -121,10 +121,11 @@ Both go by the room names inside buildings, which are also what decides the loot
 === 🧰 Home & favorites
 [list]
 [*] [b]Set[/b]: right-click the map → "Favorites": "Set as home" or "Add to favorites…".
+[*] [b]Remove or rename[/b]: right-click a favorite's icon (or name) on the map → "Favorite: <name>": "Remove from favorites", "Rename…" or "Set as home"; removing asks first.
 [*] [b]Favorites[/b]: named, unlimited.
 [*] [b]New home[/b]: setting a new home keeps the old one as a favorite.
 [*] [b]Go home[/b]: replaces the trip with a single stop home and starts navigating (the mini-map's house button, right-click → "Favorites", or the trip page).
-[*] [b]Favorites list[/b]: an empty search box lists favorites to rename, remove or set as home.
+[*] [b]Favorites list[/b]: an empty search box lists favorites; right-click one (or select it and press "Actions…") to rename, remove or set it as home.
 [*] [b]Saved[/b]: kept on your PC per account (one set per server account in multiplayer, one per save in single player), so a new character still has them after death; to move them to another PC, copy the Zomboid/Lua/MinidoracatMiniMap/places folder.
 [*] [b]Hide icons[/b]: turn off "Show home & favorites" in "Players & navigation"; Go Home, the favorites list and the right-click menu still work.
 [/list]

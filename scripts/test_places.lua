@@ -75,7 +75,8 @@ local function fixture(opts)
     end
     local env = setmetatable({ MinidoracatMiniMapCore = core, MinidoracatMiniMapAPI = api,
         Events = events, getSpecificPlayer = function(pn) return players[pn] end,
-        isClient = function() return client end, getText = function(key) return key end,
+        isClient = function() return client end,
+        getText = function(key, arg) if arg ~= nil then return key .. "|" .. tostring(arg) end return key end,
         ISTextBox = TextBox, ISToolTip = { new = function() return tooltip() end },
         getJoypadData = function() return nil end,
         HaloTextHelper = { addGoodText = function() end, addBadText = function() end },
@@ -533,6 +534,85 @@ do
     eq(#s5.glyphs + #s5.texts, 0, "WMPlaces 關＝世界地圖不畫")
     ISWorldMap_instance = nil
     placeOpts.Places, placeOpts.WMPlaces = nil, nil
+end
+
+-- 雙地圖右鍵的收藏圖標（Core.placeAt）：圖標至少算 24px 見方（標記 8px 也一樣）、名稱底框也算（要等
+-- drawPlaces 建好字寬快取）、重疊取最後畫的那筆；這張地圖不畫收藏、或圖示在邊界外沒畫出來＝沒有目標。
+-- 子選單（placesAddMenu 第 6 參）換成這一筆：設為家（家本身不列）／改名／從收藏移除，不列加入收藏；
+-- 父項「收藏：名稱」（Core.placeMenuTitle）名稱太長截短。
+do
+    local t = fixture(); t.player(0)
+    local shop = assert(t.core.placesAdd(0, 100, 50, "Shop"))
+    local barn = assert(t.core.placesAdd(0, 300, 50, "Barn"))
+    local over = assert(t.core.placesAdd(0, 310, 50, "Over")) -- 比 Barn 晚畫＝疊在上面
+    assert(t.core.placesAdd(0, 3, 50, "Edge")) -- 圖示超出左緣，drawPlaces 不畫
+    local s = { playerNum = 0, width = 1000, height = 200, glyphs = {},
+        mapAPI = { worldToUIX = function(_, x) return x end, worldToUIY = function(_, _, y) return y end } }
+    function s:drawRect() end
+    function s:drawText() end
+    function s:drawTextZoomed() end
+    local function hit(x, y)
+        local p = t.core.placeAt(s, x, y)
+        return p and p.id
+    end
+    eq(hit(100, 50), shop, "點在圖標中心")
+    eq(hit(111, 50), shop, "標記 16px 時仍算 24px 見方（右緣 12px 內）")
+    eq(hit(113, 50), nil, "超出 24px 見方")
+    eq(hit(112, 68), nil, "還沒畫過（沒有字寬快取）時名稱不算")
+    t.core.drawPlaces(s)
+    -- 名稱 "Shop" 寬 20：底框 x 90-110（±3）、y 60-70（圖示下緣＋2、字高 10）
+    eq(hit(112, 68), shop, "名稱底框也算")
+    eq(hit(305, 50), over, "重疊時取最後畫的那筆（最上層）")
+    eq(hit(3, 50), nil, "超出邊界沒畫出來的不算")
+    placeSliders.MarkerIconSize = 8
+    eq(hit(111, 50), shop, "標記 8px 仍算 24px 見方")
+    placeSliders.MarkerIconSize = 32
+    eq(hit(115, 50), shop, "標記 32px 照圖示大小算")
+    placeSliders.MarkerIconSize = nil
+    placeOpts.Places = false
+    eq(hit(100, 50), nil, "小地圖那格關＝小地圖沒有目標")
+    ISWorldMap_instance = s
+    eq(hit(100, 50), shop, "世界地圖那格開＝世界地圖照認")
+    placeOpts.WMPlaces = false
+    eq(hit(100, 50), nil, "世界地圖那格關＝世界地圖沒有目標")
+    ISWorldMap_instance = nil
+    placeOpts.Places, placeOpts.WMPlaces = nil, nil
+
+    local function names(m)
+        local out = {}
+        for i, o in ipairs(m.options) do out[i] = o.name:gsub("^UI_MinidoracatMiniMap_", "") end
+        return table.concat(out, ",")
+    end
+    local removed = {}
+    t.core.navPromptPlaceRemove = function(pn, id) removed[#removed + 1] = pn .. ":" .. id end
+    local m = menu(); t.core.placesAddMenu(m, 0, 100, 50, nil, t.core.placeAt(s, 100, 50))
+    eq(names(m), "GoHome,SetHome,PlaceRename,PlaceRemove", "收藏上的子選單＝這一筆的動作、不列加入收藏")
+    local set = m:find("UI_MinidoracatMiniMap_SetHome")
+    set.fn(set.target, set.a)
+    eq((t.api.getNavHome(0)), 100, "設為家＝這一筆變成家")
+    eq(t.core.placesState(0).count, 4, "設為家不新增地點")
+    eq(lastMessage(t), "UI_MinidoracatMiniMap_HomeSet", "設為家回饋")
+    m = menu(); t.core.placesAddMenu(m, 0, 100, 50, nil, t.core.placeAt(s, 100, 50))
+    eq(names(m), "GoHome,PlaceRename,PlaceRemove", "家本身不列設為家")
+    local rename = m:find("UI_MinidoracatMiniMap_PlaceRename")
+    rename.fn(rename.target, rename.a)
+    local box = t.log.dialogs[#t.log.dialogs]
+    eq(box.default, "Shop", "改名預填這一筆的名稱")
+    box:press("OK", "Mall")
+    eq(t.core.placeLabel(0, t.core.placesState(0).places[1]), "Mall", "改名寫進這一筆")
+    local remove = m:find("UI_MinidoracatMiniMap_PlaceRemove")
+    remove.fn(remove.target, remove.a)
+    eq(removed[1], "0:" .. shop, "移除交給共用確認框（帶 pn 與這一筆的 id）")
+    t.core.navPromptPlaceRemove = nil
+    m = menu(); t.core.placesAddMenu(m, 0, 300, 50, nil, t.core.placeAt(s, 300, 50))
+    eq(names(m), "GoHome,SetHome,PlaceRename", "缺確認框（_Search）時不列移除")
+    m = menu(); t.core.placesAddMenu(m, 0, 600, 50, nil, t.core.placeAt(s, 600, 50))
+    eq(names(m), "GoHome,SetHome,PlaceAdd", "空白處照舊：設為家（這裡）／加入收藏")
+    eq(t.core.placeMenuTitle(0, t.core.placesState(0).places[2]), "UI_MinidoracatMiniMap_PlaceMenuOf|Barn",
+        "父項帶這一筆的名稱")
+    assert(t.core.placesRename(0, barn, "Abcdefghijklmnopqrstuvwxyz"))
+    eq(t.core.placeMenuTitle(0, t.core.placesState(0).places[2]),
+        "UI_MinidoracatMiniMap_PlaceMenuOf|Abcdefghijklmnopqrs...", "名稱超過 20 字截短")
 end
 
 print("test_places: ok")

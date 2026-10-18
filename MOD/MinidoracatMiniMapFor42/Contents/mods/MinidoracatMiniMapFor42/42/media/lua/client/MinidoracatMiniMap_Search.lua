@@ -870,7 +870,8 @@ end
 
 -- 「動作…」鈕與清單右鍵共用同一份原生選單（可捲動、走原版鍵盤／手把路由）。
 -- 按鈕只列次要動作（主要動作已在底部）；右鍵列出該頁全部動作。d.shown(win) 回 false 的項
--- 整項不列（不是灰掉）。anchor＝相對視窗的定位框，後續二層選單（插入位置／收藏）沿用同一處
+-- 整項不列（不是灰掉）；有 d.fill 的項自己往選單加（收藏：依選中項列出那幾項）。anchor＝相對視窗的
+-- 定位框，後續二層選單（插入位置）沿用同一處
 local function openActions(win, anchor, all)
     local trip = win.page == "itinerary"
     local defs = trip and win.tripBtns or win.searchBtns
@@ -880,10 +881,14 @@ local function openActions(win, anchor, all)
         for i = 1, #defs do
             local d = defs[i]
             if d.btn ~= moreBtn and (all or d.group == "more") and (not d.shown or d.shown(win)) then
-                local intent = d.field == "manualBtn"
-                    and { phase = win._tPhase, revision = win._tRev } or nil
-                local option = menu:addOption(d.btn.title, win, d.action, intent)
-                option.notAvailable = d.btn.enable == false
+                if d.fill then
+                    d.fill(menu, win)
+                else
+                    local intent = d.field == "manualBtn"
+                        and { phase = win._tPhase, revision = win._tRev } or nil
+                    local option = menu:addOption(d.btn.title, win, d.action, intent)
+                    option.notAvailable = d.btn.enable == false
+                end
             end
         end
     end)
@@ -999,31 +1004,31 @@ local function placeMenuApply(_, payload)
     end
 end
 
--- 收藏：選中收藏列＝設為家（已是家不列）／改名／移除；選中其他結果＝加入收藏。
+-- 收藏的動作直接放進「動作…」與清單右鍵（openActions 的 fill，不另開第二張選單；2026-10-18 設計稿
+-- minimap-places-remove-1018 作答）：收藏列＝設為家（已是家不列）／改名／從收藏移除（會刪資料的排最後）；
+-- 其他結果＝加入收藏...（直接開命名框）；沒選到地點或缺 _Places＝灰字的加入收藏...（同其他目標動作）。
 -- 座標結果不帶預設名稱：無名收藏顯示即時座標、無名的家顯示「家」，寫死座標字串會蓋掉這兩種顯示
-local function winPlaceMenu(win)
+local function placeOptions(menu, win)
     local it = winSelectedItem(win)
-    if not it then return end
     local pn = win.playerNum or 0
     local owner = getSpecificPlayer(pn)
-    if not owner then return end
-    local button = win.actionAnchor or win.searchMoreBtn
-    openNativeMenu(win, button, function(menu)
-        if it.kind == "place" then
-            if not it.home then
-                menu:addOption(getText("UI_MinidoracatMiniMap_PlaceMenuSetHome"), win, placeMenuApply,
-                    { pn = pn, owner = owner, op = "home", placeId = it.placeId })
-            end
-            menu:addOption(getText("UI_MinidoracatMiniMap_PlaceRename"), win, placeMenuApply,
-                { pn = pn, owner = owner, op = "rename", placeId = it.placeId })
-            menu:addOption(getText("UI_MinidoracatMiniMap_PlaceRemove"), win, placeMenuApply,
-                { pn = pn, owner = owner, op = "remove", placeId = it.placeId })
-        else
-            menu:addOption(getText("UI_MinidoracatMiniMap_PlaceAdd"), win, placeMenuApply,
-                { pn = pn, owner = owner, op = "add", x = it.x, y = it.y,
-                    label = it.kind ~= "coord" and it.label or nil })
-        end
-    end)
+    if not (it and owner and Core.placesState) then
+        local none = menu:addOption(getText("UI_MinidoracatMiniMap_PlaceAdd"))
+        none.notAvailable = true
+        return
+    end
+    local function add(key, payload)
+        payload.pn, payload.owner = pn, owner
+        menu:addOption(getText(key), win, placeMenuApply, payload)
+    end
+    if it.kind ~= "place" then
+        add("UI_MinidoracatMiniMap_PlaceAdd", { op = "add", x = it.x, y = it.y,
+            label = it.kind ~= "coord" and it.label or nil })
+        return
+    end
+    if not it.home then add("UI_MinidoracatMiniMap_PlaceMenuSetHome", { op = "home", placeId = it.placeId }) end
+    add("UI_MinidoracatMiniMap_PlaceRename", { op = "rename", placeId = it.placeId })
+    add("UI_MinidoracatMiniMap_PlaceRemove", { op = "remove", placeId = it.placeId })
 end
 
 --------------------------------------------------------------------------------
@@ -1058,7 +1063,11 @@ local function confirmApply(panel)
         local remove = Core.placesRemove
         local ok, reason = false, "failed"
         if remove then ok, reason = remove(pn, payload.placeId) end
-        if not ok then winMessage(pn, placesErrorText(reason)) end
+        if ok then
+            winMessage(pn, getText("UI_MinidoracatMiniMap_PlaceRemoved"), true) -- 同「已加入收藏」的通道
+        else
+            winMessage(pn, placesErrorText(reason))
+        end
         return
     end
     local st = tripState(pn)
@@ -1590,7 +1599,6 @@ local function winRefresh(win, force)
         win.insertBtn:setEnable(has)
         win.priorityBtn:setEnable(has)
         win.replaceBtn:setEnable(has)
-        win.placeBtn:setEnable(has and Core.placesState ~= nil)
     end
     -- 引擎冷啟動／nodata 重試泵（每幀，prerender 呼叫）：沒設導航目標時 drawNavRoute
     -- 在 kick 前就 return，搜尋是唯一入口（codex review）。實際泵送（小地圖 live inner
@@ -2405,7 +2413,7 @@ local function createSearchWindow(pn)
         tripShowOnMap(target)
     end)
     -- 搜尋頁：主要＝加到行程最後／在地圖顯示；次要＝插在指定站之前／先去這裡／
-    -- 取代整趟（取代會立刻出發，放次要；會丟待前往站時先確認）／收藏（原生選單依選中項切換）
+    -- 取代整趟（取代會立刻出發，放次要；會丟待前往站時先確認）／收藏動作（placeOptions 依選中項直接列出）
     win.searchBtns = {
         { key = "UI_MinidoracatMiniMap_TripAdd", action = winAddStop, field = "addBtn" },
         { key = "UI_MinidoracatMiniMap_SearchGoto", action = winGoto, field = "gotoBtn" },
@@ -2416,7 +2424,7 @@ local function createSearchWindow(pn)
             field = "priorityBtn", group = "more" },
         { key = "UI_MinidoracatMiniMap_SearchSetTarget", action = winSetTarget,
             field = "replaceBtn", group = "more" },
-        { key = "UI_MinidoracatMiniMap_PlaceMenu", action = winPlaceMenu,
+        { key = "UI_MinidoracatMiniMap_PlaceMenu", fill = placeOptions,
             field = "placeBtn", group = "more" },
     }
     makeButtons(win, win.searchBtns)

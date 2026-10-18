@@ -2116,10 +2116,39 @@ do
         end
         win:prerender()
     end
-    local function optionTexts(menu)
+    -- 收藏動作直接列在「動作…」與清單右鍵（placeOptions）：只比收藏相關的項
+    local function placeTexts(menu)
         local out = {}
-        for i, option in ipairs(menu.options) do out[i] = option.text end
+        for _, option in ipairs(menu.options) do
+            if option.text:find("Place", 1, true) then out[#out + 1] = option.text end
+        end
         return table.concat(out, ",", 1, #out)
+    end
+    local function moreMenu()
+        pressButton(win.searchMoreBtn)
+        return win.nativeMenu
+    end
+    local function choose(menu, text)
+        for i, option in ipairs(menu.options) do
+            if option.text == text then
+                menu.mouseOver = i
+                menu:onJoypadDown(Joypad.AButton)
+                return
+            end
+        end
+        error("選單沒有「" .. text .. "」", 2)
+    end
+    -- 清單右鍵（rowMenu：先選中滑鼠下的列，再開全部動作）
+    local function rightClickPlace(id)
+        local y = 0
+        for _, row in ipairs(win.list.items) do
+            if row.item.placeId == id then
+                win.list:onRightMouseUp(30, y + 1)
+                return win.nativeMenu
+            end
+            y = y + (row.height or win.list.itemheight)
+        end
+        error("清單裡找不到收藏 " .. tostring(id), 2)
     end
     local P = "UI_MinidoracatMiniMap_"
 
@@ -2131,7 +2160,10 @@ do
     win:prerender(); win:prerender()
     linesContain(win.list.items[1].item.lines, "PlacesEmpty", "Z1: 收藏為空時先說明怎麼加入")
     linesContain(win.list.items[2].item.lines, "SearchEmptyHint", "Z1: 原本的搜尋說明仍保留")
-    falsy(win.placeBtn.enable, "Z1: 沒選到地點時收藏鈕停用")
+    local m1 = moreMenu()
+    eq(placeTexts(m1), P .. "PlaceAdd", "Z1: 沒選到地點時只列加入收藏")
+    truthy(m1.options[#m1.options].notAvailable, "Z1: 而且是灰字（同其他目標動作）")
+    m1:closeAll()
 
     setPlaces({ { id = 1, x = 100, y = 0, label = "Shop" }, { id = 2, x = 300, y = 400 },
         { id = 3, x = 30, y = 40, label = "Farm" } }, 2)
@@ -2147,8 +2179,7 @@ do
     eq(items[2].item.tag, P .. "SearchKindPlace", "Z2: 其他收藏用收藏標籤")
     eq(items[1].item.right, "(300, 400)  500m", "Z2: 右欄沿用座標＋距離格式")
     linesContain(items[4].item.lines, "SearchEmptyHint", "Z2: 搜尋說明接在收藏之後")
-    truthy(win.addBtn.enable and win.gotoBtn.enable and win.placeBtn.enable,
-        "Z2: 選到收藏列時既有動作與收藏鈕可用")
+    truthy(win.addBtn.enable and win.gotoBtn.enable, "Z2: 選到收藏列時既有動作可用")
     clearCalls()
     pressButton(win.addBtn)
     eq(lastCall("edit").op, "append", "Z2: 收藏列可直接加到行程最後")
@@ -2184,50 +2215,46 @@ do
     players[0].x = 0
     win:prerender()
 
-    -- 收藏鈕：選中項決定選單內容；點擊時驗 owner，失敗必顯示
+    -- 收藏動作：選中項決定列哪幾項（直接列出，不另開第二張選單）；點擊時驗 owner，失敗必顯示
     selectPlace(1)
-    pressButton(win.placeBtn)
-    local menu = win.nativeMenu
-    eq(optionTexts(menu), P .. "PlaceMenuSetHome," .. P .. "PlaceRename," .. P .. "PlaceRemove",
-        "Z5: 非家收藏列出設為家／改名／移除")
+    local menu = moreMenu()
+    eq(placeTexts(menu), P .. "PlaceMenuSetHome," .. P .. "PlaceRename," .. P .. "PlaceRemove",
+        "Z5: 非家收藏直接列出設為家／改名／從收藏移除")
+    eq(menu.options[#menu.options].text, P .. "PlaceRemove", "Z5: 會刪資料的移除排最後")
     clearCalls()
-    menu:onJoypadDown(Joypad.AButton)
+    choose(menu, P .. "PlaceMenuSetHome")
     eq(lastCall("placeHome").id, 1, "Z6: 設為家走 Core.placesSetHome(捕捉的 placeId)")
     truthy(win.msgGood, "Z6: 成功回饋用成功色")
     linesContain(win.msgLines, "HomeSet", "Z6: 成功要說出來")
     placeResult = { ok = false, reason = "stale" }
-    pressButton(win.placeBtn)
-    win.nativeMenu:onJoypadDown(Joypad.AButton)
+    choose(moreMenu(), P .. "PlaceMenuSetHome")
     falsy(win.msgGood, "Z6: 失敗不得用成功色")
     linesContain(win.msgLines, "PlaceError_stale", "Z6: 失敗走 placesErrorText，不得靜默")
     placeResult = { ok = true }
     selectPlace(2)
-    pressButton(win.placeBtn)
-    eq(optionTexts(win.nativeMenu), P .. "PlaceRename," .. P .. "PlaceRemove",
-        "Z5: 已是家不列設為家")
-    win.nativeMenu:closeAll()
+    menu = moreMenu()
+    eq(placeTexts(menu), P .. "PlaceRename," .. P .. "PlaceRemove", "Z5: 已是家不列設為家")
+    menu:closeAll()
     selectPlace(1)
-    pressButton(win.placeBtn)
-    menu = win.nativeMenu
+    menu = moreMenu()
     players[0] = makePlayer(0, 0)
     clearCalls()
-    menu:onJoypadDown(Joypad.AButton)
+    choose(menu, P .. "PlaceMenuSetHome")
     eq(countCalls("placeHome"), 0, "Z7: 換角色後的舊選單不得改新角色的收藏")
     win:prerender()
     selectPlace(1)
-    pressButton(win.placeBtn)
-    win.nativeMenu.mouseOver = 2
     clearCalls()
-    win.nativeMenu:onJoypadDown(Joypad.AButton)
+    choose(moreMenu(), P .. "PlaceRename")
     eq(lastCall("placeRename").id, 1, "Z6: 改名走 Core.placesPromptRename")
 
-    -- 移除：共用確認面板；不驗行程 revision，只驗 owner 與收藏仍在
-    selectPlace(3)
-    pressButton(win.placeBtn)
-    win.nativeMenu.mouseOver = 3
+    -- 移除：收藏列按右鍵直接選「從收藏移除」；共用確認面板；不驗行程 revision，只驗 owner 與收藏仍在
+    menu = rightClickPlace(3)
+    eq(win.list.items[win.list.selected].item.placeId, 3, "Z8: 右鍵先選中滑鼠下的收藏")
+    eq(placeTexts(menu), P .. "PlaceMenuSetHome," .. P .. "PlaceRename," .. P .. "PlaceRemove",
+        "Z8: 右鍵直接列出收藏動作")
     UI.confirm = nil
     clearCalls()
-    win.nativeMenu:onJoypadDown(Joypad.AButton)
+    choose(menu, P .. "PlaceRemove")
     local panel = UI.confirm
     truthy(panel, "Z8: 移除收藏先確認")
     eq(panel.payload.op, "placeRemove", "Z8: 確認面板 op=placeRemove")
@@ -2239,6 +2266,8 @@ do
     pressButton(panel.actionBtn)
     eq(lastCall("placeRemove") and lastCall("placeRemove").id, 3,
         "Z9: 行程 revision 改變不影響收藏移除（不走行程 revision 檢查）")
+    truthy(win.msgGood, "Z9: 移除成功用成功色")
+    linesContain(win.msgLines, "PlaceRemoved", "Z9: 移除成功要說出來（同加入收藏）")
     Core.navPromptPlaceRemove(0, 1)
     panel = UI.confirm
     setPlaces({ { id = 2, x = 300, y = 400 }, { id = 3, x = 30, y = 40, label = "Barn" } }, 2)
@@ -2257,13 +2286,13 @@ do
     falsy(UI.confirm, "Z10: 不存在的收藏不開確認")
     linesContain(win.msgLines, "PlaceError_stale", "Z10: 而是回報 stale")
 
-    -- 非收藏結果：只列加入收藏；座標結果不帶預設名稱，其他結果帶結果名稱
+    -- 非收藏結果：只列加入收藏、直接開命名框；座標結果不帶預設名稱，其他結果帶結果名稱
     win.entry.text = "12895,3499"
     win:prerender(); win:prerender()
-    pressButton(win.placeBtn)
-    eq(optionTexts(win.nativeMenu), P .. "PlaceAdd", "Z11: 非收藏結果只列加入收藏")
+    menu = moreMenu()
+    eq(placeTexts(menu), P .. "PlaceAdd", "Z11: 非收藏結果只列加入收藏")
     clearCalls()
-    win.nativeMenu:onJoypadDown(Joypad.AButton)
+    choose(menu, P .. "PlaceAdd")
     local added = lastCall("placeAdd")
     eq(added.x, 12895, "Z11: 帶結果座標 X")
     eq(added.y, 3499, "Z11: 帶結果座標 Y")
@@ -2272,8 +2301,7 @@ do
     Core.navStreetIndex = function() return { { name = "Oak St", low = "oak st", x = 40, y = 60 } } end
     win.entry.text = "oak"
     win:prerender(); win:prerender()
-    pressButton(win.placeBtn)
-    win.nativeMenu:onJoypadDown(Joypad.AButton)
+    choose(moreMenu(), P .. "PlaceAdd")
     eq(lastCall("placeAdd").label, "Oak St", "Z11: 其他結果以結果名稱當預設名稱")
     Core.navStreetIndex = oldIndex
 
@@ -2313,7 +2341,7 @@ do
     win:onJoypadDown(Joypad.AButton)
     eq(countCalls("goHome"), 1, "Z13: 手把 A 觸發回家")
 
-    -- 窄版大字：回家不被折疊；收藏鈕經「更多」原生選單可達並開出收藏選單
+    -- 窄版大字：回家不被折疊；收藏動作經「動作…」原生選單可達
     Core.toggleSearchWindow(0)
     screen = { w = 320, h = 540 }
     fontHeights = { [UIFont.Small] = 26, [UIFont.Medium] = 33 }
@@ -2325,16 +2353,9 @@ do
     win._lastText = nil
     win:prerender(); win:prerender()
     eq(win.list.items[1].item.placeId, 2, "Z14: 窄版仍是家排第一")
-    pressButton(win.searchMoreBtn)
-    local pick
-    for i, option in ipairs(win.nativeMenu.options) do
-        if option.text == win.placeBtn.title then pick = i end
-    end
-    truthy(pick and not win.nativeMenu.options[pick].notAvailable, "Z14: 更多選單含可用的收藏")
-    win.nativeMenu.mouseOver = pick
-    win.nativeMenu:onJoypadDown(Joypad.AButton)
-    eq(optionTexts(win.nativeMenu), P .. "PlaceRename," .. P .. "PlaceRemove",
-        "Z14: 經更多選單開出收藏選單")
+    menu = moreMenu()
+    eq(placeTexts(menu), P .. "PlaceRename," .. P .. "PlaceRemove", "Z14: 窄版「動作…」直接列出收藏動作")
+    falsy(menu.options[#menu.options].notAvailable, "Z14: 而且可用")
     win.nativeMenu:closeAll()
     Core.toggleSearchWindow(0)
     screen = { w = 1920, h = 1080 }
@@ -2347,7 +2368,7 @@ do
     Core.navMessage(0, "oops")
     falsy(halos[#halos].good, "Z15: 其餘走 addBadText")
 
-    -- 缺 _Places（單獨抽載）：不列收藏、收藏鈕停用、回家顯示 generic 錯誤，不丟錯
+    -- 缺 _Places（單獨抽載）：不列收藏、加入收藏停用、回家顯示 generic 錯誤，不丟錯
     for _, name in ipairs({ "placesState", "placesError", "placeLabel", "placesErrorText",
         "placesSetHome", "placesPromptRename", "placesPromptAdd", "placesRemove", "placesGoHome" }) do
         Core[name] = nil
@@ -2360,7 +2381,10 @@ do
     win.entry.text = "12895,3499"
     win:prerender(); win:prerender()
     truthy(win.addBtn.enable, "Z16 前提: 選到了真地點")
-    falsy(win.placeBtn.enable, "Z16: 缺 _Places 時收藏鈕停用")
+    menu = moreMenu()
+    eq(placeTexts(menu), P .. "PlaceAdd", "Z16: 缺 _Places 時只列加入收藏")
+    truthy(menu.options[#menu.options].notAvailable, "Z16: 而且是灰字")
+    menu:closeAll()
     Core.toggleSearchWindow(0, "itinerary")
     pressButton(win.homeBtn)
     linesContain(win.msgLines, "TripError_failed", "Z16: 缺 _Places 時回家顯示 generic 錯誤")

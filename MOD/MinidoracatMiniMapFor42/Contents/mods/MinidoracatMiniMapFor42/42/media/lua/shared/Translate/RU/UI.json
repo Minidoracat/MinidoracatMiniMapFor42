@@ -480,13 +480,15 @@
     "UI_MinidoracatMiniMap_HomeSet": "Дом задан",
     "UI_MinidoracatMiniMap_PlaceAdd": "В избранное...",
     "UI_MinidoracatMiniMap_PlaceAdded": "Добавлено в избранное",
+    "UI_MinidoracatMiniMap_PlaceRemoved": "Удалено из избранного",
     "UI_MinidoracatMiniMap_PlaceNameTitle": "Название места (пусто - показывать координаты)",
     "UI_MinidoracatMiniMap_PlaceRename": "Переименовать...",
     "UI_MinidoracatMiniMap_PlaceRemove": "Удалить из избранного",
     "UI_MinidoracatMiniMap_PlaceConfirmRemove": "Удалить «%1» из избранного?",
     "UI_MinidoracatMiniMap_PlaceMenu": "Избранное",
+    "UI_MinidoracatMiniMap_PlaceMenuOf": "Избранное: %1",
     "UI_MinidoracatMiniMap_PlaceMenuSetHome": "Сделать домом",
-    "UI_MinidoracatMiniMap_PlacesEmpty": "Избранного пока нет. Щёлкните ПКМ по карте и выберите «Избранное» › «В избранное...» или выберите результат поиска и нажмите «Избранное».",
+    "UI_MinidoracatMiniMap_PlacesEmpty": "Избранного пока нет. Щёлкните ПКМ по карте и выберите «Избранное» › «В избранное...» или щёлкните ПКМ по результату поиска и выберите «В избранное...».",
     "UI_MinidoracatMiniMap_SearchKindPlace": "Избранное",
     "UI_MinidoracatMiniMap_PlaceError_unsupported": "Избранное сохранено более новой версией этого мода. Обновите мод, чтобы его редактировать."
 }

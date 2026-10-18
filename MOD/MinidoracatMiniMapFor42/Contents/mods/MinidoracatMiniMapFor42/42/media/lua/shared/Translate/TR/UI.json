@@ -480,13 +480,15 @@
     "UI_MinidoracatMiniMap_HomeSet": "Ev ayarlandı",
     "UI_MinidoracatMiniMap_PlaceAdd": "Favorilere ekle...",
     "UI_MinidoracatMiniMap_PlaceAdded": "Favorilere eklendi",
+    "UI_MinidoracatMiniMap_PlaceRemoved": "Favorilerden kaldırıldı",
     "UI_MinidoracatMiniMap_PlaceNameTitle": "Favori adı (koordinatları göstermek için boş bırakın)",
     "UI_MinidoracatMiniMap_PlaceRename": "Yeniden adlandır...",
     "UI_MinidoracatMiniMap_PlaceRemove": "Favorilerden kaldır",
     "UI_MinidoracatMiniMap_PlaceConfirmRemove": "\"%1\" favorilerden kaldırılsın mı?",
     "UI_MinidoracatMiniMap_PlaceMenu": "Favoriler",
+    "UI_MinidoracatMiniMap_PlaceMenuOf": "Favori: %1",
     "UI_MinidoracatMiniMap_PlaceMenuSetHome": "Ev olarak ayarla",
-    "UI_MinidoracatMiniMap_PlacesEmpty": "Henüz favori yok. Haritaya sağ tıklayıp \"Favoriler\" › \"Favorilere ekle...\" seçeneğini seçin ya da bir arama sonucunu seçip Favoriler'i kullanın.",
+    "UI_MinidoracatMiniMap_PlacesEmpty": "Henüz favori yok. Haritaya sağ tıklayıp \"Favoriler\" › \"Favorilere ekle...\" seçeneğini seçin ya da bir arama sonucuna sağ tıklayıp \"Favorilere ekle...\" seçeneğini seçin.",
     "UI_MinidoracatMiniMap_SearchKindPlace": "Favori",
     "UI_MinidoracatMiniMap_PlaceError_unsupported": "Favoriler bu modun daha yeni bir sürümüyle kaydedildi. Düzenlemek için modu güncelleyin."
 }
