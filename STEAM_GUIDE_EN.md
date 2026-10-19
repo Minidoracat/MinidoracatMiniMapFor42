@@ -1,7 +1,7 @@
 <!-- 指南網址：https://steamcommunity.com/sharedfiles/filedetails/?id=3817841972 -->
 <!-- Steam guide source (English): the full reference for this mod; the Workshop description only summarizes. Format and sync: pz-family-docs/release.md「完整說明：Steam 指南」 -->
 <!-- 標題：📖 MiniMap Mod Guide: Features, Navigation & Road Data -->
-<!-- 摘要：Illustrated guide to the Minidoracat MiniMap mod: map imagery, resource points, parking lots, search and multi-target navigation, home and favorites, mini-map controls and icons, Map Display Settings and server sandbox options, and road data for mod maps. -->
+<!-- 摘要：Illustrated guide to the Minidoracat MiniMap mod: map imagery, resource points, parking lots, search and multi-target navigation, home and favorites, mini-map controls, facing arrows and floors, icons, Map Display Settings and server sandbox options, and road data for mod maps. -->
 === 🚀 Quick start
 [b]繁體中文版：[/b][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817841920]小地圖 MOD 完整說明[/url]
 
@@ -150,6 +150,35 @@ Both go by the room names inside buildings, which are also what decides the loot
 [/list]
 [*] [b]Teleport Here[/b] (MP server staff only): right-click the mini-map → "Teleport Here" is the first item, same as on the world map; only roles that can use /teleportto (admin, moderator, GM, observer) see it.
 [/list]
+=== 🧰 Facing arrows & floors
+{{img:12-player-facing.jpg}}
+[h3]Your facing[/h3]
+[list]
+[*] [b]Arrow[/b]: your position is a red arrow pointing where your character faces; in a vehicle it points where the vehicle's front points. Both maps have it, drawn on top of every layer, so home and vehicle icons no longer cover it.
+[*] [b]View cone[/b]: a faint red cone in front of the arrow shows at a glance which way you face; it only shows direction, not the game's real field of view.
+[*] [b]Toggles[/b]: in the "Players & navigation" category, unticking "Show which way I face (arrow)" brings back the vanilla red dot, and unticking "View cone (me and other players)" removes the cones; the size follows "Marker size (home, favorites, nav, search)".
+[/list]
+[h3]Other players' facing (MP only)[/h3]
+[list]
+[*] [b]Colors[/b]: teammates in your faction or safehouse are cyan, other players white, each with an arrow and a cone, one size smaller than yours.
+[*] [b]The server decides who[/b]: the sandbox option "Other players' facing": Off, Faction and safehouse only (default), or Everyone on the map.
+[*] [b]No extra intel[/b]: it follows the vanilla map's rules (server option MapRemotePlayerVisibility); at 1 (the vanilla default, other players hidden on the map) nothing is drawn, so set it to 2–4 first.
+[*] [b]Far-away players[/b]: the game sends only their position, not their facing, so they keep the vanilla red dot.
+[*] [b]Turn it off yourself[/b]: untick "Show which way other players face"; it's greyed out when the server sets the option to Off.
+[/list]
+[h3]Floor marks[/h3]
+{{img:13-floor-marks.jpg}}
+[list]
+[*] [b]Other players[/b]: players not on your floor are drawn differently; pick the look in "Floor mark style":
+[list]
+[*] BFH (default): their arrow is one size smaller, in its normal color when they're above you and darker when they're below.
+[*] BF6: same size, with a small black triangle inside the arrow, pointing up when they're above you and down when they're below (easier to see with a larger "Marker size").
+[/list]
+[*] [b]Zombie dots[/b]: dots on other floors fade, in both styles.
+[*] [b]Which floor[/b]: basements are negative and stairs count as the floor below; in split screen each map uses its own player.
+[*] [b]Servers can turn it off[/b]: the sandbox option "Allow floor marks" is on by default; which floor someone is on is intel too, so PVP servers can turn it off, and then both settings are greyed out in the settings window. Single player always allows it.
+[*] [b]Turn it off yourself[/b]: untick "Mark other floors (players and zombies)".
+[/list]
 === 🧰 Icons & display
 [h3]Zombies, animals and vehicles[/h3]
 [list]
@@ -239,6 +268,7 @@ Both go by the room names inside buildings, which are also what decides the loot
 [*] four livestock-visibility levels
 [*] safehouse display scope
 [*] faction sharing toggle
+[*] who can see other players' facing, and whether floor marks are allowed ("General" page)
 [/list]
 [*] [b]Live[/b]: changes apply live.
 [*] [b]Display distance[/b]: players can only set their own display distance stricter than the server, not looser.
@@ -290,6 +320,12 @@ MiniMap doesn't detect the real road surface to correct coordinates; it only has
 [list]
 [*] Usually the map's author didn't include road data, or a higher-priority map covers that area.
 [*] See "Mod maps & road data" and the MOD Maps supported map list.
+[/list]
+[h3]Can't see teammates' arrows in multiplayer?[/h3]
+[list]
+[*] With the vanilla server option MapRemotePlayerVisibility at 1 (the vanilla default, other players hidden on the map) nothing is drawn; set it to 2–4.
+[*] The sandbox option "Other players' facing" must not be Off; by default only teammates in your faction or safehouse are drawn.
+[*] They must be nearby: for far-away players the game sends only a position, so they keep the vanilla red dot.
 [/list]
 [h3]Will it lower my FPS?[/h3]
 [list]

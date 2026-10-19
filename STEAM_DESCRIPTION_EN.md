@@ -30,8 +30,8 @@ Keep every Minidoracat MiniMap series mod up to date and restart the game after 
 [*] [b]Home & favorites[/b]: right-click the map → "Favorites" to set home or add favorites; one-click Go home
 [*] [b]Zombie / animal / vehicle icons[/b]: on both the mini-map and the world map, plus street names and safehouses
 [*] [b]Ghost mode & free resizing[/b]: a permanent overlay that never blocks play; icon and text sizes adjustable
-[*] [b]Server sandbox controls[/b]: disable icons and cap display distances; changes apply live
-[*] [b]Singleplayer & multiplayer[/b]: only shows data the client already receives
+[*] [b]Facing arrows & floors[/b]: see which way you and your teammates face, and who is on another floor
+[*] [b]Server sandbox controls[/b]: disable icons and cap display distances; only data the client already receives is drawn
 [/list]
 📖 [b]Full details, settings and FAQ for every feature:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817841972]MiniMap Mod Guide: Features, Navigation & Road Data[/url]
 
