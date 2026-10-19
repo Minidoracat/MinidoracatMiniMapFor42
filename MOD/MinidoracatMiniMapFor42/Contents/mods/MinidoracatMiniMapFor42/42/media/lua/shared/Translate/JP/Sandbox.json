@@ -38,7 +38,7 @@
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option2": "派閥とセーフハウスのみ",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option3": "マップに見える全員",
     "Sandbox_MinidoracatMiniMapAllowFloorMarks": "ほかの階の表示を許可",
-    "Sandbox_MinidoracatMiniMapAllowFloorMarks_tooltip": "有効にすると、プレイヤーはミニマップとワールドマップでほかの階を見分けられます。ほかの階のプレイヤーは矢印の描き方が変わり、ほかの階のゾンビドットは薄くなります。初期値はオフです。プレイヤーがどの階にいるかも情報になるので、PVP サーバーはオフのままにできます。プレイヤーについては「ほかのプレイヤーの向き」で描かれている人だけに適用されます。マルチプレイ専用で、シングルプレイでは常に使えます。",
+    "Sandbox_MinidoracatMiniMapAllowFloorMarks_tooltip": "有効にすると、プレイヤーはミニマップとワールドマップでほかの階を見分けられます。ほかの階のプレイヤーは矢印の描き方が変わり、ほかの階のゾンビドットは薄くなります。初期値はオンです。プレイヤーがどの階にいるかも情報になるので、PVP サーバーはオフにできます。プレイヤーについては「ほかのプレイヤーの向き」で描かれている人だけに適用されます。マルチプレイ専用で、シングルプレイでは常に使えます。",
     "Sandbox_MinidoracatMiniMapAllowAnimalDots": "動物アイコンを許可",
     "Sandbox_MinidoracatMiniMapAllowAnimalDots_tooltip": "プレイヤーがミニマップに周囲の動物アイコン（野生・家畜）を表示することを許可します。無効にすると全プレイヤーで機能がオフになります（管理者の変更は即時反映）。",
     "Sandbox_MinidoracatMiniMapAnimalIconDistance": "動物アイコン表示距離（マス）",

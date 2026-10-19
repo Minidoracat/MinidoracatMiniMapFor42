@@ -205,9 +205,9 @@ local SCHEMA = {
     -- 其他玩家的朝向箭頭與扇形（_Nav.lua Core.remoteFacingLevel）：1 關閉、2 只限陣營與安全屋成員、
     -- 3 地圖上看得到的所有玩家；不在任何旁路白名單（原版 CanSeeAll 規則已讓管理員看到全部）
     { "RemoteFacingDisplay", "number", 2 },
-    -- 別層標示（_Nav.lua Core.floorMarksMode）：預設關，多人要伺服器開放（玩家在哪一層也是 PVP 情報）；
+    -- 別層標示（_Nav.lua Core.floorMarksMode）：預設開，伺服器可以關（玩家在哪一層也是 PVP 情報）；
     -- 單機一律可用（判斷在 floorMarksMode，不在這裡）。不在任何旁路白名單
-    { "AllowFloorMarks", "boolean", false },
+    { "AllowFloorMarks", "boolean", true },
     { "ExportPlayerPositions", "boolean", false },
     { "PlayerExportInterval", "number", 5 },
     { "ExportOfflinePlayers", "boolean", true },

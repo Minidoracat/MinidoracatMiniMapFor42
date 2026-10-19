@@ -38,7 +38,7 @@
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option2": "Tylko frakcja i schronienie",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option3": "Wszyscy na mapie",
     "Sandbox_MinidoracatMiniMapAllowFloorMarks": "Zezwól na oznaczanie pięter",
-    "Sandbox_MinidoracatMiniMapAllowFloorMarks_tooltip": "Po włączeniu gracze odróżniają inne piętra na minimapie i mapie świata: inni gracze na innym piętrze mają inną strzałkę, a kropki zombie z innych pięter bledną. Domyślnie wyłączone, bo piętro, na którym jest gracz, to cenna informacja na serwerach PVP. W przypadku graczy dotyczy tylko tych, których już pokazuje „Kierunek innych graczy”. Tylko w grze wieloosobowej; w grze jednoosobowej zawsze dozwolone.",
+    "Sandbox_MinidoracatMiniMapAllowFloorMarks_tooltip": "Po włączeniu gracze odróżniają inne piętra na minimapie i mapie świata: inni gracze na innym piętrze mają inną strzałkę, a kropki zombie z innych pięter bledną. Domyślnie włączone; piętro, na którym jest gracz, to cenna informacja, więc serwery PVP mogą to wyłączyć. W przypadku graczy dotyczy tylko tych, których już pokazuje „Kierunek innych graczy”. Tylko w grze wieloosobowej; w grze jednoosobowej zawsze dozwolone.",
     "Sandbox_MinidoracatMiniMapAllowAnimalDots": "Zezwól na ikony zwierząt",
     "Sandbox_MinidoracatMiniMapAllowAnimalDots_tooltip": "Pozwala graczom pokazywać na minimapie ikony pobliskich zwierząt (dzikich i hodowlanych). Po wyłączeniu funkcja jest wyłączona dla wszystkich graczy (zmiany administratora działają na bieżąco).",
     "Sandbox_MinidoracatMiniMapAnimalIconDistance": "Zasięg wyświetlania ikon zwierząt (pola)",

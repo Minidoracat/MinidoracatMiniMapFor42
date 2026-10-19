@@ -38,7 +38,7 @@
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option2": "只限陣營與安全屋成員",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option3": "地圖上看得到的所有玩家",
     "Sandbox_MinidoracatMiniMapAllowFloorMarks": "允許標示其他樓層",
-    "Sandbox_MinidoracatMiniMapAllowFloorMarks_tooltip": "開啟後，玩家可以在小地圖與世界地圖上分出其他樓層：別層的其他玩家換一種箭頭畫法，別層的殭屍點位變淡。預設關閉：玩家在哪一層也是情報，PVP 伺服器可以維持關閉。其他玩家只套用在「其他玩家的朝向」有畫出來的人。只在多人遊戲有作用，單機一律可用。",
+    "Sandbox_MinidoracatMiniMapAllowFloorMarks_tooltip": "開啟後，玩家可以在小地圖與世界地圖上分出其他樓層：別層的其他玩家換一種箭頭畫法，別層的殭屍點位變淡。預設開啟；玩家在哪一層也是情報，PVP 伺服器可以關閉。其他玩家只套用在「其他玩家的朝向」有畫出來的人。只在多人遊戲有作用，單機一律可用。",
     "Sandbox_MinidoracatMiniMapAllowAnimalDots": "允許動物圖標",
     "Sandbox_MinidoracatMiniMapAllowAnimalDots_tooltip": "允許玩家在小地圖上顯示附近動物圖標（野生與畜養）。關閉後所有玩家的動物圖標功能失效（管理員改動即時生效）。",
     "Sandbox_MinidoracatMiniMapAnimalIconDistance": "動物圖標顯示距離（格）",

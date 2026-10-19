@@ -38,7 +38,7 @@
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option2": "只限阵营与安全屋成员",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option3": "地图上看得到的所有玩家",
     "Sandbox_MinidoracatMiniMapAllowFloorMarks": "允许标示其他楼层",
-    "Sandbox_MinidoracatMiniMapAllowFloorMarks_tooltip": "开启后，玩家可以在小地图与世界地图上分出其他楼层：其他楼层的玩家换一种箭头画法，其他楼层的丧尸点位变淡。默认关闭：玩家在哪一层也是情报，PVP 服务器可以保持关闭。其他玩家只套用在「其他玩家的朝向」有画出来的人。只在多人游戏有作用，单机一律可用。",
+    "Sandbox_MinidoracatMiniMapAllowFloorMarks_tooltip": "开启后，玩家可以在小地图与世界地图上分出其他楼层：其他楼层的玩家换一种箭头画法，其他楼层的丧尸点位变淡。默认开启；玩家在哪一层也是情报，PVP 服务器可以关闭。其他玩家只套用在「其他玩家的朝向」有画出来的人。只在多人游戏有作用，单机一律可用。",
     "Sandbox_MinidoracatMiniMapAllowAnimalDots": "允许动物图标",
     "Sandbox_MinidoracatMiniMapAllowAnimalDots_tooltip": "允许玩家在小地图上显示附近动物图标（野生与畜养）。关闭后所有玩家的动物图标功能失效（管理员改动即时生效）。",
     "Sandbox_MinidoracatMiniMapAnimalIconDistance": "动物图标显示距离（格）",

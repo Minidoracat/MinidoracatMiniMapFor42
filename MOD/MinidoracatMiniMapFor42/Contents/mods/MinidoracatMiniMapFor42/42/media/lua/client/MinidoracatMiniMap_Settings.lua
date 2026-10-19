@@ -96,7 +96,7 @@ local SEC_PLACES = { id = "places", label = "UI_MinidoracatMiniMap_SecPlaces", i
     -- 自己與隊友圖標是引擎圖層：Players／RemotePlayers 只管小地圖，世界地圖的在原版世界地圖選項（齒輪）；
     -- PlayerFacing／PlayerCone／RemoteFacing 是本 MOD 畫的箭頭與扇形，兩張地圖共用勾選，跟著各自的
     -- Players（其他玩家另要 RemotePlayers）顯示；RemoteFacing 在伺服器沙盒 RemoteFacingDisplay＝1 時停用。
-    -- FloorMarks＝別層標示（其他玩家的箭頭與殭屍點），伺服器沙盒 AllowFloorMarks 沒開（多人）時連同樣式下拉停用；
+    -- FloorMarks＝別層標示（其他玩家的箭頭與殭屍點），伺服器沙盒 AllowFloorMarks 關掉（多人）時連同樣式下拉停用；
     -- 樣式下拉只管其他玩家、單機不列
     ticks = {
         { id = "Players", label = "UI_MinidoracatMiniMap_Players", default = true },

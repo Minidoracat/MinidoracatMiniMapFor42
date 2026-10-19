@@ -49,7 +49,7 @@
     "UI_MinidoracatMiniMap_RemoteFacing": "其他玩家显示朝向",
     "UI_MinidoracatMiniMap_RemoteFacing_tooltip": "附近的队友（同阵营或同安全屋）画青色箭头，其他玩家画白色箭头。范围由服务器决定；远处的玩家只有原版红点。",
     "UI_MinidoracatMiniMap_FloorMarks": "标示其他楼层（玩家与丧尸）",
-    "UI_MinidoracatMiniMap_FloorMarks_tooltip": "不在你这一层的其他玩家与丧尸点位会画得不一样：丧尸点位变淡，其他玩家的箭头按「楼层标示样式」。走在楼梯上算下面那一层。多人游戏要服务器先开放（沙盒选项「允许标示其他楼层」，默认关闭）。",
+    "UI_MinidoracatMiniMap_FloorMarks_tooltip": "不在你这一层的其他玩家与丧尸点位会画得不一样：丧尸点位变淡，其他玩家的箭头按「楼层标示样式」。走在楼梯上算下面那一层。多人游戏时服务器可以关闭（沙盒选项「允许标示其他楼层」，默认开启）。",
     "UI_MinidoracatMiniMap_FloorMarkStyle": "楼层标示样式",
     "UI_MinidoracatMiniMap_FloorMarkStyle_tooltip": "BFH 式：同一层的箭头保持原大小；其他楼层的小一号，在楼上的保持原色、在楼下的变暗。BF6 式：箭头大小不变，其他楼层的箭头里多一个黑色小三角，尖端朝上表示在楼上、朝下表示在楼下；把「标记大小」调大更容易看清。只影响其他玩家；两种样式的丧尸点位都是其他楼层变淡。",
     "UI_MinidoracatMiniMap_FloorMarkStyle_BFH": "BFH：大小与明暗",

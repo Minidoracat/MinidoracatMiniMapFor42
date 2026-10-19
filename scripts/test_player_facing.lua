@@ -373,13 +373,14 @@ mate.z, bob.z = 1, -1
 local R = size * 0.8
 local function tip(sz) return 0.55 * 1.25 * sz end
 
--- FL0 伺服器沒開放（沙盒 AllowFloorMarks 預設關）：勾選開著也不分樓層，照收集順序、原大小
+-- FL0 伺服器關掉（沙盒 AllowFloorMarks＝false）：勾選開著也不分樓層，照收集順序、原大小
+sandbox.AllowFloorMarks = false
 el = mpDraw()
 check(#el.polys == 6 and near(H / 2 - el.polys[2][2], tip(R)) and el.polys[2].b == 1 and el.polys[4].r > 0.9,
-    "FL0 floor marks need the server to allow them")
-sandbox.AllowFloorMarks = true
+    "FL0 a server can turn floor marks off")
+sandbox.AllowFloorMarks = nil
 
--- FL1 BFH 式：樓下先畫、樓上再畫、自己最上面；別層小一號，樓上照原色、樓下變暗（外框一起），扇形跟著
+-- FL1 BFH 式（伺服器沒設＝預設開）：樓下先畫、樓上再畫、自己最上面；別層小一號，樓上照原色、樓下變暗（外框一起），扇形跟著
 el = mpDraw()
 check(#el.polys == 6 and near(el.polys[2][1], W / 2 - 40) and near(el.polys[4][1], W / 2 + 40)
     and el.polys[6].r > 0.9 and el.polys[6].g < 0.2, "FL1 draws below, then above, then yourself on top")

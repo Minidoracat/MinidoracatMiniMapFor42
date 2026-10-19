@@ -38,7 +38,7 @@
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option2": "Faction and safehouse only",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option3": "Everyone on the map",
     "Sandbox_MinidoracatMiniMapAllowFloorMarks": "Allow floor marks",
-    "Sandbox_MinidoracatMiniMapAllowFloorMarks_tooltip": "When on, players can tell other floors apart on the mini-map and the world map: other players on another floor get a different arrow, and zombie dots on other floors fade. Off by default, because which floor a player is on is useful intel on PVP servers. For players it only applies to those \"Other players' facing\" already shows. Multiplayer only; single player always allows it.",
+    "Sandbox_MinidoracatMiniMapAllowFloorMarks_tooltip": "When on, players can tell other floors apart on the mini-map and the world map: other players on another floor get a different arrow, and zombie dots on other floors fade. On by default; which floor a player is on is useful intel, so PVP servers may want to turn it off. For players it only applies to those \"Other players' facing\" already shows. Multiplayer only; single player always allows it.",
     "Sandbox_MinidoracatMiniMapAllowAnimalDots": "Allow animal icons",
     "Sandbox_MinidoracatMiniMapAllowAnimalDots_tooltip": "Allow players to show nearby animal icons (wild and livestock) on the mini-map. When disabled, the feature is turned off for every player (admin changes apply live).",
     "Sandbox_MinidoracatMiniMapAnimalIconDistance": "Animal icon display distance (tiles)",

@@ -10,7 +10,7 @@ option MinidoracatMiniMap.RemoteFacingDisplay
 {type = enum, numValues = 3, default = 2, page = MinidoracatMiniMap, translation = MinidoracatMiniMapRemoteFacingDisplay,}
 
 option MinidoracatMiniMap.AllowFloorMarks
-{type = boolean, default = false, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowFloorMarks,}
+{type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowFloorMarks,}
 
 option MinidoracatMiniMap.AllowAdminTacticalView
 {type = boolean, default = false, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowAdminTacticalView,}

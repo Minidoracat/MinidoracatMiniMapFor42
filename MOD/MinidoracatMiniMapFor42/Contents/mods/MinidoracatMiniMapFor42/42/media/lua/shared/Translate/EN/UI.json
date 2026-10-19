@@ -49,7 +49,7 @@
     "UI_MinidoracatMiniMap_RemoteFacing": "Show which way other players face",
     "UI_MinidoracatMiniMap_RemoteFacing_tooltip": "Nearby teammates (same faction or safehouse) get a cyan arrow, other players a white one. The server decides who is shown; players far away stay a plain red dot.",
     "UI_MinidoracatMiniMap_FloorMarks": "Mark other floors (players and zombies)",
-    "UI_MinidoracatMiniMap_FloorMarks_tooltip": "Other players and zombie dots that are not on your floor are drawn differently: zombie dots fade, and other players' arrows follow the \"Floor mark style\". Someone on the stairs counts as the floor below. In multiplayer the server has to allow it first (sandbox option \"Allow floor marks\", off by default).",
+    "UI_MinidoracatMiniMap_FloorMarks_tooltip": "Other players and zombie dots that are not on your floor are drawn differently: zombie dots fade, and other players' arrows follow the \"Floor mark style\". Someone on the stairs counts as the floor below. In multiplayer the server can turn it off (sandbox option \"Allow floor marks\", on by default).",
     "UI_MinidoracatMiniMap_FloorMarkStyle": "Floor mark style",
     "UI_MinidoracatMiniMap_FloorMarkStyle_tooltip": "BFH style: arrows on your floor keep their size; arrows on other floors are smaller, bright when the player is above you and dark when below. BF6 style: arrows keep their size and get a small black triangle inside, pointing up when the player is above you and down when below; a larger \"Marker size\" makes it easier to see. Only affects other players; zombie dots on other floors fade in both styles.",
     "UI_MinidoracatMiniMap_FloorMarkStyle_BFH": "BFH: size and shade",

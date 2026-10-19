@@ -986,13 +986,13 @@ do
     check(navRow(st.nav, "remote").switch ~= nil, "S2 nav shows the master switch")
     st.selectSection("places")
     check(e.byKey("FloorMarkStyle") ~= nil, "S1 multiplayer shows the floor style dropdown")
-    -- 伺服器沙盒 AllowFloorMarks 預設關：勾選與樣式下拉都停用；伺服器開放後才能用
-    check(e.byKey("FloorMarks")._enabled == false and e.byKey("FloorMarkStyle"):isEnabled() == false,
-        "S1 floor marks stay disabled until the server allows them")
-    e.gates.AllowFloorMarks = true
-    st.selectSection("places")
+    -- 伺服器沙盒 AllowFloorMarks 預設開：勾選與樣式下拉都能用；伺服器關掉時兩個都停用
     check(e.byKey("FloorMarks")._enabled == true and e.byKey("FloorMarkStyle"):isEnabled() == true,
-        "S1 the server switch enables the floor tick and its style")
+        "S1 floor marks are enabled by default")
+    e.gates.AllowFloorMarks = false
+    st.selectSection("places")
+    check(e.byKey("FloorMarks")._enabled == false and e.byKey("FloorMarkStyle"):isEnabled() == false,
+        "S1 a server that turns floor marks off disables the tick and its style")
     e.gates.AllowFloorMarks = nil
     st.selectSection("remote")
     local header = e.controls(function(el)

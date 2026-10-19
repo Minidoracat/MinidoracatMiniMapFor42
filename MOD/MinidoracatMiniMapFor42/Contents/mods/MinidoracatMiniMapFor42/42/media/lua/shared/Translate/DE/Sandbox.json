@@ -38,7 +38,7 @@
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option2": "Nur Fraktion und Safehouse",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option3": "Alle auf der Karte",
     "Sandbox_MinidoracatMiniMapAllowFloorMarks": "Etagen-Kennzeichnung erlauben",
-    "Sandbox_MinidoracatMiniMapAllowFloorMarks_tooltip": "Wenn aktiv, können Spieler auf Minimap und Weltkarte andere Etagen unterscheiden: Andere Spieler auf einer anderen Etage bekommen einen anderen Pfeil, Zombiepunkte auf anderen Etagen werden blasser. Standardmäßig aus, denn auf welcher Etage jemand ist, ist auf PVP-Servern eine wertvolle Information. Bei Spielern gilt es nur für die, die \"Blickrichtung anderer Spieler\" bereits zeigt. Nur im Mehrspieler; im Einzelspieler immer erlaubt.",
+    "Sandbox_MinidoracatMiniMapAllowFloorMarks_tooltip": "Wenn aktiv, können Spieler auf Minimap und Weltkarte andere Etagen unterscheiden: Andere Spieler auf einer anderen Etage bekommen einen anderen Pfeil, Zombiepunkte auf anderen Etagen werden blasser. Standardmäßig an; auf welcher Etage jemand ist, ist eine wertvolle Information, deshalb können PVP-Server es ausschalten. Bei Spielern gilt es nur für die, die \"Blickrichtung anderer Spieler\" bereits zeigt. Nur im Mehrspieler; im Einzelspieler immer erlaubt.",
     "Sandbox_MinidoracatMiniMapAllowAnimalDots": "Tier-Icons erlauben",
     "Sandbox_MinidoracatMiniMapAllowAnimalDots_tooltip": "Erlaubt Spielern, Icons von Tieren in der Nähe (Wild- und Nutztiere) auf der Minimap anzuzeigen. Deaktiviert ist die Funktion für alle Spieler aus (Admin-Änderungen gelten sofort).",
     "Sandbox_MinidoracatMiniMapAnimalIconDistance": "Anzeigeweite Tier-Icons (Kacheln)",

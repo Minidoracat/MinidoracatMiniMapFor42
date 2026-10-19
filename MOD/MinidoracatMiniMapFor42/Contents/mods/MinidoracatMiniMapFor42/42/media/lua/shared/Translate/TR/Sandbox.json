@@ -38,7 +38,7 @@
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option2": "Yalnızca grup ve güvenli ev",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option3": "Haritadaki herkes",
     "Sandbox_MinidoracatMiniMapAllowFloorMarks": "Kat işaretlemeye izin ver",
-    "Sandbox_MinidoracatMiniMapAllowFloorMarks_tooltip": "Açıkken oyuncular mini haritada ve dünya haritasında diğer katları ayırt edebilir: başka kattaki diğer oyuncuların oku farklı çizilir, diğer katlardaki zombi noktaları soluklaşır. Varsayılan olarak kapalıdır, çünkü bir oyuncunun hangi katta olduğu PVP sunucularında değerli bir bilgidir. Oyuncular için yalnızca \"Diğer oyuncuların yönü\" ile zaten gösterilenlere uygulanır. Yalnızca çok oyunculu; tek oyunculu oyunda her zaman izinlidir.",
+    "Sandbox_MinidoracatMiniMapAllowFloorMarks_tooltip": "Açıkken oyuncular mini haritada ve dünya haritasında diğer katları ayırt edebilir: başka kattaki diğer oyuncuların oku farklı çizilir, diğer katlardaki zombi noktaları soluklaşır. Varsayılan olarak açıktır; bir oyuncunun hangi katta olduğu değerli bir bilgi olduğundan PVP sunucuları bunu kapatabilir. Oyuncular için yalnızca \"Diğer oyuncuların yönü\" ile zaten gösterilenlere uygulanır. Yalnızca çok oyunculu; tek oyunculu oyunda her zaman izinlidir.",
     "Sandbox_MinidoracatMiniMapAllowAnimalDots": "Hayvan simgelerine izin ver",
     "Sandbox_MinidoracatMiniMapAllowAnimalDots_tooltip": "Oyuncuların yakındaki hayvan simgelerini (vahşi ve çiftlik hayvanları) mini haritada göstermesine izin verir. Devre dışıyken özellik tüm oyuncular için kapanır (yönetici değişiklikleri anında uygulanır).",
     "Sandbox_MinidoracatMiniMapAnimalIconDistance": "Hayvan simgesi görüntüleme mesafesi (kare)",

@@ -49,7 +49,7 @@
     "UI_MinidoracatMiniMap_RemoteFacing": "Diğer oyuncuların baktığı yönü göster",
     "UI_MinidoracatMiniMap_RemoteFacing_tooltip": "Yakındaki takım arkadaşları (aynı grup veya güvenli ev) camgöbeği, diğer oyuncular beyaz ok alır. Kimin görüneceğine sunucu karar verir; uzaktaki oyuncular kırmızı nokta olarak kalır.",
     "UI_MinidoracatMiniMap_FloorMarks": "Diğer katları işaretle (oyuncular ve zombiler)",
-    "UI_MinidoracatMiniMap_FloorMarks_tooltip": "Sizinle aynı katta olmayan diğer oyuncular ve zombi noktaları farklı çizilir: zombi noktaları soluklaşır, diğer oyuncuların okları \"Kat stili\" ayarına uyar. Merdivendeki biri alttaki kattan sayılır. Çok oyunculu oyunda önce sunucunun izin vermesi gerekir (sandbox seçeneği \"Kat işaretlemeye izin ver\", varsayılan olarak kapalı).",
+    "UI_MinidoracatMiniMap_FloorMarks_tooltip": "Sizinle aynı katta olmayan diğer oyuncular ve zombi noktaları farklı çizilir: zombi noktaları soluklaşır, diğer oyuncuların okları \"Kat stili\" ayarına uyar. Merdivendeki biri alttaki kattan sayılır. Çok oyunculu oyunda sunucu bunu kapatabilir (sandbox seçeneği \"Kat işaretlemeye izin ver\", varsayılan olarak açık).",
     "UI_MinidoracatMiniMap_FloorMarkStyle": "Kat stili",
     "UI_MinidoracatMiniMap_FloorMarkStyle_tooltip": "BFH stili: kendi katınızdaki oklar boyutunu korur; diğer katlardakiler daha küçüktür, oyuncu üstünüzdeyse parlak, altınızdaysa koyudur. BF6 stili: oklar boyutunu korur ve içine küçük siyah bir üçgen eklenir; oyuncu üstünüzdeyse yukarıyı, altınızdaysa aşağıyı gösterir. \"İşaretçi boyutu\" büyüdükçe daha kolay görünür. Yalnızca diğer oyuncuları etkiler; iki stilde de diğer katlardaki zombi noktaları soluklaşır.",
     "UI_MinidoracatMiniMap_FloorMarkStyle_BFH": "BFH: boyut ve parlaklık",

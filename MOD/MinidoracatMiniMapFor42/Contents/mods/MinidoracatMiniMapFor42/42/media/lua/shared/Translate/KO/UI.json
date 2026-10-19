@@ -49,7 +49,7 @@
     "UI_MinidoracatMiniMap_RemoteFacing": "다른 플레이어의 방향 표시",
     "UI_MinidoracatMiniMap_RemoteFacing_tooltip": "가까운 동료(같은 조직 또는 은신처)는 청록색 화살표, 다른 플레이어는 흰색 화살표로 표시합니다. 누가 보이는지는 서버가 정하며, 멀리 있는 플레이어는 원래의 빨간 점으로 남습니다.",
     "UI_MinidoracatMiniMap_FloorMarks": "다른 층 구분 표시(플레이어와 좀비)",
-    "UI_MinidoracatMiniMap_FloorMarks_tooltip": "나와 다른 층에 있는 다른 플레이어와 좀비 점을 다르게 그립니다. 좀비 점은 흐려지고, 다른 플레이어의 화살표는 \"층 표시 방식\"을 따릅니다. 계단 위에 있는 사람은 아래층으로 칩니다. 멀티플레이에서는 서버가 먼저 허용해야 합니다(샌드박스 옵션 \"다른 층 표시 허용\", 기본값 꺼짐).",
+    "UI_MinidoracatMiniMap_FloorMarks_tooltip": "나와 다른 층에 있는 다른 플레이어와 좀비 점을 다르게 그립니다. 좀비 점은 흐려지고, 다른 플레이어의 화살표는 \"층 표시 방식\"을 따릅니다. 계단 위에 있는 사람은 아래층으로 칩니다. 멀티플레이에서는 서버가 끌 수 있습니다(샌드박스 옵션 \"다른 층 표시 허용\", 기본값 켜짐).",
     "UI_MinidoracatMiniMap_FloorMarkStyle": "층 표시 방식",
     "UI_MinidoracatMiniMap_FloorMarkStyle_tooltip": "BFH 방식: 같은 층의 화살표는 원래 크기이고, 다른 층의 화살표는 한 단계 작아지며 위층이면 원래 색, 아래층이면 어둡게 표시합니다. BF6 방식: 화살표 크기는 그대로이고, 다른 층의 화살표 안에 작은 검은 삼각형이 생깁니다. 위를 가리키면 위층, 아래를 가리키면 아래층입니다. \"표시 크기\"를 키우면 더 잘 보입니다. 다른 플레이어에만 적용되며, 좀비 점은 두 방식 모두 다른 층이면 흐려집니다.",
     "UI_MinidoracatMiniMap_FloorMarkStyle_BFH": "BFH: 크기와 밝기",

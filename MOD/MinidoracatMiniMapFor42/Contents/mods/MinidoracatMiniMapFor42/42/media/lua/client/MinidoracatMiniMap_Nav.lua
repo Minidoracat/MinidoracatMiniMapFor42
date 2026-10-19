@@ -632,11 +632,11 @@ Core.remoteFacingLevel = function(pn)
     if v == 1 or v == 3 then return v end
     return 2
 end
--- 沙盒 AllowFloorMarks（預設關）：多人要伺服器開放才有別層標示——玩家在哪一層也是 PVP 情報；單機沒有
+-- 沙盒 AllowFloorMarks（預設開）：多人時伺服器可以關掉別層標示——玩家在哪一層也是 PVP 情報；單機沒有
 -- 別的玩家，一律可用。回 1＝伺服器關閉（設定視窗「標示其他樓層」與樣式下拉停用，offMode）、2＝可用。
 -- 其他玩家（drawPlayerFacing）與殭屍點（_Dots.lua drawZombieDotsOn）共用
 Core.floorMarksMode = function(pn)
-    if not isClient() or Core.sandboxGate("AllowFloorMarks", false, pn) == true then return 2 end
+    if not isClient() or Core.sandboxGate("AllowFloorMarks", true, pn) == true then return 2 end
     return 1
 end
 -- 同隊＝同陣營或同安全屋（原版 UIWorldMap.shouldShowRemotePlayer 的同一組判斷，本機玩家任一位即可）。
