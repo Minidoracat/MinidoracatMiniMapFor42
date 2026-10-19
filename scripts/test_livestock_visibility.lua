@@ -251,7 +251,7 @@ local cell = { getZombieList = function() return javaList(zombies) end }
 local function getCell() return cell end
 local function log(err) error(err) end
 local function zombie(x, y)
-    return { getX = function() return x end, getY = function() return y end }
+    return { getX = function() return x end, getY = function() return y end, getZ = function() return 0 end }
 end
 ]=]
 local zombieSuffix = [=[

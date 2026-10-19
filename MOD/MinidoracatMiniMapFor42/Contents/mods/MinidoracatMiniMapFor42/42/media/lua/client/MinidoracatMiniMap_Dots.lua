@@ -67,6 +67,7 @@ local ZDOTS_COLORS = {
 -- （舊三檔大小 combobox 的像素換算表已隨遷移程式碼移至 MinidoracatMiniMap_Migrate.lua）
 local ZDOTS_MAXES = { 100, 200, 400, 800 } -- 上限檔位（索引對應 ZombieDotMax combobox）
 local ZDOTS_EDGE_A = 0.8      -- 描邊透明度（黑）；隨 ZombieDotAlpha 滑條等比縮放
+local ZDOTS_FLOOR_A = 0.3     -- 別層殭屍點的透明度倍率（勾選 FloorMarks；設計稿 minimap-floors-v2-1019）
 
 -- ponytail: 掃描硬上限 4000——超過的清單尾端不掃（輪替起點掃描是升級路徑），
 -- 實務上客戶端同步的殭屍數遠低於此，引擎也早在此之前就跑不動了
@@ -251,6 +252,7 @@ local function sampleZombieDots(inner, gateMax, scanKey)
                         if not d then d = {}; pool[c] = d end
                         d.x = zx
                         d.y = zy
+                        d.z = math.floor(z:getZ()) -- 樓層（地下室是負數）：畫的時候和地圖的玩家比
                     end
                 end
                 if nearC >= maxDots then break end -- 近圈吃滿額度＝後面必不入選
@@ -266,6 +268,7 @@ local function sampleZombieDots(inner, gateMax, scanKey)
                 if not s then s = {}; st.dots[count] = s end
                 s.x = pool[j].x
                 s.y = pool[j].y
+                s.z = pool[j].z
             end
         end
         take(st.near, nearC)
@@ -288,6 +291,7 @@ local function sampleZombieDots(inner, gateMax, scanKey)
 end
 -- test:zombie-sampling:end
 
+-- test:zombie-dots-draw:start
 -- 一顆殭屍點（黑描邊＋本體；地圖與設定視窗預覽共用）。c＝ZDOTS_COLORS 項、af＝透明度係數
 local function drawZombieDot(el, ux, uy, size, c, af)
     el:drawRect(ux - 2, uy - 2, size + 2, size + 2, ZDOTS_EDGE_A * af, 0, 0, 0)
@@ -299,7 +303,8 @@ end
 
 -- 殭屍點繪製（小地圖與世界地圖共用；el 需有 mapAPI/width/height/playerNum）。
 -- optId＝該表面的開關（小地圖 ZombieDots／世界地圖 WMZombieDots）；surface＝"mini"／"world"
--- （功能閘門 zombie 用）；顏色/大小/上限與伺服器沙盒閘兩表面共用
+-- （功能閘門 zombie 用）；顏色/大小/上限與伺服器沙盒閘兩表面共用。別層標示（伺服器開放 Core.floorMarksMode、
+-- 勾選 FloorMarks）開著時，和這張地圖的玩家不同樓層的點乘上 ZDOTS_FLOOR_A：玩家樓層每幀讀，殭屍樓層是取樣時記的
 local function drawZombieDotsOn(el, optId, surface)
     if not getBoolOption(optId, false) then return end -- 關閉＝零成本
     -- 伺服器沙盒禁用（管理員戰術檢視生效時 Policy 對此鍵回 true＝旁路）：
@@ -318,6 +323,11 @@ local function drawZombieDotsOn(el, optId, surface)
     local c = zdotsColor()
     local size = getSliderValue("ZombieDotSize", 3, 1, 16)
     local af = getSliderValue("ZombieDotAlpha", 100, 10, 100) / 100 -- 透明度係數（描邊/本體等比）
+    local myFloor
+    if Core.floorMarksMode(pn) == 2 and getBoolOption("FloorMarks", true) then
+        local p = getSpecificPlayer(pn)
+        if p then myFloor = math.floor(p:getZ()) end
+    end
     local mapAPI = el.mapAPI
     -- 仿射投影（perf 稽核 ICON-1）：原每點 2 次 worldToUI 跨界（800 檔＝1600 次/
     -- 幀/表面）收斂為每幀 6 次導係數採樣＋逐點純 Lua 乘加。錨定取樣時的視野
@@ -337,11 +347,12 @@ local function drawZombieDotsOn(el, optId, surface)
             -- 手動裁到視窗內（Lua drawRect 不吃元件裁切）；含描邊起繪於 ux-2。
             -- drawRect＝ISUIElement.lua:1191（引數 x,y,w,h,a,r,g,b）
             if ux >= 2 and uy >= 2 and ux <= el.width - size and uy <= el.height - size then
-                drawZombieDot(el, ux, uy, size, c, af)
+                drawZombieDot(el, ux, uy, size, c, (myFloor and d.z ~= myFloor) and af * ZDOTS_FLOOR_A or af)
             end
         end
     end
 end
+-- test:zombie-dots-draw:end
 
 --------------------------------------------------------------------------------
 -- 動物圖標（AnimalDots，預設關）：野生/畜養獨立開關＋兩種圖標風格。

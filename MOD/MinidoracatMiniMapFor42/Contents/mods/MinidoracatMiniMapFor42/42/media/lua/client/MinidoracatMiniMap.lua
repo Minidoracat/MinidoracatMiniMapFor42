@@ -1175,8 +1175,24 @@ if PZAPI and PZAPI.ModOptions then
     modOptions:addTitle("UI_MinidoracatMiniMap_SecPlaces")
     modOptions:addTickBox("Players", "UI_MinidoracatMiniMap_Players", true,
         "UI_MinidoracatMiniMap_Players_tooltip")
+    -- 朝向箭頭與視野扇形（_Nav.lua Core.drawPlayerFacing）：兩張地圖共用，跟著各自的自己圖標顯示；
+    -- 其他玩家另要「顯示隊友圖標」與伺服器沙盒 RemoteFacingDisplay
+    modOptions:addTickBox("PlayerFacing", "UI_MinidoracatMiniMap_PlayerFacing", true,
+        "UI_MinidoracatMiniMap_PlayerFacing_tooltip")
+    modOptions:addTickBox("PlayerCone", "UI_MinidoracatMiniMap_PlayerCone", true,
+        "UI_MinidoracatMiniMap_PlayerCone_tooltip")
     modOptions:addTickBox("RemotePlayers", "UI_MinidoracatMiniMap_RemotePlayers", true,
         "UI_MinidoracatMiniMap_RemotePlayers_tooltip")
+    modOptions:addTickBox("RemoteFacing", "UI_MinidoracatMiniMap_RemoteFacing", true,
+        "UI_MinidoracatMiniMap_RemoteFacing_tooltip")
+    -- 別層標示（_Nav.lua drawFacingBuf、_Dots.lua drawZombieDotsOn）：殭屍點別層變淡；其他玩家的箭頭照樣式
+    -- 1＝BFH（別層小一號，樓上亮、樓下暗）、2＝BF6（箭頭裡加上下小三角）
+    modOptions:addTickBox("FloorMarks", "UI_MinidoracatMiniMap_FloorMarks", true,
+        "UI_MinidoracatMiniMap_FloorMarks_tooltip")
+    combo = modOptions:addComboBox("FloorMarkStyle", "UI_MinidoracatMiniMap_FloorMarkStyle",
+        "UI_MinidoracatMiniMap_FloorMarkStyle_tooltip")
+    combo:addItem("UI_MinidoracatMiniMap_FloorMarkStyle_BFH", true) -- 預設 BFH
+    combo:addItem("UI_MinidoracatMiniMap_FloorMarkStyle_BF6", false)
     -- 家與收藏點標記（兩格預設開，Core.LAYER_MAPS.places）：關＝那張地圖不畫，回家與收藏清單照常（_Places.lua drawPlaces）
     modOptions:addTickBox("Places", "UI_MinidoracatMiniMap_Places", true,
         "UI_MinidoracatMiniMap_Places_tooltip")
@@ -2912,6 +2928,12 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         end
         pcall(Core.drawPlayerCoords, self) -- 在導航目標之前畫（距離標籤蓋膠囊，見函式註解）
         pcall(Core.drawNavTargets, self)
+        -- 自己的朝向箭頭：路線、家與收藏、載具圖標都可能落在玩家腳下，所以排在它們之後
+        local pfOk, pfErr = pcall(Core.drawPlayerFacing, self)
+        if not pfOk and not self._minidoracatFacingErrLogged then
+            self._minidoracatFacingErrLogged = true
+            log("player facing draw failed: " .. tostring(pfErr))
+        end
         -- 管理員檢視標記畫在全部加繪之上（最後呼叫）：它是「你正在看旁路資料」
         -- 的提示，不得被點雲/圖標蓋掉；失敗 log-once 且下一幀重試
         local adminOk, adminErr = pcall(Core.drawAdminViewMarker, self)

@@ -1,5 +1,6 @@
 {
     "IGUI_MapOption_Isometric": "Isometrisch",
+    "IGUI_MapOption_Isometric_tooltip": "An: Die Karte dreht sich passend zur Spielansicht, Norden liegt oben rechts. Aus: Draufsicht mit Norden oben. Die Karte kennt nur diese zwei Ausrichtungen und dreht sich nicht mit deinem Charakter.",
     "IGUI_MapOption_PlaceNames": "Ortsnamen",
     "IGUI_MapOption_RemoteSymbols": "Remote-Symbole",
     "IGUI_MapOption_RemoteSymbols_tooltip": "Aus blendet alle Kartensymbole aus, die andere Spieler teilen; deine bleiben. Um nur bestimmte Spieler auszublenden, wähle sie in der Kategorie \"Remote-Symbole\" der Kartenanzeige oder klicke auf der Weltkarte mit rechts auf ihr Symbol.",

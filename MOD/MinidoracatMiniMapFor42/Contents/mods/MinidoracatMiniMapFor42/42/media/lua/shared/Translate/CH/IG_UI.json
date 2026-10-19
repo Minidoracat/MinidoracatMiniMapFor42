@@ -1,5 +1,6 @@
 {
     "IGUI_MapOption_Isometric": "等軸測投影",
+    "IGUI_MapOption_Isometric_tooltip": "勾選＝地圖轉成和遊戲畫面一樣的斜角，北方在右上；不勾＝俯視，北方朝上。地圖只有這兩種方向，不會跟著角色旋轉。",
     "IGUI_MapOption_PlaceNames": "地名",
     "IGUI_MapOption_RemoteSymbols": "其他玩家標記",
     "IGUI_MapOption_RemoteSymbols_tooltip": "關閉時隱藏所有其他玩家分享的地圖標記，只留你自己的。只想隱藏某幾位玩家：在「地圖顯示設定」的「其他玩家標記」分類點選作者，或在世界地圖右鍵他的標記。",

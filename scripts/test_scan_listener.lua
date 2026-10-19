@@ -106,7 +106,7 @@ local function fixture()
             h.calls[#h.calls + 1] = { pn = pn, kind = kind }
         end)
     end
-    h.setZombies({ { getX = function() return 1 end, getY = function() return 1 end } })
+    h.setZombies({ { getX = function() return 1 end, getY = function() return 1 end, getZ = function() return 0 end } })
     h.setVehicles({ { getX = function() return 2 end, getY = function() return 2 end } })
     return h
 end

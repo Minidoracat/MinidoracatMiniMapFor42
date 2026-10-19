@@ -1,5 +1,6 @@
 {
     "IGUI_MapOption_Isometric": "Isométrique",
+    "IGUI_MapOption_Isometric_tooltip": "Activé : la carte prend l'orientation de la vue du jeu, nord en haut à droite. Désactivé : vue de dessus, nord en haut. La carte n'a que ces deux orientations ; elle ne pivote pas avec votre personnage.",
     "IGUI_MapOption_PlaceNames": "Nom des endroits",
     "IGUI_MapOption_RemoteSymbols": "Symboles des autres",
     "IGUI_MapOption_RemoteSymbols_tooltip": "Désactivé masque tous les symboles de carte partagés par les autres joueurs ; les vôtres restent. Pour ne masquer que certains joueurs, choisissez-les dans la catégorie « Symboles des autres » des Réglages d'affichage de la carte, ou faites un clic droit sur leur symbole sur la carte du monde.",

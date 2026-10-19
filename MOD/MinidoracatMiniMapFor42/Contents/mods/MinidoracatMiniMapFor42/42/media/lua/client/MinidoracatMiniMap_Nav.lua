@@ -508,6 +508,309 @@ local function drawPlayerCoords(inner)
     end
 end
 
+-- 朝向箭頭與視野扇形（設計稿 minimap-facing-1018、minimap-team-facing-1019）：自己與附近其他玩家的
+-- 箭頭蓋在引擎的 6×6 紅點上、畫在本 MOD 全部地圖圖層之上（呼叫端排在 drawNavTargets 之後）。引擎紅點
+-- 在 Lua prerender 之前就畫完（UIWorldMap.render → super.render），站在家或坐車時會被家圖標、方向盤
+-- 圖標整顆蓋住。方向＝「位置」與「前方一點」都經 mapAPI 投影後取畫面向量：俯視、等軸測與 175ms 切換
+-- 過場同一條路徑。原版地圖引擎只有俯視／等軸測兩種矩陣，地圖本身不能跟著角色旋轉。
+-- 全掛 Core、不開 chunk 層 local（Kahlua 主 chunk local 上限）。
+-- test:player-facing:start
+-- 鏢形：0＝尖、1＝右後、2＝凹口、3＝左後。單色 DrawPolygon 以第 0 點為扇心拆 (0,1,2)(0,2,3)
+-- 兩個三角形，凹四邊形照樣畫對——頂點順序不可動。pad＝外擴（描邊層用）。走 ISUIElement 的
+-- drawPolygon（元件相對座標，ISUIElement.lua:1254）：地圖與設定預覽元件都有
+Core.drawFacingDart = function(el, cx, cy, ux, uy, len, wid, pad, r, g, b, a)
+    local px, py = -uy, ux
+    local f = 0.55 * len + pad * 1.8
+    local back = 0.45 * len + pad
+    local notch = 0.15 * len - pad * 0.4
+    local hw = wid * 0.5 + pad
+    el:drawPolygon(nil,
+        cx + ux * f, cy + uy * f,
+        cx - ux * back + px * hw, cy - uy * back + py * hw,
+        cx - ux * notch, cy - uy * notch,
+        cx - ux * back - px * hw, cy - uy * back - py * hw,
+        r, g, b, a)
+end
+-- 兩層：黑色外框、彩色本體（預設原版紅點的紅；其他玩家的顏色見 FACING_COLORS）。2026-10-18 使用者
+-- 在樣式比較頁選了 B（拿掉白邊）：對比在淺色地面與家圖標上較高，在草地、柏油路約 2.6–3.3:1
+-- （白邊版至少 3.4:1）。地圖與設定預覽共用。a＝整支的不透明度（預設 1；BFH 式的樓下玩家用）
+Core.drawFacingArrow = function(el, cx, cy, ux, uy, size, r, g, b, a)
+    local len, wid = size * 1.25, size * 0.95
+    local dart = Core.drawFacingDart
+    a = a or 1
+    dart(el, cx, cy, ux, uy, len, wid, 1.6, 0, 0, 0, 0.85 * a)
+    dart(el, cx, cy, ux, uy, len, wid, 0, r or 0.92, g or 0.1, b or 0.1, a)
+end
+-- 別層標示（設計稿 minimap-floors-v2-1019；勾選 FloorMarks、下拉 FloorMarkStyle）：只改其他玩家，樓層以
+-- 這張地圖的玩家（el.playerNum）為準，樓層＝z 取整數（地下室是負數，樓梯上算下面那層）。
+-- 1＝BFH 式（2015 年 Battlefield Hardline 的小地圖）：別層 FLOOR_SIZE 倍大小、扇形跟著縮；樓上照原色、
+-- 扇形 alpha FLOOR_CONE_UP；樓下顏色乘 FLOOR_DIM、箭頭 alpha FLOOR_DIM_A、扇形 alpha FLOOR_CONE_DOWN。
+-- 2＝BF6 式：大小顏色不變，箭頭裡多一個畫面對齊的黑色小三角，尖端朝上＝樓上（drawFloorGlyph）
+Core.FLOOR_SIZE, Core.FLOOR_DIM, Core.FLOOR_DIM_A = 0.65, 0.55, 0.8
+Core.FLOOR_CONE_UP, Core.FLOOR_CONE_DOWN = 0.6, 0.3
+-- 小三角放在鏢形實心的部分（中心往尖端 0.1 個標記大小）；第 4 點重複第 3 點＝單一三角形
+Core.drawFloorGlyph = function(el, cx, cy, ux, uy, size, up)
+    local gx, gy = cx + ux * 0.1 * size, cy + uy * 0.1 * size
+    local w, h = size * 0.2, size * 0.16
+    local s = up and -1 or 1
+    el:drawPolygon(nil, gx, gy + s * h, gx + w, gy - s * h, gx - w, gy - s * h, gx - w, gy - s * h, 0, 0, 0, 0.9)
+end
+-- 一筆的大小、顏色倍率、箭頭 alpha、扇形 alpha：只有 BFH 式的別層玩家會變
+Core.floorLook = function(e, style)
+    if style ~= 1 or e.dz == 0 then return e.size, 1, 1, 0.85 end
+    if e.dz > 0 then return e.size * Core.FLOOR_SIZE, 1, 1, Core.FLOOR_CONE_UP end
+    return e.size * Core.FLOOR_SIZE, Core.FLOOR_DIM, Core.FLOOR_DIM_A, Core.FLOOR_CONE_DOWN
+end
+-- 畫的層：0 樓下、1 同層、2 樓上、3 本機玩家（永遠最上面）
+Core.facingLayer = function(e)
+    if e.kind == "self" then return 3 end
+    if e.dz < 0 then return 0 end
+    if e.dz > 0 then return 2 end
+    return 1
+end
+-- 視野扇形（設計稿 minimap-team-facing-1019）：media/ui/minimap_facing_cone.png 是 128×128 白色漸層
+-- （scripts/make_facing_cone.py 產生），頂點在左邊中間、半角 38°，畫的時候再上色。四角 DrawTexture
+-- 收畫面絕對座標（UIElement.DrawTexture 不加元件位置，DrawPolygon 才加），所以這裡自己加。
+-- 角順序 tl, tr, br, bl＝貼圖 (0,0) (1,0) (1,1) (0,1)：u 沿前方、v 沿側邊
+Core.FACING_CONE_TEX = "media/ui/minimap_facing_cone.png"
+Core.FACING_CONE_SIDE = 0.628 -- 側邊半寬／長度＝sin 38°，同貼圖產生器
+Core.FACING_CONE_LEN = 4.5    -- 扇形長＝標記大小 × 4.5 px（預設 72 px，原型實拍的長度）
+-- 每種人兩組 rgb：箭頭、扇形。隊友＝同陣營或同安全屋
+Core.FACING_COLORS = {
+    self = { 0.92, 0.1, 0.1, 1, 0.25, 0.2 },
+    team = { 0.2, 0.78, 1, 0.3, 0.8, 1 },
+    other = { 0.95, 0.95, 0.95, 1, 1, 1 },
+}
+Core.drawFacingConeQuad = function(el, x1, y1, x2, y2, x3, y3, x4, y4, r, g, b, a)
+    local tex = Core.adotsTexture(Core.FACING_CONE_TEX)
+    if not tex then return end
+    local ox, oy = el:getAbsoluteX(), el:getAbsoluteY()
+    el:drawTextureAllPoint(tex, x1 + ox, y1 + oy, x2 + ox, y2 + oy, x3 + ox, y3 + oy, x4 + ox, y4 + oy, r, g, b, a)
+end
+-- 畫面座標版（設定預覽）：頂點 (cx, cy)、方向 (ux, uy) 是單位向量、長 len px
+Core.drawFacingConeUI = function(el, cx, cy, ux, uy, len, r, g, b, a)
+    local s = Core.FACING_CONE_SIDE * len
+    local sx, sy = -uy * s, ux * s
+    local ex, ey = cx + ux * len, cy + uy * len
+    Core.drawFacingConeQuad(el, cx - sx, cy - sy, ex - sx, ey - sy, ex + sx, ey + sy, cx + sx, cy + sy, r, g, b, a)
+end
+-- 地圖版：四個角都先算世界座標再經 mapAPI 投影，俯視、等軸測與切換過場都貼在地面
+Core.drawFacingCone = function(el, api, wx, wy, fx, fy, len, r, g, b, a)
+    local scale = api:getWorldScale()
+    local L = len / ((scale and scale > 0) and scale or 1)
+    local s = Core.FACING_CONE_SIDE * L
+    local sx, sy = -fy * s, fx * s
+    local ex, ey = wx + fx * L, wy + fy * L
+    Core.drawFacingConeQuad(el,
+        api:worldToUIX(wx - sx, wy - sy), api:worldToUIY(wx - sx, wy - sy),
+        api:worldToUIX(ex - sx, ey - sy), api:worldToUIY(ex - sx, ey - sy),
+        api:worldToUIX(ex + sx, ey + sy), api:worldToUIY(ex + sx, ey + sy),
+        api:worldToUIX(wx + sx, wy + sy), api:worldToUIY(wx + sx, wy + sy),
+        r, g, b, a)
+end
+-- 位置與世界前向（+x 東、+y 南）：坐車看車（原版紅點也畫在車的位置；角色角度在車上
+-- 不保證更新），車頭向量的 x、z＝世界 x、y；徒步看身體角度（跟著轉身動畫，不會八方向
+-- 跳格）。車頭向量共用一個 Vector3f，每幀不配置
+Core.playerFacing = function(p)
+    local v = p:getVehicle()
+    if v then
+        local f = Core.facingVec
+        if not f then
+            f = Vector3f.new()
+            Core.facingVec = f
+        end
+        v:getForwardVector(f)
+        return v:getX(), v:getY(), f:x(), f:z()
+    end
+    local a = p:getAnimAngleRadians()
+    return p:getX(), p:getY(), math.cos(a), math.sin(a)
+end
+-- 沙盒 RemoteFacingDisplay：1 關閉、2 只限陣營與安全屋成員（預設）、3 地圖上看得到的所有玩家；
+-- 設定視窗「其他玩家顯示朝向」勾選在 1 時停用（offMode）
+Core.remoteFacingLevel = function(pn)
+    local v = Core.sandboxGate("RemoteFacingDisplay", 2, pn)
+    if v == 1 or v == 3 then return v end
+    return 2
+end
+-- 沙盒 AllowFloorMarks（預設關）：多人要伺服器開放才有別層標示——玩家在哪一層也是 PVP 情報；單機沒有
+-- 別的玩家，一律可用。回 1＝伺服器關閉（設定視窗「標示其他樓層」與樣式下拉停用，offMode）、2＝可用。
+-- 其他玩家（drawPlayerFacing）與殭屍點（_Dots.lua drawZombieDotsOn）共用
+Core.floorMarksMode = function(pn)
+    if not isClient() or Core.sandboxGate("AllowFloorMarks", false, pn) == true then return 2 end
+    return 1
+end
+-- 同隊＝同陣營或同安全屋（原版 UIWorldMap.shouldShowRemotePlayer 的同一組判斷，本機玩家任一位即可）。
+-- 安全屋判斷會掃全部安全屋，所以每位玩家每秒才重算一次
+Core.facingTeam, Core.facingTeamAt = {}, {}
+Core.isFacingTeammate = function(other, now)
+    local name = other:getUsername()
+    if not name then return false end
+    local at = Core.facingTeamAt[name]
+    if at and now - at < 1000 then return Core.facingTeam[name] end
+    local team = false
+    for pn = 0, 3 do
+        local p = getSpecificPlayer(pn)
+        if p and (Faction.isInSameFaction(p, name) or SafeHouse.isInSameSafehouse(p:getUsername(), name)) then
+            team = true
+            break
+        end
+    end
+    Core.facingTeam[name], Core.facingTeamAt[name] = team, now
+    return team
+end
+-- 本機玩家任一位有 CanSeeAll（原版 isAdminSeeRemotePlayers 另比雙方的權限數，Lua 讀不到對方的；
+-- 伺服器本來就只把看得到的隱形玩家同步給有權限的人）。Policy 讀角色要 pcall，每秒重算一次
+Core.facingAdmin = function(now)
+    if Core.facingAdminAt and now - Core.facingAdminAt < 1000 then return Core.facingAdminVal end
+    local P, admin = MinidoracatMiniMapPolicy, false
+    if P then
+        for pn = 0, 3 do
+            if getSpecificPlayer(pn) and P.hasCanSeeAll(pn) then
+                admin = true
+                break
+            end
+        end
+    end
+    Core.facingAdminAt, Core.facingAdminVal = now, admin
+    return admin
+end
+-- 原版 UIWorldMap.shouldShowRemotePlayer 的 Lua 版：不會比原版地圖多顯示任何人。opt＝公開伺服器選項
+-- MapRemotePlayerVisibility（登入時下發）：1 不顯示（原版預設）、2 只限陣營、3 陣營＋看得到的人、
+-- 4 所有人。「對方看得見隱形玩家」讀不到，當作看不見（只會少畫）
+Core.vanillaShowsRemote = function(other, team, admin, opt)
+    if other:isInvisible() then return admin end
+    if admin then return true end
+    if opt == 2 then return team end
+    if opt == 3 and team then return true end
+    if opt ~= 3 and opt ~= 4 then return false end
+    for pn = 0, 3 do
+        local p = getSpecificPlayer(pn)
+        if p then
+            if opt == 4 then
+                if not p:isInvisible() then return true end
+            elseif p:checkCanSeeClient(other) then
+                return true
+            end
+        end
+    end
+    return false
+end
+-- 每幀重用的繪製清單：先收齊，再畫全部扇形、最後畫全部箭頭（扇形不蓋箭頭）；兩趟都照 facingLayer 由下往上，
+-- 本機玩家永遠最上面。中心離邊不到半個箭頭就不收，留給原版紅點（自由查看拖走時）。dz＝樓層差（別層標示關＝0）
+Core.facingBuf = { n = 0 }
+Core.facingPush = function(el, api, k, wx, wy, fx, fy, kind, size, arrow, dz)
+    local half = size * 0.8
+    local cx, cy = api:worldToUIX(wx, wy), api:worldToUIY(wx, wy)
+    if cx < half or cy < half or cx > el.width - half or cy > el.height - half then return end
+    local tx, ty = wx + fx * k, wy + fy * k
+    local dx = api:worldToUIX(tx, ty) - cx
+    local dy = api:worldToUIY(tx, ty) - cy
+    local n = math.sqrt(dx * dx + dy * dy)
+    if n <= 0 then return end
+    local buf = Core.facingBuf
+    local i = buf.n + 1
+    local e = buf[i]
+    if not e then
+        e = {}
+        buf[i] = e
+    end
+    e.cx, e.cy, e.ux, e.uy, e.wx, e.wy, e.fx, e.fy = cx, cy, dx / n, dy / n, wx, wy, fx, fy
+    e.kind, e.size, e.arrow, e.dz = kind, size, arrow, dz or 0
+    buf.n = i
+end
+-- 其他玩家（設計稿 minimap-team-facing-1019）：getOnlinePlayers＝伺服器有同步給這台客戶端的玩家
+-- （約等於周圍載入範圍；遠處玩家引擎只送座標、沒有朝向，只剩原版紅點）。隊友青、其他人白，比自己小一號。
+-- myFloor＝這張地圖的玩家所在樓層（別層標示關＝nil，樓層差一律 0）
+Core.collectRemoteFacing = function(el, api, k, size, level, myFloor)
+    local now = getTimestampMs()
+    local admin = Core.facingAdmin(now)
+    local opt = getServerOptions():getInteger("MapRemotePlayerVisibility") or 1
+    local list = getOnlinePlayers()
+    for i = 0, list:size() - 1 do
+        local o = list:get(i)
+        if o and not o:isLocalPlayer() and not o:isDead() then
+            local team = Core.isFacingTeammate(o, now)
+            if (team or level == 3) and Core.vanillaShowsRemote(o, team, admin, opt) then
+                local wx, wy, fx, fy = Core.playerFacing(o)
+                local dz = myFloor and math.floor(o:getZ()) - myFloor or 0
+                Core.facingPush(el, api, k, wx, wy, fx, fy, team and "team" or "other", size, true, dz)
+            end
+        end
+    end
+end
+-- style＝別層標示樣式（1 BFH、2 BF6；關＝nil）
+Core.drawFacingBuf = function(el, api, cone, style)
+    local buf, colors, layer = Core.facingBuf, Core.FACING_COLORS, Core.facingLayer
+    if cone then
+        for L = 0, 3 do
+            for i = 1, buf.n do
+                local e = buf[i]
+                if layer(e) == L then
+                    local c = colors[e.kind]
+                    local size, dim, _, ca = Core.floorLook(e, style)
+                    Core.drawFacingCone(el, api, e.wx, e.wy, e.fx, e.fy, size * Core.FACING_CONE_LEN,
+                        c[4] * dim, c[5] * dim, c[6] * dim, ca)
+                end
+            end
+        end
+    end
+    for L = 0, 3 do
+        for i = 1, buf.n do
+            local e = buf[i]
+            if e.arrow and layer(e) == L then
+                local c = colors[e.kind]
+                local size, dim, a = Core.floorLook(e, style)
+                Core.drawFacingArrow(el, e.cx, e.cy, e.ux, e.uy, size, c[1] * dim, c[2] * dim, c[3] * dim, a)
+                if style == 2 and e.dz ~= 0 then Core.drawFloorGlyph(el, e.cx, e.cy, e.ux, e.uy, size, e.dz > 0) end
+            end
+        end
+    end
+end
+-- el＝小地圖 inner 或世界地圖（都有 mapAPI／width／height／playerNum）。該地圖顯示自己圖標（引擎 Players：小地圖由
+-- ModOptions Players 寫入、世界地圖由原版選項）才畫。勾選：PlayerFacing＝自己的箭頭、PlayerCone＝
+-- 所有扇形、RemoteFacing＝其他玩家（另要該地圖的 RemotePlayers）、FloorMarks＝別層標示。同原版畫全部本機玩家。
+-- 扇形會伸出元件邊，整段包 stencil（同 _Zones fill pass）；畫錯也必定 clear，免得裁切洩漏到同幀其他 UI
+Core.drawPlayerFacing = function(el)
+    local api = el.mapAPI
+    if not (api and api:getBoolean("Players")) then return end
+    local selfArrow = getBoolOption("PlayerFacing", true)
+    local cone = getBoolOption("PlayerCone", true)
+    local level = 1
+    if isClient() and getBoolOption("RemoteFacing", true) and api:getBoolean("RemotePlayers") then
+        level = Core.remoteFacingLevel()
+    end
+    if not (selfArrow or cone or level >= 2) then return end
+    local size = Core.markerIconSize()
+    local scale = api:getWorldScale()
+    local k = 48 / ((scale and scale > 0) and scale or 1) -- 約 48 px 長的投影探針
+    -- 別層標示只改其他玩家：伺服器開放、勾選開著才記樓層差（style＝樣式 1 BFH、2 BF6；不畫＝nil）
+    local style
+    Core.facingBuf.n = 0
+    if level >= 2 then
+        local pn = el.playerNum or 0
+        if Core.floorMarksMode(pn) == 2 and getBoolOption("FloorMarks", true) then
+            style = Core.getComboIndex("FloorMarkStyle", 1)
+        end
+        local owner = style and getSpecificPlayer(pn)
+        Core.collectRemoteFacing(el, api, k, size * 0.8, level, owner and math.floor(owner:getZ()) or nil)
+    end
+    if selfArrow or cone then
+        for pn = 0, 3 do
+            local p = getSpecificPlayer(pn)
+            if p and not p:isDead() then
+                local wx, wy, fx, fy = Core.playerFacing(p)
+                Core.facingPush(el, api, k, wx, wy, fx, fy, "self", size, selfArrow)
+            end
+        end
+    end
+    if Core.facingBuf.n == 0 then return end
+    el:setStencilRect(0, 0, el.width, el.height)
+    local ok, err = pcall(Core.drawFacingBuf, el, api, cone, style)
+    el:clearStencilRect()
+    if not ok then error(err, 0) end
+end
+-- test:player-facing:end
+
 -- 管理員檢視常駐標記（左上角琥珀膠囊）：只要該玩家的戰術或隱私旁路正在生效
 -- 就一直畫——管理員必須「看得出自己看到的不是普通玩家看到的」，否則會把旁路
 -- 結果當成一般玩家可見資訊回報。零旁路＝首行即返回（普通玩家零成本）。

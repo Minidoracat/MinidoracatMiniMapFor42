@@ -260,7 +260,9 @@ do
     s.selectSection("base")
     check(env.byKey("RemotePlayers") == nil, "G2 RemotePlayers hidden in single player")
     s.selectSection("places")
-    check(env.byKey("RemotePlayers") == nil and env.byKey("SharedTargets") == nil, "G2 MP-only ticks hidden in SP")
+    check(env.byKey("RemotePlayers") == nil and env.byKey("SharedTargets") == nil and env.byKey("FloorMarkStyle") == nil
+        and env.byKey("FloorMarks") ~= nil and env.byKey("FloorMarks")._enabled == true,
+        "G2 MP-only ticks and the floor style dropdown hidden in SP; the floor tick stays usable without a server")
     -- 引擎勾選直寫 mapAPI，重設不動
     s.selectSection("base")
     env.byKey("Isometric"):forceClick()
@@ -459,6 +461,34 @@ do
     pv = previewOf("places")
     check(count(pv, "text", function(d) return d[1] == T("UI_MinidoracatMiniMap_PlaceHome") end) == 1,
         "J6 places preview draws the home label (drawPlaceAt)")
+    -- 自己的朝向箭頭樣本：黑框、紅色本體兩層，紅色最後畫（蓋在最上面）；扇形墊在箭頭下面、頂點在箭頭中心；
+    -- 各自的勾選關＝不畫
+    local polys, firstPoly, cone, coneAt = {}, nil, nil, nil
+    for i, d in ipairs(pv.draws) do
+        if d.kind == "poly" then
+            polys[#polys + 1] = d
+            firstPoly = firstPoly or i
+        elseif d.kind == "allpoint" then
+            cone, coneAt = d, i
+        end
+    end
+    check(#polys == 2 and polys[2][9] > 0.9 and polys[2][10] < 0.2 and polys[1][9] == 0,
+        "J6 places preview draws the facing arrow sample: black outline, red body on top")
+    -- 頂點＝箭頭中心：紅色本體尖端在中心前方 0.55×1.25×16 px、朝右上（x 分量 0.7071）
+    local abs = pv:getAbsoluteX()
+    local tipX = polys[2] and polys[2][1]
+    check(count(pv, "allpoint") == 1 and coneAt < firstPoly and cone[9] == 1 and cone[10] < 0.3
+        and tipX and math.abs(tipX - ((cone[1] + cone[7]) / 2 - abs) - 0.55 * 1.25 * 16 * 0.7071) < 0.01,
+        "J6 places preview draws one red cone sample under the arrow, its apex at the arrow center")
+    env.values.PlayerFacing = false
+    pv = previewOf("places")
+    checkEq(count(pv, "poly"), 0, "J6 PlayerFacing off hides the arrow sample")
+    checkEq(count(pv, "allpoint"), 1, "J6 the cone sample has its own tick")
+    env.values.PlayerFacing = nil
+    env.values.PlayerCone = false
+    pv = previewOf("places")
+    check(count(pv, "allpoint") == 0 and count(pv, "poly") == 2, "J6 PlayerCone off hides only the cone sample")
+    env.values.PlayerCone = nil
     -- 零配置：預覽繪製函式本身不建 table／closure（原始碼守衛：繪製段不得出現 `{` 或 function）
     local src = H.readFile(H.SETTINGS)
     for _, name in ipairs({ "previewZombie", "previewAnimals", "previewVehicles", "previewPoi", "previewSafehouse",
@@ -954,6 +984,16 @@ do
     checkEq(table.concat(st.sections, ","), "base,places,remote,poicat,parking,zombie,animals,vehicles,safehouse,window,perf",
         "S1 multiplayer lists the category right after players and navigation")
     check(navRow(st.nav, "remote").switch ~= nil, "S2 nav shows the master switch")
+    st.selectSection("places")
+    check(e.byKey("FloorMarkStyle") ~= nil, "S1 multiplayer shows the floor style dropdown")
+    -- 伺服器沙盒 AllowFloorMarks 預設關：勾選與樣式下拉都停用；伺服器開放後才能用
+    check(e.byKey("FloorMarks")._enabled == false and e.byKey("FloorMarkStyle"):isEnabled() == false,
+        "S1 floor marks stay disabled until the server allows them")
+    e.gates.AllowFloorMarks = true
+    st.selectSection("places")
+    check(e.byKey("FloorMarks")._enabled == true and e.byKey("FloorMarkStyle"):isEnabled() == true,
+        "S1 the server switch enables the floor tick and its style")
+    e.gates.AllowFloorMarks = nil
     st.selectSection("remote")
     local header = e.controls(function(el)
         return el._sec and el._sec.id == "remote" and e.type(el) == "MinidoracatUICheckbox" end)[1]

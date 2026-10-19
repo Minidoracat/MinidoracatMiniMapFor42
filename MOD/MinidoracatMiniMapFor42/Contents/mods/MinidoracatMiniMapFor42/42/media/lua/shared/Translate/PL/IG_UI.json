@@ -1,5 +1,6 @@
 {
     "IGUI_MapOption_Isometric": "Izometria",
+    "IGUI_MapOption_Isometric_tooltip": "Wł.: mapa obraca się tak jak widok gry, północ jest w prawym górnym rogu. Wył.: widok z góry, północ u góry. Mapa ma tylko te dwa ustawienia i nie obraca się razem z postacią.",
     "IGUI_MapOption_PlaceNames": "Nazwy miejsc",
     "IGUI_MapOption_RemoteSymbols": "Symbole zdalne",
     "IGUI_MapOption_RemoteSymbols_tooltip": "Wyłączenie ukrywa wszystkie symbole mapy udostępniane przez innych graczy; twoje zostają. Aby ukryć tylko wybranych graczy, zaznacz ich w kategorii „Symbole zdalne” w Ustawieniach wyświetlania mapy albo kliknij prawym przyciskiem ich symbol na mapie świata.",

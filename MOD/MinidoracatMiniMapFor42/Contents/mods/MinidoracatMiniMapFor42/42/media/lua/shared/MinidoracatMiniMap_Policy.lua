@@ -181,7 +181,7 @@ local OPTION_PREFIX = "MinidoracatMiniMap."
 local TTL_MS = 250
 local NUM_LIMIT = 1000000000 -- 數字合理值域（±1e9）：順手把 inf 一併排除
 
--- 25 鍵 schema：{ 沙盒鍵名, 型別, 預設值 }。預設值必須與
+-- 沙盒鍵 schema：{ 沙盒鍵名, 型別, 預設值 }。預設值必須與
 -- media/sandbox-options.txt 的 default 逐鍵一致——這是「舊伺服器缺鍵」時的
 -- 實際生效值，寫錯會讓缺鍵的伺服器行為與有鍵的不同。enum 以 number 表示
 -- （Java 端 getValue 回選項索引）。
@@ -202,6 +202,12 @@ local SCHEMA = {
     { "SafehouseNameDisplay", "number", 3 },
     { "SafehouseNameDistance", "number", 0 },
     { "AllowNavShare", "boolean", true },
+    -- 其他玩家的朝向箭頭與扇形（_Nav.lua Core.remoteFacingLevel）：1 關閉、2 只限陣營與安全屋成員、
+    -- 3 地圖上看得到的所有玩家；不在任何旁路白名單（原版 CanSeeAll 規則已讓管理員看到全部）
+    { "RemoteFacingDisplay", "number", 2 },
+    -- 別層標示（_Nav.lua Core.floorMarksMode）：預設關，多人要伺服器開放（玩家在哪一層也是 PVP 情報）；
+    -- 單機一律可用（判斷在 floorMarksMode，不在這裡）。不在任何旁路白名單
+    { "AllowFloorMarks", "boolean", false },
     { "ExportPlayerPositions", "boolean", false },
     { "PlayerExportInterval", "number", 5 },
     { "ExportOfflinePlayers", "boolean", true },
@@ -218,7 +224,7 @@ local SCHEMA = {
     -- 不在任何旁路白名單（管理員戰術檢視也一樣）
     { "PoiSourceLock", "boolean", false },
 }
-local SCHEMA_N = 25 -- 顯式筆數（家規：不用 # 依賴隱性長度）
+local SCHEMA_N = 27 -- 顯式筆數（家規：不用 # 依賴隱性長度）
 
 local KIND = {}
 for i = 1, SCHEMA_N do

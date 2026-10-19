@@ -1,5 +1,6 @@
 {
     "IGUI_MapOption_Isometric": "아이소메트릭",
+    "IGUI_MapOption_Isometric_tooltip": "켜면 지도를 게임 화면과 같은 비스듬한 방향으로 돌립니다(북쪽이 오른쪽 위). 끄면 위에서 본 지도이며 북쪽이 위입니다. 지도 방향은 이 두 가지뿐이며 캐릭터를 따라 회전하지 않습니다.",
     "IGUI_MapOption_PlaceNames": "장소 이름",
     "IGUI_MapOption_RemoteSymbols": "공유 기호",
     "IGUI_MapOption_RemoteSymbols_tooltip": "끄면 다른 플레이어가 공유한 지도 기호를 모두 숨기며, 내 기호는 그대로 남습니다. 특정 플레이어만 숨기려면 지도 표시 설정의 \"공유 기호\" 분류에서 선택하거나, 세계 지도에서 그 플레이어의 기호를 우클릭하세요.",

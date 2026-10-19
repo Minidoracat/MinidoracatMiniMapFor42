@@ -166,6 +166,12 @@ local function installISUI(env)
     function ISPanel:drawTextureScaledAspect(t, x, y, w, h, a, r, g, b) rec(self, "tex", t, x, y, w, h, a, r, g, b) end
     function ISPanel:drawTexture(t, x, y, a, r, g, b) rec(self, "tex", t, x, y, 0, 0, a, r, g, b) end
     function ISPanel:drawLine(t, x1, y1, x2, y2, th, a, r, g, b) rec(self, "line", x1, y1, x2, y2, a, r, g, b) end
+    function ISPanel:drawPolygon(t, x1, y1, x2, y2, x3, y3, x4, y4, r, g, b, a)
+        self.draws[#self.draws + 1] = { kind = "poly", x1, y1, x2, y2, x3, y3, x4, y4, r, g, b, a }
+    end
+    function ISPanel:drawTextureAllPoint(t, x1, y1, x2, y2, x3, y3, x4, y4, r, g, b, a)
+        self.draws[#self.draws + 1] = { kind = "allpoint", tex = t, x1, y1, x2, y2, x3, y3, x4, y4, r, g, b, a }
+    end
     function ISPanel:render() end
 
     ISButton = ISPanel:derive("ISButton")
@@ -523,6 +529,11 @@ function H.load(opts)
             "return drawPlaceAt",
         }, "\n")
         Core.drawPlaceAt = assert(compile(src))(Core)
+        -- 真的朝向箭頭（_Nav.lua test:player-facing 區段；預覽只用 drawFacingArrow）
+        local nav = assert(readFile(REPO_CLIENT .. "MinidoracatMiniMap_Nav.lua"))
+        local facing = assert(nav:match("%-%- test:player%-facing:start\n(.-)\n%-%- test:player%-facing:end"),
+            "missing player-facing test block")
+        assert(compile("local Core, getBoolOption = ...\n" .. facing, "@_Nav.lua player-facing"))(Core, Core.getBoolOption)
     end
     -- 真的 _Markers.lua（圖層偏好 MarkerLayers 與 drawMarkerAt）
     assert(compile(assert(readFile(REPO_CLIENT .. "MinidoracatMiniMap_Markers.lua")), "@_Markers.lua"))()

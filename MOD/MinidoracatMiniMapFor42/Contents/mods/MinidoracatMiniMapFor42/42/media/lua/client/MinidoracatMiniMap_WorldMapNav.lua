@@ -179,6 +179,12 @@ if ISWorldMap and ISWorldMap.prerender then
             self._minidoracatWMNavErrLogged = true
             print("[MinidoracatMiniMap] worldmap nav draw failed: " .. tostring(err))
         end
+        -- 自己的朝向箭頭：世界地圖的自己圖標（原版選項 Players）開著才畫，同小地圖排在導航之後
+        ok, err = pcall(Core.drawPlayerFacing, self)
+        if not ok and not self._minidoracatWMFacingErrLogged then
+            self._minidoracatWMFacingErrLogged = true
+            print("[MinidoracatMiniMap] worldmap facing draw failed: " .. tostring(err))
+        end
         -- 管理員檢視標記：本檔的 prerender wrap 是最外層，畫在全部世界地圖加繪
         -- 之上。缺函式／繪製錯誤都 log-once，避免旁路生效卻沒有安全提示。
         ok, err = pcall(Core.drawAdminViewMarker, self)

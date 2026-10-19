@@ -1,5 +1,6 @@
 {
     "IGUI_MapOption_Isometric": "Isométrico",
+    "IGUI_MapOption_Isometric_tooltip": "Ligado: o mapa gira para ficar igual à visão do jogo, com o norte no canto superior direito. Desligado: visão de cima, norte para cima. O mapa só tem essas duas orientações; ele não gira com o seu personagem.",
     "IGUI_MapOption_PlaceNames": "Nomes de Lugares",
     "IGUI_MapOption_RemoteSymbols": "Símbolos Remotos",
     "IGUI_MapOption_RemoteSymbols_tooltip": "Desligado oculta todos os símbolos do mapa que outros jogadores compartilham; os seus continuam. Para ocultar só alguns jogadores, escolha-os na categoria \"Símbolos Remotos\" de Exibição do mapa ou clique com o botão direito no símbolo deles no mapa do mundo.",

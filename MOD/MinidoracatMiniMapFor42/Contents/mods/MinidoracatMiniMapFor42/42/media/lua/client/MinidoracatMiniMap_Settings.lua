@@ -42,9 +42,10 @@ local Policy = Core.policy
 -- distance），新增選項只改這裡。分類可帶 combosFirst（下拉放在開關之前）。
 --   maps：{ { label, cells＝Core.LAYER_MAPS 的一層, mpOnly? } }——每列一行標籤＋小地圖、世界地圖兩顆 chip
 --   tick：{ id, label, default, engine?（直寫引擎選項，重設不動）, mpOnly?, gate?（沙盒閘）,
---           livestock?（牲畜模式 4 停用）, shMode?（安全屋沙盒模式 1 停用）, shAll?（兩個安全屋模式都 1 才停用）,
+--           livestock?（牲畜模式 4 停用）, offMode?（Core 上的沙盒模式函式名，回 1＝伺服器關閉、停用）,
+--           shAll?（兩個安全屋模式都 1 才停用）,
 --           minimapOnly?（資源點房間資料版停用）, rebuild?, tooltip? }
---   combo：{ id, label, default, items, rebuild?, tooltip?, poiLock?（伺服器鎖定資源版本時停用、顯示 default） }
+--   combo：{ id, label, default, items, mpOnly?, rebuild?, tooltip?, poiLock?（伺服器鎖定資源版本時停用、顯示 default） }
 --   slider：{ id, label, default, min, max, step, fmt, zeroLabel?, capBy?（伺服器上限＝沙盒選項名） }
 --   master（標題列與導覽列的分類開關）：{ id, … } 單鍵，或 { label, members, tooltip? }＝成員 OR；
 --           圖層分類的 members＝「顯示在」各格，開＝每格寫自己的 on、關＝全清（studioMasterSet）
@@ -56,9 +57,9 @@ local MapRows = { SHOW_ON = "UI_MinidoracatMiniMap_ShowOn", TIP = "UI_Minidoraca
     CHIPS = { "UI_MinidoracatMiniMap_MapMini", "UI_MinidoracatMiniMap_MapWorld" } }
 -- 安全屋三件套（範圍框／圖標／名稱）：畫哪些內容；畫在哪張地圖由「顯示在」決定
 local SAFEHOUSE_TICKS = {
-    { id = "Safehouses", label = "UI_MinidoracatMiniMap_Safehouses", default = true, shMode = "safehouseDisplayMode" },
-    { id = "SafehouseIcons", label = "UI_MinidoracatMiniMap_SafehouseIcons", default = true, shMode = "safehouseDisplayMode" },
-    { id = "SafehouseNames", label = "UI_MinidoracatMiniMap_SafehouseNames", default = true, shMode = "safehouseNameMode" },
+    { id = "Safehouses", label = "UI_MinidoracatMiniMap_Safehouses", default = true, offMode = "safehouseDisplayMode" },
+    { id = "SafehouseIcons", label = "UI_MinidoracatMiniMap_SafehouseIcons", default = true, offMode = "safehouseDisplayMode" },
+    { id = "SafehouseNames", label = "UI_MinidoracatMiniMap_SafehouseNames", default = true, offMode = "safehouseNameMode" },
 }
 -- 顯示距離（格；0＝不限）：與伺服器沙盒距離經 displayDist 取較小者生效。capBy＝對應沙盒
 -- 選項名——滑條上限縮到伺服器有效上限（sandboxDist 已併全域上限 AllInfoDistance）、數值寫成
@@ -92,11 +93,26 @@ local SEC_PLACES = { id = "places", label = "UI_MinidoracatMiniMap_SecPlaces", i
         { label = "UI_MinidoracatMiniMap_RowNavRoute", cells = LM.navRoute },
         { label = "UI_MinidoracatMiniMap_RowShared", cells = LM.shared, mpOnly = true },
     },
-    -- 自己與隊友圖標是引擎圖層：這兩顆只管小地圖，世界地圖的在原版世界地圖選項（齒輪）
+    -- 自己與隊友圖標是引擎圖層：Players／RemotePlayers 只管小地圖，世界地圖的在原版世界地圖選項（齒輪）；
+    -- PlayerFacing／PlayerCone／RemoteFacing 是本 MOD 畫的箭頭與扇形，兩張地圖共用勾選，跟著各自的
+    -- Players（其他玩家另要 RemotePlayers）顯示；RemoteFacing 在伺服器沙盒 RemoteFacingDisplay＝1 時停用。
+    -- FloorMarks＝別層標示（其他玩家的箭頭與殭屍點），伺服器沙盒 AllowFloorMarks 沒開（多人）時連同樣式下拉停用；
+    -- 樣式下拉只管其他玩家、單機不列
     ticks = {
         { id = "Players", label = "UI_MinidoracatMiniMap_Players", default = true },
+        { id = "PlayerFacing", label = "UI_MinidoracatMiniMap_PlayerFacing", default = true },
+        { id = "PlayerCone", label = "UI_MinidoracatMiniMap_PlayerCone", default = true },
         { id = "RemotePlayers", label = "UI_MinidoracatMiniMap_RemotePlayers", default = true, mpOnly = true },
+        { id = "RemoteFacing", label = "UI_MinidoracatMiniMap_RemoteFacing", default = true, mpOnly = true,
+            offMode = "remoteFacingLevel" },
+        { id = "FloorMarks", label = "UI_MinidoracatMiniMap_FloorMarks", default = true, offMode = "floorMarksMode" },
         { id = "KeepFinishedTrip", label = "UI_MinidoracatMiniMap_KeepFinishedTrip", default = false },
+    },
+    combos = {
+        { id = "FloorMarkStyle", label = "UI_MinidoracatMiniMap_FloorMarkStyle", default = 1, mpOnly = true,
+            offMode = "floorMarksMode",
+            tooltip = "UI_MinidoracatMiniMap_FloorMarkStyle_tooltip",
+            items = { "UI_MinidoracatMiniMap_FloorMarkStyle_BFH", "UI_MinidoracatMiniMap_FloorMarkStyle_BF6" } },
     },
     -- 標記大小（家／收藏、導航旗與行程站、搜尋落點、未分層 addon marker）：繪製端每幀讀值
     sliders = {
@@ -621,8 +637,8 @@ end
 --------------------------------------------------------------------------------
 -- 狀態判定（inspector、導覽開關、搜尋結果共用同一份）
 --------------------------------------------------------------------------------
--- 控制項可否操作：伺服器沙盒閘、牲畜可見性模式 4、安全屋沙盒模式 1（shAll＝範圍與名稱兩個模式都 1，
--- 「顯示在」格：伺服器把安全屋整層關了）、資源點房間資料版、伺服器鎖定資源版本
+-- 控制項可否操作：伺服器沙盒閘、牲畜可見性模式 4、沙盒模式 1（offMode：安全屋範圍／名稱、其他玩家朝向、別層標示；
+-- shAll＝範圍與名稱兩個模式都 1，「顯示在」格：伺服器把安全屋整層關了）、資源點房間資料版、伺服器鎖定資源版本
 local function entryEnabled(entry, pn)
     if entry.minimapOnly and Core.poiSource and Core.poiSource() == "rooms" then return false end
     if entry.poiLock and Core.poiSource then
@@ -631,7 +647,7 @@ local function entryEnabled(entry, pn)
     end
     if entry.gate and sandboxGate(entry.gate, true, pn) == false then return false end
     if entry.livestock and livestockVisibilityMode(pn) == 4 then return false end
-    local modeFn = entry.shMode and Core[entry.shMode]
+    local modeFn = entry.offMode and Core[entry.offMode]
     if modeFn and modeFn(pn) == 1 then return false end
     if entry.shAll and Core.safehouseDisplayMode and Core.safehouseDisplayMode(pn) == 1
         and Core.safehouseNameMode and Core.safehouseNameMode(pn) == 1 then return false end
@@ -1012,12 +1028,21 @@ local function previewSafehouse(self, x, y, w, h)
 end
 
 local function previewPlaces(self, x, y, w, h)
-    if not Core.layerOn("places") then return end -- 兩張地圖都不畫＝預覽也空白
-    local p = self._pv
     local size = Core.markerIconSize()
+    local cy = y + h * 0.38
+    -- 自己的朝向箭頭與扇形樣本（朝右上）：和地圖同一組函式；家與收藏兩格都關時照畫
+    if getBoolOption("PlayerCone", true) then
+        local c = Core.FACING_COLORS.self
+        Core.drawFacingConeUI(self, x + w * 0.5, cy, 0.7071, -0.7071, math.min(size * Core.FACING_CONE_LEN, h * 0.5),
+            c[4], c[5], c[6], 0.85)
+    end
+    if getBoolOption("PlayerFacing", true) then
+        Core.drawFacingArrow(self, x + w * 0.5, cy, 0.7071, -0.7071, size)
+    end
+    if not Core.layerOn("places") then return end -- 兩張地圖都不畫＝家與收藏樣本空白
+    local p = self._pv
     local tz = Core.mapTextZoom()
     local lblH = getTextManager():getFontHeight(UIFont.Small) * tz
-    local cy = y + h * 0.38
     Core.drawPlaceAt(self, true, x + w * 0.3, cy, size, p.home, p.homeW, tz, lblH)
     Core.drawPlaceAt(self, false, x + w * 0.7, cy, size, p.pin, p.pinW, tz, lblH)
 end
@@ -1534,13 +1559,15 @@ local function addCombos(ctx, list)
     if not list then return end
     for i = 1, #list do
         local entry = list[i]
-        -- 停用時顯示 default（伺服器鎖定資源版本＝「依伺服器設定」）；玩家存的值不動，解除後照舊
-        local enabled = entryEnabled(entry, ctx.pn)
-        local selected = enabled and getComboIndex(entry.id, entry.default) or entry.default
-        local dd = addDropdown(ctx, getText(entry.label), entry.items, selected, onModCombo,
-            entry.tooltip and getText(entry.tooltip) or nil)
-        dd._entry, dd._findKey = entry, entry.id
-        dd:setEnabled(enabled)
+        if not (entry.mpOnly and not isClient()) then
+            -- 停用時顯示 default（伺服器鎖定資源版本＝「依伺服器設定」）；玩家存的值不動，解除後照舊
+            local enabled = entryEnabled(entry, ctx.pn)
+            local selected = enabled and getComboIndex(entry.id, entry.default) or entry.default
+            local dd = addDropdown(ctx, getText(entry.label), entry.items, selected, onModCombo,
+                entry.tooltip and getText(entry.tooltip) or nil)
+            dd._entry, dd._findKey = entry, entry.id
+            dd:setEnabled(enabled)
+        end
     end
 end
 
