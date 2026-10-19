@@ -52,6 +52,8 @@ local env = setmetatable({
         return safehouse[a] ~= nil and safehouse[a] == safehouse[b]
     end },
     MinidoracatMiniMapPolicy = { hasCanSeeAll = function(pn) return admins[pn] == true end },
+    -- 原版 getPlayerInfo：RealX／RealY 是最後一個網路封包的位置（真的回傳 Java Float，這裡用 Lua 數字）
+    getPlayerInfo = function(p) return p.net end,
     Vector3f = { new = function()
         return { x = function(self) return self.vx end, z = function(self) return self.vz end }
     end },
@@ -94,7 +96,7 @@ local function mapAPI(iso, showPlayers, showRemote)
     return api
 end
 local function element(api)
-    local el = { mapAPI = api, width = W, height = H, polys = {}, quads = {}, log = {}, stencil = 0, cleared = 0 }
+    local el = { mapAPI = api, width = W, height = H, polys = {}, quads = {}, rects = {}, log = {}, stencil = 0, cleared = 0 }
     function el:drawPolygon(_, x1, y1, x2, y2, x3, y3, x4, y4, r, g, b, a)
         self.polys[#self.polys + 1] = { x1, y1, x2, y2, x3, y3, x4, y4, r = r, g = g, b = b, a = a }
         self.log[#self.log + 1] = "poly"
@@ -102,6 +104,10 @@ local function element(api)
     function el:drawTextureAllPoint(tex, x1, y1, x2, y2, x3, y3, x4, y4, r, g, b, a)
         self.quads[#self.quads + 1] = { x1, y1, x2, y2, x3, y3, x4, y4, r = r, g = g, b = b, a = a, tex = tex }
         self.log[#self.log + 1] = "quad"
+    end
+    function el:drawRect(x, y, w, h, a, r, g, b)
+        self.rects[#self.rects + 1] = { x = x, y = y, w = w, h = h, a = a, r = r, g = g, b = b }
+        self.log[#self.log + 1] = "rect"
     end
     function el:getAbsoluteX() return AX end
     function el:getAbsoluteY() return AY end
@@ -290,9 +296,9 @@ check(bodies(el, "team") == 1 and bodies(el, "other") == 0 and bodies(el, "self"
 local mateBody = el.polys[2]
 check(near(mateBody[1], W / 2 + 10 * S) and near(mateBody[2], H / 2 - 0.55 * 1.25 * size * 0.8)
     and mateBody.b == 1 and mateBody.g > 0.7, "R2 the teammate arrow is cyan, one size smaller, on the teammate")
-check(el.log[1] == "quad" and el.log[2] == "quad" and el.log[3] == "poly" and bodies(el, "self") == 1
+check(el.log[1] == "quad" and el.log[2] == "quad" and el.log[3] == "rect" and el.log[4] == "poly" and bodies(el, "self") == 1
     and el.polys[#el.polys].r > 0.9 and el.polys[#el.polys].g < 0.2,
-    "R2 all cones first, own arrow drawn last on top")
+    "R2 all cones first, then the teammate's dot cover and arrow, own arrow drawn last on top")
 local _, _, rdx, rdy = coneAxis(el.quads[1])
 check(near(rdx, 0) and near(rdy, -1), "R2 the teammate cone points where the teammate faces")
 
@@ -367,6 +373,37 @@ now = now + 1
 el = draw(false, { [0] = me })
 check(bodies(el, "team") == 1 and calls.safehouse > before, "R10 the cache refreshes after a second")
 
+-- R11 原版在其他玩家的網路位置畫 6×6 純紅點（UIWorldMap.renderPlayer：元件座標取整數再減 3）。徒步的其他玩家
+-- 照 getPlayerInfo 的 RealX／RealY 畫（真的值是 Java Float，只能 tostring），箭頭底下先在同一格蓋不透明的黑；
+-- 自己的箭頭是紅的不蓋。此時 sandbox＝2、只有隊友 mate（CX+10, CY，面向北）會畫
+local function javaFloat(v) return setmetatable({}, { __tostring = function() return tostring(v) end }) end
+el = mpDraw()
+local cover = el.rects[1]
+check(#el.rects == 1 and cover.x == math.floor(W / 2 + 10 * S) - 3 and cover.y == math.floor(H / 2) - 3
+    and cover.w == 6 and cover.h == 6 and cover.a == 1 and cover.r == 0 and cover.g == 0 and cover.b == 0,
+    "R11 a teammate's arrow covers the vanilla red dot with opaque black, own arrow does not")
+mate.net = { RealX = javaFloat(CX + 11.3), RealY = javaFloat(CY + 0.6) }
+el = mpDraw()
+local nx, ny = W / 2 + 11.3 * S, H / 2 + 0.6 * S
+local cax, cay = coneAxis(el.quads[1])
+check(near(el.polys[2][1], nx) and near(el.polys[2][2], ny - 0.55 * 1.25 * size * 0.8) and near(cax, nx) and near(cay, ny)
+    and el.rects[1].x == math.floor(nx) - 3 and el.rects[1].y == math.floor(ny) - 3,
+    "R11 on foot, arrow, cone and cover sit at the network position where vanilla draws the dot")
+mate.net = { RealX = javaFloat(CX + 50), RealY = javaFloat(CY) }
+el = mpDraw()
+check(near(el.polys[2][1], W / 2 + 10 * S), "R11 a network position 8+ tiles off the character falls back to the character")
+mate.net = nil
+el = mpDraw()
+check(near(el.polys[2][1], W / 2 + 10 * S) and el.rects[1].x == math.floor(W / 2 + 10 * S) - 3,
+    "R11 without network info the arrow and cover use the character position")
+mate.net = { RealX = javaFloat(CX + 11.3), RealY = javaFloat(CY + 0.6) }
+local walk = mate.getVehicle
+mate.getVehicle = function() return vehicle(CX + 10, CY + 2, 0, -1) end
+el = mpDraw()
+check(near(el.polys[2][1], W / 2 + 10 * S) and near(el.polys[2][2], H / 2 + 2 * S - 0.55 * 1.25 * size * 0.8),
+    "R11 in a vehicle the arrow stays on the vehicle")
+mate.getVehicle, mate.net = walk, nil
+
 -- 別層：mate 在樓上、bob（陌生人）在地下室；自己在地面。預設 FloorMarks 開、BFH 式
 sandbox.RemoteFacingDisplay = 3
 mate.z, bob.z = 1, -1
@@ -426,7 +463,7 @@ el = mpDraw()
 check(near(el.polys[2].r, 0.95 * 0.55) and near(H / 2 - el.polys[4][2], tip(R)),
     "FL5 on the stairs a player counts as the lower floor")
 
-local EXPECTED_ASSERTIONS = 54
+local EXPECTED_ASSERTIONS = 59
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS .. ", actual " .. assertions)
     os.exit(1)

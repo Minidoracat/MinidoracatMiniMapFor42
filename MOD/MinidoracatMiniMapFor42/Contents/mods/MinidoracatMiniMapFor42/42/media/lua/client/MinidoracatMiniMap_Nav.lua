@@ -718,6 +718,18 @@ Core.facingPush = function(el, api, k, wx, wy, fx, fy, kind, size, arrow, dz)
     e.kind, e.size, e.arrow, e.dz = kind, size, arrow, dz or 0
     buf.n = i
 end
+-- 原版地圖畫其他玩家的 6×6 紅點（UIWorldMap.renderPlayer）用最後收到的網路封包位置（WorldMapRemotePlayer＝
+-- 角色的 realx/realy），不是畫面上內插中的角色：走動時紅點跑在角色前面一格多（2026-10-19 實測 12–20 px）。
+-- 徒步的其他玩家改在這個位置畫，箭頭才蓋得住紅點；坐車的照車的位置。Lua 只有 getPlayerInfo 讀得到（值是
+-- Java Float，同原版 InterpolationPlayerPeriodDebug.lua 先 tostring 再轉數字）。讀不到、或離角色 8 格以上
+-- （剛同步、還沒收到封包）就用角色位置
+Core.remoteNetPos = function(o, x, y)
+    local ok, info = pcall(getPlayerInfo, o)
+    if not (ok and info) then return x, y end
+    local rx, ry = tonumber(tostring(info.RealX)), tonumber(tostring(info.RealY))
+    if rx and ry and math.abs(rx - x) < 8 and math.abs(ry - y) < 8 then return rx, ry end
+    return x, y
+end
 -- 其他玩家（設計稿 minimap-team-facing-1019）：getOnlinePlayers＝伺服器有同步給這台客戶端的玩家
 -- （約等於周圍載入範圍；遠處玩家引擎只送座標、沒有朝向，只剩原版紅點）。隊友青、其他人白，比自己小一號。
 -- myFloor＝這張地圖的玩家所在樓層（別層標示關＝nil，樓層差一律 0）
@@ -732,6 +744,7 @@ Core.collectRemoteFacing = function(el, api, k, size, level, myFloor)
             local team = Core.isFacingTeammate(o, now)
             if (team or level == 3) and Core.vanillaShowsRemote(o, team, admin, opt) then
                 local wx, wy, fx, fy = Core.playerFacing(o)
+                if not o:getVehicle() then wx, wy = Core.remoteNetPos(o, wx, wy) end
                 local dz = myFloor and math.floor(o:getZ()) - myFloor or 0
                 Core.facingPush(el, api, k, wx, wy, fx, fy, team and "team" or "other", size, true, dz)
             end
@@ -760,6 +773,9 @@ Core.drawFacingBuf = function(el, api, cone, style)
             if e.arrow and layer(e) == L then
                 local c = colors[e.kind]
                 local size, dim, a = Core.floorLook(e, style)
+                -- 其他玩家：箭頭底下先在原版紅點的位置（同 UIWorldMap.renderPlayer：元件座標取整數再減 3）蓋一塊
+                -- 不透明的黑，箭頭比紅點小或有凹口時露出來的只是黑框色；自己的箭頭是紅色，不用蓋
+                if e.kind ~= "self" then el:drawRect(math.floor(e.cx) - 3, math.floor(e.cy) - 3, 6, 6, 1, 0, 0, 0) end
                 Core.drawFacingArrow(el, e.cx, e.cy, e.ux, e.uy, size, c[1] * dim, c[2] * dim, c[3] * dim, a)
                 if style == 2 and e.dz ~= 0 then Core.drawFloorGlyph(el, e.cx, e.cy, e.ux, e.uy, size, e.dz > 0) end
             end
