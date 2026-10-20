@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### 修正
+
+- 導航不再為了省一兩公尺，把路線畫在路旁的停車帶或空地上：Louisville 的 Bone St 與 Cows Lament St、Tanner St 一帶原本沿著停車帶走、貼著路邊裝飾，現在照 Bone St 本身走。小地圖補上的幾段官方沒畫的通路仍然可以導航，只在正式道路繞不了多少路時改走正式道路。
+- 自動駕駛（拖車調頭、堵車改道）重新規劃時，不再挑離車子很遠的另一條路當起點；以前會因此把改道路線退回、交還給玩家，玩家得先自己把車挪到別處。
+
+> 技術要點：RoadPatch 的 bridge 路段（6 條）建圖時帶旗標，A* 成本在 surface 倍率之上再乘 1.10（倍率仍 ≥1，heuristic 仍 admissible）；bridge 不刪、`route.len` 與 `segSurface`／`segWidth` 不變，`route.cost` 含這一成。公開 API：`navApiVersion` 9→10，`requestDetour` 第 8 參 `maxSnap`（可省）：起點候選離玩家的投影距離超過它就不參賽，最近的候選也超過時照舊回它；不傳＝與 v9 相同，狀態字彙不變。
+
 ## [42.21.0-0.48.1] - 2026-10-19
 
 ### 修正

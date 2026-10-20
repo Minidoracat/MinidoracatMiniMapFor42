@@ -507,6 +507,7 @@ function NavCore.applyRoadPatches(streets, patch, officialDir, displayName)
         local ok, err = stagePatchStreet(staged, lookup, patch.bridge[i], operationIds, targetLow, officialDir,
             displayName)
         if not ok then return false, err end
+        staged[#staged].bridge = true -- 建圖時帶到邊上，edgeTravelCost 多算一成（2026-10-20 R6 裁定）
     end
 
     local oldN = #streets
@@ -1017,7 +1018,9 @@ local function conservativeMetadata(oldSurface, oldWidth, surface, width)
     return mergedSurface, mergedWidth
 end
 
-local function graphEdge(g, a, b, len, surface, width)
+-- bridge（RoadPatch bridge 路段）只在每個貢獻者都是 bridge 時成立：同一條邊也是官方街＝照官方算。
+-- adjBridge／sBridge 稀疏（true 或 nil）。
+local function graphEdge(g, a, b, len, surface, width, bridge)
     if a == b then return end
     local lo, hi = a, b
     if lo > hi then lo, hi = hi, lo end
@@ -1029,12 +1032,14 @@ local function graphEdge(g, a, b, len, surface, width)
             g.adjSurface[edge], g.adjWidth[edge], surface, width)
         g.adjSurface[edge], g.adjSurface[edge + 1] = mergedSurface, mergedSurface
         g.adjWidth[edge], g.adjWidth[edge + 1] = mergedWidth, mergedWidth
+        if not bridge then g.adjBridge[edge], g.adjBridge[edge + 1] = nil, nil end
         return
     end
     local e = g.edgeCount + 1
     g.edgeSeen[ek] = e
     g.adjTo[e], g.adjLen[e], g.adjNext[e] = b, len, g.adjHead[a]
     g.adjSurface[e], g.adjWidth[e] = surface, width
+    if bridge then g.adjBridge[e], g.adjBridge[e + 1] = true, true end
     g.adjHead[a] = e
     local e2 = e + 1
     g.adjTo[e2], g.adjLen[e2], g.adjNext[e2] = a, len, g.adjHead[b]
@@ -1043,7 +1048,7 @@ local function graphEdge(g, a, b, len, surface, width)
     g.edgeCount = e2
 end
 
-local function graphSnapSeg(g, x1, y1, x2, y2, a, b2, surface, width)
+local function graphSnapSeg(g, x1, y1, x2, y2, a, b2, surface, width, bridge)
     if a == b2 then return end
     local lo, hi = a, b2
     if lo > hi then lo, hi = hi, lo end
@@ -1052,6 +1057,7 @@ local function graphSnapSeg(g, x1, y1, x2, y2, a, b2, surface, width)
     if seg then
         g.sSurface[seg], g.sWidth[seg] = conservativeMetadata(
             g.sSurface[seg], g.sWidth[seg], surface, width)
+        if not bridge then g.sBridge[seg] = nil end
         return
     end
     local s = g.segCount + 1
@@ -1059,6 +1065,7 @@ local function graphSnapSeg(g, x1, y1, x2, y2, a, b2, surface, width)
     g.snapSeen[ek] = s
     g.sx1[s], g.sy1[s], g.sx2[s], g.sy2[s], g.sA[s], g.sB[s] = x1, y1, x2, y2, a, b2
     g.sSurface[s], g.sWidth[s] = surface, width
+    if bridge then g.sBridge[s] = true end
     local bx1, bx2, by1, by2 = bucketRange(x1, y1, x2, y2, 0) -- snap 有擴圈查詢，不需 pad
     for bx = bx1, bx2 do
         for by = by1, by2 do
@@ -1102,9 +1109,9 @@ local function stepCut(b, budget)
             nodeCount = 0, edgeCount = 0, segCount = 0,
             nx = {}, ny = {}, nodeByKey = {},
             adjHead = {}, adjNext = {}, adjTo = {}, adjLen = {},
-            adjSurface = {}, adjWidth = {}, edgeSeen = {},
+            adjSurface = {}, adjWidth = {}, adjBridge = {}, edgeSeen = {},
             sx1 = {}, sy1 = {}, sx2 = {}, sy2 = {}, sA = {}, sB = {},
-            sSurface = {}, sWidth = {}, sbuck = {}, snapSeen = {},
+            sSurface = {}, sWidth = {}, sBridge = {}, sbuck = {}, snapSeen = {},
             -- A* generation stamp 工作區（findRoute 重用，免每次清表）
             gen = 0, gScore = {}, fromN = {}, fromEdge = {}, stamp = {}, closed = {},
         }
@@ -1136,12 +1143,13 @@ local function stepCut(b, budget)
         if keep[quantKey(ox1, oy1)] and dist2(x1, y1, ox1, oy1) > mergeEnd then keepEnd(b, i, 0, ox1, oy1) end
         if keep[quantKey(ox2, oy2)] and dist2(x2, y2, ox2, oy2) > mergeEnd then keepEnd(b, i, 1, ox2, oy2) end
         local ts = b.cuts[i]
+        local bridge = b.streets[b.gsid[i]].bridge == true
         if not ts then
             local a = graphNode(g, x1, y1)
             local c = graphNode(g, x2, y2)
             local len = sqrt(dist2(x1, y1, x2, y2))
-            graphEdge(g, a, c, len, b.gsurface[i], b.gwidth[i])
-            graphSnapSeg(g, x1, y1, x2, y2, a, c, b.gsurface[i], b.gwidth[i])
+            graphEdge(g, a, c, len, b.gsurface[i], b.gwidth[i], bridge)
+            graphSnapSeg(g, x1, y1, x2, y2, a, c, b.gsurface[i], b.gwidth[i], bridge)
             ops = ops + 3
         else
             -- 依 t 插排（家規禁 table.sort——Kahlua 遞迴 quicksort 已排序輸入
@@ -1167,9 +1175,9 @@ local function stepCut(b, budget)
                     local qn = graphNode(g, cut.x, cut.y)
                     if qn ~= pn then
                         graphEdge(g, pn, qn, sqrt(dist2(px, py, cut.x, cut.y)),
-                            b.gsurface[i], b.gwidth[i])
+                            b.gsurface[i], b.gwidth[i], bridge)
                         graphSnapSeg(g, px, py, cut.x, cut.y, pn, qn,
-                            b.gsurface[i], b.gwidth[i])
+                            b.gsurface[i], b.gwidth[i], bridge)
                         px, py, pn = cut.x, cut.y, qn
                         ops = ops + 3
                     end
@@ -1178,9 +1186,9 @@ local function stepCut(b, budget)
             local en = graphNode(g, x2, y2)
             if en ~= pn then
                 graphEdge(g, pn, en, sqrt(dist2(px, py, x2, y2)),
-                    b.gsurface[i], b.gwidth[i])
+                    b.gsurface[i], b.gwidth[i], bridge)
                 graphSnapSeg(g, px, py, x2, y2, pn, en,
-                    b.gsurface[i], b.gwidth[i])
+                    b.gsurface[i], b.gwidth[i], bridge)
                 ops = ops + 3
             end
         end
@@ -1340,14 +1348,17 @@ end
 -- A* objective 與幾何長分離：adjLen/route.len 永遠是實際世界距離；surface
 -- 只進 route.cost。未有實機數據前採保守有界倍率 paved/unknown=1、
 -- gravel=1.05、dirt=1.10；width 僅暴露 metadata，MiniMap 不知道消費者車型，
--- 不得代替 AutoDrive 決定窄路代價。倍率皆 >=1，heuristic 仍 admissible。
-local function edgeTravelCost(len, surface, _width)
+-- 不得代替 AutoDrive 決定窄路代價。bridge（RoadPatch 的 bridge 路段：補官方沒畫的
+-- 可通行鋪面帶，不是正式街道）再乘 1.10：差距不到一成時 A* 走官方街（2026-10-20 使用者
+-- 裁定，R6 Bone St 停車帶 bridge 只比 Bone St 短 2 m）。倍率皆 >=1，heuristic 仍 admissible。
+local function edgeTravelCost(len, surface, _width, bridge)
     local multiplier = 1.0
     if surface == "gravel" then
         multiplier = 1.05
     elseif surface == "dirt" then
         multiplier = 1.10
     end
+    if bridge then multiplier = multiplier * 1.10 end
     return len * multiplier
 end
 
@@ -1392,6 +1403,7 @@ local function runAStar(g, startCand, endCand, tx, ty, av, query)
     end
     local endSurface, endWidth = g.sSurface[endCand.seg], g.sWidth[endCand.seg]
     local startSurface, startWidth = g.sSurface[startCand.seg], g.sWidth[startCand.seg]
+    local endBridge, startBridge = g.sBridge[endCand.seg], g.sBridge[startCand.seg]
     if not validSurface(endSurface) or not validWidth(endWidth)
         or not validSurface(startSurface) or not validWidth(startWidth)
     then
@@ -1407,18 +1419,18 @@ local function runAStar(g, startCand, endCand, tx, ty, av, query)
     local px, py = startCand.qx, startCand.qy
     local lenA = sqrt(dist2(px, py, g.nx[a], g.ny[a]))
     local lenB = sqrt(dist2(px, py, g.nx[b2], g.ny[b2]))
-    local gA = edgeTravelCost(lenA, startSurface, startWidth)
+    local gA = edgeTravelCost(lenA, startSurface, startWidth, startBridge)
         + segmentAvoidPenalty(lenA, px, py, g.nx[a], g.ny[a], av)
-    local gB = edgeTravelCost(lenB, startSurface, startWidth)
+    local gB = edgeTravelCost(lenB, startSurface, startWidth, startBridge)
         + segmentAvoidPenalty(lenB, px, py, g.nx[b2], g.ny[b2], av)
     local reached = false
     local okSearch, searchErr = pcall(function()
         g.nx[Q], g.ny[Q], g.adjHead[Q] = endCand.qx, endCand.qy, 0
         g.adjTo[eBase + 1], g.adjLen[eBase + 1], g.adjNext[eBase + 1] = Q, lenQC, savedC
-        g.adjSurface[eBase + 1], g.adjWidth[eBase + 1] = endSurface, endWidth
+        g.adjSurface[eBase + 1], g.adjWidth[eBase + 1], g.adjBridge[eBase + 1] = endSurface, endWidth, endBridge
         g.adjHead[c] = eBase + 1
         g.adjTo[eBase + 2], g.adjLen[eBase + 2], g.adjNext[eBase + 2] = Q, lenQD, savedD
-        g.adjSurface[eBase + 2], g.adjWidth[eBase + 2] = endSurface, endWidth
+        g.adjSurface[eBase + 2], g.adjWidth[eBase + 2], g.adjBridge[eBase + 2] = endSurface, endWidth, endBridge
         g.adjHead[d] = eBase + 2
         g.gen = gen
         stamp[a], gS[a], fromN[a], fromEdge[a], closed[a] = gen, gA, 0, 0, false
@@ -1442,7 +1454,7 @@ local function runAStar(g, startCand, endCand, tx, ty, av, query)
                     queryStep(query, 1)
                     local to = g.adjTo[e]
                     local edgeLen = g.adjLen[e]
-                    local ng = gn + edgeTravelCost(edgeLen, g.adjSurface[e], g.adjWidth[e])
+                    local ng = gn + edgeTravelCost(edgeLen, g.adjSurface[e], g.adjWidth[e], g.adjBridge[e])
                         + segmentAvoidPenalty(edgeLen, g.nx[n], g.ny[n], g.nx[to], g.ny[to], av)
                     if stamp[to] ~= gen or ng < gS[to] then
                         stamp[to], gS[to], fromN[to], fromEdge[to], closed[to] =
@@ -1464,6 +1476,7 @@ local function runAStar(g, startCand, endCand, tx, ty, av, query)
     g.adjNext[eBase + 1], g.adjNext[eBase + 2] = nil, nil
     g.adjSurface[eBase + 1], g.adjSurface[eBase + 2] = nil, nil
     g.adjWidth[eBase + 1], g.adjWidth[eBase + 2] = nil, nil
+    g.adjBridge[eBase + 1], g.adjBridge[eBase + 2] = nil, nil
     g.nx[Q], g.ny[Q], g.adjHead[Q] = nil, nil, nil
 
     if not okSearch then return nil, searchErr end
@@ -1492,21 +1505,21 @@ local function runAStar(g, startCand, endCand, tx, ty, av, query)
         local prevX, prevY = pts[np - 1], pts[np]
         local edgeLen = sqrt(dist2(prevX, prevY, x, y))
         if edgeLen > 1e-6 then
-            local surface, width
+            local surface, width, bridge
             if fromN[node] == 0 then          -- 起點種子：走的是 startCand snap 段
-                surface, width = startSurface, startWidth
+                surface, width, bridge = startSurface, startWidth, startBridge
             elseif node == Q then             -- 注入邊已回滾，改用 endCand snap 段
-                surface, width = endSurface, endWidth
+                surface, width, bridge = endSurface, endWidth, endBridge
             else
                 local edge = fromEdge[node]
-                surface, width = g.adjSurface[edge], g.adjWidth[edge]
+                surface, width, bridge = g.adjSurface[edge], g.adjWidth[edge], g.adjBridge[edge]
             end
             np = np + 2
             pts[np - 1], pts[np] = x, y
             local segmentIndex = np / 2 - 1
             segSurface[segmentIndex], segWidth[segmentIndex] = surface, width
             routeLen = routeLen + edgeLen
-            routeCost = routeCost + edgeTravelCost(edgeLen, surface, width)
+            routeCost = routeCost + edgeTravelCost(edgeLen, surface, width, bridge)
             avoidPenalty = avoidPenalty
                 + segmentAvoidPenalty(edgeLen, prevX, prevY, x, y, av)
         end
@@ -1524,7 +1537,9 @@ end
 -- 總代價含兩端 approach 距離（×approachWeight，缺省 3＝徒步；車上由呼叫端給 12），
 -- 取最短。第二回傳＝A* 內部例外（呼叫端 log）
 -- extraAvoid（v9，可省）＝更多避讓圈的扁平表 { x1, y1, r1, … }（同一次查詢的懲罰與主圈相同；requestDetour 已驗參）。
-local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight, extraAvoid)
+-- maxSnap（v10，可省）＝起點候選的投影距離上限：超過的候選不參賽——改道時跳出避讓圈、從百米外的路起步
+-- 會比繞合法迴圈便宜（AutoDrive 拖車調頭 why=far）。最近的候選也超過時只留它（＝舊行為，消費者看 snapDist 拒收）。
+local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight, extraAvoid, maxSnap)
     approachWeight = approachWeight or 3
     if not g or g.nodeCount == 0 then return nil end
     local av = nil
@@ -1546,6 +1561,10 @@ local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approac
     local starts = snapCandidates(g, sx, sy, 2, query)
     if #starts == 0 then starts[1] = nearestSnap(g, sx, sy, query) end
     if not starts[1] then return nil end
+    if maxSnap and starts[1].d2 <= maxSnap * maxSnap then
+        -- starts 依 d2 升冪：從尾端剪掉超過上限的
+        while starts[#starts].d2 > maxSnap * maxSnap do starts[#starts] = nil end
+    end
     local ends = snapCandidates(g, tx, ty, 2, query)
     if #ends == 0 then ends[1] = nearestSnap(g, tx, ty, query) end
     if not ends[1] then return nil end
@@ -1562,7 +1581,7 @@ local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approac
                 local avoidPenalty = segmentAvoidPenalty(dlen, sc.qx, sc.qy, ec.qx, ec.qy, av)
                 r = {
                     pts = { sc.qx, sc.qy, ec.qx, ec.qy },
-                    len = dlen, cost = edgeTravelCost(dlen, surface, width),
+                    len = dlen, cost = edgeTravelCost(dlen, surface, width, g.sBridge[sc.seg]),
                     avoidPenalty = avoidPenalty,
                     segSurface = { surface }, segWidth = { width },
                     approachSurface = "unknown",
@@ -1603,9 +1622,9 @@ local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approac
     return best
 end
 
-function NavCore.findRoute(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight, extraAvoid)
+function NavCore.findRoute(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight, extraAvoid, maxSnap)
     local ok, route, err = pcall(findRouteInner, g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight,
-        extraAvoid)
+        extraAvoid, maxSnap)
     if not ok then return nil, route end
     return route, err
 end
@@ -2952,7 +2971,9 @@ end
 -- 每圈與主圈同樣軟封鎖（路線穿任一圈 avoidPenalty>0）。AutoDrive 用它避開同一趟先前改道時已判死的堵點
 -- （只避新堵點時 A* 會原路繞回舊堵點）。每圈同主圈驗參（有限數字、r>0），長度不是 3 的倍數、超過 8 圈或
 -- 任一值不合＝badargs；舊消費者不傳＝行為與 v8 相同。
-MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoidX, avoidY, avoidR, moreAvoid)
+-- v10：第 8 參 maxSnap（可省）＝起點候選離玩家的投影距離上限（米，有限正數；不合＝badargs）：超過的候選不參賽
+-- （findRouteInner），最近的候選也超過時照舊回它、由消費者看 snapDist 拒收。不傳＝行為與 v9 相同。
+MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoidX, avoidY, avoidR, moreAvoid, maxSnap)
     if type(avoidX) ~= "number" or type(avoidY) ~= "number" or type(avoidR) ~= "number"
         or avoidX ~= avoidX or avoidY ~= avoidY or avoidR ~= avoidR
         or avoidX == math.huge or avoidX == -math.huge
@@ -2972,12 +2993,15 @@ MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoi
             end
         end
     end
+    if maxSnap ~= nil and (type(maxSnap) ~= "number" or not (maxSnap > 0) or maxSnap == math.huge) then
+        return nil, "badargs"
+    end
     local playerObj, argState = apiPlayer(playerNum, targetX, targetY)
     if not playerObj then return nil, argState end
     local px, py = playerObj:getX(), playerObj:getY()
     local weight = approachWeightFor(playerObj)
     local route, aerr = NavCore.findRoute(engine.graph, px, py, targetX, targetY,
-        avoidX, avoidY, avoidR, weight, moreAvoid)
+        avoidX, avoidY, avoidR, weight, moreAvoid, maxSnap)
     if aerr then
         failNavEngine(aerr)
         return nil, "failed"
