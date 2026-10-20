@@ -1297,6 +1297,102 @@ do
 end
 
 --------------------------------------------------------------------------------
+-- 二十五之二、RoadPatch bridge 多算一成（2026-10-20 使用者裁定 R6）：差距不到一成走官方街、
+-- 超過一成仍走 bridge（不刪路）；同一條邊也是官方街＝照官方算；起終點落在 bridge 上也加權。
+--------------------------------------------------------------------------------
+do
+    assert(math.abs(mod.edgeTravelCost(100, "paved", 7, true) - 110) < 1e-9
+        and math.abs(mod.edgeTravelCost(100, "dirt", 7, true) - 121) < 1e-9
+        and math.abs(mod.edgeTravelCost(100, "paved", 7, nil) - 100) < 1e-9,
+        "bridge cost：surface 倍率之上再乘 1.10")
+    local function detourVsBridge(side)
+        return buildAll({
+            { name = "", src = "M", width = 7, segSurface = { "paved" }, bridge = true,
+                pts = { 0, 0, 100, 0 } },
+            { name = "Official", src = "M", width = 6, segSurface = { "paved", "paved", "paved" },
+                pts = { 0, 0, 0, side, 100, side, 100, 0 } },
+        }, nil)
+    end
+    local near = route(detourVsBridge(4), 0, 0, 100, 0)
+    assertRouteMetadata(near, "bridge 差 8%")
+    assert(near.len > 107 and near.len < 109 and math.abs(near.cost - near.len) < 1e-6,
+        "bridge cost：官方街只長 8%（< 一成）時走官方街，實得 len " .. near.len)
+    local far = route(detourVsBridge(10), 0, 0, 100, 0)
+    assertRouteMetadata(far, "bridge 差 20%")
+    assert(math.abs(far.len - 100) < 1e-6 and math.abs(far.cost - 110) < 1e-6,
+        "bridge cost：官方街長 20% 時仍走 bridge（不刪路），cost＝len×1.10，實得 len " .. far.len)
+    -- 同幾何的 bridge 與官方街合成一條邊／snap 段：照官方算（不因多一個 bridge 貢獻者變貴）；
+    -- 兩端各接官方短街，A* 展開經過合成邊（同段直達只看 snap 段）。
+    local dupGraph = buildAll({
+        { name = "", src = "M", width = 7, segSurface = { "paved" }, bridge = true, pts = { 0, 0, 100, 0 } },
+        { name = "Official", src = "M", width = 7, segSurface = { "paved" }, pts = { 0, 0, 100, 0 } },
+        { name = "West", src = "M", width = 7, segSurface = { "paved" }, pts = { -50, 0, 0, 0 } },
+        { name = "East", src = "M", width = 7, segSurface = { "paved" }, pts = { 100, 0, 150, 0 } },
+    }, nil)
+    local dup = route(dupGraph, 10, 0, 90, 0)
+    assert(dup and math.abs(dup.cost - 80) < 1e-6, "bridge cost：與官方街重合的 snap 段照官方算")
+    local through = route(dupGraph, -25, 0, 125, 0)
+    assert(through and math.abs(through.len - 150) < 1e-6 and math.abs(through.cost - 150) < 1e-6,
+        "bridge cost：與官方街重合的邊照官方算，實得 " .. tostring(through and through.cost))
+    -- 起點在 bridge 段上時兩個種子都要加權：西種子 10 m＋官方 122 m vs 東種子 90 m＋官方 38 m。
+    -- 加權後 11+122=133 < 99+38=137 走西；種子不加權會變 132 > 128 走東。終點在 bridge（注入邊）對稱。
+    local seedGraph = buildAll({
+        { name = "", src = "M", width = 6, segSurface = { "paved" }, bridge = true, pts = { 0, 0, 100, 0 } },
+        { name = "W", src = "M", width = 6, segSurface = { "paved" }, pts = { 0, 0, 0, -30 } },
+        { name = "S", src = "M", width = 6, segSurface = { "paved" }, pts = { 0, -30, 100, -30 } },
+        { name = "E", src = "M", width = 6, segSurface = { "paved" }, pts = { 100, -30, 100, 0 } },
+    }, nil)
+    local west = route(seedGraph, 10, 0, 92, -30)
+    assertRouteMetadata(west, "起點種子")
+    assert(math.abs(west.len - 132) < 1e-6 and west.pts[3] == 0,
+        "bridge cost：起點在 bridge 上，兩個種子都加權後走西端，實得 len " .. west.len)
+    local westIn = route(seedGraph, 92, -30, 10, 0)
+    assertRouteMetadata(westIn, "終點注入邊")
+    assert(math.abs(westIn.len - 132) < 1e-6 and westIn.pts[#westIn.pts - 3] == 0,
+        "bridge cost：終點在 bridge 上，注入邊加權後從西端進，實得 len " .. westIn.len)
+    -- 起點 snap 在 bridge 段上（起點種子 gA/gB 與回溯都要加權）、終點在官方段；同段直達也加權
+    local g = buildAll({
+        { name = "", src = "M", width = 7, segSurface = { "paved" }, bridge = true, pts = { 0, 0, 100, 0 } },
+        { name = "Official", src = "M", width = 7, segSurface = { "paved" }, pts = { 100, 0, 200, 0 } },
+    }, nil)
+    local mixed = route(g, 50, 0, 150, 0)
+    assertRouteMetadata(mixed, "起點在 bridge")
+    assert(math.abs(mixed.len - 100) < 1e-6 and math.abs(mixed.cost - 105) < 1e-6,
+        "bridge cost：50 m bridge＋50 m 官方＝cost 105，實得 " .. mixed.cost)
+    local back = route(g, 150, 0, 50, 0)
+    assert(back and math.abs(back.cost - 105) < 1e-6, "bridge cost：終點在 bridge（注入邊）也加權，實得 " .. back.cost)
+    local same = route(g, 10, 0, 90, 0)
+    assert(same and math.abs(same.cost - 88) < 1e-6, "bridge cost：同段直達 80 m＝88，實得 " .. same.cost)
+end
+
+--------------------------------------------------------------------------------
+-- 二十五之三、maxSnap（nav API v10 requestDetour 第 8 參）：起點候選投影距離超過上限者不參賽。
+-- 重現 AutoDrive 拖車調頭 why=far：避讓圈在車尾，往前要繞 2700 m 合法迴圈；不設上限時 A* 寧可拿 100 m 外的
+-- 路當起點（200 m＋approach 12×100＝1400）。最近候選也超過上限時照舊（消費者看 snapDist 拒收）。
+--------------------------------------------------------------------------------
+do
+    local g = buildAll({
+        { name = "Main", src = "M", width = 8, pts = { -200, 0, 100, 0 } },
+        { name = "Spur", src = "M", width = 8, pts = { 100, 0, 300, 0 } },
+        { name = "Loop", src = "M", width = 8, pts = { -200, 0, -200, 1000, 300, 1000, 300, 0 } },
+    }, nil)
+    local old = mod.findRoute(g, 0, 0, 300, 0, 13, 0, 12, 12)
+    assertRouteMetadata(old, "maxSnap 不設")
+    assert(math.abs(old.snapDist - 100) < 1e-6 and old.avoidPenalty == 0,
+        "maxSnap：不設上限＝舊行為，起點跳到 100 m 外，實得 snapDist " .. old.snapDist)
+    local capped = mod.findRoute(g, 0, 0, 300, 0, 13, 0, 12, 12, nil, 20)
+    assertRouteMetadata(capped, "maxSnap 20")
+    assert(capped.snapDist < 1e-6 and capped.avoidPenalty == 0 and math.abs(capped.len - 2700) < 1e-6,
+        "maxSnap：上限 20 m＝從車下的路走合法迴圈，實得 snapDist " .. capped.snapDist .. " len " .. capped.len)
+    assert(capped.pts[3] < 0, "maxSnap：合法迴圈先往西（不穿車尾避讓圈）")
+    -- 最近候選也超過上限（車在路外 50 m）：與不設上限逐欄相同
+    local offA = mod.findRoute(g, 0, 50, 300, 0, 13, 0, 12, 12)
+    local offB = mod.findRoute(g, 0, 50, 300, 0, 13, 0, 12, 12, nil, 20)
+    assert(offA and offB and offB.snapDist > 20 and offA.snapDist == offB.snapDist and offA.len == offB.len,
+        "maxSnap：最近候選也超過上限時照舊回路線（snapDist " .. tostring(offB and offB.snapDist) .. "）")
+end
+
+--------------------------------------------------------------------------------
 -- 二十六、正式 generated Lua × runtime cross-language 契約：直接由 generated
 -- geometrySet 反建官方 q2 streets（街名全改譯名），再跑 production apply。
 -- 這會抓 generator/Lua 在量化、width、segment identity 任一字元漂移。
@@ -1391,6 +1487,52 @@ do
             for i = 2, #r.pts, 2 do
                 assert(math.abs(r.pts[i] - 11399.5) < 1, "Elder Road：路線留在路面中線")
             end
+        end
+    end
+    -- R6（2026-10-20 使用者裁定）：Bone St 停車帶 bridge c:8a9b2d…（x≈13171）只比 Bone St（x 13163）短 2 m，
+    -- bridge 多算一成後 Cows Lament→Tanner 走 Bone St；6 條 bridge 都不刪、端點對端點仍走它。
+    do
+        local g = officialBuilder.graph
+        local flagged = 0
+        for i = 1, #streets do
+            if streets[i].bridge then flagged = flagged + 1 end
+        end
+        assert(flagged == patch.bridgeCount and flagged == 6, "R6：applyRoadPatches 只給 6 條 bridge 帶旗標，實得 " .. flagged)
+        local function nearLine(r, x, y, tol)
+            local p = r.pts
+            for i = 1, #p / 2 - 1 do
+                if mod.projPointSeg(x, y, p[i * 2 - 1], p[i * 2], p[i * 2 + 1], p[i * 2 + 2]) <= tol * tol then
+                    return true
+                end
+            end
+            return false
+        end
+        for _, ends in ipairs({ { 13111.5, 1262.5, 13282, 1306 }, { 13282, 1306, 13111.5, 1262.5 } }) do
+            local r = mod.findRoute(g, ends[1], ends[2], ends[3], ends[4], nil, nil, nil, 12)
+            assertRouteMetadata(r, "R6 Bone St")
+            assert(not nearLine(r, 13171, 1275, 2) and nearLine(r, 13163, 1275, 0.5),
+                "R6：路線走 Bone St 中線 x13163、不走停車帶 bridge x13171")
+        end
+        for i = 1, patch.bridgeCount do
+            local p = patch.bridge[i].pts
+            local n = #p / 2
+            local L = 0
+            for k = 1, n - 1 do
+                L = L + math.sqrt((p[k * 2 + 1] - p[k * 2 - 1]) ^ 2 + (p[k * 2 + 2] - p[k * 2]) ^ 2)
+            end
+            local half, mx, my = L / 2, nil, nil
+            for k = 1, n - 1 do
+                local l = math.sqrt((p[k * 2 + 1] - p[k * 2 - 1]) ^ 2 + (p[k * 2 + 2] - p[k * 2]) ^ 2)
+                if half <= l then
+                    mx = p[k * 2 - 1] + (p[k * 2 + 1] - p[k * 2 - 1]) * half / l
+                    my = p[k * 2] + (p[k * 2 + 2] - p[k * 2]) * half / l
+                    break
+                end
+                half = half - l
+            end
+            local r = mod.findRoute(g, p[1], p[2], p[n * 2 - 1], p[n * 2], nil, nil, nil, 12)
+            assert(r and math.abs(r.len - L) < 1 and nearLine(r, mx, my, 1.5) and r.cost > r.len,
+                "R6：bridge " .. patch.bridge[i].id:sub(1, 10) .. " 仍可達、端點對端點仍走它且多算成本")
         end
     end
     -- snapDist 離線重現（AutoDrive 2026-09-01 回報：車在 (10716,9756) 目標

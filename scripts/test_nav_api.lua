@@ -36,10 +36,10 @@ local nextRoute, nextRouteState = nil, nil
 local detourCalls = {}
 local nextDetourRoute, nextDetourError = nil, nil
 local NavCore = {
-    findRoute = function(graph, sx, sy, tx, ty, ax, ay, ar, approachWeight, more)
+    findRoute = function(graph, sx, sy, tx, ty, ax, ay, ar, approachWeight, more, maxSnap)
         detourCalls[#detourCalls + 1] = {
             graph = graph, sx = sx, sy = sy, tx = tx, ty = ty,
-            ax = ax, ay = ay, ar = ar, w = approachWeight, more = more,
+            ax = ax, ay = ay, ar = ar, w = approachWeight, more = more, maxSnap = maxSnap,
         }
         return nextDetourRoute, nextDetourError
     end,
@@ -343,6 +343,30 @@ for label, bad in pairs({
         "A20: moreAvoid " .. label .. " → badargs 且不進 A*")
 end
 
+-- A21（v10）：第 8 參 maxSnap 原值轉給 findRoute；不傳＝nil（v9 呼叫逐位元不變）
+resetAll()
+T.players[0] = player(1, 2)
+T.engine.graph = { id = "graph" }
+T.setDetour(detourV4, nil)
+detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5, nil, 20)
+assert(detour == detourV4 and detourState == "ok" and T.detourCalls[1].maxSnap == 20
+    and T.detourCalls[1].more == nil, "A21: maxSnap 轉遞給 findRoute")
+detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5, more)
+assert(detourState == "ok" and T.detourCalls[2].maxSnap == nil and T.detourCalls[2].more == more,
+    "A21: 七參數呼叫不帶 maxSnap")
+
+-- A22（v10）：maxSnap 須是有限正數——壞值當場 badargs、不進 A*
+for label, bad in pairs({
+    ["非數字"] = "20", ["0"] = 0, ["負數"] = -1, ["NaN"] = NAN, ["Infinity"] = INF, ["表"] = {},
+}) do
+    resetAll()
+    T.players[0] = player(1, 2)
+    T.engine.graph = { id = "graph" }
+    detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5, nil, bad)
+    assert(detour == nil and detourState == "badargs" and #T.detourCalls == 0,
+        "A22: maxSnap " .. label .. " → badargs 且不進 A*")
+end
+
 --------------------------------------------------------------------------------
 -- 六、ensureRoute 快取／偏航（test:nav-cache 區段；跑 production 本體）
 -- 實測病灶（2026-09-01 AutoDrive telemetry）：車在 (10716,9756) 拿到首點
@@ -525,5 +549,5 @@ do
         "C8: 已在折返路線後段，不因落在首段後方誤判重算")
 end
 
-print("test_nav_api: OK（requestRoute A1-A12＋requestDetour A13-A20"
+print("test_nav_api: OK（requestRoute A1-A12＋requestDetour A13-A22"
     .. "＋ensureRoute 快取/偏航 C0-C8）")
