@@ -367,6 +367,87 @@ for label, bad in pairs({
         "A22: maxSnap " .. label .. " → badargs 且不進 A*")
 end
 
+-- A23（v11）：第 9 參 deferCommit=true——算出照回、引數照轉，但不寫快取（藍線與 requestRoute 維持原線）
+local function detourRoute(tag)
+    return { tag = tag, pts = { 1, 2, 3, 4 }, len = 2, cost = 2, avoidPenalty = 0,
+        segSurface = { "paved" }, segWidth = { 6 }, sx = 1, sy = 2, ex = 3, ey = 4 }
+end
+local function deferredSetup()
+    resetAll()
+    T.players[0] = player(7, 8)
+    T.engine.graph = { id = "graph" }
+    local base = { state = "ok", route = detourRoute("base"), tx = 10, ty = 20 }
+    T.navRoutes[0] = base
+    return base
+end
+local base = deferredSetup()
+local dA = detourRoute("A")
+T.setDetour(dA, nil)
+detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5, nil, 20, true)
+assert(detour == dA and detourState == "ok" and T.detourCalls[1].maxSnap == 20 and T.navRoutes[0] == base,
+    "A23: deferCommit=true 回改道線但不寫快取")
+-- A24：commitDetour 收這條＝寫進快取（同 v10 覆寫的欄位），重複 commit 冪等
+local cok, cstate = API.commitDetour(0, dA)
+local rs0 = T.navRoutes[0]
+assert(cok == true and cstate == "ok" and rs0 ~= base and rs0.route == dA and rs0.state == "ok"
+    and rs0.progressIdx == 1 and rs0.tx == 10 and rs0.ty == 20 and rs0.buildX == 7 and rs0.buildY == 8
+    and rs0.lastBuildMs == 12345 and rs0.approachWeight == 3, "A24: commit 後快取＝改道線（欄位同 v10 覆寫）")
+cok, cstate = API.commitDetour(0, dA)
+assert(cok == true and cstate == "ok" and T.navRoutes[0] == rs0, "A24: 快取已是這條＝再 commit 仍 ok、不換條目")
+-- A25：stale 一律不寫——別的表、被新請求取代、快取期間換過、引擎失敗、別的槽、非 deferred／無路請求之後
+local function staleCase(label, prep, route, pn)
+    local b = deferredSetup()
+    local d = detourRoute("S")
+    T.setDetour(d, nil)
+    API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, true)
+    local r = prep and prep(d) or d
+    local okc, st = API.commitDetour(pn or 0, route or r)
+    assert(okc == false and st == "stale" and (T.navRoutes[0] == b or T.navRoutes[0] == nil
+        or T.navRoutes[0].route ~= d), "A25: " .. label .. " → (false, stale) 且不寫，實得 " .. tostring(st))
+end
+staleCase("別的 table", nil, detourRoute("other"))
+staleCase("新的 deferred 請求取代", function(d)
+    T.setDetour(detourRoute("B"), nil)
+    API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, true)
+    return d
+end)
+staleCase("之後的非 deferred 請求", function(d)
+    local b2 = detourRoute("C")
+    T.setDetour(b2, nil)
+    API.requestDetour(0, 10, 20, 30, 40, 5)
+    assert(T.navRoutes[0].route == b2, "A25: 不帶第 9 參照 v10 覆寫快取")
+    return d
+end)
+staleCase("之後的無路請求", function(d)
+    T.setDetour(nil, nil)
+    API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, true)
+    return d
+end)
+staleCase("快取期間被重算換掉", function(d)
+    T.navRoutes[0] = { state = "ok", route = detourRoute("rebuilt"), tx = 10, ty = 20 }
+    return d
+end)
+staleCase("快取期間被清掉（換目標）", function(d) T.navRoutes[0] = nil return d end)
+staleCase("引擎失敗", function(d) T.engine.state = "failed" return d end)
+staleCase("別的槽位", nil, nil, 1)
+-- A26：deferCommit=false 等同不傳（v10 覆寫）；壞值 badargs 且不進 A*
+deferredSetup()
+T.setDetour(dA, nil)
+detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, false)
+assert(detourState == "ok" and T.navRoutes[0].route == dA, "A26: deferCommit=false 照 v10 覆寫快取")
+for label, bad in pairs({ ["字串"] = "true", ["數字"] = 1, ["表"] = {} }) do
+    deferredSetup()
+    detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, bad)
+    assert(detour == nil and detourState == "badargs" and #T.detourCalls == 0,
+        "A26: deferCommit " .. label .. " → badargs 且不進 A*")
+end
+-- A27：commitDetour 驗參——槽位同 requestRoute、route 須是表
+for label, args in pairs({ ["槽位 4"] = { 4, dA }, ["槽位 0.5"] = { 0.5, dA }, ["槽位 NaN"] = { NAN, dA },
+    ["槽位字串"] = { "0", dA }, ["route nil"] = { 0, nil }, ["route 字串"] = { 0, "r" } }) do
+    cok, cstate = API.commitDetour(args[1], args[2])
+    assert(cok == false and cstate == "badargs", "A27: commitDetour " .. label .. " → badargs")
+end
+
 --------------------------------------------------------------------------------
 -- 六、ensureRoute 快取／偏航（test:nav-cache 區段；跑 production 本體）
 -- 實測病灶（2026-09-01 AutoDrive telemetry）：車在 (10716,9756) 拿到首點
@@ -549,5 +630,5 @@ do
         "C8: 已在折返路線後段，不因落在首段後方誤判重算")
 end
 
-print("test_nav_api: OK（requestRoute A1-A12＋requestDetour A13-A22"
+print("test_nav_api: OK（requestRoute A1-A12＋requestDetour A13-A22＋deferCommit／commitDetour A23-A27"
     .. "＋ensureRoute 快取/偏航 C0-C8）")
