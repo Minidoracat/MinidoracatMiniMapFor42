@@ -607,7 +607,19 @@ do
     m = menu(); t.core.placesAddMenu(m, 0, 300, 50, nil, t.core.placeAt(s, 300, 50))
     eq(names(m), "GoHome,SetHome,PlaceRename", "缺確認框（_Search）時不列移除")
     m = menu(); t.core.placesAddMenu(m, 0, 600, 50, nil, t.core.placeAt(s, 600, 50))
-    eq(names(m), "GoHome,SetHome,PlaceAdd", "空白處照舊：設為家（這裡）／加入收藏")
+    eq(names(m), "GoHome,SetHome,PlaceAdd", "空白處照舊：設為家（這裡）／加入收藏；缺搜尋視窗時不列管理收藏")
+    -- 「管理收藏...」（2026-10-21 設計稿 minimap-places-entry-1021 作答）：空白處子選單最後一項，開搜尋視窗的
+    -- 收藏頁（帶頁名＝視窗開著就切頁、不關）；收藏圖標上的子選單只管那一筆，不列
+    local opened = {}
+    t.core.toggleSearchWindow = function(pn, page) opened[#opened + 1] = tostring(pn) .. ":" .. tostring(page) end
+    m = menu(); t.core.placesAddMenu(m, 0, 600, 50, nil, t.core.placeAt(s, 600, 50))
+    eq(names(m), "GoHome,SetHome,PlaceAdd,PlaceManage", "空白處子選單最後是管理收藏")
+    local manage = m:find("UI_MinidoracatMiniMap_PlaceManage")
+    manage.fn(manage.target, manage.a)
+    eq(opened[1], "0:places", "管理收藏開這位玩家的收藏頁")
+    m = menu(); t.core.placesAddMenu(m, 0, 300, 50, nil, t.core.placeAt(s, 300, 50))
+    eq(m:find("UI_MinidoracatMiniMap_PlaceManage"), nil, "收藏圖標上的子選單不列管理收藏")
+    t.core.toggleSearchWindow = nil
     eq(t.core.placeMenuTitle(0, t.core.placesState(0).places[2]), "UI_MinidoracatMiniMap_PlaceMenuOf|Barn",
         "父項帶這一筆的名稱")
     assert(t.core.placesRename(0, barn, "Abcdefghijklmnopqrstuvwxyz"))

@@ -311,12 +311,14 @@ local function countName(menu, name)
 end
 local SET = "UI_MinidoracatMiniMap_SetTarget"
 local REPLACE = "UI_MinidoracatMiniMap_SearchSetTarget"
--- 沒有行程時第一層五項：設定導航目標／加到行程最後／收藏▸／複製座標／搜尋地圖
--- （有待前往站見 R10；有行程才有的「行程▸」見 R6）
+-- 沒有行程時第一層六項：設定導航目標／加到行程最後／收藏▸／複製座標／行程規劃...（平的，開行程頁）／
+-- 搜尋、收藏與行程（有待前往站見 R10；有行程時第五項是「行程▸」子選單，見 R6）
+local TRIP_OPEN = "UI_MinidoracatMiniMap_TripOpen"
 local OURS = SET
     .. ",UI_MinidoracatMiniMap_TripAdd"
     .. ",UI_MinidoracatMiniMap_PlaceMenu"
     .. ",UI_MinidoracatMiniMap_CopyHere|12, 34, 0"
+    .. "," .. TRIP_OPEN
     .. ",UI_MinidoracatMiniMap_SearchMenu"
 local function subNames(menu, parentName) -- 第一層某個父項掛的子選單
     for _, o in ipairs(menu.options) do
@@ -385,7 +387,7 @@ local gotGet = false
 for _, c in ipairs(mod.calls) do if c == "ISContextMenu.get:1:105:206" then gotGet = true end end
 assert(gotGet, "R4: 須以 self.playerNum=1 與絕對座標自建（實得 " .. table.concat(mod.calls, ",") .. "）")
 local menu = mod.menu(1)
-assert(names(menu) == OURS, "R4: 自建選單五項（實得 " .. names(menu) .. "）")
+assert(names(menu) == OURS, "R4: 自建選單六項（實得 " .. names(menu) .. "）")
 assert(#mod.menu(0).options == 0, "R4: 不得碰 player 0 的單例")
 -- R4b: 回家／設為家／加入收藏交給 _Places，掛在「收藏」子選單（不是第一層）
 assert(subNames(menu, "UI_MinidoracatMiniMap_PlaceMenu") == "UI_MinidoracatMiniMap_GoHome"
@@ -403,7 +405,10 @@ wm1:onMinidoracatPriorityStop(12.7, 34.2) -- 「加入行程」子選單的先�
 assert(mod.calls[#mod.calls] == "prompt:1:12.7:34.2:nil:priority",
     "R9: 先去這裡須走 priority（舊的 next 已不存在）")
 menu.options[5].fn(menu.options[5].target)
-assert(mod.calls[#mod.calls] == "toggle:1:nil", "R9: SearchMenu 維持原 toggle（不帶頁）")
+assert(mod.calls[#mod.calls] == "toggle:1:itinerary", "R9: 沒有行程時第一層的行程規劃開行程頁")
+menu.options[6].fn(menu.options[6].target)
+assert(mod.calls[#mod.calls] == "toggle:1:search",
+    "R9: 「搜尋、收藏與行程...」開或切到搜尋頁（帶頁名＝視窗開著也不關）")
 -- R10: 有待前往站時第一項改「取代並導航」（同一個 replace 回呼，確認在 navPromptTarget），
 --      第二項一律委派 Core 共用的錨點組裝
 mod.clearCalls(); mod.resetMenus()
@@ -413,6 +418,7 @@ local m10 = mod.menu(1)
 assert(names(m10) == REPLACE .. ",UI_MinidoracatMiniMap_TripAddMenu"
     .. ",UI_MinidoracatMiniMap_PlaceMenu"
     .. ",UI_MinidoracatMiniMap_CopyHere|12, 34, 0"
+    .. "," .. TRIP_OPEN
     .. ",UI_MinidoracatMiniMap_SearchMenu",
     "R10: 有待前往站＝取代並導航＋加入行程（實得 " .. names(m10) .. "）")
 m10.options[1].fn(m10.options[1].target, m10.options[1].a, m10.options[1].b)
@@ -431,7 +437,7 @@ mod.setPlaceHit({ id = 7, label = "Shop" })
 wm1:onRightMouseUp(5, 6)
 local m4c = mod.menu(1)
 assert(names(m4c) == SET .. ",UI_MinidoracatMiniMap_TripAdd,UI_MinidoracatMiniMap_PlaceMenuOf|Shop"
-    .. ",UI_MinidoracatMiniMap_CopyHere|12, 34, 0,UI_MinidoracatMiniMap_SearchMenu",
+    .. ",UI_MinidoracatMiniMap_CopyHere|12, 34, 0," .. TRIP_OPEN .. ",UI_MinidoracatMiniMap_SearchMenu",
     "R4c: 收藏上的父項帶名稱、第一層項數不變（實得 " .. names(m4c) .. "）")
 assert(mod.handoff.place and mod.handoff.place.id == 7 and mod.handoff.placesMenu == m4c.options[3].sub,
     "R4c: 同一筆收藏交給 placesAddMenu 的子選單")
@@ -517,8 +523,8 @@ mod.clearCalls(); mod.resetMenus()
 mod.setPlayer(1, { name = "p1" })
 
 --------------------------------------------------------------------------------
--- R6: 有行程或載入錯誤 → 第一層多「行程▸」（在搜尋地圖前）；子選單＝行程規劃／（有活動站）
---     停止導航／（isClient＋Faction＋沙盒）分享目標／清空行程（會刪資料，排最後）
+-- R6: 有行程或載入錯誤 → 第一層第五項是「行程▸」（取代平的「行程規劃...」，在搜尋之前）；子選單＝
+--     行程規劃／（有活動站）停止導航／（isClient＋Faction＋沙盒）分享目標／清空行程（會刪資料，排最後）
 --------------------------------------------------------------------------------
 local TRIP = "UI_MinidoracatMiniMap_TripManage"
 local WITH_TRIP = SET .. ",UI_MinidoracatMiniMap_TripAdd,UI_MinidoracatMiniMap_PlaceMenu"
@@ -530,8 +536,8 @@ mod.setFaction({})
 mod.setSandbox(true)
 r = wm1:onRightMouseUp(5, 6)
 local m6 = mod.menu(1)
-assert(names(m6) == WITH_TRIP, "R6: 有行程＝第一層六項（實得 " .. names(m6) .. "）")
-assert(subNames(m6, TRIP) == "UI_MinidoracatMiniMap_TripTitle,UI_MinidoracatMiniMap_TripPause"
+assert(names(m6) == WITH_TRIP, "R6: 有行程＝第一層六項、沒有平的行程規劃（實得 " .. names(m6) .. "）")
+assert(subNames(m6, TRIP) == TRIP_OPEN .. ",UI_MinidoracatMiniMap_TripPause"
     .. ",UI_MinidoracatMiniMap_ShareTarget,UI_MinidoracatMiniMap_TripClear",
     "R6: 行程子選單＝行程規劃／停止導航／分享／清空（實得 " .. subNames(m6, TRIP) .. "）")
 -- 回呼：行程規劃開行程頁；停止導航暫停；清空走確認對話框入口（都不得直接改權威）
@@ -544,7 +550,7 @@ tripMenu.options[4].fn(tripMenu.options[4].target)
 assert(mod.calls[#mod.calls] == "promptClear:1", "R6: 清空行程須走確認入口")
 mod.clearCalls(); mod.resetMenus()
 
-local NO_SHARE = "UI_MinidoracatMiniMap_TripTitle,UI_MinidoracatMiniMap_TripPause,UI_MinidoracatMiniMap_TripClear"
+local NO_SHARE = TRIP_OPEN .. ",UI_MinidoracatMiniMap_TripPause,UI_MinidoracatMiniMap_TripClear"
 mod.setSandbox(false) -- 伺服器禁分享：Share 消失、其餘保留
 r = wm1:onRightMouseUp(5, 6)
 assert(subNames(mod.menu(1), TRIP) == NO_SHARE, "R6: 沙盒禁分享＝無 Share")
@@ -562,7 +568,7 @@ assert(subNames(mod.menu(1), TRIP) == NO_SHARE, "R6: 單機＝無 Share")
 mod.clearCalls(); mod.resetMenus()
 
 -- R6b: 暫停中（無活動站）不得出現停止導航與分享
-local CLEAR_ONLY = "UI_MinidoracatMiniMap_TripTitle,UI_MinidoracatMiniMap_TripClear"
+local CLEAR_ONLY = TRIP_OPEN .. ",UI_MinidoracatMiniMap_TripClear"
 mod.setNavTarget(nil)
 r = wm1:onRightMouseUp(5, 6)
 assert(subNames(mod.menu(1), TRIP) == CLEAR_ONLY,
@@ -577,7 +583,7 @@ assert(subNames(mod.menu(1), TRIP) == CLEAR_ONLY,
 mod.clearCalls(); mod.resetMenus()
 mod.setTrip(nil, nil)
 r = wm1:onRightMouseUp(5, 6)
-assert(names(mod.menu(1)) == OURS, "R6c: 無行程無錯誤＝沒有「行程」子選單")
+assert(names(mod.menu(1)) == OURS, "R6c: 無行程無錯誤＝沒有「行程」子選單，第一層是平的行程規劃")
 mod.clearCalls(); mod.resetMenus()
 
 --------------------------------------------------------------------------------

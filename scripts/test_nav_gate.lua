@@ -652,9 +652,9 @@ end
 
 --------------------------------------------------------------------------------
 -- 七、小地圖右鍵導航項鎖定（真 _Nav 選單包裝與 Core.mapMenuFill＋真 navGateAllows／navErrorText）：
---     沒有行程時第一層＝設定導航目標／加到行程最後／收藏▸／複製座標／搜尋地圖；set 閘門擋住時
---     前兩項變灰＋原因 tooltip，「加入行程」與回家收到同一句原因（紅父項、未設家說明由
---     test_itinerary_ui／test_places 驗）；其餘照常
+--     沒有行程時第一層＝設定導航目標／加到行程最後／收藏▸／複製座標／行程規劃...／搜尋、收藏與行程；
+--     set 閘門擋住時前兩項變灰＋原因 tooltip，「加入行程」與回家收到同一句原因（紅父項、未設家說明由
+--     test_itinerary_ui／test_places 驗）；其餘（含只開視窗的行程規劃）照常
 --------------------------------------------------------------------------------
 do
     local t = fixture(true)
@@ -668,7 +668,8 @@ do
     end
     local LOCKED = { ["T:UI_MinidoracatMiniMap_SetTarget"] = true, ["T:UI_MinidoracatMiniMap_TripAdd"] = true }
     local ORDER = "T:UI_MinidoracatMiniMap_SetTarget,T:UI_MinidoracatMiniMap_TripAdd"
-        .. ",T:UI_MinidoracatMiniMap_PlaceMenu,T:UI_MinidoracatMiniMap_CopyHere,T:UI_MinidoracatMiniMap_SearchMenu"
+        .. ",T:UI_MinidoracatMiniMap_PlaceMenu,T:UI_MinidoracatMiniMap_CopyHere,T:UI_MinidoracatMiniMap_TripOpen"
+        .. ",T:UI_MinidoracatMiniMap_SearchMenu"
     local setAsks = 0
     local gateMode = "allow"
     API.registerNavGate("Probe", function(_, context)
@@ -686,7 +687,7 @@ do
         eq(menu.visible, true, tag .. " 追加後選單可見")
         local names = {}
         for i, o in ipairs(menu.options) do names[i] = o.name end
-        eq(table.concat(names, ","), ORDER, tag .. " 沒有行程時第一層五項")
+        eq(table.concat(names, ","), ORDER, tag .. " 沒有行程時第一層六項")
         for _, o in ipairs(menu.options) do
             if LOCKED[o.name] then
                 eq(o.notAvailable, want and true or nil, tag .. " " .. o.name .. " 可用性")

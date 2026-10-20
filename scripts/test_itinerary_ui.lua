@@ -1006,14 +1006,29 @@ win.entry.onOtherKey(win.entry, Keyboard.KEY_TAB)
 falsy(win.entry:isFocused(), "G10: 打字中 TAB 解焦")
 truthy(win.focus, "G10: 並接手到焦點環")
 
+-- 分頁列由左到右：搜尋、收藏、行程。←／→ 一次換一頁、停在兩端；手把 X 依序換頁、到最後一頁回第一頁
 key(win, Keyboard.KEY_RIGHT)
-eq(win.page, "itinerary", "G11: 右方向鍵可達行程頁")
+eq(win.page, "places", "G11: 右方向鍵往右一頁（收藏）")
+key(win, Keyboard.KEY_RIGHT)
+eq(win.page, "itinerary", "G11: 再按一次到行程頁")
+key(win, Keyboard.KEY_RIGHT)
+eq(win.page, "itinerary", "G11: 停在最後一頁，不繞回")
+key(win, Keyboard.KEY_LEFT)
+eq(win.page, "places", "G11: 左方向鍵往左一頁")
 key(win, Keyboard.KEY_LEFT)
 eq(win.page, "search", "G11: 左方向鍵回搜尋頁")
+key(win, Keyboard.KEY_LEFT)
+eq(win.page, "search", "G11: 停在第一頁，不繞回")
 win:onJoypadDown(Joypad.XButton)
-eq(win.page, "itinerary", "G12: 手把 X 換頁")
+eq(win.page, "places", "G12: 手把 X 依序換頁（收藏）")
 win:onJoypadDown(Joypad.XButton)
-eq(win.page, "search", "G12: 手把 X 可換回")
+eq(win.page, "itinerary", "G12: 手把 X 依序換頁（行程）")
+win:onJoypadDown(Joypad.XButton)
+eq(win.page, "search", "G12: 手把 X 到最後一頁回第一頁")
+win:onJoypadDirRight()
+eq(win.page, "places", "G12: 手把右往右一頁")
+win:onJoypadDirLeft()
+eq(win.page, "search", "G12: 手把左往左一頁")
 
 --------------------------------------------------------------------------------
 -- H. 手把：原生 joypad focus 取得與交還
@@ -1046,7 +1061,7 @@ JoypadState.players[1] = nil
 -- I. 版面：視窗絕不大於 viewport；主要動作固定可達；次要動作空間不足時折疊
 --------------------------------------------------------------------------------
 local function assertLayout(tag)
-    for _, page in ipairs({ "search", "itinerary" }) do
+    for _, page in ipairs({ "search", "places", "itinerary" }) do
         Core.toggleSearchWindow(0, page)
         local w
         for i = #UI.added, 1, -1 do
@@ -1062,6 +1077,14 @@ local function assertLayout(tag)
         truthy(list.y + list.height <= defs[1].btn.y,
             where .. "主要動作須在清單之外（不會被捲走）")
         truthy(list.y >= 0 and list.y + list.height <= w.height, where .. "清單須落在視窗內")
+        if page == "places" then
+            -- 收藏頁沒有搜尋框：清單從搜尋框的位置開始，比搜尋頁多出那一列的高度
+            falsy(w.entry:isVisible(), where .. "收藏頁沒有搜尋框")
+            eq(list.y, w.entry.y, where .. "清單從搜尋框的位置開始")
+            truthy(list.height > w.listAt.search.h, where .. "清單比搜尋頁高（沒有搜尋框那一列）")
+        else
+            truthy(not trip == w.entry:isVisible(), where .. "搜尋框只在搜尋頁")
+        end
         local visible = 0
         for i = 1, #defs do
             local btn = defs[i].btn
@@ -1118,6 +1141,15 @@ truthy(win.tripList.height >= win.tripList.itemheight, "I6: 操作時仍看得�
 truthy(key(win, Keyboard.KEY_ESCAPE), "I7: ESC只消耗於關動作選單")
 truthy(win:isVisible(), "I7: 關選單不關行程")
 falsy(win.nativeMenu:isVisible(), "I7: 動作選單已關閉")
+-- I6b. 三個分頁在窄版大字換成多列：清單快沒位置時訊息列只留一行，放不下的全文照舊進可捲清單，
+--      訊息列不得壓到清單
+eq(win.msgMaxLines, 1, "I6b: 窄版大字、清單快沒位置時，訊息列只留一行")
+Core.navMessage(0, string.rep("long message ", 12))
+truthy(#win.msgLines == 1 and win.msgLines.truncated, "I6b: 訊息只畫一行，放不下的標 truncated")
+truthy(win.g.msgY >= win.tripList.y + win.tripList.height, "I6b: 訊息列不壓到清單")
+win._tRev = nil
+win:prerender()
+contains(listText(win.tripList), "long message", "I6b: 訊息全文接進可捲清單")
 Core.toggleSearchWindow(0)
 screen = { w = 1920, h = 1080 }
 fontHeights = { [UIFont.Small] = 14, [UIFont.Medium] = 18 }
@@ -2361,6 +2393,123 @@ do
     screen = { w = 1920, h = 1080 }
     fontHeights = { [UIFont.Small] = 14, [UIFont.Medium] = 18 }
 
+    -- 收藏頁（2026-10-21 設計稿 minimap-places-entry-1021 作答）：分頁列「搜尋｜收藏｜行程」；收藏頁不看
+    -- 搜尋框、一律列出家與收藏，沿用搜尋頁的清單、底部按鈕與右鍵
+    local function placeIds(w)
+        local out = {}
+        for _, row in ipairs(w.list.items) do
+            if row.item.kind == "place" then out[#out + 1] = tostring(row.item.placeId) end
+        end
+        return table.concat(out, ",")
+    end
+    setTrip(0, "draft", { stop(1, 100, 100) }, nil, nil, 401)
+    setPlaces({ { id = 1, x = 100, y = 0, label = "Shop" }, { id = 2, x = 300, y = 400 },
+        { id = 3, x = 30, y = 40, label = "Barn" } }, 2)
+    win = openWindow(0, "search")
+    local tabNames = {}
+    for i, tab in ipairs(win.tabs) do tabNames[i] = tab.page .. "=" .. tostring(tab.key) end
+    eq(table.concat(tabNames, ","), "search=" .. P .. "SearchTabSearch,places=" .. P .. "PlaceMenu,itinerary="
+        .. P .. "TripManage", "PT1: 分頁列＝搜尋、收藏、行程，收藏分頁沿用「收藏」字樣")
+    win.entry.text = "zzz" -- 搜尋框留著上次的字（玩家回報的情境：重開視窗後空白頁不見了）
+    win._lastText = nil
+    win:prerender(); win:prerender()
+    eq(placeIds(win), "", "PT2 前提: 搜尋頁打了字、沒有名稱相符，就沒有收藏列")
+    Core.toggleSearchWindow(0, "places")
+    eq(win.page, "places", "PT2: 明確 page 切到收藏頁")
+    truthy(win:isVisible(), "PT2: 切頁不關窗")
+    falsy(win.entry:isVisible(), "PT2: 收藏頁沒有搜尋框")
+    falsy(win.entry:isFocused(), "PT2: 收藏頁不留聚焦的輸入框（會白攔遊戲鍵盤）")
+    truthy(win.list:isVisible(), "PT2: 收藏頁顯示清單")
+    eq(win.titleText, P .. "RowPlaces", "PT2: 標題是「家與收藏點」")
+    win:prerender(); win:prerender()
+    eq(placeIds(win), "2,1,3", "PT3: 搜尋框有字，收藏頁照樣列出全部收藏，家第一")
+    falsy(listText(win.list):find("SearchEmptyHint", 1, true), "PT3: 收藏頁不放搜尋說明")
+    falsy(listText(win.list):find("SearchNoResult", 1, true), "PT3: 收藏頁不放無結果")
+    eq(win.list.y, win.entry.y, "PT4: 收藏頁的清單從搜尋框的位置開始")
+    selectPlace(1)
+    clearCalls()
+    pressButton(win.addBtn)
+    eq(lastCall("edit").op, "append", "PT5: 收藏頁也能加到行程最後")
+    eq(lastCall("edit").a, 100, "PT5: 帶那一筆的座標")
+    menu = moreMenu()
+    eq(placeTexts(menu), P .. "PlaceMenuSetHome," .. P .. "PlaceRename," .. P .. "PlaceRemove",
+        "PT5: 「動作…」直接列出收藏動作（同搜尋頁）")
+    menu:closeAll()
+    menu = rightClickPlace(3)
+    eq(placeTexts(menu), P .. "PlaceMenuSetHome," .. P .. "PlaceRename," .. P .. "PlaceRemove",
+        "PT5: 清單右鍵同一份")
+    menu:closeAll()
+    Core.toggleSearchWindow(0, "search")
+    truthy(win.entry:isVisible(), "PT6: 回搜尋頁，搜尋框回來")
+    truthy(win.list.y > win.entry.y, "PT6: 清單回到搜尋框下面")
+    eq(win.entry.text, "zzz", "PT6: 搜尋框的字不被收藏頁清掉")
+    Core.toggleSearchWindow(0)
+    falsy(win:isVisible(), "PT7 前提: 關窗")
+    Core.toggleSearchWindow(0, "places")
+    truthy(win:isVisible() and win.page == "places", "PT7: 帶 places 開窗就落在收藏頁（右鍵「管理收藏...」）")
+    falsy(win.entry:isFocused(), "PT7: 收藏頁開窗不聚焦輸入框")
+    win:prerender(); win:prerender()
+    eq(placeIds(win), "2,1,3", "PT7: 重開也列出全部收藏")
+    local hasEntry, hasList, tabCount = false, false, 0
+    for _, entry in ipairs(win.placesFocus) do
+        if entry.el == win.entry then hasEntry = true end
+        if entry.el == win.list then hasList = true end
+        for _, tab in ipairs(win.tabs) do
+            if entry.el == tab.btn then tabCount = tabCount + 1 end
+        end
+    end
+    falsy(hasEntry, "PT8: 收藏頁的焦點環不含搜尋框")
+    truthy(hasList and tabCount == 3, "PT8: 收藏頁的焦點環有三個分頁與清單")
+    setPlaces({}, nil)
+    win:prerender()
+    linesContain(win.list.items[1].item.lines, "PlacesEmpty", "PT9: 沒有收藏時說明怎麼加入")
+    falsy(listText(win.list):find("SearchEmptyHint", 1, true), "PT9: 收藏頁不放搜尋說明")
+
+    -- 搜尋框也比對收藏名稱（同設計稿第 4 題）：收藏排在街道與設施前面；座標查詢不比對；
+    -- 收藏 revision 進快取鍵，改名後結果跟著重算
+    setPlaces({ { id = 1, x = 100, y = 0, label = "Shop" }, { id = 2, x = 300, y = 400 },
+        { id = 3, x = 30, y = 40, label = "Barn" }, { id = 4, x = 12, y = 34 } }, 2)
+    local oldStreets = Core.navStreetIndex
+    Core.navStreetIndex = function() return { { name = "Barnes Rd", low = "barnes rd", x = 40, y = 60 } } end
+    Core.toggleSearchWindow(0, "search")
+    win.entry.text = "BARN"
+    win._lastText = nil
+    win:prerender(); win:prerender()
+    eq(win.list.items[1].item.kind, "place", "PS1: 打收藏名稱找得到收藏（不分大小寫）")
+    eq(win.list.items[1].item.placeId, 3, "PS1: 是那一筆")
+    eq(win.list.items[1].item.tag, P .. "SearchKindPlace", "PS1: 標「收藏」")
+    eq(win.list.items[2].item.kind, "street", "PS2: 收藏排在街道前面")
+    menu = rightClickPlace(3)
+    eq(placeTexts(menu), P .. "PlaceMenuSetHome," .. P .. "PlaceRename," .. P .. "PlaceRemove",
+        "PS3: 搜尋結果裡的收藏列，右鍵直接列出收藏動作")
+    menu:closeAll()
+    selectPlace(3)
+    places.revision = places.revision + 1 -- 同表就地改名：只有 revision 看得出變化
+    places.places[3].label = "Barn 2"
+    win:prerender()
+    eq(win.list.items[win.list.selected].item.label, "Barn 2", "PS4: 改名後搜尋結果跟著重算，選取以 placeId 保留")
+    places.revision = places.revision + 1
+    places.places[3].label = "Stable"
+    win:prerender()
+    eq(placeIds(win), "", "PS4: 名稱不再相符就從結果消失")
+    eq(win.list.items[1].item.kind, "street", "PS4: 只剩街道")
+    win.entry.text = "placehome"
+    win:prerender()
+    eq(placeIds(win), "2", "PS5: 沒有名字的家比對顯示名稱（家）")
+    truthy(win.list.items[1].item.home, "PS5: 家列帶 home 旗標")
+    win.entry.text = "12"
+    win:prerender()
+    eq(placeIds(win), "4", "PS5: 沒有名字的收藏比對座標字樣（只打一個數字不算座標）")
+    win.entry.text = "12,34"
+    win:prerender()
+    eq(win.list.items[1].item.kind, "coord", "PS6: 座標查詢的第一列是那個座標")
+    eq(placeIds(win), "", "PS6: 座標查詢不比對收藏")
+    win.entry.text = "qqq"
+    win:prerender()
+    linesContain(win.list.items[1].item.lines, "SearchNoResult", "PS7: 收藏與街道都不相符時照舊顯示無結果")
+    Core.navStreetIndex = oldStreets
+    Core.toggleSearchWindow(0)
+
     -- navMessage：視窗不在時退 halo，好壞分通道
     Core.navMessage(0, "done", true)
     eq(halos[#halos].text, "done", "Z15: 視窗不在時退 halo")
@@ -2662,4 +2811,5 @@ print("test_itinerary_ui: 全數通過（A 開窗切頁收合 / B 提示列防�
     .. "M 快捷鍵入口 / N 分割畫面 ping / Q 接續模式兩入口 / R 插入錨點防線 / "
     .. "S 逐站停等與認領鎖定 / T 搜尋頁動作可用性 / U 全文出口 / "
     .. "V 全文列逐行可讀 / W 插入錨點有界標籤與全文出口 / X 真 Core 接管與直線指引 / Y 按鈕錨定 / "
-    .. "Z 收藏清單與回家 / LK 右鍵「加入行程」子選單與鎖定、世界地圖 Toast / SH 分享的鍵盤與手把入口）")
+    .. "Z 收藏清單與回家 / PT 收藏頁 / PS 搜尋比對收藏名稱 / LK 右鍵「加入行程」子選單與鎖定、世界地圖 Toast / "
+    .. "SH 分享的鍵盤與手把入口）")

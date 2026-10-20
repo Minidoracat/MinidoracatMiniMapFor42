@@ -590,8 +590,10 @@ Core.placeMenuTitle = function(pn, place)
 end
 -- 雙地圖右鍵「收藏」子選單（Core.mapMenuFill 傳子選單；不能掛子選單時是第一層）：回家（依原版慣例
 -- notAvailable＋說明：未設家優先說明設定方法，否則 navBlocked＝Core.navMenuBlocked 的導航被擋原因）、
--- 設為家、加入收藏。place＝游標下的收藏（Core.placeAt）時改成這一筆的設為家（已是家不列）／改名／
--- 從收藏移除，不列加入收藏（同搜尋視窗收藏列；2026-10-18 設計稿 minimap-places-remove-1018 作答）
+-- 設為家、加入收藏，最後是「管理收藏...」：開搜尋視窗的收藏頁（2026-10-21 設計稿 minimap-places-entry-1021
+-- 作答：玩家找改家、改收藏的地方會先看這裡）。place＝游標下的收藏（Core.placeAt）時改成這一筆的設為家
+-- （已是家不列）／改名／從收藏移除，不列加入收藏與管理收藏（同搜尋視窗收藏列；2026-10-18 設計稿
+-- minimap-places-remove-1018 作答：這個子選單只管這一筆）
 Core.placesAddMenu = function(context, pn, worldX, worldY, navBlocked, place)
     local option = context:addOption(getText("UI_MinidoracatMiniMap_GoHome"), pn, menuGoHome)
     Core.navMenuLock(option, not homeOf(pn) and getText("UI_MinidoracatMiniMap_HomeNotSet") or navBlocked)
@@ -608,6 +610,9 @@ Core.placesAddMenu = function(context, pn, worldX, worldY, navBlocked, place)
     end
     context:addOption(getText("UI_MinidoracatMiniMap_SetHome"), pn, menuSetHome, worldX, worldY)
     context:addOption(getText("UI_MinidoracatMiniMap_PlaceAdd"), pn, menuAddPlace, worldX, worldY)
+    if Core.toggleSearchWindow then -- 視窗在 _Search.lua；帶頁名＝開著就切頁，不關窗
+        context:addOption(getText("UI_MinidoracatMiniMap_PlaceManage"), pn, Core.toggleSearchWindow, "places")
+    end
 end
 
 API.getNavHome = function(pn)

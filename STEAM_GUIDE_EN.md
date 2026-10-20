@@ -77,13 +77,14 @@ Both go by the room names inside buildings, which are also what decides the loot
 === 🧰 Search & trip window
 {{img:05-search-street.jpg}}
 [list]
-[*] [b]Open[/b]: the magnifier in the mini-map or world map button row, right-click the map → "Search map...", or [b];[/b].
+[*] [b]Open[/b]: the magnifier in the mini-map or world map button row, right-click the map → "Search, favorites & itinerary...", or [b];[/b]. The window has three tabs: Search, Favorites and Itinerary (←/→ on the keyboard, X on a gamepad).
 [*] [b]Type[/b]:
 [list]
 [*] coordinates (e.g. 12895,3499)
 [*] a street name (original or translated)
 [*] one of 20 facility categories
 [*] "parking lot" for the nearest lots
+[*] a favorite's name (listed first)
 [/list]
 [*] [b]Order[/b]: sorted by distance.
 [*] [b]Results[/b]: show a result on the map, navigate to it or add it to your trip. Right-click results or trip stops for more actions.
@@ -96,7 +97,7 @@ Both go by the room names inside buildings, which are also what decides the loot
 {{img:03-nav-menu.jpg}}
 [list]
 [*] [b]Up to 16 targets[/b]: add to the end, insert before a stop or "Go here first".
-[*] [b]Trip page[/b]: reorder, remove/undo, skip and preview the remaining route.
+[*] [b]Trip page[/b]: reorder, remove/undo, skip and preview the remaining route; right-click the map → "Plan itinerary..." opens it (inside the "Itinerary" submenu while a trip exists).
 [*] [b]Continuing[/b]: new trips continue to the next stop automatically on arrival; switch to step mode, or mark single targets as stopovers, and they wait for you to continue. Existing trips stay step-by-step.
 [*] [b]In a vehicle[/b]: the trip only continues once you've stopped.
 [*] [b]Arriving[/b]: for a target on the road, stopping in the lane beside it counts as arrived (no need to cross to the other side of the centre line); for an off-road target, reaching the roadside tells you to walk the rest.
@@ -125,9 +126,9 @@ Both go by the room names inside buildings, which are also what decides the loot
 [*] [b]Favorites[/b]: named, unlimited.
 [*] [b]New home[/b]: setting a new home keeps the old one as a favorite.
 [*] [b]Go home[/b]: replaces the trip with a single stop home and starts navigating (the mini-map's house button, right-click → "Favorites", or the trip page).
-[*] [b]Favorites list[/b]: an empty search box lists favorites; right-click one (or select it and press "Actions…") to rename, remove or set it as home.
+[*] [b]Favorites list[/b]: the window's Favorites tab lists home and every favorite; right-click the map → "Favorites" → "Manage favorites…" opens it. Right-click a favorite (or select it and press "Actions…") to rename, remove or set it as home.
 [*] [b]Saved[/b]: kept on your PC per account (one set per server account in multiplayer, one per save in single player), so a new character still has them after death; to move them to another PC, copy the Zomboid/Lua/MinidoracatMiniMap/places folder.
-[*] [b]Hide icons[/b]: turn off "Show home & favorites" in "Players & navigation"; Go Home, the favorites list and the right-click menu still work.
+[*] [b]Hide icons[/b]: turn off "Show home & favorites" in "Players & navigation"; Go Home, the Favorites tab and the right-click menu still work.
 [/list]
 === 🧰 Mini-map controls
 [list]

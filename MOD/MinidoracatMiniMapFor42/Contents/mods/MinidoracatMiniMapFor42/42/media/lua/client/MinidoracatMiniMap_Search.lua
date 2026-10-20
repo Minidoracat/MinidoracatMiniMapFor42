@@ -1,5 +1,5 @@
 -- MinidoracatMiniMap_Search.lua
--- 本檔範圍：地圖搜尋／行程視窗（0.17.0 搜尋；v6 多停靠點行程頁）——單一視窗兩頁，
+-- 本檔範圍：地圖搜尋／收藏／行程視窗（0.17.0 搜尋；v6 多停靠點行程頁；收藏頁見下）——單一視窗三頁，
 -- 共用放大鏡入口、標題列與 owner-transfer。
 --
 -- 【搜尋頁】輸入自動判別「座標 or 關鍵字」：
@@ -9,7 +9,7 @@
 --     原版 teleport UI 慣例）
 --   - 關鍵字：比對街道名（NavRoute 引擎抽取的翻譯後街名——LangFor42 中文街名
 --     直接可搜；"KY-841" 含字母走關鍵字不會誤判座標）＋POI 類別名（20 類翻譯
---     名，命中即展開該類設施、依距玩家有界最近-N 選擇）
+--     名，命中即展開該類設施、依距玩家有界最近-N 選擇）＋收藏名稱（排在最前面，座標查詢不比對）
 -- 結果動作：在大地圖顯示（ShowWorldMap 帶座標開圖，ISWorldMap.lua:1500，並落
 -- Core.searchPing 由雙表面畫脈動標記）／加到行程最後（Core.navPromptTarget
 -- op=append，主要動作）／插在指定停靠點之前（原生子選單列出待前往站，選項建立時
@@ -18,8 +18,12 @@
 -- ／先去這裡（op=priority：插在第一個待前往站之前並明確開始導航，不啟自駕）／取代整趟
 -- （op=replace，次要動作；會丟待前往站時先確認）。選不到結果時（空字串／載入中／查無命中的
 -- 說明列）這些動作一律停用——不留按了沒反應的按鈕。
--- 未輸入時列出收藏（家第一，權威在 _Places.lua，本檔只現查唯讀狀態）；「收藏」鈕以
--- 原生選單依選中項提供設為家／改名／移除或加入收藏。行程頁另有永遠可按的「回家」。
+-- 未輸入時列出收藏（家第一，權威在 _Places.lua，本檔只現查唯讀狀態）；收藏列的設為家／改名／移除
+-- 直接列在「動作…」與清單右鍵。行程頁另有永遠可按的「回家」。
+--
+-- 【收藏頁】（2026-10-21 設計稿 minimap-places-entry-1021 作答）不看搜尋框，一律列出家與收藏；
+-- 沿用搜尋頁的清單、底部按鈕與右鍵，只是沒有搜尋框、清單接在分頁列下面。右鍵「收藏」子選單的
+-- 「管理收藏...」開這一頁（_Places.lua）。
 --
 -- 【行程頁】行程權威完全在 _Itinerary.lua：本檔每次刷新用 Core.navItineraryState
 -- 現查唯讀狀態，**不留第二份 stops／revision**，所有變更一律經
@@ -520,7 +524,7 @@ end
 local function winMessage(pn, text, good)
     local win = searchWin
     if win and win:isVisible() and not win.collapsed and (win.playerNum or 0) == pn then
-        win.msgLines = wrapLines(text, win.width - 20, MSG_LINES)
+        win.msgLines = wrapLines(text, win.width - 20, win.msgMaxLines or MSG_LINES)
         win.msgUntil = getTimestampMs() + MSG_MS
         win.msgGood = good == true
         -- 訊息列只預留固定行數：放不下就把完整文字併進可捲清單（錯誤原因不得只剩
@@ -675,7 +679,8 @@ end
 -- 焦點環（鍵盤與手把共用同一套；可見焦點＝琥珀外框）
 --------------------------------------------------------------------------------
 local function focusEntries(win)
-    return win.page == "itinerary" and win.tripFocus or win.searchFocus
+    if win.page == "itinerary" then return win.tripFocus end
+    return win.page == "places" and win.placesFocus or win.searchFocus
 end
 
 local function focusUsable(entry)
@@ -763,13 +768,26 @@ local function styleTab(btn, on)
         or { r = 0.4, g = 0.4, b = 0.4, a = 1 }
 end
 
+-- 各頁標題：{ 標題, 放不下時的短標題 }。收藏頁沿用設定視窗的「家與收藏點」與分頁名「收藏」
+local PAGE_TITLES = {
+    search = { "UI_MinidoracatMiniMap_SearchTitle", "UI_MinidoracatMiniMap_SearchTabSearch" },
+    places = { "UI_MinidoracatMiniMap_RowPlaces", "UI_MinidoracatMiniMap_PlaceMenu" },
+    itinerary = { "UI_MinidoracatMiniMap_TripTitle", "UI_MinidoracatMiniMap_TripManage" },
+}
+
 -- 依「目前頁 × 是否收合 × 次要動作是否展開」決定每顆按鈕可見性。
--- 收合時只留標題列兩顆鈕：其餘元件不可見、輸入框解焦，完全不吃鍵盤
+-- 收合時只留標題列兩顆鈕：其餘元件不可見、輸入框解焦，完全不吃鍵盤。
+-- 收藏頁與搜尋頁共用同一份清單與底部按鈕：差在收藏頁沒有搜尋框、清單接在分頁列下面
 local function applyPage(win)
     local trip = win.page == "itinerary"
     local shown = not win.collapsed
-    win.entry:setVisible(shown and not trip)
+    win.entry:setVisible(shown and win.page == "search")
     win.list:setVisible(shown and not trip)
+    local at = win.listAt and win.listAt[win.page]
+    if at then
+        win.list:setY(at.y)
+        win.list:setHeight(at.h)
+    end
     win.tripList:setVisible(shown and trip)
     for i = 1, #win.modeBtns do
         win.modeBtns[i].btn:setVisible(shown and trip)
@@ -786,12 +804,11 @@ local function applyPage(win)
         end
     end
     win.g = win.geom[win.page]
-    win.titleText = getText(trip and "UI_MinidoracatMiniMap_TripTitle"
-        or "UI_MinidoracatMiniMap_SearchTitle")
+    local titles = PAGE_TITLES[win.page]
+    win.titleText = getText(titles[1])
     win.titleW = getTextManager():MeasureStringX(UIFont.Medium, win.titleText)
     if win.titleW > win.collapseBtn.x - 20 then
-        win.titleText = getText(trip and "UI_MinidoracatMiniMap_TripManage"
-            or "UI_MinidoracatMiniMap_SearchTabSearch")
+        win.titleText = getText(titles[2])
         win.titleW = getTextManager():MeasureStringX(UIFont.Medium, win.titleText)
     end
     -- 依整個視窗置中；只有會碰到右上角按鈕時才往左讓
@@ -809,7 +826,7 @@ local function applyPage(win)
             if win.tabs[i].page == win.page then win.focus = i end
         end
     end
-    -- 兩頁的刷新 cache 一律作廢：切頁／重排版後清單寬度可能已變，
+    -- 各頁的刷新 cache 一律作廢：切頁／重排版後清單寬度可能已變，
     -- 換行判定與預格式化的右欄寬都要按新版面重算
     win._lastText = nil
     win._lastState = nil
@@ -819,13 +836,25 @@ local function applyPage(win)
 end
 
 local function setPage(win, page)
-    if page ~= "itinerary" then page = "search" end
+    if page ~= "itinerary" and page ~= "places" then page = "search" end
     if win.page == page then return end
     -- 離開搜尋頁必解焦：不可見的輸入框仍會攔截遊戲鍵盤
     -- （UITextBox2.java:652 只有 unfocus() 清 currentTextEntryBox）
-    if page == "itinerary" and win.entry and win.entry.unfocus then win.entry:unfocus() end
+    if page ~= "search" and win.entry and win.entry.unfocus then win.entry:unfocus() end
     win.page = page
     applyPage(win)
+end
+
+-- 分頁順序＝分頁列由左到右。wrap＝手把 X 到最後一頁再回第一頁；方向鍵停在兩端
+local PAGES = { "search", "places", "itinerary" }
+local function stepPage(win, delta, wrap)
+    local at = 1
+    for i = 1, #PAGES do
+        if PAGES[i] == win.page then at = i end
+    end
+    local to = at + delta
+    if wrap then to = (to - 1) % #PAGES + 1 end
+    if PAGES[to] then setPage(win, PAGES[to]) end
 end
 
 local function toggleCollapsed(win)
@@ -1564,7 +1593,7 @@ local function addInfoRow(list, text)
     return first
 end
 
--- 收藏列（搜尋頁未輸入時）：家第一，其餘照收藏順序；以 placeId 保留選取。
+-- 收藏列（收藏頁，與搜尋頁未輸入時）：家第一，其餘照收藏順序；以 placeId 保留選取。
 -- unsupported（較新 schema，拒絕寫入）接在清單後說明；invalid 依契約當空清單
 local function addPlaceRows(win, pn, ps, err, px, py, keepId)
     local list = win.list
@@ -1587,6 +1616,31 @@ local function addPlaceRows(win, pn, ps, err, px, py, keepId)
     if err == "unsupported" then addInfoRow(list, placesErrorText(err)) end
 end
 
+-- 搜尋框也比對收藏名稱（2026-10-21 設計稿 minimap-places-entry-1021 作答）：名稱含查詢字就列出，
+-- 排在街道與設施前面；家第一，其餘照收藏順序（同 addPlaceRows）。比對的是顯示名稱（Core.placeLabel：
+-- 沒有名字的家＝「家」、沒有名字的收藏＝座標）。座標查詢不比對：打座標要的是那個座標本身
+local function matchPlaces(pn, ps, text, px, py)
+    local out = {}
+    local q = text:match("^%s*(.-)%s*$")
+    if not ps or q == "" or parseCoords(q) then return out end
+    q = q:lower()
+    for pass = 1, 2 do
+        for i = 1, ps.count or 0 do
+            local place = ps.places[i]
+            local home = place.id == ps.homeId
+            if home == (pass == 1) then
+                local name = placeName(pn, place)
+                if name:lower():find(q, 1, true) then
+                    out[#out + 1] = finalizeItem({ kind = "place", placeId = place.id, home = home,
+                        x = place.x, y = place.y, label = name,
+                        d = math.sqrt(dist2(px, py, place.x, place.y)) })
+                end
+            end
+        end
+    end
+    return out
+end
+
 local function winRefresh(win, force)
     -- 選取相依的動作（滑鼠改選不會動 cache key）先處理，成本只是純量比較：
     -- 空字串／載入中／查無命中的說明列不是地點，五個目標動作一律停用——按鈕亮著
@@ -1606,25 +1660,28 @@ local function winRefresh(win, force)
     -- Core.navKickAvailable，本檔不再各自取表面
     local pn = win.playerNum or 0
     if Core.navKickAvailable then Core.navKickAvailable(pn) end
-    local text = win.entry:getInternalText() or ""
+    -- 收藏頁不看搜尋框：搜尋框留著上次的字，收藏頁照樣列出全部收藏
+    local onPlaces = win.page == "places"
+    local text = onPlaces and "" or (win.entry:getInternalText() or "")
     local playerObj = getSpecificPlayer(pn)
     if not playerObj then return end -- 不寫 key：玩家回來後同 key 仍要能刷（review）
     local px, py = playerObj:getX(), playerObj:getY()
-    -- cache key＝文字＋引擎狀態雙欄位（review：索引屬非同步建置，只鍵文字會在
-    -- ready 後永遠停在「載入中」；欄位比較零每幀字串配置）。未輸入時另鍵收藏
-    -- revision／錯誤與玩家 8 格位置桶（同行程頁：站著不動零重建）
+    -- cache key＝頁＋文字＋引擎狀態（review：索引屬非同步建置，只鍵文字會在
+    -- ready 後永遠停在「載入中」；欄位比較零每幀字串配置）＋收藏 revision／錯誤（搜尋結果也列收藏，
+    -- 改名或刪除後要重算）。未輸入時另鍵玩家 8 格位置桶（同行程頁：站著不動零重建）
     local st = Core.navEngineState and Core.navEngineState() or "unknown"
-    local ps, pRev, pErr, bx, by = nil, nil, nil, nil, nil
+    local ps = placesRead(pn)
+    local pRev = ps and ps.revision or nil
+    local pErr = Core.placesError and Core.placesError(pn) or nil
+    local bx, by = nil, nil
     if text == "" then
-        ps = placesRead(pn)
-        pRev = ps and ps.revision or nil
-        pErr = Core.placesError and Core.placesError(pn) or nil
         bx, by = math.floor(px / 8), math.floor(py / 8)
     end
-    if not force and text == win._lastText and st == win._lastState and pRev == win._pRev
-        and pErr == win._pErr and bx == win._pBx and by == win._pBy then
+    if not force and win.page == win._lastPage and text == win._lastText and st == win._lastState
+        and pRev == win._pRev and pErr == win._pErr and bx == win._pBx and by == win._pBy then
         return
     end
+    win._lastPage = win.page
     win._lastText = text
     win._lastState = st
     win._pRev, win._pErr, win._pBx, win._pBy = pRev, pErr, bx, by
@@ -1632,7 +1689,15 @@ local function winRefresh(win, force)
     local keepId = keep and keep.kind == "place" and keep.placeId or nil
     win.list:clear()
     win._searchSel = nil -- 清單重建：下個 prerender 依新的選取重算動作可用性
-    local results = doSearch(text, px, py)
+    if onPlaces then
+        -- 收藏頁：只有家與收藏（缺 _Places 時不列）
+        if Core.placesState then addPlaceRows(win, pn, ps, pErr, px, py, keepId) end
+        if win.msgFull then addInfoRow(win.list, win.msgFull) end
+        return
+    end
+    local results = matchPlaces(pn, ps, text, px, py)
+    local found = doSearch(text, px, py)
+    for i = 1, #found do results[#results + 1] = found[i] end
     if #results == 0 then
         if text == "" then
             -- 還沒輸入：先列收藏（缺 _Places 時不列），再明說要輸入什麼才有動作
@@ -1670,6 +1735,7 @@ local function winRefresh(win, force)
             local row = win.list:addItem(result.label, result, result.sourceHint)
             prepareRow(win.list, row, result, 24 + result.tagW + 10, result.rightW,
                 result.sourceHint ~= nil)
+            if keepId and result.placeId == keepId then win.list.selected = row.itemindex end
         end
     end
     -- 訊息列收不住的完整文字接在結果之後：選取索引 1 仍是第一個可用地點
@@ -2149,7 +2215,8 @@ relayoutWindow = function(win, pn)
     if win.collapsed then
         -- 收合：只留標題列。其餘元件由 applyPage 設為不可見，鍵盤完全不攔
         win:setHeight(titleH)
-        win.geom = { search = { headY = 0, msgY = 0 }, itinerary = { headY = 0, msgY = 0 } }
+        win.geom = { search = { headY = 0, msgY = 0 }, places = { headY = 0, msgY = 0 },
+            itinerary = { headY = 0, msgY = 0 } }
         applyPage(win)
         return
     end
@@ -2180,6 +2247,13 @@ relayoutWindow = function(win, pn)
     local h = math.min(heightFor(8), maxH)
     win:setHeight(h)
     local btnTop = h - pad - block
+    -- 窄版大字時分頁列可能換到兩三列（三個分頁）：行程清單連一列都放不下時，訊息列只留一行，
+    -- 放不下的全文照舊接進可捲清單（winMessage 的 msgFull），清單至少留一列可選
+    win.msgMaxLines = MSG_LINES
+    if btnTop - msgH - 4 - listY.itinerary < rowH then
+        win.msgMaxLines = 1
+        msgH = lineH + 6
+    end
     local msgY = btnTop - msgH
     layoutButtons(win.searchBtns, pad, btnTop, availW, btnH, gap)
     layoutButtons(win.tripBtns, pad, btnTop, availW, btnH, gap)
@@ -2195,15 +2269,22 @@ relayoutWindow = function(win, pn)
     end
     fitList(win.list, listY.search)
     fitList(win.tripList, listY.itinerary)
+    -- 收藏頁與搜尋頁共用 win.list：收藏頁沒有搜尋框，清單往上接到分頁列下面（applyPage 依頁套用）
+    win.listAt = {
+        search = { y = listY.search, h = math.max(0, msgY - 4 - listY.search) },
+        places = { y = bodyY, h = math.max(0, msgY - 4 - bodyY) },
+    }
     win.entry:setX(pad)
     win.entry:setY(bodyY)
     win.entry:setWidth(availW)
     win.entry:setHeight(entryH)
     win.geom = {
         search = { msgY = msgY, headY = bodyY },
+        places = { msgY = msgY, headY = bodyY },
         itinerary = { msgY = msgY, headY = modeTop },
     }
     win.searchFocus = focusListFor(win, win.list, win.searchBtns, win.entry, nil)
+    win.placesFocus = focusListFor(win, win.list, win.searchBtns, nil, nil)
     win.tripFocus = focusListFor(win, win.tripList, win.tripBtns, nil, win.modeBtns)
     applyPage(win)
 end
@@ -2235,9 +2316,9 @@ local function winKeyNav(win, key)
     elseif key == Keyboard.KEY_UP then
         focusStep(win, -1)
     elseif key == Keyboard.KEY_LEFT then
-        setPage(win, "search")
+        stepPage(win, -1)
     elseif key == Keyboard.KEY_RIGHT then
-        setPage(win, "itinerary")
+        stepPage(win, 1)
     elseif key == Keyboard.KEY_RETURN then
         focusActivate(win)
     end
@@ -2295,7 +2376,7 @@ local function installInput(win)
     win.entry.onCommandEntered = function() winGoto(win) end
     win.entry.onPressDown = function() listStep(win.list, 1) end
     win.entry.onPressUp = function() listStep(win.list, -1) end
-    -- 手把：原生 joypad focus 模式（A 觸發／B 關窗／X 換頁／方向鍵移動）
+    -- 手把：原生 joypad focus 模式（A 觸發／B 關窗／X 依序換頁／左右換到隔壁頁／方向鍵移動）
     win.onGainJoypadFocus = function(self, joypadData)
         ISPanel.onGainJoypadFocus(self, joypadData)
         if not self.collapsed and not self.focus then focusMove(self, 1) end
@@ -2306,15 +2387,15 @@ local function installInput(win)
         elseif button == Joypad.BButton then
             closeWindow(self)
         elseif button == Joypad.XButton then
-            setPage(self, self.page == "search" and "itinerary" or "search")
+            stepPage(self, 1, true)
         elseif button == Joypad.YButton then
             toggleCollapsed(self)
         end
     end
     win.onJoypadDirUp = function(self) focusStep(self, -1) end
     win.onJoypadDirDown = function(self) focusStep(self, 1) end
-    win.onJoypadDirLeft = function(self) setPage(self, "search") end
-    win.onJoypadDirRight = function(self) setPage(self, "itinerary") end
+    win.onJoypadDirLeft = function(self) stepPage(self, -1) end
+    win.onJoypadDirRight = function(self) stepPage(self, 1) end
 end
 
 claimJoypad = function(win, pn)
@@ -2364,9 +2445,11 @@ local function createSearchWindow(pn)
     styleButton(win.closeBtn)
     win.closeBtn.tooltip = getText("UI_MinidoracatMiniMap_StudioClose")
     win:addChild(win.closeBtn)
-    -- 分頁鈕（鍵盤／手把可達的行程頁入口；滑鼠、TAB、左右鍵、X 鈕四路等價）
+    -- 分頁鈕（鍵盤／手把可達的收藏頁與行程頁入口；滑鼠、TAB、左右鍵、X 鈕四路等價）。
+    -- 由左到右的順序同 PAGES：搜尋、收藏、行程
     win.tabs = {
         { key = "UI_MinidoracatMiniMap_SearchTabSearch", page = "search" },
+        { key = "UI_MinidoracatMiniMap_PlaceMenu", page = "places" },
         { key = "UI_MinidoracatMiniMap_TripManage", page = "itinerary" },
     }
     for i = 1, #win.tabs do
@@ -2412,6 +2495,15 @@ local function createSearchWindow(pn)
     win.tripList:setOnMouseDoubleClick(win, function(target)
         tripShowOnMap(target)
     end)
+    -- 捲軸每幀對齊清單高度（照原版 ISComboBoxPopup:prerender）：引擎只把一幀內最後一次 setHeight
+    -- 的高度差套到錨定的捲軸（UIElement.setHeight 每次覆寫 lastheight），relayoutWindow 的 fitList
+    -- 與 applyPage 同一幀各設一次時，捲軸會停在建立時的 10px，內容沒滿也畫出半截捲軸
+    local function listPrerender(self)
+        self.vscroll:setHeight(self.height)
+        ISScrollingListBox.prerender(self)
+    end
+    win.list.prerender = listPrerender
+    win.tripList.prerender = listPrerender
     -- 搜尋頁：主要＝加到行程最後／在地圖顯示；次要＝插在指定站之前／先去這裡／
     -- 取代整趟（取代會立刻出發，放次要；會丟待前往站時先確認）／收藏動作（placeOptions 依選中項直接列出）
     win.searchBtns = {
@@ -2564,16 +2656,17 @@ Core.isBehindWorldMap = function(win, pn)
     return false
 end
 
--- 開關搜尋／行程視窗（按鈕/右鍵選單/快捷鍵入口共用）。引擎冷啟動由 winRefresh 的
+-- 開關搜尋／收藏／行程視窗（按鈕/右鍵選單/快捷鍵入口共用）。引擎冷啟動由 winRefresh 的
 -- Core.navKickAvailable 負責（開窗後首個 prerender 即泵）。
--- page＝"search"／"itinerary" 時語意是「開啟或切到該頁」，**絕不關窗**——
--- 右鍵「行程管理」按兩次不該把視窗關掉；不帶 page 保留原本的 toggle。
+-- page＝"search"／"places"／"itinerary" 時語意是「開啟或切到該頁」，**絕不關窗**——
+-- 右鍵「搜尋、收藏與行程...」「管理收藏...」「行程規劃...」按兩次不該把視窗關掉；不帶 page
+-- （按鈕列放大鏡、快捷鍵）保留原本的 toggle。
 -- 收合狀態下再按等於展開，不用先展開再按一次；被世界地圖蓋住時再按＝叫到前面（看不見的窗不關）。
 -- 分割畫面：同人再按＝關；他人按＝owner-transfer 重刷（同 _Settings 慣例），
 -- 不誤關別人的視窗
 Core.toggleSearchWindow = function(pn, page)
     pn = pn or 0
-    if page ~= "search" and page ~= "itinerary" then page = nil end
+    if page ~= "search" and page ~= "places" and page ~= "itinerary" then page = nil end
     if searchWin and searchWin:isVisible() then
         if (searchWin.playerNum or 0) == pn then
             if searchWin.collapsed then
