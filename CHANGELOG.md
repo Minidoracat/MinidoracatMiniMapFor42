@@ -10,7 +10,7 @@
 
 > 技術要點：RoadPatch 的 bridge 路段（6 條）建圖時帶旗標，A* 成本在 surface 倍率之上再乘 1.10（倍率仍 ≥1，heuristic 仍 admissible）；bridge 不刪、`route.len` 與 `segSurface`／`segWidth` 不變，`route.cost` 含這一成。公開 API：`navApiVersion` 9→10，`requestDetour` 第 8 參 `maxSnap`（可省）：起點候選離玩家的投影距離超過它就不參賽，最近的候選也超過時不剪，與不傳相同；不傳＝與 v9 相同，狀態字彙不變。
 >
-> `navApiVersion` 10→11：`requestDetour` 第 9 參 `deferCommit`（可省，boolean）＝true 時算出的改道線不寫路線快取，消費者驗收通過才呼叫新介面 `commitDetour(playerNum, route)` 寫入（回 `(true, "ok")`／`(false, "badargs"|"stale")`；只收該玩家最近一次待接受、且快取從算的當下沒換過的那條）。不傳＝與 v10 相同（算出即覆寫快取），舊版自駕照舊。
+> `navApiVersion` 10→11：`requestDetour` 第 9 參 `deferCommit`（可省，boolean）＝true 時算出的改道線不寫路線快取，消費者驗收通過才呼叫新介面 `commitDetour(playerNum, route)` 寫入（回 `(true, "ok")`／`(false, "badargs"|"stale")`；只收該玩家最近一次待接受、且快取從算的當下沒換過的那條；換目標或取消、換世界、尋路引擎失敗都會撤銷待接受的改道，原本沒有快取也一樣）。不傳＝與 v10 相同（算出即覆寫快取），舊版自駕照舊。
 
 ## [42.21.0-0.48.1] - 2026-10-19
 

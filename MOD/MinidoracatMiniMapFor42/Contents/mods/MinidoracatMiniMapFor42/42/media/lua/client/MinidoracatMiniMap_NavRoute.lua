@@ -1731,6 +1731,10 @@ local navRoutes = {} -- [pn] = { state="ok|noroad", route=, tx=, ty=, progressId
 -- 重置管轄，但兩張表永不互相讀寫（活動段 identity／進度只屬 navRoutes）。
 -- [pn] = { state=, revision=, graph=, weight=, segs=, total=, done=, dist= }
 local navPreview = {}
+-- v11 待接受的改道（requestDetour 第 9 參 deferCommit）：[pn] = { entry＝要寫進 navRoutes 的快取條目, base＝算的當下
+-- navRoutes[pn] }。宣告在這裡＝讓快取失效的三處（世界重置、clearRoute、failNavEngine）一併撤銷：base 是 nil 時
+-- 「清快取」前後都是 nil，commitDetour 只比 base 分不出來，舊候選會被寫進失效後的快取。
+local navDetours = {}
 
 -- 街道覆蓋查詢：dir 優先序取自主檔 getLoadedMapDirs（index 1＝最高）。
 -- 鏡像 MapFiles.postLoad/hasCell300（42.20.4 MapFiles.java:120-134）：
@@ -2221,6 +2225,7 @@ local function kickEngine(inner)
 end
 -- test:nav-kick:end
 
+-- test:nav-invalidate:start（scripts/test_nav_api.lua 抽本區段：快取失效三處要一併撤銷 v11 待接受的改道）
 -- 世界生命週期重置：PZ 同一程序回主選單再進另一存檔時 client Lua 不重載，
 -- 引擎單例會把上一世界的 graph／failed 終態帶進新世界（幽靈路網或永久直線）
 Events.OnGameStart.Add(function()
@@ -2230,14 +2235,17 @@ Events.OnGameStart.Add(function()
     engine.searchState = "ok"
     engine.streetIndex = nil
     for pn in pairs(navRoutes) do navRoutes[pn] = nil end
+    for pn in pairs(navDetours) do navDetours[pn] = nil end
     -- 換世界＝預覽整筆丟棄（含開關本身）：新世界的行程與路網都是另一套，
     -- 留著舊段等於在新地圖上畫幽靈線
     for pn in pairs(navPreview) do navPreview[pn] = nil end
     for k in pairs(logOnce) do logOnce[k] = nil end
 end)
 
+-- 活動目標換掉或取消一律經這裡（_Itinerary notify／guide 呼叫 Core.navInvalidateRoute，不看有沒有快取）
 local function clearRoute(pn)
     navRoutes[pn] = nil
+    navDetours[pn] = nil
 end
 Core.navInvalidateRoute = clearRoute
 
@@ -2245,7 +2253,9 @@ local function failNavEngine(err)
     logf("astar", "route search error; routing disabled this world: " .. tostring(err))
     engine.state, engine.graph, engine.builder = "failed", nil, nil
     for key in pairs(navRoutes) do navRoutes[key] = nil end
+    for key in pairs(navDetours) do navDetours[key] = nil end
 end
+-- test:nav-invalidate:end
 
 -- 路線狀態收斂（繪製幀＋OnTick 維護各一條路徑，便宜路徑優先）：target 消失→清；
 -- target 變更→重算；增量投影更新行進進度（progressIdx/progX/progY 供裁切繪製），
@@ -2927,8 +2937,6 @@ Core.NavRouteCore = NavCore -- 除錯/測試面（離線測試另行抽取原始
 -- ±Infinity 進 A* 後所有距離比較恆為 false，會白跑完整張路網才回 nil。
 -- test:nav-api:start（scripts/test_nav_api.lua 抽本區段跑查詢面回歸測試）
 local apiTarget = { x = 0, y = 0 } -- 餵 ensureRoute 的重用暫存（它只讀 x/y、不留參考）
--- v11 待接受的改道：[pn] = { entry＝要寫進 navRoutes 的快取條目, base＝算的當下 navRoutes[pn] }（requestDetour 第 9 參）
-local navDetours = {}
 local function apiSlot(playerNum)
     return type(playerNum) == "number" and playerNum == playerNum
         and playerNum >= 0 and playerNum <= 3 and playerNum % 1 == 0

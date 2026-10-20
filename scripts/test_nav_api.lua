@@ -20,9 +20,14 @@ local compile = loadstring or load
 local body = assert(source:match(
     "%-%- test:nav%-api:start[^\n]*\n(.-)\n%-%- test:nav%-api:end"),
     "找不到 nav-api 測試區段")
+-- 快取失效三處（世界重置、clearRoute／Core.navInvalidateRoute、failNavEngine）跑 production 本體：v11 待接受的改道
+-- 要跟著撤銷（base＝nil 時只比 base 分不出「清過了」）
+local invalidateBody = assert(source:match(
+    "%-%- test:nav%-invalidate:start[^\n]*\n(.-)\n%-%- test:nav%-invalidate:end"),
+    "找不到 nav-invalidate 測試區段")
 
 -- prelude 提供本區段於 _NavRoute.lua「之前」已存在的環境：engine／ensureRoute／
--- navRoutes／getSpecificPlayer／MinidoracatMiniMapAPI。
+-- navRoutes／navDetours／getSpecificPlayer／MinidoracatMiniMapAPI；中間接 nav-invalidate 區段（production）。
 -- 注意：長字串 [=[ 後的首個換行會被 Lua 吃掉，body 與 suffix 之間須補顯式 "\n"
 local prelude = [=[
 local MinidoracatMiniMapAPI = {}
@@ -30,6 +35,12 @@ local engine = {
     state = "ready", graph = nil, patchState = "applied", searchState = "ok",
 }
 local navRoutes = {}
+local navPreview = {}
+local navDetours = {}
+local logOnce = {}
+local Core = {}
+local worldReset = nil
+local Events = { OnGameStart = { Add = function(fn) worldReset = fn end } }
 local players = {}
 local calls = {}
 local nextRoute, nextRouteState = nil, nil
@@ -46,12 +57,9 @@ local NavCore = {
 }
 local function logf() end
 local function getTimestampMs() return 12345 end
+]=] .. invalidateBody .. "\n" .. [=[
 -- approachWeightFor 定義在 nav-cache 區段（production 同檔在前），這裡給同語意樁
 local function approachWeightFor(p) return p:getVehicle() and 12 or 3 end
-local function failNavEngine()
-    engine.state, engine.graph = "failed", nil
-    for key in pairs(navRoutes) do navRoutes[key] = nil end
-end
 local function getSpecificPlayer(pn) return players[pn] end
 -- ensureRoute stub：記下實際收到的引數（含 target 表 identity，驗證重用暫存契約）
 local function ensureRoute(key, target, px, py, weight)
@@ -64,6 +72,7 @@ end
 local suffix = [=[
 return { API = MinidoracatMiniMapAPI, engine = engine, navRoutes = navRoutes,
     players = players, calls = calls, detourCalls = detourCalls,
+    invalidate = Core.navInvalidateRoute, worldReset = worldReset, failNavEngine = failNavEngine,
     setRoute = function(r, state) nextRoute, nextRouteState = r, state end,
     setDetour = function(r, err) nextDetourRoute, nextDetourError = r, err end }
 ]=]
@@ -448,6 +457,39 @@ for label, args in pairs({ ["槽位 4"] = { 4, dA }, ["槽位 0.5"] = { 0.5, dA 
     assert(cok == false and cstate == "badargs", "A27: commitDetour " .. label .. " → badargs")
 end
 
+-- A28（v11）：快取原本是 nil（base＝nil）時，快取失效也要讓待接受的改道失效——清成 nil 前後都是 nil，只比 base 分不出來。
+-- 三處失效（production nav-invalidate 區段）：Core.navInvalidateRoute（_Itinerary 換目標／取消活動站走這條）、世界重置、
+-- 引擎失敗。後兩者把 engine 打成 idle／failed，這裡手動拉回 ready（＝之後重建好），只驗 navDetours 有沒有被撤銷。
+local function nilBaseSetup()
+    resetAll()
+    T.players[0], T.players[1] = player(7, 8), player(1, 1)
+    T.engine.graph = { id = "graph" }
+    local d = detourRoute("nil-base")
+    T.setDetour(d, nil)
+    detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, true)
+    assert(detour == d and detourState == "ok" and T.navRoutes[0] == nil, "A28: 前提：快取是 nil 時 deferred 照回、不寫")
+    return d
+end
+local dn = nilBaseSetup()
+cok, cstate = API.commitDetour(0, dn)
+assert(cok == true and cstate == "ok" and T.navRoutes[0] and T.navRoutes[0].route == dn,
+    "A28: 快取是 nil、中間沒失效＝照常 commit（nil 基底不是一律拒）")
+dn = nilBaseSetup()
+T.invalidate(1)
+cok, cstate = API.commitDetour(0, dn)
+assert(cok == true and cstate == "ok", "A28: 別的槽位清快取不影響這一槽待接受的改道")
+for label, invalidate in pairs({
+    ["換目標／取消（Core.navInvalidateRoute）"] = function() T.invalidate(0) end,
+    ["世界重置（OnGameStart）"] = function() T.worldReset(); T.engine.state = "ready" end,
+    ["引擎失敗（failNavEngine）"] = function() T.failNavEngine("boom"); T.engine.state = "ready" end,
+}) do
+    dn = nilBaseSetup()
+    invalidate()
+    cok, cstate = API.commitDetour(0, dn)
+    assert(cok == false and cstate == "stale" and T.navRoutes[0] == nil,
+        "A28: 快取 nil→" .. label .. "→commit＝(false, stale) 且不寫，實得 " .. tostring(cok) .. "/" .. tostring(cstate))
+end
+
 --------------------------------------------------------------------------------
 -- 六、ensureRoute 快取／偏航（test:nav-cache 區段；跑 production 本體）
 -- 實測病灶（2026-09-01 AutoDrive telemetry）：車在 (10716,9756) 拿到首點
@@ -630,5 +672,5 @@ do
         "C8: 已在折返路線後段，不因落在首段後方誤判重算")
 end
 
-print("test_nav_api: OK（requestRoute A1-A12＋requestDetour A13-A22＋deferCommit／commitDetour A23-A27"
+print("test_nav_api: OK（requestRoute A1-A12＋requestDetour A13-A22＋deferCommit／commitDetour A23-A28"
     .. "＋ensureRoute 快取/偏航 C0-C8）")
