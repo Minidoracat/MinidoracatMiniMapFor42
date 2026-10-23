@@ -92,6 +92,16 @@ checkEq(win.title, T("UI_MinidoracatMiniMap_StudioTitle"), "B1 window title")
 check(win.closable == true and win.pinButton == nil and win.collapseButton == nil,
     "B2 close button only (no pin/collapse)")
 checkEq(env.type(win), "MinidoracatUIWindow", "B2 window is UI.Window")
+-- 本體不透明（框架 rev 18 opts.opaque）：預設 DARK surface 是 0.8 的黑，後面的角色與視窗的字會透出來
+local function bodyAlpha(w)
+    w.draws = {}
+    w._UI.Window.prerender(w)
+    for _, d in ipairs(w.draws) do
+        if d.kind == "rect" and d[1] == 0 and d[2] == 0 and d[3] == w.width and d[4] == w.height then return d[5] end
+    end
+end
+check(win.opaque == true, "B2b window asks the framework for an opaque body (opts.opaque)")
+checkEq(bodyAlpha(win), 1, "B2b window body is drawn at alpha 1")
 checkEq(table.concat(s.sections, ","), "base,places,poicat,parking,zombie,animals,vehicles,safehouse,window,perf",
     "B3 built-in categories in fixed order without addons")
 do
@@ -1124,6 +1134,7 @@ do
     checkEq(lw.meta, getText("UI_MinidoracatMiniMap_RemoteListCount", "27", "27", "1"), "L1 the count line shows totals")
     local lx, sx = lw.win:getX(), st.win:getAbsoluteX()
     check(lx >= sx + st.win.width or lx + lw.win.width <= sx, "L1 the window opens beside the settings window, not over it")
+    check(lw.win.opaque == true and bodyAlpha(lw.win) == 1, "L1 the author list window body is opaque too")
     search("  GUN ")
     checkEq(keys(), "BigGun99,Gunner07,Gunner27,gunslinger", "L2 search matches any part of the name, ignoring case and spaces")
     checkEq(e.Core.remoteListWindow().meta, getText("UI_MinidoracatMiniMap_RemoteListCount", "27", "4", "1"),

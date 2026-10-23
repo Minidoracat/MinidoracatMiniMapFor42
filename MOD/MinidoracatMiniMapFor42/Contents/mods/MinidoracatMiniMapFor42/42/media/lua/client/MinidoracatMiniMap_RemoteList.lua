@@ -202,7 +202,7 @@ end
 local function create(UI, font)
     local fontH = getTextManager():getFontHeight(font)
     local win = UI.Window.new{ width = math.max(360, fontH * 24), height = 520, minWidth = 300, minHeight = 280,
-        resizable = true, icon = "users", font = font, onResize = layout,
+        resizable = true, icon = "users", font = font, onResize = layout, opaque = true, -- 同設定視窗：本體不透明
         title = getText("UI_MinidoracatMiniMap_RemoteListTitle") }
     local colors = win.theme.colors
     win._UI, win._font, win._fontH = UI, font, fontH

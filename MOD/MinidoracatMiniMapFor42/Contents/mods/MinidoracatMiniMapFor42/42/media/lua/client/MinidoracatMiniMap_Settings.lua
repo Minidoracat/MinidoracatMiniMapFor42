@@ -2359,9 +2359,11 @@ local function onNavSelect(win, id)
     studioSelect(win, id)
 end
 
+-- opaque（框架 rev 18）：本體與彈出清單不透明，後面的角色與視窗的字不透出來（預設 surface 是 0.8 的黑）；
+-- rev 17 框架不認這個欄位，照舊半透明
 local function studioCreate(UI, font)
     local win = UI.Window.new{ x = 0, y = 0, width = 600, height = 400, icon = "sliders", font = font,
-        title = getText("UI_MinidoracatMiniMap_StudioTitle"), onClose = studioOnClose }
+        title = getText("UI_MinidoracatMiniMap_StudioTitle"), onClose = studioOnClose, opaque = true }
     win._font = font
     win._UI = UI
     win.setVisible = studioSetVisible
