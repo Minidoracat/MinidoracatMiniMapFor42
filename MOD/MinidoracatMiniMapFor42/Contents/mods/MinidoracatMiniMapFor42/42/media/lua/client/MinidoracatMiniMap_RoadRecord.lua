@@ -22,7 +22,12 @@ Rec.PTS_MAX = Codec and Codec.MAX_POINTS or 300
 Rec.MIN_W = Codec and Codec.MIN_WIDTH or 3
 Rec.MAX_W = Codec and Codec.MAX_WIDTH or 16
 Rec.DEFAULT_W = 4          -- save form "narrow 4" default; used where width was not measured
-Rec.SCAN = 6               -- tiles scanned to each side for the road edge
+-- tiles scanned to each side for the road edge: the car can sit anywhere across a MAX_W road, so
+-- one side may hold up to MAX_W - 1 road tiles (a 6-tile scan missed the far edge of an 8-wide
+-- road whenever the car kept to its lane: 2026-10-23 record-drive-sp, 37% of points estimated)
+Rec.SCAN = Rec.MAX_W - 1
+Rec.CARRY = Rec.MAX_W     -- an unmeasured road point keeps the last lane offset for this many points
+Rec.JUMP = 3              -- a cross-cut this much wider than the road (narrowest recent cut) crosses a junction
 Rec.BACK_COS = -0.8660254  -- cos(150 deg): turn sharper than this is a reversal tip
 Rec.BACK_ARM = 6           -- reversal legs shorter than this are dropped
 Rec.RDP_CHUNK = 256       -- pass-1 RDP run length (bounds the O(n^2) worst case)
@@ -91,25 +96,44 @@ function Rec.scan(cell, ox, oy, z, dx, dy)
     return nil
 end
 
--- One sample at (x, y) heading (hx, hy) (unit). Returns width, surface, measured, cx, cy:
--- both edges found -> width = left + right + 1 and the point moves to the road centre;
--- otherwise DEFAULT_W, measured=false and the driven position.
+-- One sample at (x, y) heading (hx, hy) (unit). Returns width, surface, measured, cx, cy, off, onRoad:
+-- both edges found (and no wider than MAX_W) -> width = left + right + 1 and the point moves to the
+-- road centre (off = its offset right of the tile centre); otherwise DEFAULT_W, measured=false and
+-- the driven position. onRoad = the tile under the car is a road tile.
 function Rec.sample(x, y, z, hx, hy)
     local cell = getCell()
     local tx, ty = math.floor(x), math.floor(y)
     local name = Rec.dryFloorName(cell:getGridSquare(tx, ty, z))
     local s = Rec.surfaceOf(name)
-    if not Rec.isRoadName(name) then return Rec.DEFAULT_W, s, false, x, y end
+    if not Rec.isRoadName(name) then return Rec.DEFAULT_W, s, false, x, y, nil, false end
     local ox, oy = tx + 0.5, ty + 0.5
     local l = Rec.scan(cell, ox, oy, z, hy, -hx)  -- left of travel (y grows south)
     local r = Rec.scan(cell, ox, oy, z, -hy, hx)  -- right of travel
-    if not (l and r) then return Rec.DEFAULT_W, s, false, x, y end
+    if not (l and r) or l + r + 1 > Rec.MAX_W then return Rec.DEFAULT_W, s, false, x, y, nil, true end
     local off = (r - l) / 2
-    return l + r + 1, s, true, ox - off * hy, oy + off * hx
+    return l + r + 1, s, true, ox - off * hy, oy + off * hx, off, true
 end
 
+-- A road point whose edge is out of reach (side road junction, wide corner) keeps the lane offset
+-- of the last measured point within CARRY points: the line stays on the centre instead of jumping
+-- to the car's lane and back (a zig-zag the save form reports as sharp turns). A cross-cut more
+-- than JUMP wider than the road (the narrowest cut measured within CARRY points; cuts grow as the
+-- car turns) runs through a junction or across a corner: its midpoint is on neither road, so it
+-- counts as unmeasured too (turning at a junction otherwise put a vertex off both roads,
+-- 2026-10-23 record-drive-sp 112 deg "sharp turn"). A road that really widens is measured again
+-- CARRY points later. Off-road points stay where the car drove.
 function Rec.measure(rec, i, z, hx, hy)
-    local w, s, m, cx, cy = Rec.sample(rec.xs[i], rec.ys[i], z, hx, hy)
+    local w, s, m, cx, cy, off, onRoad = Rec.sample(rec.xs[i], rec.ys[i], z, hx, hy)
+    local recent = rec.offI and i - rec.offI <= Rec.CARRY
+    if m and recent and w > rec.roadW + Rec.JUMP then
+        w, m, cx, cy = Rec.DEFAULT_W, false, rec.xs[i], rec.ys[i]
+    end
+    if m then
+        rec.off, rec.offI, rec.roadW = off, i, recent and math.min(rec.roadW, w) or w
+    elseif onRoad and recent then
+        cx = math.floor(rec.xs[i]) + 0.5 - rec.off * hy
+        cy = math.floor(rec.ys[i]) + 0.5 + rec.off * hx
+    end
     rec.w[i], rec.s[i], rec.m[i], rec.cx[i], rec.cy[i] = w, s, m, cx, cy
     local st = rec.state
     st.surface, st.measured, st.width = s, m, m and w or nil
@@ -202,9 +226,13 @@ function Rec.widthClass(w) if w <= 4 then return 1 elseif w <= 7 then return 2 e
 
 -- Must-keep flags: ends, plus every point where the surface or width class changes and the
 -- new class holds DEBOUNCE points (single noisy samples do not burn the 300-point budget).
+-- An unmeasured sample keeps the last measured width class: a gap in measuring is not a change.
 function Rec.metaBreaks(S, W, M, m)
-    local key = {}
-    for i = 1, m do key[i] = RANK[S[i]] * 10 + (M[i] and Rec.widthClass(W[i]) or 0) end
+    local key, wc = {}, 0
+    for i = 1, m do
+        if M[i] then wc = Rec.widthClass(W[i]) end
+        key[i] = RANK[S[i]] * 10 + wc
+    end
     local keep, cur = { [1] = true, [m] = true }, key[1]
     for i = 2, m do
         if key[i] ~= cur then

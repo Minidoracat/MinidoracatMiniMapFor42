@@ -2,7 +2,8 @@
 -- Invariants a player would see break:
 --   * one point per tile moved (car position when driving); RAW_MAX auto-stops into review
 --   * surface table = AutoDrive floorSurfaceId; bridge water under the deck is skipped
---   * width scan is symmetric and recentres the point; no edge within 6 tiles = estimated width
+--   * width scan symmetric, recentres the point; an edge beyond MAX_W - 1 tiles or a road wider than
+--     MAX_W = estimated width; a road point with one edge out of reach keeps the last lane offset
 --   * short reversal legs vanish; surface / width class changes keep a vertex
 --   * every draft <= 300 points, parts join end-to-end, segWidth / segSurface exactly n-1
 --   * death / player gone / new game drops the recording and raises the lost flag once
@@ -235,11 +236,11 @@ do
     -- wider than the scan: estimate, position untouched
     paint(t, 300, 400, 0, 30, "blends_street_01_0")
     local w5, _, m5, cx5, cy5 = R.sample(350.3, 15.2, 0, 1, 0)
-    check(not m5 and w5 == R.DEFAULT_W and cx5 == 350.3 and cy5 == 15.2, "D9 edge beyond 6 tiles: estimated default width")
+    check(not m5 and w5 == R.DEFAULT_W and cx5 == 350.3 and cy5 == 15.2, "D9 edge beyond 15 tiles: estimated default width")
     local w6, s6, m6 = R.sample(500.5, 500.5, 0, 1, 0)
     check(not m6 and w6 == R.DEFAULT_W and s6 == "dirt", "D10 off-road: estimated, surface still read")
-    -- one side only
-    paint(t, 0, 200, 60, 70, "blends_street_01_0")
+    -- one side only (the far edge 24 tiles away)
+    paint(t, 0, 200, 60, 85, "blends_street_01_0")
     local _, _, m7 = R.sample(100.5, 61.5, 0, 1, 0)
     check(not m7, "D11 only one edge found: estimated")
     -- narrow dirt trail of edge blends counts as a road
@@ -408,6 +409,104 @@ do
     checkEq(#t.tool, 0, "I2 no review for a one-point recording")
     check(t.msgs[1] and t.msgs[1]:find("RoadRecTooShort", 1, true), "I3 too-short notice")
     checkEq(t.core.roadRecordLastLost(0), false, "I4 too short is not a loss")
+end
+
+-- J. driving in the right lane of an 8-wide road (2026-10-23 record-drive-sp: 37% of the paved
+--    points "estimated" and the line zig-zagging between the centre and the lane): the lane side
+--    holds more than 6 road tiles, so both edges must still be found and the point centred
+do
+    local t = fixture()
+    local R = t.R
+    paint(t, 0, 300, 100, 107, "blends_street_01_0") -- rows 100..107: 8 wide, centre y = 104
+    local w, _, m, _, cy = R.sample(50.3, 106.4, 0, 1, 0)
+    check(m and w == 8 and cy == 104, "J1 right lane of an 8-wide road: measured 8, centred (w=" .. tostring(w)
+        .. " m=" .. tostring(m) .. " cy=" .. tostring(cy) .. ")")
+    begin(t, 2.3, 106.4)
+    drive(t, { 2.3, 106.4, 290.3, 106.4 })
+    t.core.roadRecordStop(0)
+    local d = t.tool[1].opts.draft
+    checkDraft(t, d, "J2")
+    checkEq(#d.pts / 2, 2, "J3 straight lane drive: two vertices")
+    check(d.pts[2] == 104 and d.pts[4] == 104, "J4 both ends on the road centre line")
+    check(d.measured[1] and d.segWidth[1] == 8, "J5 width measured 8")
+    -- wider than MAX_W across: not a measurement
+    paint(t, 0, 300, 200, 220, "blends_street_01_0") -- 21 wide
+    local w2, _, m2 = R.sample(50.5, 210.5, 0, 1, 0)
+    check(not m2 and w2 == R.DEFAULT_W, "J6 21 tiles across (> MAX_W): estimated")
+end
+
+-- K. side road junction: the lane side opens up for the side road's width; the point keeps the
+--    lane offset instead of jumping back to the car, and the gap forces no vertex
+do
+    local t = fixture()
+    paint(t, 0, 300, 100, 107, "blends_street_01_0")
+    paint(t, 140, 145, 0, 99, "blends_street_01_0") -- 6-wide side road to the north
+    begin(t, 2.3, 106.4)
+    drive(t, { 2.3, 106.4, 290.3, 106.4 })
+    local rec = t.R.recs[0]
+    local gap = 0
+    for i = 1, rec.n do if not rec.m[i] then gap = gap + 1 end end
+    check(gap > 0 and gap <= 8, "K1 only the junction is unmeasured (" .. gap .. " points)")
+    t.core.roadRecordStop(0)
+    local d = t.tool[1].opts.draft
+    checkDraft(t, d, "K2")
+    checkEq(#d.pts / 2, 2, "K3 straight past the junction: two vertices")
+    check(d.pts[2] == 104 and d.pts[4] == 104, "K4 on the centre line")
+    check(d.measured[1] and d.segWidth[1] == 8, "K5 the junction gap does not make the segment estimated")
+end
+
+-- L. a centre tile off the road (shoulder, off-road) is never shifted by the carried lane offset
+do
+    local t = fixture()
+    paint(t, 0, 100, 100, 107, "blends_street_01_0")
+    begin(t, 2.3, 106.4)
+    drive(t, { 2.3, 106.4, 100.3, 106.4, 110.3, 106.4 })
+    local rec = t.R.recs[0]
+    local moved = false
+    for i = 1, rec.n do
+        if rec.xs[i] >= 101 and (rec.cx[i] ~= rec.xs[i] or rec.cy[i] ~= rec.ys[i]) then moved = true end
+    end
+    check(not moved, "L1 off-road points stay where the car drove")
+end
+
+-- M. left turn at a junction (2026-10-23 record-drive-sp: a vertex off both roads and a 112 deg
+--    "sharp turn" at the corner): cross-cuts through the junction grow wider than the road and
+--    count as unmeasured, so every vertex stays on a road tile and the corner turns <= 100 deg
+do
+    for _, R0 in ipairs({ 3, 5, 8 }) do
+        local t = fixture()
+        paint(t, 0, 400, 100, 107, "blends_street_01_0")   -- E-W paved, 8 wide, centre y 104
+        paint(t, 147, 152, 108, 400, "blends_street_01_48") -- N-S gravel, 6 wide, centre x 150
+        -- westbound in the north lane, left turn into the southbound (west) lane
+        local cx, cy = 148.4 + R0, 101.6 + R0
+        local path = { 300.5, 101.6, cx, 101.6 }
+        for a = 1, 18 do
+            local th = math.pi / 2 + a * (math.pi / 2) / 18
+            path[#path + 1] = cx + R0 * math.cos(th); path[#path + 1] = cy - R0 * math.sin(th)
+        end
+        path[#path + 1] = 148.4; path[#path + 1] = 300
+        begin(t, 300.5, 101.6)
+        drive(t, path)
+        t.core.roadRecordStop(0)
+        local d = t.tool[1].opts.draft
+        checkDraft(t, d, "M1 r=" .. R0)
+        local n = #d.pts / 2
+        local onRoad, maxTurn = true, 0
+        for k = 1, n do
+            local x, y = d.pts[2 * k - 1], d.pts[2 * k]
+            if not t.R.isRoadName(t.tiles[math.floor(x) .. "," .. math.floor(y)]) then onRoad = false end
+            if k > 1 and k < n then
+                local ax, ay = x - d.pts[2 * k - 3], y - d.pts[2 * k - 2]
+                local bx, by = d.pts[2 * k + 1] - x, d.pts[2 * k + 2] - y
+                local c = (ax * bx + ay * by) / math.sqrt((ax * ax + ay * ay) * (bx * bx + by * by))
+                local deg = math.deg(math.acos(math.max(-1, math.min(1, c))))
+                if deg > maxTurn then maxTurn = deg end
+            end
+        end
+        check(onRoad, "M2 r=" .. R0 .. " every vertex on a road tile")
+        check(maxTurn <= 100, string.format("M3 r=%d no turn sharper than 100 deg (%.0f)", R0, maxTurn))
+        checkEq(d.pts[#d.pts - 1], 150, "M4 r=" .. R0 .. " ends on the gravel centre line")
+    end
 end
 
 print(string.format("test_road_record: %d assertions, %d failures", assertions, failures))
