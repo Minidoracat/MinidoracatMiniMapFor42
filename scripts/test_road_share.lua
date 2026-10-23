@@ -110,7 +110,11 @@ local function loadWithTail(path, tail)
     return assert(load(src .. "\n" .. tail, "@" .. path))()
 end
 local RS = loadWithTail(LUA .. "server/MinidoracatMiniMapRoadShare.lua", "return RS")
+-- 同引擎：空表的 args 不上線，伺服器收到 nil（GameClient.java:1837 putBoolean(!isEmpty)、GameServer.java:2267-2278）
 local function send(who, command, args)
+    local empty = type(args) == "table"
+    for _ in pairs(type(args) == "table" and args or {}) do empty = false break end
+    if empty then args = nil end
     for _, fn in ipairs(handlers.OnClientCommand) do fn("MinidoracatMiniMapRoads", command, P[who], args) end
 end
 

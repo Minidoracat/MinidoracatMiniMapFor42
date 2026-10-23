@@ -274,5 +274,7 @@ Events.OnClientCommand.Add(function(module, command, player, args)
     if module ~= RS.MODULE then return end
     local fn = Commands[command]
     local name = fn and player and player:getUsername()
-    if name and type(args) == "table" then fn(player, args, name) end
+    -- 空表的 args 不上線：客戶端對空表只寫 false（GameClient.java:1837），伺服器收到 nil（GameServer.java:2267-2278）。
+    -- roadSync 送的就是 {}：nil 當空表，各指令自己驗欄位；其他非表照舊不理
+    if name and (args == nil or type(args) == "table") then fn(player, args or {}, name) end
 end)
