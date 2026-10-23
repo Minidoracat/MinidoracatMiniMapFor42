@@ -418,6 +418,23 @@ Events.OnGameBoot.Add(function()
     SEC_ZONES.present = true
 end)
 
+-- 設定備份與補回（UI 框架 rev 23，ModOptionsBackup）：主選單沒有 MOD 建選項時按套用，原版把整個 ModOptions.ini
+-- 清空（MainOptions.lua:409-411 不 load、:3766 照樣 save），進遊戲小地圖設定全回預設。地圖包與區域選項在上面兩個
+-- OnGameBoot 才加，所以排在它們之後；仍早於 OnMainMenuEnter 裡 MainOptions:create 的 load，補回的值由那次 load 套上。
+-- 框架沒有這個能力時不做（照原版存讀）。
+Events.OnGameBoot.Add(function()
+    if not modOptions then return end
+    local UI = MinidoracatUI and MinidoracatUI.v1
+    if not (UI and UI.API_MAJOR == 1 and type(UI.API_REVISION) == "number" and UI.API_REVISION >= 23
+        and UI.CAPABILITIES and UI.CAPABILITIES.modOptionsBackup and UI.ModOptionsBackup) then
+        return
+    end
+    local restored = UI.ModOptionsBackup.protect(modOptions)
+    if type(restored) == "number" and restored > 0 then
+        print("[MinidoracatMiniMap] restored " .. restored .. " map settings from the backup (ModOptions.ini was wiped)")
+    end
+end)
+
 -- 視窗自己觸發的 apply 期間為真：Core.settingsAfterApply 據此分辨 ESC 頁「套用」
 -- （要重建 inspector 同步現值）與視窗內改值（只刷新導覽開關）
 local applyingFromWindow = false

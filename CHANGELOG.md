@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### 修正
+
+- 在主選單的「選項」按了套用之後，進遊戲小地圖的設定不會再全部回到預設。原版在主選單沒有啟用任何有選項的 MOD 時按套用，會把所有 MOD 的設定一起清掉，多人遊戲最常遇到；現在小地圖會記住存過的設定，被清掉時進遊戲自動補回。需要 Minidoracat UI Library 也更新到新版才會生效；更新前就被清掉的設定要再設一次。
+
+> 技術要點：`OnGameBoot`（地圖包、區域選項加完之後）呼叫 UI 框架 rev 23 的 `UI.ModOptionsBackup.protect`（`CAPABILITIES.modOptionsBackup`），從 `Zomboid/Lua/MinidoracatUI/ModOptions_MinidoracatMiniMap.ini` 逐筆補回 `ModOptions.ini` 缺的行，補到時 console 印 `[MinidoracatMiniMap] restored N map settings`。框架低於 rev 23 時照舊沒有這層保護；伺服器有裝 Minidoracat Fixes 時，它另外整檔補回。
+
 ## [42.21.0-0.49.1] - 2026-10-23
 
 ### 修正
