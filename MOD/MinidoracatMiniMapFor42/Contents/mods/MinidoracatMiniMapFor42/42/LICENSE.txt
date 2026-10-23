@@ -18,9 +18,11 @@ a warranty of originality, exclusive copyright or clearance of third-party
 rights.
 
 The two parking icons (media/ui/poi_icons/poi_parking.png and
-media/ui/poi_icons/color/poi_parking.png) and the view cone texture
-(media/ui/minimap_facing_cone.png, made by scripts/make_facing_cone.py) were
-drawn programmatically for this project and are licensed under MIT.
+media/ui/poi_icons/color/poi_parking.png), the view cone texture
+(media/ui/minimap_facing_cone.png, made by scripts/make_facing_cone.py) and
+the custom roads settings icon (media/ui/minimap_road.png, made by
+scripts/make_road_icon.py) were drawn programmatically for this project and
+are licensed under MIT.
 
 2. Project Zomboid and map-derived data - NOT MIT
 

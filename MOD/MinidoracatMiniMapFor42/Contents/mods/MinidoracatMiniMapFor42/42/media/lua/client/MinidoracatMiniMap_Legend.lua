@@ -4,7 +4,8 @@
 -- 列出地圖上正在畫的資源點類別（圖示＋名稱）與地下設施角標的意思。
 -- 內容取自 POI 模組同一次建置的結果（Core.poiLegend）：只列勾選中、有貼圖的類別，
 -- 彩色／單色與地圖一致；「顯示資源點」關閉或全部類別取消時資源點那段不畫。世界地圖有畫自訂道路
--- （_RoadDraw.lua Core.roadsLegend）時下面多一列線樣，有停用的路再多一列「不用於導航」；兩段都沒有＝整塊不畫。
+-- （_RoadDraw.lua Core.roadsLegend）時下面多一列「自訂道路」色塊（依目前畫法），開關開著且真的有
+-- 別人分享的路、不用於導航的路時各多一列；兩段都沒有＝整塊不畫。
 -- 原版 8 列建築色塊保留不動（使用者 2026-09-30 裁決）。字與列高跟「地圖文字大小」，
 -- 放不下時由 2 欄加到最多 4 欄。
 -- 面板是世界地圖的直接子元件：原版街名 hover（ISWorldMap.lua:672 isMouseOverChild）與
@@ -23,8 +24,8 @@ local GAP = 6  -- 圖示與文字間距
 -- 面板寬高與標題列高。n＝類別數；nameW／titleW／basementW＝最寬類別名、標題、地下設施說明
 -- 的字寬（倍率 1 px，無地下設施列時 basementW＝nil）；fontH／titleH＝Small／Medium 字高；
 -- minW＝至少要多寬（對齊原版圖例）；maxH＝可用高度，放不下就加欄（2→4），4 欄仍放不下時
--- 維持 4 欄、超出部分交給畫面邊界。extraRows／extraW＝類別下面另加的整列（自訂道路的線樣，
--- 樣本寬＝圖示邊長×2）與其中最寬的字寬；省略＝沒有
+-- 維持 4 欄、超出部分交給畫面邊界。extraRows／extraW＝類別下面另加的整列（自訂道路的色塊，
+-- 樣本寬＝圖示邊長×3）與其中最寬的字寬；省略＝沒有
 -- test:legend-layout:start
 local MIN_COLS, MAX_COLS = 2, 4
 local function legendLayout(n, nameW, titleW, basementW, fontH, titleH, tz, minW, maxH, extraRows, extraW)
@@ -50,7 +51,7 @@ local function legendLayout(n, nameW, titleW, basementW, fontH, titleH, tz, minW
         if width < need then width = need end
     end
     if extra > 0 then
-        need = PAD * 2 + iconS * 2 + GAP + (extraW or 0) * tz
+        need = PAD * 2 + iconS * 3 + GAP + (extraW or 0) * tz
         if width < need then width = need end
     end
     if width < minW then width = minW end
@@ -93,13 +94,16 @@ function LegendPanel:measureTexts()
     self._titleW = tm:MeasureStringX(UIFont.Medium, self._title)
     self._basementText = getText("UI_MinidoracatMiniMap_LegendBasement")
     self._basementW = tm:MeasureStringX(UIFont.Small, self._basementText)
-    -- 自訂道路兩列（_RoadDraw.lua 同一組線樣）：只有自訂道路時標題換成「自訂道路」
+    -- 自訂道路各列（_RoadDraw.lua RD.drawLegendSample 同一套畫法）：只有自訂道路時標題換成「自訂道路」
     self._roadsTitle = getText("UI_MinidoracatMiniMap_RoadSecTitle")
     self._roadsTitleW = tm:MeasureStringX(UIFont.Medium, self._roadsTitle)
-    self._roadText = getText("UI_MinidoracatMiniMap_RoadLegendRoad")
-    self._roadOffText = getText("UI_MinidoracatMiniMap_RoadNavOffMark")
-    self._roadW = math.max(tm:MeasureStringX(UIFont.Small, self._roadText),
-        tm:MeasureStringX(UIFont.Small, self._roadOffText))
+    self._roadTexts = { road = getText("UI_MinidoracatMiniMap_RoadLegendRoad"),
+        received = getText("UI_MinidoracatMiniMap_RoadLegendReceived"),
+        off = getText("UI_MinidoracatMiniMap_RoadNavOffMark") }
+    self._roadW = 0
+    for _, text in pairs(self._roadTexts) do
+        self._roadW = math.max(self._roadW, tm:MeasureStringX(UIFont.Small, text))
+    end
 end
 
 function LegendPanel:setBounds(x, y, w, h)
@@ -121,9 +125,9 @@ function LegendPanel:prerender()
         or not Core.layerOn("poi", "world") then
         lg = nil
     end
-    -- 自訂道路（世界地圖有畫才列；Core.roadsLegend 在 _RoadDraw.lua）：一列線樣，有停用的再一列
+    -- 自訂道路（世界地圖有畫才列；Core.roadsLegend 在 _RoadDraw.lua）：列種類 road／received／off
     local roads = map and Core.roadsLegend and Core.roadsLegend(map.playerNum or 0)
-    local roadRows = roads and (roads.anyOff and 2 or 1) or 0
+    local roadRows = roads and roads.n or 0
     if (not lg and roadRows == 0) or (key and not key:isVisible()) then
         self:setBounds(self.x, self.y, 0, 0)
         return
@@ -142,25 +146,10 @@ function LegendPanel:prerender()
         lg and lg.basement and self._basementW or nil, tm:getFontHeight(UIFont.Small),
         tm:getFontHeight(UIFont.Medium), tz, minW, map.height - y - PAD * 4, roadRows, self._roadW)
     L.tz, L.fontH = tz, tm:getFontHeight(UIFont.Small) * tz
-    L.lg, L.roadRows = lg, roadRows
+    L.lg, L.roads, L.roadRows = lg, roads, roadRows
     self._layout = L
     self:setBounds(x, y, L.width, L.height)
     ISPanel.prerender(self)
-end
-
--- 線樣：同地圖上的自訂道路（黑底＋淺色虛線；停用＝淡化細虛線）
-function LegendPanel:drawRoadSample(x, y, w, off)
-    local RD = Core.RoadDraw
-    if not RD then return end
-    local under, over = off and RD.OFF_UNDER or RD.UNDER, off and RD.OFF_OVER or RD.OVER
-    local on, gap = off and RD.OFF_DASH_ON or RD.DASH_ON, off and RD.OFF_DASH_OFF or RD.DASH_OFF
-    self:drawLine(nil, x, y, x + w, y, under.w, under.a, under.r, under.g, under.b)
-    local t = 0
-    while t < w do
-        local e = math.min(t + on, w)
-        self:drawLine(nil, x + t, y, x + e, y, over.w, over.a, over.r, over.g, over.b)
-        t = t + on + gap
-    end
 end
 
 function LegendPanel:render()
@@ -198,11 +187,10 @@ function LegendPanel:render()
     end
     local y = L.headH + L.rows * L.rowH + 2 + (lg and lg.basement and L.rowH or 0)
     for k = 1, L.roadRows do
-        local off = k == 2
-        local ly = y + iconS / 2
-        self:drawRoadSample(PAD, ly - ly % 1, iconS * 2, off)
+        local kind = L.roads[k]
+        if Core.RoadDraw then Core.RoadDraw.drawLegendSample(self, PAD, y, iconS * 3, iconS, kind) end
         local ty = y + textDy
-        Core.drawMapText(self, off and self._roadOffText or self._roadText, PAD + iconS * 2 + GAP, ty - ty % 1,
+        Core.drawMapText(self, self._roadTexts[kind], PAD + iconS * 3 + GAP, ty - ty % 1,
             1, 1, 1, 1, UIFont.Small, tz)
         y = y + L.rowH
     end

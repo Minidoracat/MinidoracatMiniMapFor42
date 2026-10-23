@@ -102,7 +102,7 @@ local function bodyAlpha(w)
 end
 check(win.opaque == true, "B2b window asks the framework for an opaque body (opts.opaque)")
 checkEq(bodyAlpha(win), 1, "B2b window body is drawn at alpha 1")
-checkEq(table.concat(s.sections, ","), "base,places,poicat,parking,zombie,animals,vehicles,safehouse,window,perf",
+checkEq(table.concat(s.sections, ","), "base,places,roads,poicat,parking,zombie,animals,vehicles,safehouse,window,perf",
     "B3 built-in categories in fixed order without addons")
 do
     local headers, items = {}, {}
@@ -112,12 +112,16 @@ do
     checkEq(table.concat(headers, "|"), T("UI_MinidoracatMiniMap_GroupLayers") .. "|" .. T("UI_MinidoracatMiniMap_GroupWindow"),
         "B4 only non-empty group headers (layers, window)")
     local icons = {}
-    for _, row in ipairs(items) do icons[#icons + 1] = row.id .. "=" .. tostring(row.icon) end
-    checkEq(table.concat(icons, ","), "base=layers,places=markerFlag,poicat=pin,parking=carSedan,zombie=skull,animals=pawprint,"
-        .. "vehicles=steeringwheel,safehouse=house,window=sliders,perf=chart", "B5 nav icons per category")
+    -- 字串＝框架圖示鍵；Texture（自訂道路的本 MOD 貼圖）記它的路徑
+    for _, row in ipairs(items) do
+        icons[#icons + 1] = row.id .. "=" .. tostring(type(row.icon) == "table" and row.icon.path or row.icon)
+    end
+    checkEq(table.concat(icons, ","), "base=layers,places=markerFlag,roads=media/ui/minimap_road.png,poicat=pin,"
+        .. "parking=carSedan,zombie=skull,animals=pawprint,vehicles=steeringwheel,safehouse=house,window=sliders,perf=chart",
+        "B5 nav icons per category")
     local switches = {}
     for _, row in ipairs(items) do if row.switch then switches[#switches + 1] = row.id end end
-    checkEq(table.concat(switches, ","), "poicat,parking,zombie,animals,vehicles,safehouse", "B6 master switches in nav")
+    checkEq(table.concat(switches, ","), "roads,poicat,parking,zombie,animals,vehicles,safehouse", "B6 master switches in nav")
 end
 s.selectSection("parking") -- 只有母開關＋判定說明的分類也要建得出來（不拋錯）
 check(win.x >= 0 and win.y >= 0 and win.x + win.width <= 1920 and win.y + win.height <= 1080,
@@ -435,7 +439,8 @@ do
         for _, d in ipairs(pv.draws) do if d.kind == kind and (not pred or pred(d)) then n = n + 1 end end
         return n
     end
-    for _, id in ipairs({ "places", "poicat", "zombie", "animals", "vehicles", "safehouse" }) do
+    -- roads：這個殼沒有 _RoadDraw（Core.drawRoadsPreview 缺）＝預覽留空、不能拋錯
+    for _, id in ipairs({ "places", "roads", "poicat", "zombie", "animals", "vehicles", "safehouse" }) do
         local pv = previewOf(id)
         check(pv ~= nil, "J1 " .. id .. " has a preview")
         check(pv and not pv._failed, "J1 " .. id .. " preview draws without error")
@@ -727,7 +732,7 @@ do
     e.zoneCats = { "farm", "loot" }
     e.boot()
     local st = e.open(0)
-    checkEq(table.concat(st.sections, ","), "base,places,poicat,parking,zombie,animals,vehicles,safehouse,window,perf,zones,mappack",
+    checkEq(table.concat(st.sections, ","), "base,places,roads,poicat,parking,zombie,animals,vehicles,safehouse,window,perf,zones,mappack",
         "N1 zones (order 1) then map packs (order 2) in the add-on group")
     checkEq(navRow(st.nav, "zones").icon, "zone", "N1 zones icon")
     check(navRow(st.nav, "zones").switch ~= nil and navRow(st.nav, "mappack").switch == nil, "N1 zones nav switch = ZoneLayer")
@@ -991,7 +996,7 @@ do
     e.Core.remoteListSig = function() return listSig end
     e.Core.remoteShowAllAuthors = function() showAllCalls = showAllCalls + 1 end
     local st = e.open(0)
-    checkEq(table.concat(st.sections, ","), "base,places,remote,poicat,parking,zombie,animals,vehicles,safehouse,window,perf",
+    checkEq(table.concat(st.sections, ","), "base,places,remote,roads,poicat,parking,zombie,animals,vehicles,safehouse,window,perf",
         "S1 multiplayer lists the category right after players and navigation")
     check(navRow(st.nav, "remote").switch ~= nil, "S2 nav shows the master switch")
     st.selectSection("places")
@@ -1171,6 +1176,120 @@ do
     listSig = "b"
     for _ = 1, 30 do e.frame() end
     check(keys():find("zed", 1, true) ~= nil, "L8 a changed signature refreshes the open list")
+end
+
+-- ── RD 自訂道路分類（設計稿 minimap-road-style-1023）：欄位與預設照契約、ESC 頁同一份、「玩家與導航」不再有那一列、
+--    分類開關＝兩格、重設、搜尋、分享的路只在多人、預覽交給 Core.drawRoadsPreview（缺＝留空不拋錯） ──
+do
+    local CONTRACT = {
+        { id = "CustomRoadNames", kind = "tick", default = true, label = "UI_MinidoracatMiniMap_RoadNames" },
+        { id = "CustomRoadReceived", kind = "tick", default = true, label = "UI_MinidoracatMiniMap_RoadReceived" },
+        { id = "CustomRoadDisabled", kind = "tick", default = true, label = "UI_MinidoracatMiniMap_RoadDisabled" },
+        { id = "CustomRoadStyle", kind = "combo", default = 1, label = "UI_MinidoracatMiniMap_RoadStyle",
+            items = { "UI_MinidoracatMiniMap_RoadStyle_Band", "UI_MinidoracatMiniMap_RoadStyle_Corridor",
+                "UI_MinidoracatMiniMap_RoadStyle_Line" } },
+        { id = "CustomRoadAlpha", kind = "slider", default = 85, min = 30, max = 100, step = 5, text = "85%",
+            label = "UI_MinidoracatMiniMap_RoadAlpha" },
+        { id = "CustomRoadMinWidth", kind = "slider", default = 3, min = 1, max = 6, step = 1, text = "3px",
+            label = "UI_MinidoracatMiniMap_RoadMinWidth" },
+    }
+    local main = assert(H.readFile((H.SETTINGS:gsub("_Settings%.lua$", ".lua"))))
+    local function searchHit(e, st, labelKey, id)
+        st.search._entry:setText(T(labelKey))
+        st.search:prerender()
+        e.frame()
+        local hit = findControl(e, function(el) return el._hit and el._hit.entry and el._hit.entry.id == id end)
+        st.search._entry:setText("")
+        st.search:prerender()
+        e.frame()
+        return hit ~= nil
+    end
+    local e = H.load{ mp = true }
+    e.boot()
+    local st = e.open(0)
+    st.selectSection("roads")
+    -- RD1 每個鍵：型別、預設、有翻譯的標籤；ESC 頁（主檔 ModOptions 註冊）同 id、同標籤、同預設
+    for _, c in ipairs(CONTRACT) do
+        local el = e.byKey(c.id)
+        local en = el and el._entry
+        check(en ~= nil and en.default == c.default and en.label == c.label and getTextOrNull(c.label) ~= nil,
+            "RD1 roads category has " .. c.id .. " (default, translated label)")
+        if c.kind == "tick" then
+            checkEq(e.type(el), "MinidoracatUICheckbox", "RD1 " .. c.id .. " is a checkbox")
+            check(el and el.tooltip == getTextOrNull(c.label .. "_tooltip") and el.tooltip ~= nil,
+                "RD1 " .. c.id .. " has its tooltip")
+            local label, def = main:match('addTickBox%("' .. c.id .. '", "([%w_]+)", (%a+)')
+            check(label == c.label and def == tostring(c.default), "RD1 ESC tick " .. c.id .. " has the same label and default")
+        elseif c.kind == "combo" then
+            checkEq(e.type(el), "MinidoracatUIDropdown", "RD1 " .. c.id .. " is a dropdown")
+            check(en and table.concat(en.items, ",") == table.concat(c.items, ","), "RD1 style items are A/B/C")
+            local block = main:match('addComboBox%("' .. c.id .. '", "' .. c.label .. '".-\n(.-)\n%s*modOptions:')
+            local items, defIdx = {}, nil
+            for key, on in (block or ""):gmatch('addItem%("([%w_]+)", (%a+)%)') do
+                items[#items + 1] = key
+                if on == "true" then defIdx = #items end
+            end
+            check(table.concat(items, ",") == table.concat(c.items, ",") and defIdx == c.default,
+                "RD1 ESC combo " .. c.id .. " has the same items and default")
+        else
+            checkEq(e.type(el), "MinidoracatUISliderRow", "RD1 " .. c.id .. " is a slider")
+            check(en and en.min == c.min and en.max == c.max and en.step == c.step, "RD1 " .. c.id .. " range and step")
+            if el then el:prerender() end
+            check(el and el._text and el._text:find(c.text, 1, true), "RD1 " .. c.id .. " reads " .. c.text
+                .. " (" .. tostring(el and el._text) .. ")")
+            local label, lo, hi, step, def = main:match('addSlider%("' .. c.id .. '", "([%w_]+)", (%d+), (%d+), (%d+), (%d+)')
+            check(label == c.label and tonumber(lo) == c.min and tonumber(hi) == c.max and tonumber(step) == c.step
+                and tonumber(def) == c.default, "RD1 ESC slider " .. c.id .. " has the same range and default")
+        end
+    end
+    -- RD2 「顯示在」兩格在這裡；「玩家與導航」不再有（同一個選項只留一處）
+    check(e.type(e.byKey("CustomRoads")) == "MinidoracatUIButton" and e.byKey("WMCustomRoads") ~= nil,
+        "RD2 the Show on chips live in the roads category")
+    st.selectSection("places")
+    check(e.byKey("CustomRoads") == nil and e.byKey("WMCustomRoads") == nil,
+        "RD2 players and navigation no longer has a custom roads row")
+    -- RD3 分類開關＝兩格合計：關＝兩格都清、開＝兩格都回開
+    navRow(st.nav, "roads").switch.set(false)
+    check(e.values.CustomRoads == false and e.values.WMCustomRoads == false, "RD3 master off clears both maps")
+    navRow(st.nav, "roads").switch.set(true)
+    check(e.values.CustomRoads == true and e.values.WMCustomRoads == true, "RD3 master on restores both maps")
+    -- RD4 重設此分類：六個鍵與兩格回預設
+    e.values.CustomRoads, e.values.WMCustomRoads = false, false
+    e.values.CustomRoadNames, e.values.CustomRoadReceived, e.values.CustomRoadDisabled = false, false, false
+    e.values.CustomRoadStyle, e.values.CustomRoadAlpha, e.values.CustomRoadMinWidth = 3, 40, 6
+    st.selectSection("roads")
+    local reset = findControl(e, function(el)
+        return el._sec and el._sec.id == "roads" and el.title == T("UI_MinidoracatMiniMap_StudioResetCategory") end)
+    reset.onclick(reset.target, reset)
+    for _, c in ipairs(CONTRACT) do checkEq(e.values[c.id], c.default, "RD4 reset restores " .. c.id) end
+    check(e.values.CustomRoads == true and e.values.WMCustomRoads == true, "RD4 reset restores both Show on cells")
+    -- RD5 搜尋索引走同一份欄位
+    check(searchHit(e, st, "UI_MinidoracatMiniMap_RoadMinWidth", "CustomRoadMinWidth"), "RD5 search finds the minimum width")
+    check(searchHit(e, st, "UI_MinidoracatMiniMap_RoadReceived", "CustomRoadReceived"),
+        "RD5 multiplayer search finds the shared-roads tick")
+    -- RD6 預覽只呼叫 Core.drawRoadsPreview（預覽元件＋內框矩形）；缺＝留空不拋錯。兩倍高：左三種路面、右兩條
+    st.selectSection("places")
+    local placesH = typed(e, "MinidoracatUIPreview")[1].height
+    local calls = {}
+    e.Core.drawRoadsPreview = function(el, x, y, w, h) calls[#calls + 1] = { el = el, w = w, h = h } end
+    st.selectSection("roads")
+    local pv = typed(e, "MinidoracatUIPreview")[1]
+    pv:prerender()
+    check(#calls == 1 and calls[1].el == pv and calls[1].w > 0 and calls[1].h > 0 and not pv._failed,
+        "RD6 roads preview draws through Core.drawRoadsPreview")
+    checkEq(pv.height, placesH * 2, "RD6 roads preview is twice as tall as the others")
+    e.Core.drawRoadsPreview = nil
+    pv:prerender()
+    check(not pv._failed, "RD6 no Core.drawRoadsPreview = empty preview, no error")
+    -- RD7 單機：分享的路不列，搜尋也找不到
+    local sp = H.load{}
+    sp.boot()
+    local sst = sp.open(0)
+    sst.selectSection("roads")
+    check(sp.byKey("CustomRoadReceived") == nil and sp.byKey("CustomRoadNames") ~= nil,
+        "RD7 single player hides the shared-roads tick")
+    check(not searchHit(sp, sst, "UI_MinidoracatMiniMap_RoadReceived", "CustomRoadReceived"),
+        "RD7 single player search skips it too")
 end
 
 io.write(string.format("test_settings_studio: %d assertions, %d failures\n", assertions, failures))

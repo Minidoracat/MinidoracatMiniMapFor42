@@ -506,7 +506,88 @@ do
         check(onRoad, "M2 r=" .. R0 .. " every vertex on a road tile")
         check(maxTurn <= 100, string.format("M3 r=%d no turn sharper than 100 deg (%.0f)", R0, maxTurn))
         checkEq(d.pts[#d.pts - 1], 150, "M4 r=" .. R0 .. " ends on the gravel centre line")
+        -- 新畫法照路寬畫路帶：路口橫切（8 寬的路量到 11）存成路寬會畫出尖角，推定段用預設 4 會在
+        -- 8 與 6 之間掐出瓶頸（2026-10-24 record-drive-sp style 輪 rd-6）。斜著穿過轉角的橫切本來就
+        -- 寬 1～2 格（JUMP），轉角那一小段可以寬到 8＋JUMP
+        local wmin, wmax = 99, 0
+        for i = 1, n - 1 do
+            local w = d.segWidth[i]
+            if w < wmin then wmin = w end
+            if w > wmax then wmax = w end
+        end
+        check(wmax <= 8 + t.R.JUMP, "M5 r=" .. R0 .. " no segment wider than the wider road + JUMP (" .. wmax .. ")")
+        check(wmin >= 6, "M6 r=" .. R0 .. " no segment narrower than the narrower road (" .. wmin .. ")")
     end
+end
+
+-- N. junction cut boundary: cuts are whole tiles and a diagonal cut is 1-2 wider than the road;
+--    3 wider runs through a junction (2026-10-24 record-drive-sp: Riverside Rd 8 wide measured 11
+--    at the turn into Buck Rd, saved as an 11-wide segment and drawn as a spike)
+do
+    local t = fixture()
+    local R = t.R
+    local orig = R.sample
+    local function cut(w)
+        local rec = { xs = { 10, 11 }, ys = { 5, 5 }, w = {}, s = {}, m = {}, cx = {}, cy = {}, state = {},
+            lcx = 10, lcy = 5, offI = 1, roadW = 8 }
+        R.sample = function(x, y) return w, "paved", true, x, y, 0, true end
+        R.measure(rec, 2, 0, 1, 0)
+        R.sample = orig
+        return rec.m[2]
+    end
+    check(cut(11) == false, "N1 a cut 3 wider than the road (8 -> 11) crosses a junction: estimated")
+    check(cut(10) == true, "N2 a cut 2 wider (8 -> 10, a diagonal) is still a measurement")
+end
+
+-- O. level crossing (2026-10-24 record-drive-sp: a few unmeasured rows on a straight gravel road;
+--    carrying the lane offset from the car's tile hopped the vertices a whole tile (x 9300 / 9299)
+--    when the car crossed a tile edge, and the 1.4-tile diagonals drew as a bow tie)
+do
+    local t = fixture()
+    paint(t, 147, 152, 0, 400, "blends_street_01_48") -- N-S gravel, 6 wide, centre x 150
+    paint(t, 130, 170, 200, 203, "blends_street_01_0") -- 41-wide paved band: cut > MAX_W, unmeasured
+    begin(t, 148.9, 10.5)
+    drive(t, { 148.9, 10.5, 148.9, 199.5, 149.1, 204.5, 149.1, 390.5 })
+    local rec = t.R.recs[0]
+    local off = 0
+    -- 車在平交道上斜著漂移 0.2 格，投影線跟著行進方向略斜，點離中心線約 0.16 格；跳一整格才是錯
+    for i = 1, rec.n do
+        if rec.ys[i] >= 200 and rec.ys[i] < 204 and math.abs(rec.cx[i] - 150) > 0.25 then off = off + 1 end
+    end
+    checkEq(off, 0, "O1 crossing points stay within a quarter tile of the centre line")
+    t.core.roadRecordStop(0)
+    local d = t.tool[1].opts.draft
+    checkDraft(t, d, "O2")
+    local xs, ws = true, true
+    for k = 1, #d.pts / 2 do if d.pts[2 * k - 1] ~= 150 then xs = false end end
+    for k = 1, #d.segWidth do if d.segWidth[k] ~= 6 then ws = false end end
+    check(xs, "O3 every vertex on the centre line x 150")
+    check(ws, "O4 the crossing segment keeps the gravel width 6 (" .. table.concat(d.segWidth, ",") .. ")")
+end
+
+-- P. unmeasured segments take the nearest measured segment along the road (2026-10-24
+--    record-drive-sp: only carrying the previous one put the paved 9 on the first gravel piece
+--    at the junction, a 9-wide gravel wedge before the 6-wide gravel road)
+do
+    local R = fixture().R
+    local function fill(SW, SM, lens, SS)
+        local at = { 0 }
+        for j = 1, #lens do at[j + 1] = at[j] + lens[j] end
+        R.fillWidths(SW, SM, at, #lens, SS or {})
+        return table.concat(SW, ",")
+    end
+    checkEq(fill({ 9, 4, 4, 4, 6 }, { true, false, false, false, true }, { 2.5, 2.8, 2.7, 1.4, 5 }), "9,9,6,6,6",
+        "P1 each unmeasured piece takes the nearer measured neighbour")
+    checkEq(fill({ 8, 4, 6 }, { true, false, true }, { 1, 2, 1 }), "8,8,6", "P2 a tie takes the earlier one")
+    checkEq(fill({ 4, 4 }, { false, false }, { 3, 3 }), "4,4", "P3 nothing measured: DEFAULT_W stays")
+    -- 2026-10-24 record-drive-sp 021200: the gravel piece between the junction's paved 10 and the
+    -- gravel 6 (both adjacent) took the paved width, a 10-wide gravel wedge in the corner
+    checkEq(fill({ 10, 4, 6 }, { true, false, true }, { 3.6, 4.6, 6 }, { "paved", "gravel", "gravel" }), "10,6,6",
+        "P4 a tie takes the neighbour with the same surface")
+    -- level crossing: the rails read as paved between two gravel pieces; same surface must not reach
+    -- past the nearer neighbours (the junction's paved 10 further back)
+    checkEq(fill({ 10, 6, 4, 6 }, { true, true, false, true }, { 3.6, 6, 3, 66 }, { "paved", "gravel", "paved", "gravel" }),
+        "10,6,6,6", "P5 nearer neighbours win over a farther one with the same surface")
 end
 
 print(string.format("test_road_record: %d assertions, %d failures", assertions, failures))

@@ -527,6 +527,13 @@ _lua_tests = [
     ("test_zone_render.lua", "zone／資源點繪製、圖標名稱提示、地圖文字縮放與圖例資料", False),
     ("test_room_resources.lua", "資源點兩種版本、房間資料分批掃描與公開查詢 API", False),
     ("test_map_legend.lua", "世界地圖資源點圖例版面與顯示", False),
+    ("test_road_draw.lua", "自訂道路三款畫法、繪製預算不掉路、開關、stencil、預覽與圖例列", False),
+    ("test_road_codec.lua", "自訂道路檔案格式、備份與讀回驗證", False),
+    ("test_roads_store.lua", "自訂道路資料層：存、改、停用、收到的路", False),
+    ("test_nav_custom_roads.lua", "自訂道路併進路網、選路與 6000 段建圖", False),
+    ("test_road_tool.lua", "道路工具：畫線、編輯、存檔表單", False),
+    ("test_road_record.lua", "錄製道路：取樣、路寬路面、簡化與切分", False),
+    ("test_road_share.lua", "道路分享：伺服器保存、收件人、同步", False),
 ]
 for _script, _label, _may_skip in _lua_tests:
     _gate = f"Lua 單元測試（{_script}：{_label}）"

@@ -378,6 +378,24 @@ do
         segSurface = { "gravel", "dirt" }, measured = { true, false }, ends = { "snap", "snap" }, source = "record" } })
     local s, w, rec = RT.formDefaults(t)
     check(s == "recorded" and w == "recorded" and rec, "R2 錄的路預設「依錄製」")
+    do
+        -- 柏油：量到 8、推定 4（不算）、路口 2.5 格量到 11（同寬累計不到 5 格，不算）；碎石：6、7；
+        -- 泥土：只有推定（只寫路面名稱）
+        local rt = newTool({ mode = "review", draft = { pts = { 0, 0, 10, 0, 20, 0, 22.5, 0, 32.5, 0, 42.5, 0, 52.5, 0 },
+            segWidth = { 8, 4, 11, 6, 7, 3 }, segSurface = { "paved", "paved", "paved", "gravel", "gravel", "dirt" },
+            measured = { true, false, true, true, true, false }, ends = { "snap", "snap" }, source = "record" } })
+        local sum = RT.recordedSummary(rt) or ""
+        local item = "UI_MinidoracatMiniMap_RoadRecordedItem|"
+        local paved = item .. "UI_MinidoracatMiniMap_RoadSurface_paved|UI_MinidoracatMiniMap_RoadWidth|8"
+        local gravel = item .. "UI_MinidoracatMiniMap_RoadSurface_gravel|UI_MinidoracatMiniMap_RoadWidthRange|6|7"
+        local want = "UI_MinidoracatMiniMap_RoadRecordedSummary|" .. paved .. "UI_MinidoracatMiniMap_RoadSep"
+            .. gravel .. "UI_MinidoracatMiniMap_RoadSep" .. "UI_MinidoracatMiniMap_RoadSurface_dirt"
+        check(sum == want, "R2b 表單列出錄到的路面與路寬：推定的段不算進範圍（實得 " .. sum .. "）")
+        reset()
+        local drawn = newTool()
+        drawn.pts, drawn.segS, drawn.segW = { 0, 0, 10, 0 }, { "dirt" }, { 4 }
+        check(RT.recordedSummary(drawn) == nil, "R2c 畫的路不列錄到的摘要")
+    end
     local k = t:insertMid(2)
     check(k == 3 and #t.segW == 3 and t.segW[3] == 7 and t.segS[2] == "dirt", "R3 中段加點：那段的資料複製一份")
     t:deletePoint(2)

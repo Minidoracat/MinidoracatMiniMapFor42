@@ -963,6 +963,48 @@ function RT.formDefaults(tool)
     return uniform(tool.segS, m) or "dirt", uniform(tool.segW, m) or RT.WIDTHS[1], false
 end
 
+-- 錄的路在表單「依錄製」底下列出錄到什麼：路面照第一次出現的順序，路寬只算量到的段，而且同一種
+-- 路面、同一個寬度累計至少 SUMMARY_MIN_LEN 格才算進範圍（路口一小段寬的不撐大範圍；整種路面都不夠
+-- 長才全算）；整種路面都是推定的只寫路面名稱。畫的路回 nil。
+RT.SUMMARY_MIN_LEN = 5
+function RT.recordedSummary(tool)
+    if tool.source ~= "record" or not (tool.segS and tool.segW) then return nil end
+    local order, lens, pts = {}, {}, tool.pts
+    for k = 1, tool:count() - 1 do
+        local s, w = tool.segS[k], tool.segW[k]
+        if s then
+            if not lens[s] then order[#order + 1], lens[s] = s, {} end
+            if type(w) == "number" and not (tool.measured and tool.measured[k] == false) then
+                local dx, dy = pts[k * 2 + 1] - pts[k * 2 - 1], pts[k * 2 + 2] - pts[k * 2]
+                lens[s][w] = (lens[s][w] or 0) + math.sqrt(dx * dx + dy * dy)
+            end
+        end
+    end
+    if #order == 0 then return nil end
+    local parts = {}
+    for i = 1, #order do
+        local s = order[i]
+        local lo, hi, alo, ahi
+        for w, len in pairs(lens[s]) do
+            alo, ahi = alo and math.min(alo, w) or w, ahi and math.max(ahi, w) or w
+            if len >= RT.SUMMARY_MIN_LEN then lo, hi = lo and math.min(lo, w) or w, hi and math.max(hi, w) or w end
+        end
+        if not lo then lo, hi = alo, ahi end
+        local name = getText("UI_MinidoracatMiniMap_RoadSurface_" .. s)
+        if not lo then
+            parts[i] = name
+        elseif lo == hi then
+            parts[i] = getText("UI_MinidoracatMiniMap_RoadRecordedItem", name,
+                getText("UI_MinidoracatMiniMap_RoadWidth", fmtInt(lo)))
+        else
+            parts[i] = getText("UI_MinidoracatMiniMap_RoadRecordedItem", name,
+                getText("UI_MinidoracatMiniMap_RoadWidthRange", fmtInt(lo), fmtInt(hi)))
+        end
+    end
+    return getText("UI_MinidoracatMiniMap_RoadRecordedSummary",
+        table.concat(parts, getText("UI_MinidoracatMiniMap_RoadSep")))
+end
+
 function RT.issueText(row)
     local endLabel = row.e and getText(row.e == 1 and "UI_MinidoracatMiniMap_RoadEndStart"
         or "UI_MinidoracatMiniMap_RoadEndEnd")
@@ -1129,6 +1171,8 @@ function RT.openForm(tool)
             + (rows[k].kind == "endGap" and cw + 6 or 0)
         if need > W then W = need end
     end
+    local recSummary = RT.recordedSummary(tool)
+    if recSummary then W = math.max(W, pad * 2 + tm:MeasureStringX(UIFont.Small, recSummary)) end
     local sw = getCore():getScreenWidth() - 40
     if W > sw then W = sw end
     local form = ISPanelJoypad:new(0, 0, W, 100)
@@ -1200,6 +1244,10 @@ function RT.openForm(tool)
     end
     chipRow(getText(labelKeys[2]), sv, st, "roadSurface")
     chipRow(getText(labelKeys[3]), wv, wt, "roadWidth")
+    if recSummary then
+        form.labels[#form.labels + 1] = { text = recSummary, x = pad, y = y }
+        y = y + fh + 6
+    end
     for k = 1, #rows do
         local row = rows[k]
         form.rows[#form.rows + 1] = { y = y, text = row.text, good = row.good }

@@ -1223,17 +1223,37 @@ if PZAPI and PZAPI.ModOptions then
         "UI_MinidoracatMiniMap_NavRoute_tooltip")
     modOptions:addTickBox("WMNavRoute", "UI_MinidoracatMiniMap_WMNavRoute", true,
         "UI_MinidoracatMiniMap_WMCell_tooltip")
-    -- 自訂道路兩格（Core.LAYER_MAPS.customRoads；_RoadDraw.lua 每幀讀）：只管畫不畫，導航照常使用
-    modOptions:addTickBox("CustomRoads", "UI_MinidoracatMiniMap_RoadLayerMini", true,
-        "UI_MinidoracatMiniMap_RoadLayer_tooltip")
-    modOptions:addTickBox("WMCustomRoads", "UI_MinidoracatMiniMap_RoadLayerWorld", true,
-        "UI_MinidoracatMiniMap_WMCell_tooltip")
     -- 走完的行程留在地圖上（預設關）：關＝最後一站到達後，站號標記從小地圖與世界地圖
     -- 消失（_Nav.lua drawTripTargets）；行程頁仍列出結果，下一次加點或設目標就開新行程
     modOptions:addTickBox("KeepFinishedTrip", "UI_MinidoracatMiniMap_KeepFinishedTrip", false,
         "UI_MinidoracatMiniMap_KeepFinishedTrip_tooltip")
     -- 標記大小（px）：家／收藏、導航旗與行程站、搜尋落點、未分層的 addon marker（Core.markerIconSize）
     modOptions:addSlider("MarkerIconSize", "UI_MinidoracatMiniMap_MarkerIconSize", 8, 48, 1, 16)
+
+    -- 自訂道路 --------------------------------------------------------------------
+    -- 全部只管畫法與畫不畫（_RoadDraw.lua 每幀讀），導航照常使用。兩格＝Core.LAYER_MAPS.customRoads；
+    -- 名稱也管作者名與「不用於導航」字樣；別人分享的路只在多人有作用（設定視窗單機不列）。
+    -- 畫法 1＝路面色帶、2＝描邊路廊、3＝地圖線條；最細寬度＝拉遠時路帶在畫面上至少幾 px
+    modOptions:addSeparator()
+    modOptions:addTitle("UI_MinidoracatMiniMap_RoadSecTitle")
+    modOptions:addTickBox("CustomRoads", "UI_MinidoracatMiniMap_RoadLayerMini", true,
+        "UI_MinidoracatMiniMap_RoadLayer_tooltip")
+    modOptions:addTickBox("WMCustomRoads", "UI_MinidoracatMiniMap_RoadLayerWorld", true,
+        "UI_MinidoracatMiniMap_WMCell_tooltip")
+    modOptions:addTickBox("CustomRoadNames", "UI_MinidoracatMiniMap_RoadNames", true,
+        "UI_MinidoracatMiniMap_RoadNames_tooltip")
+    modOptions:addTickBox("CustomRoadReceived", "UI_MinidoracatMiniMap_RoadReceived", true,
+        "UI_MinidoracatMiniMap_RoadReceived_tooltip")
+    modOptions:addTickBox("CustomRoadDisabled", "UI_MinidoracatMiniMap_RoadDisabled", true,
+        "UI_MinidoracatMiniMap_RoadDisabled_tooltip")
+    combo = modOptions:addComboBox("CustomRoadStyle", "UI_MinidoracatMiniMap_RoadStyle",
+        "UI_MinidoracatMiniMap_RoadStyle_tooltip")
+    combo:addItem("UI_MinidoracatMiniMap_RoadStyle_Band", true) -- 預設路面色帶
+    combo:addItem("UI_MinidoracatMiniMap_RoadStyle_Corridor", false)
+    combo:addItem("UI_MinidoracatMiniMap_RoadStyle_Line", false)
+    modOptions:addSlider("CustomRoadAlpha", "UI_MinidoracatMiniMap_RoadAlpha", 30, 100, 5, 85)
+    modOptions:addSlider("CustomRoadMinWidth", "UI_MinidoracatMiniMap_RoadMinWidth", 1, 6, 1, 3,
+        "UI_MinidoracatMiniMap_RoadMinWidth_tooltip")
 
     -- 資源點 ----------------------------------------------------------------------
     -- 內建 POI（原版地圖資源點，20 類）：圖標為主（預設開）、區塊選配（預設關）。

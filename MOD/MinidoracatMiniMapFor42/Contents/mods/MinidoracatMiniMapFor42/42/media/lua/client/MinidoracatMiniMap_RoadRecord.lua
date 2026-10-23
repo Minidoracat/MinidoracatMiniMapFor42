@@ -27,7 +27,7 @@ Rec.DEFAULT_W = 4          -- save form "narrow 4" default; used where width was
 -- road whenever the car kept to its lane: 2026-10-23 record-drive-sp, 37% of points estimated)
 Rec.SCAN = Rec.MAX_W - 1
 Rec.CARRY = Rec.MAX_W     -- an unmeasured road point keeps the last lane offset for this many points
-Rec.JUMP = 3              -- a cross-cut this much wider than the road (narrowest recent cut) crosses a junction
+Rec.JUMP = 2              -- a cross-cut more than this wider than the road (narrowest recent cut) crosses a junction
 Rec.BACK_COS = -0.8660254  -- cos(150 deg): turn sharper than this is a reversal tip
 Rec.BACK_ARM = 6           -- reversal legs shorter than this are dropped
 Rec.RDP_CHUNK = 256       -- pass-1 RDP run length (bounds the O(n^2) worst case)
@@ -114,25 +114,30 @@ function Rec.sample(x, y, z, hx, hy)
     return l + r + 1, s, true, ox - off * hy, oy + off * hx, off, true
 end
 
--- A road point whose edge is out of reach (side road junction, wide corner) keeps the lane offset
--- of the last measured point within CARRY points: the line stays on the centre instead of jumping
--- to the car's lane and back (a zig-zag the save form reports as sharp turns). A cross-cut more
--- than JUMP wider than the road (the narrowest cut measured within CARRY points; cuts grow as the
--- car turns) runs through a junction or across a corner: its midpoint is on neither road, so it
--- counts as unmeasured too (turning at a junction otherwise put a vertex off both roads,
--- 2026-10-23 record-drive-sp 112 deg "sharp turn"). A road that really widens is measured again
--- CARRY points later. Off-road points stay where the car drove.
+-- A road point whose edge is out of reach (side road junction, wide corner, level crossing) is put
+-- on the centre line of the last measured point within CARRY points: the car is projected onto the
+-- line through that centre along the heading, so the line stays on the centre instead of jumping to
+-- the car's lane and back (a zig-zag the save form reports as sharp turns). Carrying the lane
+-- offset from the car's tile instead hopped a whole tile when the car crossed a tile edge (level
+-- crossing, 2026-10-24 record-drive-sp: vertices between x 9300 and 9299 drawn as a bow tie).
+-- A cross-cut more than JUMP wider than the road (the narrowest cut measured within CARRY points;
+-- cuts are whole tiles and a diagonal cut is 1-2 wider) runs through a junction or across a corner:
+-- its midpoint is on neither road, so it counts as unmeasured too (turning at a junction otherwise
+-- put a vertex off both roads, 2026-10-23 record-drive-sp 112 deg "sharp turn"; with JUMP 3 an
+-- 8-wide road cut 11 at the turn was saved as an 11-wide segment and drawn as a spike, 2026-10-24).
+-- A road that really widens is measured again CARRY points later. Off-road points stay where the
+-- car drove.
 function Rec.measure(rec, i, z, hx, hy)
-    local w, s, m, cx, cy, off, onRoad = Rec.sample(rec.xs[i], rec.ys[i], z, hx, hy)
+    local w, s, m, cx, cy, _, onRoad = Rec.sample(rec.xs[i], rec.ys[i], z, hx, hy)
     local recent = rec.offI and i - rec.offI <= Rec.CARRY
     if m and recent and w > rec.roadW + Rec.JUMP then
         w, m, cx, cy = Rec.DEFAULT_W, false, rec.xs[i], rec.ys[i]
     end
     if m then
-        rec.off, rec.offI, rec.roadW = off, i, recent and math.min(rec.roadW, w) or w
+        rec.lcx, rec.lcy, rec.offI, rec.roadW = cx, cy, i, recent and math.min(rec.roadW, w) or w
     elseif onRoad and recent then
-        cx = math.floor(rec.xs[i]) + 0.5 - rec.off * hy
-        cy = math.floor(rec.ys[i]) + 0.5 + rec.off * hx
+        local d = (rec.ys[i] - rec.lcy) * hx - (rec.xs[i] - rec.lcx) * hy -- signed distance off that line
+        cx, cy = rec.xs[i] + d * hy, rec.ys[i] - d * hx
     end
     rec.w[i], rec.s[i], rec.m[i], rec.cx[i], rec.cy[i] = w, s, m, cx, cy
     local st = rec.state
@@ -288,8 +293,8 @@ end
 function Rec.half(v) return math.floor(v * 2 + 0.5) / 2 end
 
 -- Segment metadata over filtered samples [a, b): width = median of measured widths when at
--- least half were measured (else DEFAULT_W, measured=false); surface = least grip seen,
--- unknown only when every sample is unknown.
+-- least half were measured (else DEFAULT_W, measured=false; Rec.finish then carries a measured
+-- neighbour's width); surface = least grip seen, unknown only when every sample is unknown.
 function Rec.segMeta(S, W, M, a, b)
     local rank, mc, hist = 0, 0, {}
     for i = a, b - 1 do
@@ -312,6 +317,37 @@ function Rec.segMeta(S, W, M, a, b)
     local w = math.floor((wlo + whi) / 2 + 0.5)
     if w < Rec.MIN_W then w = Rec.MIN_W elseif w > Rec.MAX_W then w = Rec.MAX_W end
     return w, surf, true
+end
+
+-- Unmeasured segments take the width of the nearest measured segment along the road; on a tie
+-- (both adjacent, as at a junction) the one with the same surface, else the earlier one. DEFAULT_W
+-- stays when nothing was measured. A gap in measuring is not a width change, same as metaBreaks:
+-- DEFAULT_W pieces pinched 8- and 6-wide roads at every recorded junction, and taking the paved
+-- side put a 9-10 wide gravel wedge in the corner (2026-10-24 record-drive-sp style runs). Surface
+-- only breaks ties: a level crossing reads as paved between gravel, and the nearest paved piece is
+-- the junction further back. at[j] = distance from the start to vertex j; SS = segment surfaces.
+function Rec.fillWidths(SW, SM, at, n, SS)
+    local prev, nxt, p = {}, {}, nil
+    for j = 1, n do
+        if SM[j] then p = j end
+        prev[j] = p
+    end
+    p = nil
+    for j = n, 1, -1 do
+        if SM[j] then p = j end
+        nxt[j] = p
+    end
+    for j = 1, n do
+        if not SM[j] then
+            local a, b = prev[j], nxt[j]
+            local pick = a or b
+            if a and b then
+                local da, db = at[j] - at[a + 1], at[b] - at[j + 1]
+                if db < da or (db == da and SS[b] == SS[j] and SS[a] ~= SS[j]) then pick = b else pick = a end
+            end
+            if pick then SW[j] = SW[pick] end
+        end
+    end
 end
 
 -- rec -> list of drafts (end-to-end parts, each <= PTS_MAX points), or nil when too short.
@@ -358,6 +394,13 @@ function Rec.finish(rec)
         end
     end
     if k < 2 then return nil end
+    local SW, SS, SM, at = {}, {}, {}, { 0 }
+    for j = 1, k - 1 do
+        SW[j], SS[j], SM[j] = Rec.segMeta(S, W, M, K[j], K[j + 1])
+        local dx, dy = RX[j + 1] - RX[j], RY[j + 1] - RY[j]
+        at[j + 1] = at[j] + math.sqrt(dx * dx + dy * dy)
+    end
+    Rec.fillWidths(SW, SM, at, k - 1, SS)
     local raw = {}
     for i = 1, rec.n do raw[2 * i - 1], raw[2 * i] = rec.xs[i], rec.ys[i] end
     local drafts, nd, s = {}, 0, 1
@@ -368,9 +411,7 @@ function Rec.finish(rec)
         for j = s, e do
             local o = j - s
             d.pts[2 * o + 1], d.pts[2 * o + 2] = RX[j], RY[j]
-            if j < e then
-                d.segWidth[o + 1], d.segSurface[o + 1], d.measured[o + 1] = Rec.segMeta(S, W, M, K[j], K[j + 1])
-            end
+            if j < e then d.segWidth[o + 1], d.segSurface[o + 1], d.measured[o + 1] = SW[j], SS[j], SM[j] end
         end
         nd = nd + 1; drafts[nd] = d
         s = e

@@ -46,7 +46,8 @@ local Policy = Core.policy
 --           shAll?（兩個安全屋模式都 1 才停用）,
 --           minimapOnly?（資源點房間資料版停用）, rebuild?, tooltip? }
 --   combo：{ id, label, default, items, mpOnly?, rebuild?, tooltip?, poiLock?（伺服器鎖定資源版本時停用、顯示 default） }
---   slider：{ id, label, default, min, max, step, fmt, zeroLabel?, capBy?（伺服器上限＝沙盒選項名） }
+--   slider：{ id, label, default, min, max, step, fmt, zeroLabel?, capBy?（伺服器上限＝沙盒選項名）, tooltip? }
+--   分類圖示：icon＝框架圖示鍵，或 iconTex＝本 MOD 的貼圖路徑（建導覽時 getTexture，原色不染）
 --   master（標題列與導覽列的分類開關）：{ id, … } 單鍵，或 { label, members, tooltip? }＝成員 OR；
 --           圖層分類的 members＝「顯示在」各格，開＝每格寫自己的 on、關＝全清（studioMasterSet）
 -- 值即寫 ModOptions（同步 ESC 頁元件，ModOptions.lua:68-73）並走既有 modOptions:apply()。
@@ -87,11 +88,11 @@ local SEC_BASE = { id = "base", label = "UI_MinidoracatMiniMap_SecBase", icon = 
     },
 }
 local SEC_PLACES = { id = "places", label = "UI_MinidoracatMiniMap_SecPlaces", icon = "markerFlag",
-    -- 家／收藏點、導航路線、陣營分享的目標（旗標＋路線）畫在哪張地圖：只管顯示，不影響回家與分享功能
+    -- 家／收藏點、導航路線、陣營分享的目標（旗標＋路線）畫在哪張地圖：只管顯示，不影響回家與分享功能。
+    -- 自訂道路的兩格在下方 MapRows.ROADS（同一個選項只留一處）
     maps = {
         { label = "UI_MinidoracatMiniMap_RowPlaces", cells = LM.places },
         { label = "UI_MinidoracatMiniMap_RowNavRoute", cells = LM.navRoute },
-        { label = "UI_MinidoracatMiniMap_RoadSecTitle", cells = LM.customRoads },
         { label = "UI_MinidoracatMiniMap_RowShared", cells = LM.shared, mpOnly = true },
     },
     -- 自己與隊友圖標是引擎圖層：Players／RemotePlayers 只管小地圖，世界地圖的在原版世界地圖選項（齒輪）；
@@ -119,6 +120,32 @@ local SEC_PLACES = { id = "places", label = "UI_MinidoracatMiniMap_SecPlaces", i
     sliders = {
         { id = "MarkerIconSize", label = "UI_MinidoracatMiniMap_MarkerIconSize",
             default = 16, min = 8, max = 48, step = 1, fmt = "%dpx" },
+    },
+}
+-- 自訂道路（_RoadDraw.lua 每幀讀這些鍵；預覽是它的 Core.drawRoadsPreview）：分類開關＝「顯示在」兩格，
+-- 只管畫不畫，導航照常使用。名稱開關也管作者名與「不用於導航」字樣；別人分享的路只有多人才列。
+-- iconTex＝本 MOD 自己的貼圖（框架沒有道路圖示），建導覽時才 getTexture；tallPreview＝預覽兩倍高（左三種路面、
+-- 右分享與停用各一條）。掛 MapRows：主 chunk local 已近上限
+MapRows.ROADS = { id = "roads", label = "UI_MinidoracatMiniMap_RoadSecTitle", iconTex = "media/ui/minimap_road.png",
+    tallPreview = true,
+    master = { label = "UI_MinidoracatMiniMap_RoadSecTitle", members = LM.customRoads, tooltip = MapRows.TIP },
+    maps = { { label = MapRows.SHOW_ON, cells = LM.customRoads } },
+    ticks = {
+        { id = "CustomRoadNames", label = "UI_MinidoracatMiniMap_RoadNames", default = true },
+        { id = "CustomRoadReceived", label = "UI_MinidoracatMiniMap_RoadReceived", default = true, mpOnly = true },
+        { id = "CustomRoadDisabled", label = "UI_MinidoracatMiniMap_RoadDisabled", default = true },
+    },
+    combos = {
+        { id = "CustomRoadStyle", label = "UI_MinidoracatMiniMap_RoadStyle", default = 1,
+            tooltip = "UI_MinidoracatMiniMap_RoadStyle_tooltip",
+            items = { "UI_MinidoracatMiniMap_RoadStyle_Band", "UI_MinidoracatMiniMap_RoadStyle_Corridor",
+                "UI_MinidoracatMiniMap_RoadStyle_Line" } },
+    },
+    sliders = {
+        { id = "CustomRoadAlpha", label = "UI_MinidoracatMiniMap_RoadAlpha",
+            default = 85, min = 30, max = 100, step = 5, fmt = "%d%%" },
+        { id = "CustomRoadMinWidth", label = "UI_MinidoracatMiniMap_RoadMinWidth",
+            default = 3, min = 1, max = 6, step = 1, fmt = "%dpx", tooltip = "UI_MinidoracatMiniMap_RoadMinWidth_tooltip" },
     },
 }
 -- 其他玩家標記（多人）：主開關＝ModOptions RemoteSymbols（主檔 applyToggleOptions／
@@ -329,8 +356,9 @@ local SEC_MAPPACK = { id = "mappack", label = "UI_MinidoracatMiniMap_SecMapPack"
 -- 三個條件全是 live 值（政策可即時改、權限可被升降、分割畫面每個 slot 各自判定），
 -- 每次重建與每幀 live 檢查都現判。
 local SEC_ADMIN = { id = "admin", label = "UI_MinidoracatMiniMap_SecAdmin", icon = "shieldCheck" }
-local LAYER_SECTIONS = { SEC_BASE, SEC_PLACES, SEC_REMOTE, SEC_POI, SEC_PARKING, SEC_ZOMBIE, SEC_ANIMALS,
-    SEC_VEHICLES, SEC_SAFEHOUSE }
+-- 自訂道路排在其他玩家標記之後：單機緊接「玩家與導航」，多人時其他玩家標記仍緊接玩家
+local LAYER_SECTIONS = { SEC_BASE, SEC_PLACES, SEC_REMOTE, MapRows.ROADS, SEC_POI, SEC_PARKING, SEC_ZOMBIE,
+    SEC_ANIMALS, SEC_VEHICLES, SEC_SAFEHOUSE }
 local WINDOW_SECTIONS = { SEC_WINDOW, SEC_PERF }
 
 local function adminSectionEligible(pn)
@@ -1174,6 +1202,10 @@ local PREVIEWS = {
     [SEC_ZOMBIE] = previewZombie, [SEC_ANIMALS] = previewAnimals, [SEC_VEHICLES] = previewVehicles,
     [SEC_POI] = previewPoi, [SEC_SAFEHOUSE] = previewSafehouse, [SEC_PLACES] = previewPlaces,
     [SEC_ZONES] = previewZones,
+    -- 自訂道路：畫法在 _RoadDraw.lua（地圖同一套）；還沒載入就留空
+    [MapRows.ROADS] = function(self, x, y, w, h)
+        if Core.drawRoadsPreview then Core.drawRoadsPreview(self, x, y, w, h) end
+    end,
 }
 
 --------------------------------------------------------------------------------
@@ -1604,7 +1636,7 @@ local function addSliders(ctx, list)
     for i = 1, #list do
         local entry = list[i]
         -- capBy＝伺服器沙盒距離選項：SliderRow 每幀問上限函式（含全域上限 AllInfoDistance）
-        local cap, tip
+        local cap, tip = nil, entry.tooltip and getText(entry.tooltip) or nil
         if entry.capBy and sandboxDist then
             cap = function() return sandboxDist(entry.capBy, pn) end
             tip = getText(DIST_HINT)
@@ -1733,7 +1765,7 @@ end
 -- 內建分類：標題 → 預覽 →「顯示在」→ 開關 → 篩選 → 樣式 → 大小／透明度 → 名稱 → 顯示距離 → 額外 → 重設
 local function buildSection(ctx, sec)
     addHeader(ctx, sec)
-    if PREVIEWS[sec] then addPreview(ctx, sec, PREVIEWS[sec]) end
+    if PREVIEWS[sec] then addPreview(ctx, sec, PREVIEWS[sec], sec.tallPreview and ctx.previewH * 2 or nil) end
     MapRows.build(ctx, sec)
     if sec.combosFirst then
         addCombos(ctx, sec.combos)
@@ -2069,7 +2101,7 @@ local function studioNavGroups(win, groups)
         local items = {}
         for i = 1, #groups[g].items do
             local sec = groups[g].items[i]
-            local item = { id = sec.id, label = getText(sec.label), icon = sec.icon }
+            local item = { id = sec.id, label = getText(sec.label), icon = sec.iconTex and getTexture(sec.iconTex) or sec.icon }
             local master = sec.master
             if master then
                 item.switch = {
