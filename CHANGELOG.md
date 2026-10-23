@@ -1,20 +1,15 @@
 # Changelog
 
-## [Unreleased]
-
-### 修正
-
-- 在主選單的「選項」按了套用之後，進遊戲小地圖的設定不會再全部回到預設。原版在主選單沒有啟用任何有選項的 MOD 時按套用，會把所有 MOD 的設定一起清掉，多人遊戲最常遇到；現在小地圖會記住存過的設定，被清掉時進遊戲自動補回。需要 Minidoracat UI Library 也更新到新版才會生效；更新前就被清掉的設定要再設一次。
-
-> 技術要點：`OnGameBoot`（地圖包、區域選項加完之後）呼叫 UI 框架 rev 23 的 `UI.ModOptionsBackup.protect`（`CAPABILITIES.modOptionsBackup`），從 `Zomboid/Lua/MinidoracatUI/ModOptions_MinidoracatMiniMap.ini` 逐筆補回 `ModOptions.ini` 缺的行，補到時 console 印 `[MinidoracatMiniMap] restored N map settings`。框架低於 rev 23 時照舊沒有這層保護；伺服器有裝 Minidoracat Fixes 時，它另外整檔補回。
-
 ## [42.21.0-0.49.1] - 2026-10-23
 
 ### 修正
 
 - 地圖顯示設定視窗與「管理作者」清單的底色改成不透明：以前底色是半透明的黑，後面的角色、角色資訊視窗的字會透出來，和設定標籤疊在一起看不清楚。視窗裡的下拉清單跟著不透明；滑鼠移過與選取的反白、效果預覽照舊。
+- 在主選單的「選項」按了套用之後，進遊戲小地圖的設定不會再全部回到預設。原版在主選單沒有啟用任何有選項的 MOD 時按套用，會把所有 MOD 的設定一起清掉，多人遊戲最常遇到；現在小地圖會記住存過的設定，被清掉時進遊戲自動補回。需要 Minidoracat UI Library 也更新到新版才會生效；更新前就被清掉的設定要再設一次。
 
 > 技術要點：兩個視窗的 `UI.Window.new` 加 `opaque = true`（UI 框架 rev 18 `CAPABILITIES.opaqueWindow`：本體以 theme surface 色、alpha 1 畫，`Skin.solidFill`；彈出清單開啟時看所在頂層視窗的 `opaque`）。不改框架預設 theme，hover／selected／well 仍是框架的半透明疊色，疊在不透明本體上。框架 rev 17 不認這個欄位，照舊半透明。
+
+> 技術要點：`OnGameBoot`（地圖包、區域選項加完之後）呼叫 UI 框架 rev 23 的 `UI.ModOptionsBackup.protect`（`CAPABILITIES.modOptionsBackup`），從 `Zomboid/Lua/MinidoracatUI/ModOptions_MinidoracatMiniMap.ini` 逐筆補回 `ModOptions.ini` 缺的行，補到時 console 印 `[MinidoracatMiniMap] restored N map settings`。框架低於 rev 23 時照舊沒有這層保護；伺服器有裝 Minidoracat Fixes 時，它另外整檔補回。
 
 ## [42.21.0-0.49.0] - 2026-10-21
 
