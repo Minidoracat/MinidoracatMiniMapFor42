@@ -398,6 +398,15 @@ local function drawNavTargets(inner)
     local allowed = addonOk and (not fa or fa(pn, "nav")) and true or false
     local surface = inner == ISWorldMap_instance and "world" or "mini"
     local arrow = not fa or fa(pn, "arrow", surface)
+    -- 自訂道路圖層（_RoadDraw.lua）：最先畫＝導航路線、旗標都蓋在它上面；「顯示在」兩格由它自己判斷。
+    -- 是玩家自己的資料（同收藏），不受導航閘門限制
+    if Core.drawCustomRoads then
+        local roadsOk, roadsErr = pcall(Core.drawCustomRoads, inner)
+        if not roadsOk and not inner._minidoracatRoadsErrLogged then
+            inner._minidoracatRoadsErrLogged = true
+            log("custom roads draw failed: " .. tostring(roadsErr))
+        end
+    end
     -- 路線層（_NavRoute.lua 掛 Core.drawNavRoute）：先畫＝墊在旗標/箭頭/分享旗
     -- 之下；第二參＝自己的路線與預覽是否可畫（分享路線另經 navGetShared 判 share）。
     -- 收 err＋實例旗標 log-once（同動物繪製/_WorldMapNav 慣例：主檔
@@ -926,9 +935,15 @@ Core.mapMenuFill = function(context, target, pn, wx, wy, playerObj)
         lock(context:addOption(getText("UI_MinidoracatMiniMap_TripAdd"), target,
             target.onMinidoracatAddStop, wx, wy), blocked)
     end
-    if Core.placesAddMenu then
-        -- 游標下是收藏：父項帶名稱，子選單換成這一筆（_Places.lua placeAt；圖層關或沒點中＝nil）
-        local place = Core.placeAt and Core.placeAt(target, wx, wy)
+    -- 游標下是收藏：父項帶名稱，子選單換成這一筆（_Places.lua placeAt；圖層關或沒點中＝nil）。
+    -- 沒有收藏、游標下是自訂道路：同一格換成「道路：名稱」（_RoadDraw.lua roadMapHit、_RoadTool.lua
+    -- roadsMapMenu；收藏圖標優先），第一層項數不變
+    local place = Core.placeAt and Core.placeAt(target, wx, wy)
+    local road = not place and Core.roadMapHit and Core.roadsMapMenu and Core.roadMapHit(target, wx, wy)
+    if road then
+        Core.roadsMapMenu(Core.mapSubMenu(context, "UI_MinidoracatMiniMap_RoadMenuOf", Core.roadMenuTitle(road))
+            or context, pn, road)
+    elseif Core.placesAddMenu then
         local title = place and Core.placeMenuTitle(pn, place)
         Core.placesAddMenu(Core.mapSubMenu(context, "UI_MinidoracatMiniMap_PlaceMenu", title) or context,
             pn, wx, wy, blocked, place)

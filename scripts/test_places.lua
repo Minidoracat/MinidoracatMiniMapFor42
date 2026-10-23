@@ -8,7 +8,9 @@ local itineraryPath = arg[2] or (dir .. "MinidoracatMiniMap_Itinerary.lua")
 local function readFile(path)
     local f = assert(io.open(path, "rb")); local text = f:read("*a"); f:close(); return text
 end
-local sources = { readFile(itineraryPath), readFile(placesPath) }
+-- 收藏檔的讀寫在 shared RoadCodec（遊戲裡 shared 先於 client 載入）
+local codecPath = dir .. "../shared/MinidoracatMiniMap_RoadCodec.lua"
+local sources = { readFile(codecPath), readFile(itineraryPath), readFile(placesPath) }
 -- 主檔地圖文字／標記大小 helper：抽 test:map-text 真實作，滑條值由 placeSliders 控制
 local mainSource = readFile(dir .. "MinidoracatMiniMap.lua"):gsub("\r\n", "\n")
 local mapTextSource = assert(mainSource:match(

@@ -925,6 +925,10 @@ Core.LAYER_MAPS = {
     navRoute = {
         { id = "NavRoute", label = "UI_MinidoracatMiniMap_NavRoute", default = true, on = true },
         { id = "WMNavRoute", label = "UI_MinidoracatMiniMap_WMNavRoute", default = true, on = true } },
+    -- 自訂道路（_RoadDraw.lua）：同導航路線，不算地圖圖層（世界地圖「地圖圖層」總開關不管它）
+    customRoads = {
+        { id = "CustomRoads", label = "UI_MinidoracatMiniMap_RoadLayerMini", default = true, on = true },
+        { id = "WMCustomRoads", label = "UI_MinidoracatMiniMap_RoadLayerWorld", default = true, on = true } },
     shared = {
         { id = "SharedTargets", label = "UI_MinidoracatMiniMap_SharedTargets", default = true, on = true,
             mpOnly = true },
@@ -1218,6 +1222,11 @@ if PZAPI and PZAPI.ModOptions then
     modOptions:addTickBox("NavRoute", "UI_MinidoracatMiniMap_NavRoute", true,
         "UI_MinidoracatMiniMap_NavRoute_tooltip")
     modOptions:addTickBox("WMNavRoute", "UI_MinidoracatMiniMap_WMNavRoute", true,
+        "UI_MinidoracatMiniMap_WMCell_tooltip")
+    -- 自訂道路兩格（Core.LAYER_MAPS.customRoads；_RoadDraw.lua 每幀讀）：只管畫不畫，導航照常使用
+    modOptions:addTickBox("CustomRoads", "UI_MinidoracatMiniMap_RoadLayerMini", true,
+        "UI_MinidoracatMiniMap_RoadLayer_tooltip")
+    modOptions:addTickBox("WMCustomRoads", "UI_MinidoracatMiniMap_RoadLayerWorld", true,
         "UI_MinidoracatMiniMap_WMCell_tooltip")
     -- 走完的行程留在地圖上（預設關）：關＝最後一站到達後，站號標記從小地圖與世界地圖
     -- 消失（_Nav.lua drawTripTargets）；行程頁仍列出結果，下一次加點或設目標就開新行程

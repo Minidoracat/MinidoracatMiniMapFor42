@@ -32,6 +32,8 @@
     "Sandbox_MinidoracatMiniMapSafehouseNameDistance_tooltip": "0 = keine Distanzgrenze.\nN > 0 = einen Namen nur zeigen, wenn der nächste Punkt des Bereichs\nhöchstens N Kacheln vom Spieler entfernt ist.\nEigene Safehouses eines Spielers (Eigentümer oder Mitglied) werden immer gezeigt.\nUnabhängig von der Umriss-Weite. Eine Kachel ist etwa ein Meter;\ndie Distanz ist 2D und ignoriert Stockwerke.\nAdmin-Änderungen gelten sofort nach „Anwenden“.",
     "Sandbox_MinidoracatMiniMapAllowNavShare": "Ziele mit Fraktion teilen erlauben",
     "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "Erlaubt Spielern, Navigationsziele mit Fraktionsmitgliedern zu teilen (über den Server weitergeleitet). Deaktiviert lehnt der Server Teilen-Anfragen ab.",
+    "Sandbox_MinidoracatMiniMapAllowRoadShare": "Teilen eigener Straßen erlauben",
+    "Sandbox_MinidoracatMiniMapAllowRoadShare_tooltip": "Erlaubt Spielern, eigene Straßen mit ihrer Fraktion oder ihrem Safehouse zu teilen. Der Server speichert geteilte Straßen in einer eigenen Datei, und die Navigation der Mitglieder nutzt sie direkt. Standardmäßig an. Deaktiviert lehnt der Server neue Freigaben ab und sendet keine geteilten Straßen mehr; bereits gespeicherte Straßen bleiben in der Serverdatei.",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay": "Blickrichtung anderer Spieler",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_tooltip": "Zeigt auf Minimap und Weltkarte Richtungspfeile und Sichtkegel für andere Spieler: Aus / Nur Fraktion und Safehouse / Alle auf der Karte. Nur Spieler in der Nähe werden gezeichnet und nie jemand, den die Vanilla-Karte verbirgt (Vanilla-Serveroption MapRemotePlayerVisibility).",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option1": "Aus",

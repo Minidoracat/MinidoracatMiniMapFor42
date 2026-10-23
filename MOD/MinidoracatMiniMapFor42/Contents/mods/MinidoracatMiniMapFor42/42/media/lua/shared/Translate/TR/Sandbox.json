@@ -32,6 +32,8 @@
     "Sandbox_MinidoracatMiniMapSafehouseNameDistance_tooltip": "0 = mesafe sınırı yok.\nN > 0 = ad yalnızca alanın en yakın noktası\noyuncuya N kare mesafedeyken gösterilir.\nOyuncunun kendi güvenli evleri (sahip veya üye) her zaman gösterilir.\nDış hat mesafesinden bağımsızdır. Bir kare yaklaşık bir metredir;\nmesafe 2B'dir ve katları yok sayar.\nYönetici değişiklikleri Uygula'dan hemen sonra geçerli olur.",
     "Sandbox_MinidoracatMiniMapAllowNavShare": "Grup hedefi paylaşımına izin ver",
     "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "Oyuncuların navigasyon hedeflerini grup üyeleriyle paylaşmasına izin verir (sunucu aracılığıyla iletilir). Devre dışıyken sunucu paylaşım isteklerini reddeder.",
+    "Sandbox_MinidoracatMiniMapAllowRoadShare": "Özel yol paylaşımına izin ver",
+    "Sandbox_MinidoracatMiniMapAllowRoadShare_tooltip": "Oyuncuların özel yollarını grubuyla veya güvenli eviyle paylaşmasına izin verir. Sunucu paylaşılan yolları kendi dosyasında saklar ve üyelerin navigasyonu bunları doğrudan kullanır. Varsayılan olarak açık. Devre dışıyken sunucu yeni paylaşımları reddeder ve paylaşılan yolları göndermeyi bırakır; kayıtlı yollar sunucu dosyasında kalır.",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay": "Diğer oyuncuların yönü",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_tooltip": "Mini haritada ve dünya haritasında diğer oyunculara yön okları ve görüş konileri ekler: Kapalı / Yalnızca grup ve güvenli ev / Haritadaki herkes. Yalnızca yakındaki oyuncular çizilir; orijinal haritanın gizlediği kimse gösterilmez (orijinal sunucu seçeneği MapRemotePlayerVisibility).",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option1": "Kapalı",

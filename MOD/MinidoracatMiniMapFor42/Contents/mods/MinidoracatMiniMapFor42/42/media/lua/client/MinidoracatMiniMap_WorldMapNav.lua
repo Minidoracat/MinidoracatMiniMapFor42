@@ -180,6 +180,15 @@ if ISWorldMap and ISWorldMap.prerender then
             self._minidoracatWMNavErrLogged = true
             print("[MinidoracatMiniMap] worldmap nav draw failed: " .. tostring(err))
         end
+        -- 道路工具（_RoadTool.lua）：正在畫或編輯的線、點與吸附圈蓋在自訂道路與導航之上。
+        -- 原版工具的 render 在本 wrap 之前（ISWorldMap.lua:366 prerenderMap），會被圖層蓋掉，所以畫在這裡
+        if Core.roadToolDraw then
+            ok, err = pcall(Core.roadToolDraw, self)
+            if not ok and not self._minidoracatWMRoadToolErrLogged then
+                self._minidoracatWMRoadToolErrLogged = true
+                print("[MinidoracatMiniMap] worldmap road tool draw failed: " .. tostring(err))
+            end
+        end
         -- 自己的朝向箭頭：世界地圖的自己圖標（原版選項 Players）開著才畫，同小地圖排在導航之後
         ok, err = pcall(Core.drawPlayerFacing, self)
         if not ok and not self._minidoracatWMFacingErrLogged then
@@ -193,6 +202,16 @@ if ISWorldMap and ISWorldMap.prerender then
             self._minidoracatWMAdminMarkErrLogged = true
             print("[MinidoracatMiniMap] worldmap admin marker draw failed: " .. tostring(err))
         end
+    end
+end
+-- 工具要的鍵（道路工具的 Enter／Backspace）不讓遊戲再收到：原版 ISWorldMap:isKeyConsumed 只認 Esc、
+-- C、S（ISWorldMap.lua:1196-1201），沒有問符號面板（ISWorldMapSymbols:isKeyConsumed 會問目前工具，:1685-1690）
+if ISWorldMap and ISWorldMap.isKeyConsumed then
+    local originalWMIsKeyConsumed = ISWorldMap.isKeyConsumed
+    function ISWorldMap:isKeyConsumed(key)
+        if originalWMIsKeyConsumed(self, key) then return true end
+        local sym = self.symbolsUI
+        return sym ~= nil and sym.currentTool ~= nil and sym:isKeyConsumed(key) == true
     end
 end
 -- test:wm-prerender:end

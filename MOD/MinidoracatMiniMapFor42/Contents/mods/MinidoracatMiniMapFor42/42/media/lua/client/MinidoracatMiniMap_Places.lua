@@ -98,12 +98,10 @@ end
 -- <模式>/<世界> 就是存檔資料夾 Saves/<模式>/<世界>（ZomboidFileSystem.getCurrentSaveDir）；MP 客戶端
 -- 的世界名是 <IP>_<埠>_<帳號 MD5>（GameClient.doConnect，ConnectToServerState 經 createWorld 消毒），
 -- 所以多人每個伺服器帳號一份，同原版私人地圖標記 map_symbols.bin；死亡重生的新角色讀同一檔。
--- getFileReader／getFileWriter 把 \ 也當分隔、路徑含 ".." 就回 nil（LuaManager.java:5937-5942、
--- 6728-6731）：先轉 %，再轉 / \ 與 ".."，可逆＝不同存檔不會撞名。
-local KEY_ESC = { ["%"] = "%25", ["/"] = "%2f", ["\\"] = "%5c" }
-local function fileKey(s)
-    return (tostring(s):gsub("[%%/\\]", KEY_ESC):gsub("%.%.", ".%%2e"))
-end
+-- 檔名轉義與讀寫（fileKey／readLines／writeVerified）在 shared/MinidoracatMiniMap_RoadCodec.lua，
+-- 收藏、自訂道路、伺服器道路檔共用：讀回全等才算寫成，路徑含 / \ ".." 可逆轉義。
+local Codec = MinidoracatMiniMapRoadCodec
+local fileKey, readLines, writeFile = Codec.fileKey, Codec.readLines, Codec.writeVerified
 local function placesPath(pn)
     local world = getWorld()
     return "MinidoracatMiniMap/places/" .. fileKey(world:getGameMode()) .. "/"
@@ -146,34 +144,6 @@ local function decodeLines(lines, n)
     end
     return { schemaVersion = schema, nextId = tonumber(nextId) or nextId,
         homeId = homeId ~= "" and (tonumber(homeId) or homeId) or nil, places = rows }
-end
--- 逐行讀回（getFileReader 對「不存在」與 IOException 都回 nil；readLine 剝行尾，同 POIExport
--- readBackMatches）；pcall 確保讀到一半拋錯也會 close
-local function readLines(path)
-    local reader = getFileReader(path, false)
-    if not reader then return nil end
-    local lines, n = {}, 0
-    local ok = pcall(function()
-        local line = reader:readLine()
-        while line ~= nil do
-            n = n + 1
-            lines[n] = line
-            line = reader:readLine()
-        end
-    end)
-    reader:close()
-    if ok then return lines, n end
-    return nil
-end
--- 讀回全等才算寫成：LuaFileWriter 走 PrintWriter，磁碟錯誤不拋例外（同 POIExport）
-local function writeFile(path, text)
-    local writer = getFileWriter(path, true, false)
-    if not writer then return false end
-    if not pcall(function() writer:write(text); writer:close() end) then
-        pcall(function() writer:close() end)
-    end
-    local lines, n = readLines(path)
-    return lines ~= nil and table.concat(lines, "\n", 1, n) == text
 end
 -- 回 state／nil（沒有檔）／nil, reason：invalid、unsupported，或 unreadable（檔在卻打不開：
 -- 不能當成沒有檔，否則下一次寫入會蓋掉它；cacheFileExists 只看 File.exists）

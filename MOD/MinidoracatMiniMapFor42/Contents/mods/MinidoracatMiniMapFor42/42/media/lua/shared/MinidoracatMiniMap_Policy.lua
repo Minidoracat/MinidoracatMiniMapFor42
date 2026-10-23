@@ -202,6 +202,8 @@ local SCHEMA = {
     { "SafehouseNameDisplay", "number", 3 },
     { "SafehouseNameDistance", "number", 0 },
     { "AllowNavShare", "boolean", true },
+    -- 自訂道路分享（server/MinidoracatMiniMapRoadShare.lua）：伺服器代存代送給別人，同 AllowNavShare 永不旁路
+    { "AllowRoadShare", "boolean", true },
     -- 其他玩家的朝向箭頭與扇形（_Nav.lua Core.remoteFacingLevel）：1 關閉、2 只限陣營與安全屋成員、
     -- 3 地圖上看得到的所有玩家；不在任何旁路白名單（原版 CanSeeAll 規則已讓管理員看到全部）
     { "RemoteFacingDisplay", "number", 2 },
@@ -224,7 +226,7 @@ local SCHEMA = {
     -- 不在任何旁路白名單（管理員戰術檢視也一樣）
     { "PoiSourceLock", "boolean", false },
 }
-local SCHEMA_N = 27 -- 顯式筆數（家規：不用 # 依賴隱性長度）
+local SCHEMA_N = 28 -- 顯式筆數（家規：不用 # 依賴隱性長度）
 
 local KIND = {}
 for i = 1, SCHEMA_N do

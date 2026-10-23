@@ -693,10 +693,15 @@ Core.navPauseItinerary = function(pn, reason)
     if not slot or not slot.trip then return false, "noitinerary" end
     return pause(slot, reason)
 end
+-- 找不到道路時除了暫停還要說怎麼辦（介面審查 #2）：只在 navigating→paused 那一次通知，
+-- 暫停後 phase 已不是 navigating，重複的 noroad 回報不會再發
 Core.navRouteResult = function(pn, state)
     local slot = slots[pn]
     if slot and slot.trip and slot.trip.phase == "navigating" and (state == "noroad" or state == "failed") then
         pause(slot, state)
+        if state == "noroad" and Core.navMessage then -- 視窗開著寫訊息列；只開地圖走 Toast；都沒開用頭上文字
+            Core.navMessage(pn, getText("UI_MinidoracatMiniMap_RoadNoRoadHint"), false)
+        end
     end
 end
 Core.navErrorText = function(reason, detailKey)

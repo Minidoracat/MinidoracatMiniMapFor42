@@ -111,6 +111,8 @@ local ATTACH_SLACK = 4.5      -- 半寬和之外的路口間隙容差（格）�
                               -- 實測繞遠根因之二，離線 repro ratio 8.94）。誤連
                               -- 幾何下限：兩街中心距 < 半寬和+4.5 時路緣間隙
                               -- < 4.5 格，塞不下建築，「可通行」語義成立
+local CUSTOM_SLACK = 1.0      -- 有一邊是自訂道路時取代 ATTACH_SLACK：玩家畫的線不靠人行道／分隔帶
+                              -- 間隙猜連通，只接貼著路緣（1 格內）的端點（設計稿 1.2）
 local CUT_MERGE = 0.25        -- 同段切割點合併距（格）
 local ATTACH_END = 1.0        -- 投影點併入彼段端點的世界距（格）——同路口語義
 local KEEP_END_LAT = 1.0      -- 端點被吸附橫向拖達此距（格）＝原端點留在原線上，另接短接線到吸附點
@@ -609,7 +611,7 @@ function NavCore.newBuild(streets, winnerOf)
         padTol = maxHalf * 2 + ATTACH_SLACK,
         phase = "gate", si = 1, pi = 1,
         gx1 = {}, gy1 = {}, gx2 = {}, gy2 = {}, gsid = {},
-        gwidth = {}, gsurface = {}, gn = 0,
+        gwidth = {}, gsurface = {}, gmask = {}, gn = 0,
         buck = {}, bkeys = {}, bn = 0, peakBucket = 0, bucketReferenceCount = 0,
         cuts = {},
         seenPair = {}, pairWork = 0, pairScanWork = 0, cutRecords = 0,
@@ -679,6 +681,12 @@ local function gateEmit(b, x1, y1, x2, y2, sid, width, surface, pinStart)
     return true
 end
 
+-- 量化點 k 已是官方街道的段端點（官方街道排在自訂道路前面，先由 gateEmit 登記）。
+local function officialEnd(b, k)
+    local sid = b.epStreet[k]
+    return sid ~= nil and not b.streets[sid].custom
+end
+
 -- 階段一：依引擎的 300 格街道覆蓋邊界預切，再按子段中點的勝出來源過濾。
 -- 沒有覆蓋者、來源未佔該街道格或純資料載體時保留；不可把邊緣的整個
 -- 256 格 lotheader 都當成道路覆蓋，否則會裁斷 MOD 道路與原版幹道的接線。
@@ -703,10 +711,19 @@ local function stepGate(b, budget)
             local removed = street.segRemoved and street.segRemoved[i] == true
             local x1, y1 = pts[i * 2 - 1], pts[i * 2]
             local x2, y2 = pts[i * 2 + 1], pts[i * 2 + 2]
+            -- 自訂道路（設計稿 1.2）：除了 ends 標 snap 的首尾點，頂點一律釘住——不去吸別人、
+            -- 也不被拖走；首尾照原折線位置判斷，300 格預切的子段交界另由 pinStart 釘住。
+            -- 落在官方街道端點上的不釘：那一點本來就是路口，照官方規則吸附（官方路網不因此改變）
+            local mask = street.custom and street.usableBy or nil
+            if mask then
+                local k1, k2 = quantKey(x1, y1), quantKey(x2, y2)
+                if (i > 1 or street.ends[1] ~= "snap") and not officialEnd(b, k1) then b.pinned[k1] = true end
+                if i == np - 1 and street.ends[2] ~= "snap" and not officialEnd(b, k2) then b.pinned[k2] = true end
+            end
             if removed then
                 ops = ops + 1
             elseif not b.winnerOf then
-                gateEmit(b, x1, y1, x2, y2, b.si, width, surface)
+                if gateEmit(b, x1, y1, x2, y2, b.si, width, surface) and mask then b.gmask[b.gn] = mask end
                 ops = ops + 2
             else
                 local source = street.canonicalSrc or street.src
@@ -727,6 +744,7 @@ local function stepGate(b, budget)
                             emitted = gateEmit(b, x1 + (x2 - x1) * t0, y1 + (y2 - y1) * t0,
                                 x1 + (x2 - x1) * t1, y1 + (y2 - y1) * t1,
                                 b.si, width, surface, prevKept)
+                            if emitted and mask then b.gmask[b.gn] = mask end
                         end
                         prevKept = emitted
                         ops = ops + 3
@@ -851,12 +869,21 @@ local function processPair(b, i, j)
         -- 交點世界座標以 i 段原始幾何算一次、兩段共用同一 (ix,iy)——
         -- 各自插值有浮點差，量化邊界上可能分裂成兩節點
         local ix, iy = x1 + t * (x2 - x1), y1 + t * (y2 - y1)
-        addCut(b, i, t, ix, iy)
-        addCut(b, j, u, ix, iy)
+        -- 自訂道路碰到官方段自己的端點：官方段不在端點上另切（該點本來就是節點；端點被吸走時
+        -- 這一刀會在原位多留一個節點），官方路網才和沒有自訂道路時相同。自訂段照切。
+        local mi, mj = b.gmask[i], b.gmask[j]
+        local k = (mi or mj) and quantKey(ix, iy)
+        if not (mj and not mi and (k == quantKey(x1, y1) or k == quantKey(x2, y2))) then
+            addCut(b, i, t, ix, iy)
+        end
+        if not (mi and not mj and (k == quantKey(x3, y3) or k == quantKey(x4, y4))) then
+            addCut(b, j, u, ix, iy)
+        end
     end
     -- 吸附容差＝兩路半寬和＋路口間隙（street 中心線語義：支路端點停在寬路
-    -- 路緣、雙線公路停在近側線）
-    local tol = b.gwidth[i] * 0.5 + b.gwidth[j] * 0.5 + ATTACH_SLACK
+    -- 路緣、雙線公路停在近側線）；有一邊是自訂道路時間隙只給 CUSTOM_SLACK
+    local slack = (b.gmask[i] or b.gmask[j]) and CUSTOM_SLACK or ATTACH_SLACK
+    local tol = b.gwidth[i] * 0.5 + b.gwidth[j] * 0.5 + slack
     tryAttach(b, x1, y1, x3, y3, x4, y4, j, tol)
     tryAttach(b, x2, y2, x3, y3, x4, y4, j, tol)
     tryAttach(b, x3, y3, x1, y1, x2, y2, i, tol)
@@ -1010,17 +1037,39 @@ local function graphNode(g, x, y)
     return idx
 end
 
-local function conservativeMetadata(oldSurface, oldWidth, surface, width)
+-- 自訂道路的本機玩家遮罩（Core.roadsActive 的 usableBy：pn0=1、pn1=2、pn2=4、pn3=8 相加）。
+-- 邊與 snap 段稀疏存 adjCustom／sCustom：nil＝官方街道，全員可用。Kahlua 沒有位元運算子，一律算術。
+local PN_BIT = { [0] = 1, 2, 4, 8 }
+local function maskHas(mask, pn)
+    if mask == nil then return true end
+    local bit = PN_BIT[pn]
+    return bit ~= nil and mask % (bit + bit) >= bit
+end
+
+local function maskOr(a, b)
+    local r, bit = 0, 1
+    while bit <= 8 do
+        if a % (bit + bit) >= bit or b % (bit + bit) >= bit then r = r + bit end
+        bit = bit + bit
+    end
+    return r
+end
+
+-- 重疊邊合併：surface 不同＝unknown、width 取小；遮罩只有兩邊都是自訂才留（聯集），
+-- 有一邊是官方＝官方（任何人都能走）。
+local function conservativeMetadata(oldSurface, oldWidth, surface, width, oldMask, mask)
     local mergedSurface = oldSurface
     if oldSurface ~= surface then mergedSurface = "unknown" end
     local mergedWidth = oldWidth
     if width < oldWidth then mergedWidth = width end
-    return mergedSurface, mergedWidth
+    local mergedMask = nil
+    if oldMask and mask then mergedMask = maskOr(oldMask, mask) end
+    return mergedSurface, mergedWidth, mergedMask
 end
 
 -- bridge（RoadPatch bridge 路段）只在每個貢獻者都是 bridge 時成立：同一條邊也是官方街＝照官方算。
 -- adjBridge／sBridge 稀疏（true 或 nil）。
-local function graphEdge(g, a, b, len, surface, width, bridge)
+local function graphEdge(g, a, b, len, surface, width, bridge, mask)
     if a == b then return end
     local lo, hi = a, b
     if lo > hi then lo, hi = hi, lo end
@@ -1028,10 +1077,11 @@ local function graphEdge(g, a, b, len, surface, width, bridge)
     -- edgeSeen 存正向槽；反向恆為它 +1（下方成對配置），metadata 兩向同步
     local edge = g.edgeSeen[ek]
     if edge then
-        local mergedSurface, mergedWidth = conservativeMetadata(
-            g.adjSurface[edge], g.adjWidth[edge], surface, width)
+        local mergedSurface, mergedWidth, mergedMask = conservativeMetadata(
+            g.adjSurface[edge], g.adjWidth[edge], surface, width, g.adjCustom[edge], mask)
         g.adjSurface[edge], g.adjSurface[edge + 1] = mergedSurface, mergedSurface
         g.adjWidth[edge], g.adjWidth[edge + 1] = mergedWidth, mergedWidth
+        g.adjCustom[edge], g.adjCustom[edge + 1] = mergedMask, mergedMask
         if not bridge then g.adjBridge[edge], g.adjBridge[edge + 1] = nil, nil end
         return
     end
@@ -1040,6 +1090,7 @@ local function graphEdge(g, a, b, len, surface, width, bridge)
     g.adjTo[e], g.adjLen[e], g.adjNext[e] = b, len, g.adjHead[a]
     g.adjSurface[e], g.adjWidth[e] = surface, width
     if bridge then g.adjBridge[e], g.adjBridge[e + 1] = true, true end
+    if mask then g.adjCustom[e], g.adjCustom[e + 1] = mask, mask end
     g.adjHead[a] = e
     local e2 = e + 1
     g.adjTo[e2], g.adjLen[e2], g.adjNext[e2] = a, len, g.adjHead[b]
@@ -1048,15 +1099,20 @@ local function graphEdge(g, a, b, len, surface, width, bridge)
     g.edgeCount = e2
 end
 
-local function graphSnapSeg(g, x1, y1, x2, y2, a, b2, surface, width, bridge)
+-- sName＝該段的街名（navNearestRoad 用）；重疊時官方街名優先。sOwn＝自己的路的 { pn=, id= }
+-- （編輯形狀時吸附排除用）；和別條路重疊就清掉，免得排除時連別條路一起跳過。
+local function graphSnapSeg(g, x1, y1, x2, y2, a, b2, surface, width, bridge, mask, name, own)
     if a == b2 then return end
     local lo, hi = a, b2
     if lo > hi then lo, hi = hi, lo end
     local ek = lo * 100000 + hi
     local seg = g.snapSeen[ek]
     if seg then
-        g.sSurface[seg], g.sWidth[seg] = conservativeMetadata(
-            g.sSurface[seg], g.sWidth[seg], surface, width)
+        local oldMask = g.sCustom[seg]
+        if oldMask and not mask then g.sName[seg] = name end
+        if g.sOwn[seg] ~= own then g.sOwn[seg] = nil end
+        g.sSurface[seg], g.sWidth[seg], g.sCustom[seg] = conservativeMetadata(
+            g.sSurface[seg], g.sWidth[seg], surface, width, oldMask, mask)
         if not bridge then g.sBridge[seg] = nil end
         return
     end
@@ -1064,8 +1120,9 @@ local function graphSnapSeg(g, x1, y1, x2, y2, a, b2, surface, width, bridge)
     g.segCount = s
     g.snapSeen[ek] = s
     g.sx1[s], g.sy1[s], g.sx2[s], g.sy2[s], g.sA[s], g.sB[s] = x1, y1, x2, y2, a, b2
-    g.sSurface[s], g.sWidth[s] = surface, width
+    g.sSurface[s], g.sWidth[s], g.sName[s], g.sOwn[s] = surface, width, name, own
     if bridge then g.sBridge[s] = true end
+    if mask then g.sCustom[s] = mask end
     local bx1, bx2, by1, by2 = bucketRange(x1, y1, x2, y2, 0) -- snap 有擴圈查詢，不需 pad
     for bx = bx1, bx2 do
         for by = by1, by2 do
@@ -1087,18 +1144,21 @@ end
 -- 照舊相連，吸附點只是旁接）；只保留其中一段會在路口畫出往吸附點折去再折回的尖角。
 -- 小幅橫移照舊拖動：兩條街各自被併到偏出去的路口點時，各自保留同樣會畫出尖角。
 -- 外積²≥門檻²×段長²＝橫移量達到門檻；純沿線延伸的 T 字不算橫移。
+-- 自訂道路段經過官方端點時不替那一點做決定：該點保不保留只看官方段，官方路網才和沒有自訂道路時相同。
 local function markKeep(b, i)
     local ox1, oy1, ox2, oy2 = b.gx1[i], b.gy1[i], b.gx2[i], b.gy2[i]
     local sx, sy = ox2 - ox1, oy2 - oy1
     local lat = (b.gwidth[i] or 0) * 0.5
     if lat < KEEP_END_LAT then lat = KEEP_END_LAT end
     local lim = lat * lat * (sx * sx + sy * sy)
+    local custom = b.gmask[i] ~= nil
+    local k1, k2 = quantKey(ox1, oy1), quantKey(ox2, oy2)
     local x, y = resolveMoved(b, ox1, oy1)
     local c = sx * (y - oy1) - sy * (x - ox1)
-    if c * c >= lim then b.keepKey[quantKey(ox1, oy1)] = true end
+    if c * c >= lim and not (custom and officialEnd(b, k1)) then b.keepKey[k1] = true end
     x, y = resolveMoved(b, ox2, oy2)
     c = sx * (y - oy2) - sy * (x - ox2)
-    if c * c >= lim then b.keepKey[quantKey(ox2, oy2)] = true end
+    if c * c >= lim and not (custom and officialEnd(b, k2)) then b.keepKey[k2] = true end
 end
 
 -- 階段三：依切點切割段 → 節點/邊/snap 索引
@@ -1109,9 +1169,10 @@ local function stepCut(b, budget)
             nodeCount = 0, edgeCount = 0, segCount = 0,
             nx = {}, ny = {}, nodeByKey = {},
             adjHead = {}, adjNext = {}, adjTo = {}, adjLen = {},
-            adjSurface = {}, adjWidth = {}, adjBridge = {}, edgeSeen = {},
+            adjSurface = {}, adjWidth = {}, adjBridge = {}, adjCustom = {}, edgeSeen = {},
             sx1 = {}, sy1 = {}, sx2 = {}, sy2 = {}, sA = {}, sB = {},
-            sSurface = {}, sWidth = {}, sBridge = {}, sbuck = {}, snapSeen = {},
+            sSurface = {}, sWidth = {}, sBridge = {}, sCustom = {}, sName = {}, sOwn = {},
+            sbuck = {}, snapSeen = {},
             -- A* generation stamp 工作區（findRoute 重用，免每次清表）
             gen = 0, gScore = {}, fromN = {}, fromEdge = {}, stamp = {}, closed = {},
         }
@@ -1133,7 +1194,7 @@ local function stepCut(b, budget)
             b.epMove, b.epStreet, b.junction, b.epKeys = nil, nil, nil, nil
             b.epOrd, b.epLink, b.pinned, b.keepKey = nil, nil, nil, nil
             b.gx1, b.gy1, b.gx2, b.gy2, b.gsid = nil, nil, nil, nil, nil
-            b.gwidth, b.gsurface = nil, nil
+            b.gwidth, b.gsurface, b.gmask = nil, nil, nil
             return ops
         end
         local ox1, oy1, ox2, oy2 = b.gx1[i], b.gy1[i], b.gx2[i], b.gy2[i]
@@ -1143,13 +1204,14 @@ local function stepCut(b, budget)
         if keep[quantKey(ox1, oy1)] and dist2(x1, y1, ox1, oy1) > mergeEnd then keepEnd(b, i, 0, ox1, oy1) end
         if keep[quantKey(ox2, oy2)] and dist2(x2, y2, ox2, oy2) > mergeEnd then keepEnd(b, i, 1, ox2, oy2) end
         local ts = b.cuts[i]
-        local bridge = b.streets[b.gsid[i]].bridge == true
+        local street = b.streets[b.gsid[i]]
+        local bridge, mask, name, own = street.bridge == true, b.gmask[i], street.name, street.own
         if not ts then
             local a = graphNode(g, x1, y1)
             local c = graphNode(g, x2, y2)
             local len = sqrt(dist2(x1, y1, x2, y2))
-            graphEdge(g, a, c, len, b.gsurface[i], b.gwidth[i], bridge)
-            graphSnapSeg(g, x1, y1, x2, y2, a, c, b.gsurface[i], b.gwidth[i], bridge)
+            graphEdge(g, a, c, len, b.gsurface[i], b.gwidth[i], bridge, mask)
+            graphSnapSeg(g, x1, y1, x2, y2, a, c, b.gsurface[i], b.gwidth[i], bridge, mask, name, own)
             ops = ops + 3
         else
             -- 依 t 插排（家規禁 table.sort——Kahlua 遞迴 quicksort 已排序輸入
@@ -1175,9 +1237,9 @@ local function stepCut(b, budget)
                     local qn = graphNode(g, cut.x, cut.y)
                     if qn ~= pn then
                         graphEdge(g, pn, qn, sqrt(dist2(px, py, cut.x, cut.y)),
-                            b.gsurface[i], b.gwidth[i], bridge)
+                            b.gsurface[i], b.gwidth[i], bridge, mask)
                         graphSnapSeg(g, px, py, cut.x, cut.y, pn, qn,
-                            b.gsurface[i], b.gwidth[i], bridge)
+                            b.gsurface[i], b.gwidth[i], bridge, mask, name, own)
                         px, py, pn = cut.x, cut.y, qn
                         ops = ops + 3
                     end
@@ -1186,9 +1248,9 @@ local function stepCut(b, budget)
             local en = graphNode(g, x2, y2)
             if en ~= pn then
                 graphEdge(g, pn, en, sqrt(dist2(px, py, x2, y2)),
-                    b.gsurface[i], b.gwidth[i], bridge)
+                    b.gsurface[i], b.gwidth[i], bridge, mask)
                 graphSnapSeg(g, px, py, x2, y2, pn, en,
-                    b.gsurface[i], b.gwidth[i], bridge)
+                    b.gsurface[i], b.gwidth[i], bridge, mask, name, own)
                 ops = ops + 3
             end
         end
@@ -1220,8 +1282,9 @@ local function queryStep(query, amount)
     if query.n > MAX_QUERY_WORK then error("route query work limit exceeded") end
 end
 
--- snap：擴圈搜 bucket，回最多 maxN 個「不同節點對」候選 {segIdx, d2, t, qx, qy}
-local function snapCandidates(g, x, y, maxN, query)
+-- snap：擴圈搜 bucket，回最多 maxN 個「不同節點對」候選 {segIdx, d2, t, qx, qy}；
+-- pn 用不到的自訂道路段不當候選（pn＝nil 只看官方街道）；skipId＝排除 pn 自己這條路（編輯形狀時）
+local function snapCandidates(g, x, y, maxN, query, pn, skipId)
     local found = {}
     local nFound = 0
     for r = 1, #SNAP_RING do
@@ -1237,7 +1300,10 @@ local function snapCandidates(g, x, y, maxN, query)
                         local s = list[li]
                         local d2, t, qx, qy = projPointSeg(x, y,
                             g.sx1[s], g.sy1[s], g.sx2[s], g.sy2[s])
-                        if d2 <= radius * radius then
+                        local own = skipId and g.sOwn[s]
+                        if d2 <= radius * radius and maskHas(g.sCustom[s], pn)
+                            and not (own and own.pn == pn and own.id == skipId)
+                        then
                             -- 插入排序保持 d2 升冪、同節點對去重
                             local dup = false
                             for fi = 1, nFound do
@@ -1283,17 +1349,50 @@ end
 -- 目標離路網超過 SNAP_RING 上限 160 格→整條 noroad 連直線都沒有；改為導到
 -- 路網最近點，越野末段由繪製端既有 approach 直線蓋住。O(segCount) 只在
 -- rebuild 時跑（6k 段＝微秒級；ring 命中的正常情境不進來）
-local function nearestSnap(g, x, y, query)
+local function nearestSnap(g, x, y, query, pn, skipId)
     local bestD2, bqx, bqy, bt, bseg = huge, nil, nil, nil, nil
     for s = 1, g.segCount do
         queryStep(query, 1)
         local d2v, t, qx, qy = projPointSeg(x, y, g.sx1[s], g.sy1[s], g.sx2[s], g.sy2[s])
-        if d2v < bestD2 then
+        local own = skipId and g.sOwn[s]
+        if d2v < bestD2 and maskHas(g.sCustom[s], pn) and not (own and own.pn == pn and own.id == skipId) then
             bestD2, bqx, bqy, bt, bseg = d2v, qx, qy, t, s
         end
     end
     if not bseg then return nil end
     return { seg = bseg, d2 = bestD2, t = bt, qx = bqx, qy = bqy }
+end
+
+-- 起或訖的候選裡有自訂道路時，回只看官方街道、最近 2 個不同位置的候選；沒有回 nil。
+-- 自訂道路只能多出選項，不能把原本的官方候選擠掉：findRouteInner 用它補比（2026-10-23 E2E）。
+-- 同節點對或同投影點的不算：自訂道路接上官方路會把那段切成兩半，兩半都投影到切點，
+-- 只取 2 個就會把第二近的官方路擠出去（終點注入節點以 0 長度接到切點，從哪一半進都一樣）
+local function officialExtras(g, list, x, y, query)
+    local custom = false
+    for i = 1, #list do
+        if g.sCustom[list[i].seg] ~= nil then custom = true end
+    end
+    if not custom then return nil end
+    local out = nil
+    local off = snapCandidates(g, x, y, 6, query, nil)
+    if #off == 0 then off[1] = nearestSnap(g, x, y, query, nil) end
+    for i = 1, #off do
+        local o, dup = off[i], false
+        for j = 1, #list do
+            local c = list[j]
+            if (g.sA[c.seg] == g.sA[o.seg] and g.sB[c.seg] == g.sB[o.seg])
+                or dist2(c.qx, c.qy, o.qx, o.qy) < 1e-12 then dup = true end
+        end
+        for j = 1, out and #out or 0 do
+            if dist2(out[j].qx, out[j].qy, o.qx, o.qy) < 1e-12 then dup = true end
+        end
+        if not dup then
+            out = out or {}
+            out[#out + 1] = o
+            if #out == 2 then break end
+        end
+    end
+    return out
 end
 
 local function heapPush(hI, hF, idx, f, query)
@@ -1372,10 +1471,17 @@ local function segmentAvoidPenalty(len, x1, y1, x2, y2, av)
     return 0
 end
 
--- A*（雙源起點＝snap 段兩端；終點＝臨時節點注入 snap 段兩端後回滾）。
--- 回 route：len＝路網 pts 的幾何長；cost＝只套 surface 倍率的路網段成本；
--- avoidPenalty 另列。三者皆不污染 adjLen，且都不含兩端 approach。
-local function runAStar(g, startCand, endCand, tx, ty, av, query)
+-- A*（多源多終點，2026-10-23 起）：每個起點候選的投影點→所在段兩端當種子（g＝起點 approach×權重＋段內
+-- 成本），每個終點候選注入一個臨時節點 Q_k（段兩端→Q_k 的邊另加終點 approach×權重），搜完回滾。一次搜完
+-- 所有起訖組合，結果等同逐組跑單源單終點 A* 再比總成本（之前的寫法），工作量約剩一組：補比官方候選
+-- （officialExtras）多出的組合不再一組一次 A*（逐組時壓力測試平均工作量 4 倍、最壞 61 ms）。
+-- 啟發＝min_k（到 Q_k 的直線＋終點 k 的 approach×權重），Q_k 本身為 0；邊成本不小於長度（倍率 >=1），
+-- 啟發仍一致、結果仍最佳。
+-- 回 route：len＝路網 pts 的幾何長；cost＝只套 surface 倍率的路網段成本；avoidPenalty 另列。三者皆不污染
+-- adjLen，且都不含兩端 approach；sx/sy、ex/ey＝勝出那組起訖候選的投影點。
+-- pn：跳過遮罩不含這位本機玩家的自訂道路邊（分割畫面：別人的私路不給走）；起訖候選
+-- 已由 snapCandidates 依同一 pn 過濾。route.segCustom[i]＝true 標出走在自訂道路上的段。
+local function runAStar(g, starts, ends, sx, sy, tx, ty, w, av, query, pn)
     if type(g.nx) ~= "table" or type(g.ny) ~= "table" or type(g.adjHead) ~= "table"
         or type(g.adjTo) ~= "table" or type(g.adjLen) ~= "table"
         or type(g.adjNext) ~= "table" or type(g.adjSurface) ~= "table"
@@ -1384,140 +1490,169 @@ local function runAStar(g, startCand, endCand, tx, ty, av, query)
         or type(g.stamp) ~= "table" or type(g.closed) ~= "table"
         or type(g.sA) ~= "table" or type(g.sB) ~= "table"
         or type(g.sSurface) ~= "table" or type(g.sWidth) ~= "table"
+        or type(g.adjCustom) ~= "table" or type(g.sCustom) ~= "table"
         or type(g.gen) ~= "number" or type(g.nodeCount) ~= "number"
         or type(g.edgeCount) ~= "number"
     then
         return nil, "invalid graph SoA"
     end
-    local Q = g.nodeCount + 1
-    local eBase = g.edgeCount
-    local c, d = g.sA[endCand.seg], g.sB[endCand.seg]
-    local a, b2 = g.sA[startCand.seg], g.sB[startCand.seg]
-    if not c or not d or not a or not b2
-        or type(g.nx[c]) ~= "number" or type(g.ny[c]) ~= "number"
-        or type(g.nx[d]) ~= "number" or type(g.ny[d]) ~= "number"
-        or type(g.nx[a]) ~= "number" or type(g.ny[a]) ~= "number"
-        or type(g.nx[b2]) ~= "number" or type(g.ny[b2]) ~= "number"
-    then
-        return nil, "invalid snap metadata"
+    local nx, ny = g.nx, g.ny
+    local nStart, nEnd = #starts, #ends
+    for k = 1, nStart + nEnd do
+        local s = (k <= nStart and starts[k] or ends[k - nStart]).seg
+        local a, b = g.sA[s], g.sB[s]
+        if not a or not b
+            or type(nx[a]) ~= "number" or type(ny[a]) ~= "number"
+            or type(nx[b]) ~= "number" or type(ny[b]) ~= "number"
+            or not validSurface(g.sSurface[s]) or not validWidth(g.sWidth[s])
+        then
+            return nil, "invalid snap metadata"
+        end
     end
-    local endSurface, endWidth = g.sSurface[endCand.seg], g.sWidth[endCand.seg]
-    local startSurface, startWidth = g.sSurface[startCand.seg], g.sWidth[startCand.seg]
-    local endBridge, startBridge = g.sBridge[endCand.seg], g.sBridge[startCand.seg]
-    if not validSurface(endSurface) or not validWidth(endWidth)
-        or not validSurface(startSurface) or not validWidth(startWidth)
-    then
-        return nil, "invalid snap metadata"
+    local nodeCount, eBase = g.nodeCount, g.edgeCount
+    local adjHead, adjTo, adjLen, adjNext = g.adjHead, g.adjTo, g.adjLen, g.adjNext
+    local adjSurface, adjWidth, adjBridge, adjCustom = g.adjSurface, g.adjWidth, g.adjBridge, g.adjCustom
+    local bit = PN_BIT[pn]
+    local eqx, eqy, ewa = {}, {}, {}
+    for k = 1, nEnd do
+        local ec = ends[k]
+        eqx[k], eqy[k], ewa[k] = ec.qx, ec.qy, w * sqrt(dist2(tx, ty, ec.qx, ec.qy))
     end
-    local savedC, savedD = g.adjHead[c], g.adjHead[d]
-    local lenQC = sqrt(dist2(endCand.qx, endCand.qy, g.nx[c], g.ny[c]))
-    local lenQD = sqrt(dist2(endCand.qx, endCand.qy, g.nx[d], g.ny[d]))
+    local function heur(x, y)
+        local hv = huge
+        for k = 1, nEnd do
+            local v = sqrt(dist2(x, y, eqx[k], eqy[k])) + ewa[k]
+            if v < hv then hv = v end
+        end
+        return hv
+    end
     local gen = g.gen + 1
     local gS, fromN, fromEdge = g.gScore, g.fromN, g.fromEdge
     local stamp, closed = g.stamp, g.closed
     local hI, hF = {}, {}
-    local px, py = startCand.qx, startCand.qy
-    local lenA = sqrt(dist2(px, py, g.nx[a], g.ny[a]))
-    local lenB = sqrt(dist2(px, py, g.nx[b2], g.ny[b2]))
-    local gA = edgeTravelCost(lenA, startSurface, startWidth, startBridge)
-        + segmentAvoidPenalty(lenA, px, py, g.nx[a], g.ny[a], av)
-    local gB = edgeTravelCost(lenB, startSurface, startWidth, startBridge)
-        + segmentAvoidPenalty(lenB, px, py, g.nx[b2], g.ny[b2], av)
-    local reached = false
+    local savedHead, extra, seedOf = {}, {}, {}
+    local nInj = 0
+    local reached = nil
     local okSearch, searchErr = pcall(function()
-        g.nx[Q], g.ny[Q], g.adjHead[Q] = endCand.qx, endCand.qy, 0
-        g.adjTo[eBase + 1], g.adjLen[eBase + 1], g.adjNext[eBase + 1] = Q, lenQC, savedC
-        g.adjSurface[eBase + 1], g.adjWidth[eBase + 1], g.adjBridge[eBase + 1] = endSurface, endWidth, endBridge
-        g.adjHead[c] = eBase + 1
-        g.adjTo[eBase + 2], g.adjLen[eBase + 2], g.adjNext[eBase + 2] = Q, lenQD, savedD
-        g.adjSurface[eBase + 2], g.adjWidth[eBase + 2], g.adjBridge[eBase + 2] = endSurface, endWidth, endBridge
-        g.adjHead[d] = eBase + 2
+        for k = 1, nEnd do
+            local ec, Qk = ends[k], nodeCount + k
+            local s = ec.seg
+            nx[Qk], ny[Qk], adjHead[Qk] = ec.qx, ec.qy, 0
+            for side = 1, 2 do
+                local node = side == 1 and g.sA[s] or g.sB[s]
+                if savedHead[node] == nil then savedHead[node] = adjHead[node] end
+                nInj = nInj + 1
+                local e = eBase + nInj
+                adjTo[e], adjLen[e], adjNext[e] = Qk, sqrt(dist2(ec.qx, ec.qy, nx[node], ny[node])), adjHead[node]
+                adjSurface[e], adjWidth[e], adjBridge[e], adjCustom[e] =
+                    g.sSurface[s], g.sWidth[s], g.sBridge[s], g.sCustom[s]
+                extra[e] = ewa[k]
+                adjHead[node] = e
+            end
+        end
         g.gen = gen
-        stamp[a], gS[a], fromN[a], fromEdge[a], closed[a] = gen, gA, 0, 0, false
-        stamp[b2], gS[b2], fromN[b2], fromEdge[b2], closed[b2] = gen, gB, 0, 0, false
-        heapPush(hI, hF, a,
-            gA + sqrt(dist2(g.nx[a], g.ny[a], endCand.qx, endCand.qy)), query)
-        heapPush(hI, hF, b2,
-            gB + sqrt(dist2(g.nx[b2], g.ny[b2], endCand.qx, endCand.qy)), query)
+        for k = 1, nStart do
+            local sc = starts[k]
+            local s = sc.seg
+            local wa = w * sqrt(dist2(sx, sy, sc.qx, sc.qy))
+            for side = 1, 2 do
+                local node = side == 1 and g.sA[s] or g.sB[s]
+                local len = sqrt(dist2(sc.qx, sc.qy, nx[node], ny[node]))
+                local gv = wa + edgeTravelCost(len, g.sSurface[s], g.sWidth[s], g.sBridge[s])
+                    + segmentAvoidPenalty(len, sc.qx, sc.qy, nx[node], ny[node], av)
+                if stamp[node] ~= gen or gv < gS[node] then
+                    stamp[node], gS[node], fromN[node], fromEdge[node], closed[node] = gen, gv, 0, 0, false
+                    seedOf[node] = k
+                    heapPush(hI, hF, node, gv + heur(nx[node], ny[node]), query)
+                end
+            end
+        end
         while true do
             local n = heapPop(hI, hF, query)
             if not n then break end
             if not (stamp[n] == gen and closed[n]) then
-                if n == Q then
-                    reached = true
+                if n > nodeCount then
+                    reached = n
                     break
                 end
                 closed[n] = true
-                local e = g.adjHead[n]
+                local e = adjHead[n]
                 local gn = gS[n]
                 while e ~= 0 do
                     queryStep(query, 1)
-                    local to = g.adjTo[e]
-                    local edgeLen = g.adjLen[e]
-                    local ng = gn + edgeTravelCost(edgeLen, g.adjSurface[e], g.adjWidth[e], g.adjBridge[e])
-                        + segmentAvoidPenalty(edgeLen, g.nx[n], g.ny[n], g.nx[to], g.ny[to], av)
-                    if stamp[to] ~= gen or ng < gS[to] then
-                        stamp[to], gS[to], fromN[to], fromEdge[to], closed[to] =
-                            gen, ng, n, e, false
-                        heapPush(hI, hF, to,
-                            ng + sqrt(dist2(g.nx[to], g.ny[to], endCand.qx, endCand.qy)),
-                            query)
+                    local m = adjCustom[e]
+                    if m == nil or (bit and m % (bit + bit) >= bit) then
+                        local to = adjTo[e]
+                        local edgeLen = adjLen[e]
+                        local ng = gn + edgeTravelCost(edgeLen, adjSurface[e], adjWidth[e], adjBridge[e])
+                            + segmentAvoidPenalty(edgeLen, nx[n], ny[n], nx[to], ny[to], av)
+                        if e > eBase then ng = ng + extra[e] end
+                        if stamp[to] ~= gen or ng < gS[to] then
+                            stamp[to], gS[to], fromN[to], fromEdge[to], closed[to] = gen, ng, n, e, false
+                            heapPush(hI, hF, to, ng + (to > nodeCount and 0 or heur(nx[to], ny[to])), query)
+                        end
                     end
-                    e = g.adjNext[e]
+                    e = adjNext[e]
                 end
             end
         end
     end)
 
     -- 回滾臨時注入（先回滾再組路徑，任何 return 路徑都乾淨）
-    g.adjHead[c], g.adjHead[d] = savedC, savedD
-    g.adjTo[eBase + 1], g.adjTo[eBase + 2] = nil, nil
-    g.adjLen[eBase + 1], g.adjLen[eBase + 2] = nil, nil
-    g.adjNext[eBase + 1], g.adjNext[eBase + 2] = nil, nil
-    g.adjSurface[eBase + 1], g.adjSurface[eBase + 2] = nil, nil
-    g.adjWidth[eBase + 1], g.adjWidth[eBase + 2] = nil, nil
-    g.adjBridge[eBase + 1], g.adjBridge[eBase + 2] = nil, nil
-    g.nx[Q], g.ny[Q], g.adjHead[Q] = nil, nil, nil
+    for node, head in pairs(savedHead) do adjHead[node] = head end
+    for e = eBase + 1, eBase + nInj do
+        adjTo[e], adjLen[e], adjNext[e] = nil, nil, nil
+        adjSurface[e], adjWidth[e], adjBridge[e], adjCustom[e] = nil, nil, nil, nil
+    end
+    for k = 1, nEnd do
+        nx[nodeCount + k], ny[nodeCount + k], adjHead[nodeCount + k] = nil, nil, nil
+    end
 
     if not okSearch then return nil, searchErr end
     if not reached then return nil end
     -- 回溯（節點鏈反向）——fromEdge 保存每一段的 surface/width 身分。
+    local ec = ends[reached - nodeCount]
     local chain = {}
     local cn = 0
-    local n = Q
+    local n = reached
     while n ~= 0 do
         cn = cn + 1
         chain[cn] = n
         n = fromN[n]
     end
-    local pts, segSurface, segWidth = {}, {}, {}
+    local sc = starts[seedOf[chain[cn]]]
+    local pts, segSurface, segWidth, segCustom = {}, {}, {}, {}
     local np, routeLen, routeCost, avoidPenalty = 2, 0, 0, 0
-    pts[1], pts[2] = px, py -- 起錨（玩家 snap 投影點）
+    pts[1], pts[2] = sc.qx, sc.qy -- 起錨（玩家 snap 投影點）
     for i = cn, 1, -1 do
         local node = chain[i]
         local x, y
-        if node == Q then
-            x, y = endCand.qx, endCand.qy
+        if node == reached then
+            x, y = ec.qx, ec.qy
         else
-            x, y = g.nx[node], g.ny[node]
+            x, y = nx[node], ny[node]
         end
         -- 與前一點重合（起錨=首節點）時跳過，metadata 也不可多一格。
         local prevX, prevY = pts[np - 1], pts[np]
         local edgeLen = sqrt(dist2(prevX, prevY, x, y))
         if edgeLen > 1e-6 then
-            local surface, width, bridge
-            if fromN[node] == 0 then          -- 起點種子：走的是 startCand snap 段
-                surface, width, bridge = startSurface, startWidth, startBridge
-            elseif node == Q then             -- 注入邊已回滾，改用 endCand snap 段
-                surface, width, bridge = endSurface, endWidth, endBridge
+            local surface, width, bridge, mask
+            if fromN[node] == 0 then          -- 起點種子：走的是勝出起點候選的 snap 段
+                local s = sc.seg
+                surface, width, bridge, mask = g.sSurface[s], g.sWidth[s], g.sBridge[s], g.sCustom[s]
+            elseif node == reached then       -- 注入邊已回滾，改用勝出終點候選的 snap 段
+                local s = ec.seg
+                surface, width, bridge, mask = g.sSurface[s], g.sWidth[s], g.sBridge[s], g.sCustom[s]
             else
                 local edge = fromEdge[node]
-                surface, width, bridge = g.adjSurface[edge], g.adjWidth[edge], g.adjBridge[edge]
+                surface, width, bridge = adjSurface[edge], adjWidth[edge], adjBridge[edge]
+                mask = adjCustom[edge]
             end
             np = np + 2
             pts[np - 1], pts[np] = x, y
             local segmentIndex = np / 2 - 1
             segSurface[segmentIndex], segWidth[segmentIndex] = surface, width
+            if mask then segCustom[segmentIndex] = true end
             routeLen = routeLen + edgeLen
             routeCost = routeCost + edgeTravelCost(edgeLen, surface, width, bridge)
             avoidPenalty = avoidPenalty
@@ -1526,8 +1661,8 @@ local function runAStar(g, startCand, endCand, tx, ty, av, query)
     end
     return {
         pts = pts, len = routeLen, cost = routeCost, avoidPenalty = avoidPenalty,
-        segSurface = segSurface, segWidth = segWidth, approachSurface = "unknown",
-        sx = px, sy = py, ex = endCand.qx, ey = endCand.qy,
+        segSurface = segSurface, segWidth = segWidth, segCustom = segCustom, approachSurface = "unknown",
+        sx = sc.qx, sy = sc.qy, ex = ec.qx, ey = ec.qy,
         tx = tx, ty = ty,
     }
 end
@@ -1535,11 +1670,13 @@ end
 -- 對外：找路。起、終點各取 2 候選（不同節點對）——起點防「玩家在兩路之間先走
 -- 反方向」，終點防「最近段是斷連孤島、次近段可達卻回 nil」（codex review）。
 -- 總代價含兩端 approach 距離（×approachWeight，缺省 3＝徒步；車上由呼叫端給 12），
--- 取最短。第二回傳＝A* 內部例外（呼叫端 log）
+-- 所有起訖組合一起比（同段直達＋一次多源多終點 A*），取最便宜。第二回傳＝A* 內部例外（呼叫端 log）
 -- extraAvoid（v9，可省）＝更多避讓圈的扁平表 { x1, y1, r1, … }（同一次查詢的懲罰與主圈相同；requestDetour 已驗參）。
 -- maxSnap（v10，可省）＝起點候選的投影距離上限：超過的候選不參賽——改道時跳出避讓圈、從百米外的路起步
 -- 會比繞合法迴圈便宜（AutoDrive 拖車調頭 why=far）。最近的候選也超過時只留它（＝舊行為，消費者看 snapDist 拒收）。
-local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight, extraAvoid, maxSnap)
+-- pn（可省）＝本機玩家槽：只用它能走的自訂道路；nil＝只走官方街道。
+-- 候選裡有自訂道路時，另補最近 2 個官方候選再比（officialExtras），自訂道路只多出選項、不擠掉官方候選。
+local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight, extraAvoid, maxSnap, pn)
     approachWeight = approachWeight or 3
     if not g or g.nodeCount == 0 then return nil end
     local av = nil
@@ -1558,63 +1695,60 @@ local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approac
         end
     end
     local query = { n = 0 }
-    local starts = snapCandidates(g, sx, sy, 2, query)
-    if #starts == 0 then starts[1] = nearestSnap(g, sx, sy, query) end
+    local starts = snapCandidates(g, sx, sy, 2, query, pn)
+    if #starts == 0 then starts[1] = nearestSnap(g, sx, sy, query, pn) end
     if not starts[1] then return nil end
     if maxSnap and starts[1].d2 <= maxSnap * maxSnap then
         -- starts 依 d2 升冪：從尾端剪掉超過上限的
         while starts[#starts].d2 > maxSnap * maxSnap do starts[#starts] = nil end
     end
-    local ends = snapCandidates(g, tx, ty, 2, query)
-    if #ends == 0 then ends[1] = nearestSnap(g, tx, ty, query) end
+    local ends = snapCandidates(g, tx, ty, 2, query, pn)
+    if #ends == 0 then ends[1] = nearestSnap(g, tx, ty, query, pn) end
     if not ends[1] then return nil end
+    -- 補官方候選（2026-10-23 E2E：目標旁的自訂死路佔走 2 個終點候選，徒步只能沿它繞 506 格；存路前停在
+    -- 官方路上越野 63 格）
+    local xs = officialExtras(g, starts, sx, sy, query)
+    for i = 1, xs and #xs or 0 do
+        if not maxSnap or xs[i].d2 <= maxSnap * maxSnap then starts[#starts + 1] = xs[i] end
+    end
+    local xe = officialExtras(g, ends, tx, ty, query)
+    for i = 1, xe and #xe or 0 do ends[#ends + 1] = xe[i] end
+    -- 候選 objective＝surface cost＋獨立 avoid penalty＋兩端 approach×權重；
+    -- route.len 保持純幾何長，供既有 v1-v3 消費者沿用。
     local best = nil
+    local function consider(r)
+        local cost = r.cost + r.avoidPenalty
+            + approachWeight * (sqrt(dist2(sx, sy, r.sx, r.sy))
+            + sqrt(dist2(tx, ty, r.ex, r.ey)))
+        if not best or cost < best._cost then
+            r._cost = cost
+            best = r
+        end
+    end
+    -- 起終 snap 同一路段：段內直達（A* 圖上無段中點間的邊，會繞經段端折返成 U 形——測試「gate 勝者段」
+    -- 抓到的路徑膨脹）。直達吃到避讓懲罰時，繞行由下面的 A* 比出來（同段的兩端也是種子與終點）
     for i = 1, #starts do
         for ei = 1, #ends do
             local sc, ec = starts[i], ends[ei]
-            local r, err
             if sc.seg == ec.seg then
-                -- 起終 snap 同一路段：段內直達（A* 圖上無段中點間的邊，會繞經
-                -- 段端折返成 U 形——測試「gate 勝者段」抓到的路徑膨脹）
                 local dlen = sqrt(dist2(sc.qx, sc.qy, ec.qx, ec.qy))
                 local surface, width = g.sSurface[sc.seg], g.sWidth[sc.seg]
-                local avoidPenalty = segmentAvoidPenalty(dlen, sc.qx, sc.qy, ec.qx, ec.qy, av)
-                r = {
+                consider({
                     pts = { sc.qx, sc.qy, ec.qx, ec.qy },
                     len = dlen, cost = edgeTravelCost(dlen, surface, width, g.sBridge[sc.seg]),
-                    avoidPenalty = avoidPenalty,
+                    avoidPenalty = segmentAvoidPenalty(dlen, sc.qx, sc.qy, ec.qx, ec.qy, av),
                     segSurface = { surface }, segWidth = { width },
+                    segCustom = { g.sCustom[sc.seg] ~= nil or nil },
                     approachSurface = "unknown",
                     sx = sc.qx, sy = sc.qy, ex = ec.qx, ey = ec.qy,
                     tx = tx, ty = ty,
-                }
-                if avoidPenalty > 0 then
-                    local alternate, alternateErr =
-                        runAStar(g, sc, ec, tx, ty, av, query)
-                    if alternateErr then return nil, alternateErr end
-                    if alternate and alternate.cost + alternate.avoidPenalty
-                        < r.cost + r.avoidPenalty
-                    then
-                        r = alternate
-                    end
-                end
-            else
-                r, err = runAStar(g, sc, ec, tx, ty, av, query)
-                if err then return nil, err end
-            end
-            if r then
-                -- 候選 objective＝surface cost＋獨立 avoid penalty＋兩端 approach×權重；
-                -- route.len 保持純幾何長，供既有 v1-v3 消費者沿用。
-                local cost = r.cost + r.avoidPenalty
-                    + approachWeight * (sqrt(dist2(sx, sy, r.sx, r.sy))
-                    + sqrt(dist2(tx, ty, r.ex, r.ey)))
-                if not best or cost < best._cost then
-                    r._cost = cost
-                    best = r
-                end
+                })
             end
         end
     end
+    local r, err = runAStar(g, starts, ends, sx, sy, tx, ty, approachWeight, av, query, pn)
+    if err then return nil, err end
+    if r then consider(r) end
     -- snapDist（nav API v4 additive）＝查詢起點到路線首點（起點 snap 投影點）的
     -- 直線距離，即消費者必須越野走完的接線長度；路線品質的單一數字判準。
     -- 純新增欄位，不改任何既有欄位語意（len/cost 照舊不含兩端 approach）
@@ -1622,11 +1756,71 @@ local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approac
     return best
 end
 
-function NavCore.findRoute(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight, extraAvoid, maxSnap)
+function NavCore.findRoute(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight, extraAvoid, maxSnap, pn)
     local ok, route, err = pcall(findRouteInner, g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight,
-        extraAvoid, maxSnap)
+        extraAvoid, maxSnap, pn)
     if not ok then return nil, route end
     return route, err
+end
+
+-- 路網上離 (x, y) 最近、pn 用得到的一點（畫線吸附、存檔「接上」、找不到道路時的起點）。
+-- 超過 maxDist 回 nil；name＝該段街名（自訂道路是道路名），custom＝該段只屬自訂道路。
+-- skipRoadId（可省）：跳過 pn 自己那條 id 的路（編輯形狀時端點不吸回舊版本）；別人的同名 id 不受影響。
+function NavCore.nearestRoad(g, pn, x, y, maxDist, skipRoadId)
+    if not g or g.segCount == 0 then return nil end
+    local query = { n = 0 }
+    local c = snapCandidates(g, x, y, 1, query, pn, skipRoadId)[1]
+    if not c and maxDist > SNAP_RING[#SNAP_RING] then c = nearestSnap(g, x, y, query, pn, skipRoadId) end
+    if not c or c.d2 > maxDist * maxDist then return nil end
+    return { x = c.qx, y = c.qy, dist = sqrt(c.d2), name = g.sName[c.seg] or "",
+        custom = g.sCustom[c.seg] ~= nil }
+end
+
+-- Core.roadsActive 的 { road=, usableBy= } 轉成建圖街道，接在 out 後面（out 是官方街道的副本）。
+-- 形狀同 RoadPatch add：searchable=false、沒有來源目錄（cell gate 一律保留）；另帶 custom／
+-- ends（只有 "free" 不接，其餘當 "snap"）／usableBy。點列複製一份：建圖期間改路不影響這份快照。
+-- 壞資料整條略過。回 (加入條數, 略過條數)。
+function NavCore.customStreets(entries, out)
+    local n, added, skipped = #out, 0, 0
+    for i = 1, #entries do
+        local entry = entries[i]
+        local road = type(entry) == "table" and entry.road or nil
+        local mask = type(entry) == "table" and entry.usableBy or nil
+        local street = nil
+        if type(road) == "table" and type(mask) == "number" and mask >= 1 and mask <= 15 and mask % 1 == 0
+            and validStreetPoints(road.pts) and type(road.segWidth) == "table"
+            and type(road.segSurface) == "table"
+        then
+            local src, ends = road.pts, type(road.ends) == "table" and road.ends or {}
+            local pts = {}
+            for k = 1, #src do pts[k] = src[k] end
+            street = {
+                name = type(road.name) == "string" and road.name or "", pts = pts, width = 0,
+                searchable = false, custom = true, usableBy = mask,
+                own = entry.ownerPn ~= nil and entry.roadId ~= nil
+                    and { pn = entry.ownerPn, id = entry.roadId } or nil,
+                ends = { ends[1] == "free" and "free" or "snap", ends[2] == "free" and "free" or "snap" },
+                segRemoved = {}, segWidth = {}, segSurface = {},
+            }
+            for k = 1, #src / 2 - 1 do
+                local w, s = road.segWidth[k], road.segSurface[k]
+                if not validWidth(w) then
+                    street = nil
+                    break
+                end
+                street.segRemoved[k], street.segWidth[k] = false, w
+                street.segSurface[k] = validSurface(s) and s or "unknown"
+                if w > street.width then street.width = w end
+            end
+        end
+        if street then
+            n, added = n + 1, added + 1
+            out[n] = street
+        else
+            skipped = skipped + 1
+        end
+    end
+    return added, skipped
 end
 
 -- 偏航增量投影：從 fromIdx（點序，1-based）±窗口找玩家到路線的最近投影。
@@ -1718,10 +1912,14 @@ end
 -- OnGameStart 重置：客戶端 Lua 進存檔不重載（本 repo 以 OnCreatePlayer/InitPlayer
 -- 處理 per-world 狀態的既有慣例即為此），換檔不重置會把上一世界的 graph／failed
 -- 帶進新世界（codex/grok review）
+-- 自訂道路欄位（見 newGraphBuilder 一節）：customRev＝道路版本（換世界不歸零）、attemptRev＝最近一次
+-- 含自訂道路建圖的版本、pending＝背景重建中的 builder、baseStreets／baseWof／baseSegments＝官方街道、
+-- baseEmpty＝讀不到官方街道時只用自訂道路建的圖、nodataRev、rebuildAt、probeTick。
 local engine = {
     state = "idle", extract = nil, builder = nil, graph = nil,
     patchState = "raw",
     searchState = "ok",
+    customRev = 0,
 }
 local navRoutes = {} -- [pn] = { state="ok|noroad", route=, tx=, ty=, progressIdx=,
                      --          progX=, progY=, lastBuildMs=, buildX=, buildY=,
@@ -2083,6 +2281,170 @@ local function stepExtract(ex)
     return false
 end
 
+--------------------------------------------------------------------------------
+-- 自訂道路併進路網（設計稿 1.4）：抽取完成後官方街道表留在 engine.baseStreets（RoadPatch
+-- 已套、之後不改），每次建圖＝官方街道＋Core.roadsActive 的新快照。Core.navCustomRoadsChanged
+-- 遞增 customRev；防抖 REBUILD_DELAY_MS 後另開 engine.pending 在背景建，服務中的 engine.graph
+-- 與 state 一直保持 ready。建好且版本仍最新才換圖並清路線快取（導航中的下一幀重新要路線）；
+-- 建到一半又改路＝舊結果丟掉、防抖後用新快照重建；失敗保留舊圖、這一版不再重試（改路才再試），
+-- log 並告訴玩家一次。第一次建圖若因自訂道路失敗，退回只建官方街道。
+-- 換世界（OnGameStart）丟掉 pending 與官方街道表。
+--------------------------------------------------------------------------------
+local REBUILD_DELAY_MS = 1000 -- 連續編輯、分段收到分享時只建最後一版
+
+local function setBase(streets, wof)
+    local segments = 0
+    for i = 1, #streets do segments = segments + #streets[i].pts / 2 - 1 end
+    engine.baseStreets, engine.baseWof, engine.baseSegments = streets, wof, segments
+end
+
+local function hasCustomRoads()
+    if not Core.roadsActive then return false end
+    local ok, list = pcall(Core.roadsActive, MAX_RAW_SEGMENTS)
+    return ok and type(list) == "table" and list[1] ~= nil
+end
+
+-- 開一個 builder（錯誤往上拋，呼叫端 pcall）。withCustom＝false：只建官方街道（自訂道路害
+-- 建圖失敗時的退路，不記 attemptRev）。roadsActive 的段數上限＝建圖硬上限扣掉官方段數。
+local function newGraphBuilder(withCustom)
+    local streets, custom = engine.baseStreets, 0
+    if withCustom then
+        engine.attemptRev = engine.customRev
+        local entries = Core.roadsActive and Core.roadsActive(MAX_RAW_SEGMENTS - engine.baseSegments)
+        if type(entries) == "table" and entries[1] ~= nil then
+            local base = streets
+            streets = {}
+            for i = 1, #base do streets[i] = base[i] end
+            local skipped
+            custom, skipped = NavCore.customStreets(entries, streets)
+            if skipped > 0 then
+                logf("customskip" .. engine.customRev, string.format(
+                    "skipped %d invalid custom roads", skipped))
+            end
+        end
+    end
+    local b = NavCore.newBuild(streets, engine.baseWof)
+    b.customRev, b.customCount = engine.customRev, custom
+    return b
+end
+
+local function customBuildFailed(rev, err)
+    logf("custombuild" .. rev, "graph build with custom roads failed; keeping previous roads: " .. tostring(err))
+    if not (Core.navMessage and getText) then return end
+    local text = getText("UI_MinidoracatMiniMap_RoadNavBuildFailed")
+    for pn = 0, 3 do
+        if getSpecificPlayer(pn) then Core.navMessage(pn, text, false) end
+    end
+end
+
+-- 第一次建圖（抽取完成、讀不到官方街道但有自訂道路、或 failed 後改了路）。
+-- 建圖輸入一條街都沒有＝沒有可導航路網，照舊 failed，不發布空 graph。
+local function startGraphBuild()
+    local ok, b = pcall(newGraphBuilder, true)
+    if not ok then
+        local customErr = b
+        ok, b = pcall(newGraphBuilder, false)
+        if ok then customBuildFailed(engine.customRev, customErr) end
+    end
+    if not ok then
+        logf("buildinit", "graph init failed: " .. tostring(b))
+        engine.state, engine.builder = "failed", nil
+    elseif #b.streets == 0 then
+        logf("empty", "no usable streets extracted")
+        engine.state, engine.builder = "failed", nil
+    else
+        engine.builder, engine.state = b, "building"
+    end
+end
+
+-- 讀得到官方街道的地圖實例（getStreetsAPI／getStreetDataCount 出處見檔頭）；都沒有回 nil
+local function officialStreetsInner()
+    local function count(inner)
+        local api = inner and inner.mapAPI
+        if not api then return 0 end
+        local ok, n = pcall(function() return api:getStreetsAPI():getStreetDataCount() end)
+        return ok and type(n) == "number" and n or 0
+    end
+    if count(ISWorldMap_instance) > 0 then return ISWorldMap_instance end
+    for pn = 0, 3 do
+        local mm = getPlayerMiniMap and getPlayerMiniMap(pn)
+        if count(mm and mm.inner) > 0 then return mm.inner end
+    end
+    return nil
+end
+
+-- 拋掉圖與自訂道路狀態、切到 state（之後照常冷啟動／抽取）。
+local function dropGraph(state)
+    engine.state, engine.graph, engine.pending = state, nil, nil
+    engine.baseStreets, engine.baseEmpty = nil, nil
+    for key in pairs(navRoutes) do navRoutes[key] = nil end
+end
+
+-- 非 extracting／building 時每 tick 一次：nodata 的自訂道路圖、官方街道補上後重抽、背景重建。
+local function customTick()
+    local state = engine.state
+    if state == "idle" then
+        -- 這張地圖讀不到官方街道（nodata，許多 MOD 地圖沒有 streets.xml）：有自訂道路就只用它們建圖
+        if engine.nodata and engine.nodataRev ~= engine.customRev then
+            engine.nodataRev = engine.customRev
+            if hasCustomRoads() then
+                engine.baseEmpty = true
+                setBase({}, nil)
+                startGraphBuild()
+            end
+        end
+        return
+    end
+    if state == "ready" and engine.baseEmpty then
+        -- 冷啟動時先探測到空的那一側（09-05 MP 回報）：另一側其實有官方街道就改抽官方街道
+        engine.probeTick = (engine.probeTick or 0) + 1
+        if engine.probeTick >= 60 then
+            engine.probeTick = 0
+            local inner = officialStreetsInner()
+            local ok, ex = false, nil
+            if inner then ok, ex = pcall(beginExtract, inner.mapAPI) end
+            if ok and ex then
+                dropGraph("extracting")
+                engine.extract, engine.nodata = ex, nil
+                return
+            end
+        end
+    end
+    local p = engine.pending
+    if p then
+        if p.customRev ~= engine.customRev then
+            engine.pending = nil
+            return
+        end
+        local ok, done = pcall(NavCore.step, p, STEP_BUDGET)
+        if not ok then
+            engine.pending = nil
+            customBuildFailed(p.customRev, done)
+        elseif done then
+            engine.pending, engine.graph = nil, p.graph
+            for key in pairs(navRoutes) do navRoutes[key] = nil end
+            logf("rebuilt" .. p.customRev, string.format("graph rebuilt with %d custom roads: %d nodes, %d snap segs",
+                p.customCount, p.graph.nodeCount, p.graph.segCount))
+        end
+        return
+    end
+    if not engine.baseStreets or engine.attemptRev == engine.customRev
+        or getTimestampMs() < (engine.rebuildAt or 0)
+    then
+        return
+    end
+    if engine.baseEmpty and not hasCustomRoads() then
+        -- 沒有官方街道的地圖刪光了自訂道路：回到 nodata，跟從沒畫過路一樣
+        dropGraph("idle")
+        engine.nodata, engine.nodataRev = true, engine.customRev
+    elseif state == "ready" then
+        local ok, b = pcall(newGraphBuilder, true)
+        if ok then engine.pending = b else customBuildFailed(engine.customRev, b) end
+    else
+        startGraphBuild() -- failed（含零官方街道）：改了路就重來
+    end
+end
+
 -- 純路網計算在暫停時也要推進：SP 大地圖預設會暫停；其餘狀態 O(1) 早退。
 Events.OnTickEvenPaused.Add(function()
     if engine.state == "extracting" then
@@ -2103,10 +2465,7 @@ Events.OnTickEvenPaused.Add(function()
         elseif done then
             local ex = engine.extract
             engine.extract = nil
-            if ex.outN == 0 then
-                logf("empty", "no usable streets extracted")
-                engine.state = "failed"
-            else
+            if ex.outN > 0 then
                 engine.searchState = ex.omittedSearchNames > 0 and "degraded" or "ok"
                 if ex.omittedSearchNames > 0 then
                     logf("searchdegraded", string.format(
@@ -2134,7 +2493,7 @@ Events.OnTickEvenPaused.Add(function()
                     ex.outN = #ex.out
                 end
                 -- 街名索引（_Search.lua 搜尋用）：每街 {name, low, x, y}（首點）——
-                -- graph 不存名稱、builder 完成即棄 streets 表，這裡留輕量索引。
+                -- graph 只存 snap 段街名、沒有搜尋錨點，這裡留輕量索引。
                 -- low＝建索引時一次性小寫（review：搜尋端每鍵對 1100 條 lower()
                 -- 是每鍵 1100 次字串配置，移到這裡攤平為一次）。
                 -- index 與 builder 共用同一 wof；索引逐 nonremoved segment 套與
@@ -2155,27 +2514,36 @@ Events.OnTickEvenPaused.Add(function()
                     end
                 end
                 engine.streetIndex = sidx
-                local buildOk, builder = pcall(NavCore.newBuild, ex.out, wof)
-                if not buildOk then
-                    logf("buildinit", "graph init failed: " .. tostring(builder))
-                    engine.state, engine.builder = "failed", nil
-                else
-                    engine.builder, engine.state = builder, "building"
-                end
             end
+            -- 官方街道表留著（零官方街道時是空表）：自訂道路變動時拿它重建
+            setBase(ex.out, ex.wof)
+            startGraphBuild()
         end
         return
     end
-    if engine.state ~= "building" then return end
-    local ok, done = pcall(NavCore.step, engine.builder, STEP_BUDGET)
+    if engine.state ~= "building" then
+        customTick()
+        return
+    end
+    local b = engine.builder
+    local ok, done = pcall(NavCore.step, b, STEP_BUDGET)
     if not ok then
+        engine.builder = nil
+        if b.customCount > 0 then
+            -- 自訂道路害建圖失敗：告訴玩家，改建只有官方街道的圖
+            customBuildFailed(b.customRev, done)
+            local fbOk, fb = pcall(newGraphBuilder, false)
+            if fbOk and #fb.streets > 0 then
+                engine.builder = fb
+                return
+            end
+        end
         logf("build", "graph build failed: " .. tostring(done))
         engine.state = "failed"
-        engine.builder = nil
         return
     end
     if done then
-        engine.graph = engine.builder.graph
+        engine.graph = b.graph
         engine.builder = nil
         engine.state = "ready"
         local g = engine.graph
@@ -2226,6 +2594,9 @@ end
 Events.OnGameStart.Add(function()
     engine.state, engine.extract, engine.builder, engine.graph = "idle", nil, nil, nil
     engine.nodata = nil
+    -- 自訂道路：pending 與官方街道表屬上一世界；customRev 不歸零（新世界的道路由 Roads 重新通知）
+    engine.pending, engine.baseStreets, engine.baseWof, engine.baseSegments = nil, nil, nil, nil
+    engine.baseEmpty, engine.attemptRev, engine.nodataRev, engine.probeTick = nil, nil, nil, nil
     engine.patchState = "raw"
     engine.searchState = "ok"
     engine.streetIndex = nil
@@ -2243,7 +2614,7 @@ Core.navInvalidateRoute = clearRoute
 
 local function failNavEngine(err)
     logf("astar", "route search error; routing disabled this world: " .. tostring(err))
-    engine.state, engine.graph, engine.builder = "failed", nil, nil
+    engine.state, engine.graph, engine.builder, engine.pending = "failed", nil, nil, nil
     for key in pairs(navRoutes) do navRoutes[key] = nil end
 end
 
@@ -2329,8 +2700,11 @@ local function ensureRoute(key, target, px, py, weight, notify)
         end
     end
     -- 重算（首算/target 變更/上下車換權重/偏航逾閾/無路重試）
+    -- 分享路線的 key 是 "pn:作者"：自訂道路照接收者 pn 的遮罩
+    local pn = key
+    if type(key) == "string" then pn = tonumber(key:sub(1, (key:find(":", 1, true) or 1) - 1)) end
     local route, aerr = NavCore.findRoute(engine.graph, px, py, target.x, target.y,
-        nil, nil, nil, weight)
+        nil, nil, nil, weight, nil, nil, pn)
     if aerr then
         -- failed 不在這裡通知：engine 是全域終態，extract／建圖／winner 失敗
         -- 同樣會讓活動段永遠算不出路，卻不經過本函式。統一由 OnTick 的活動段
@@ -2632,10 +3006,10 @@ end
 -- 算一段。distance 逐段累加「路網長＋兩端接線」；沒算完的段一律不入帳，
 -- 所以 done < total 時 distance 永遠是「已算出部分」而非完整門到門總長
 -- （route.len 不含兩端 approach，契約明令不可直接當總距離）。
-local function previewSegment(pv, weight)
+local function previewSegment(pv, weight, pn)
     local seg = pv.segs[pv.done + 1]
     local route, aerr = NavCore.findRoute(engine.graph, seg.ax, seg.ay, seg.bx, seg.by,
-        nil, nil, nil, weight)
+        nil, nil, nil, weight, nil, nil, pn)
     if aerr then
         -- 只標預覽：不動引擎、不碰行程。done 維持真實完成數——把它推到 total
         -- 等於謊報進度，還會讓繪製端對沒算出的段畫出假直線
@@ -2690,7 +3064,7 @@ local function previewStep(pn, pv)
         previewPlan(pv, trip, playerObj:getX(), playerObj:getY(), weight)
     end
     if pv.state == "failed" or pv.done >= pv.total then return false end
-    previewSegment(pv, weight)
+    previewSegment(pv, weight, pn)
     return true
 end
 
@@ -2901,6 +3275,38 @@ end
 Core.navEngineState = function()
     return engine.nodata and "nodata" or engine.state
 end
+-- 自訂道路（Roads.lua 存檔、刪除、停用、收到分享時呼叫）：版本 +1，防抖後在背景重建（customTick）。
+Core.navCustomRoadsChanged = function()
+    engine.customRev = engine.customRev + 1
+    engine.rebuildAt = getTimestampMs() + REBUILD_DELAY_MS
+end
+-- UI 分辨「路網還沒好」："building"＝抽取／建圖中，或剛改的路還沒併進服務中的路網（舊圖照常導航）；
+-- 最近一次重建失敗時是 "ready"（舊圖）。nodata 與未啟動都是 "idle"。
+Core.navGraphState = function()
+    local state = engine.state
+    if state == "extracting" or state == "building" then return "building" end
+    if state == "ready" then
+        if engine.pending or (engine.baseStreets and engine.attemptRev ~= engine.customRev) then
+            return "building"
+        end
+        return "ready"
+    end
+    return state == "failed" and "failed" or "idle"
+end
+-- 路網上離 (x, y) 最近、pn 看得到的一點：{ x=, y=, dist=, name=, custom= }；路網沒好、超過 maxDist
+-- 或參數不合回 nil（畫線吸附、存檔「接上」、找不到道路時決定畫線起點）。skipRoadId（可省）＝
+-- 編輯中的那條自己的路的 id：跳過它的舊版本（Core.roadsActive 的 ownerPn／roadId）。
+Core.navNearestRoad = function(pn, x, y, maxDist, skipRoadId)
+    if engine.state ~= "ready" or not engine.graph or PN_BIT[pn] == nil
+        or type(x) ~= "number" or type(y) ~= "number" or type(maxDist) ~= "number"
+        or x ~= x or y ~= y or x == math.huge or x == -math.huge or y == math.huge or y == -math.huge
+        or not (maxDist > 0) or maxDist == math.huge
+    then
+        return nil
+    end
+    local ok, hit = pcall(NavCore.nearestRoad, engine.graph, pn, x, y, maxDist, skipRoadId)
+    return ok and hit or nil
+end
 Core.NavRouteCore = NavCore -- 除錯/測試面（離線測試另行抽取原始碼區段）
 
 -- Addon 公開查詢面（nav API v4；首個消費者＝MinidoracatAutoDriveFor42，見
@@ -2916,6 +3322,8 @@ Core.NavRouteCore = NavCore -- 除錯/測試面（離線測試另行抽取原始
 --   segSurface/segWidth（長度恰 #pts/2-1）、數值 cost／avoidPenalty、
 --   approachSurface="unknown"、patchState="applied"|"raw"、snapDist。len/cost 均不含
 --   兩端 approach，cost 不含 avoidPenalty；raw 表示未套 RoadPatch、仍以原始 streets 導航。
+--   segCustom（自訂道路）＝{ [段號]=true }，只標走在玩家自訂道路上的段（和官方街道重疊的段算官方）。
+--   自訂道路重建換圖時所有路線快取作廢（customTick），同目標下一次 requestRoute 回新表。
 --   snapDist＝玩家當下座標到 pts[1]（起點 snap 投影點）的直線距離，即出發前必須
 --   越野走完的接線長度；每次 requestRoute 都刷新（沿用快取時亦然），是路線可用性
 --   的單一判準。ensureRoute 的偏航閾值同步收到 DEVIATION_DIST=12，正常情況下
@@ -3001,7 +3409,7 @@ MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoi
     local px, py = playerObj:getX(), playerObj:getY()
     local weight = approachWeightFor(playerObj)
     local route, aerr = NavCore.findRoute(engine.graph, px, py, targetX, targetY,
-        avoidX, avoidY, avoidR, weight, moreAvoid, maxSnap)
+        avoidX, avoidY, avoidR, weight, moreAvoid, maxSnap, playerNum)
     if aerr then
         failNavEngine(aerr)
         return nil, "failed"

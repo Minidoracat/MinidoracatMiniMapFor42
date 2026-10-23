@@ -91,6 +91,7 @@ local SEC_PLACES = { id = "places", label = "UI_MinidoracatMiniMap_SecPlaces", i
     maps = {
         { label = "UI_MinidoracatMiniMap_RowPlaces", cells = LM.places },
         { label = "UI_MinidoracatMiniMap_RowNavRoute", cells = LM.navRoute },
+        { label = "UI_MinidoracatMiniMap_RoadSecTitle", cells = LM.customRoads },
         { label = "UI_MinidoracatMiniMap_RowShared", cells = LM.shared, mpOnly = true },
     },
     -- 自己與隊友圖標是引擎圖層：Players／RemotePlayers 只管小地圖，世界地圖的在原版世界地圖選項（齒輪）；

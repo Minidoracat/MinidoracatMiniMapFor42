@@ -128,6 +128,9 @@ end
 function ISWorldMap.prerender(self)
     calls[#calls + 1] = "orig-prerender"
 end
+function ISWorldMap.isKeyConsumed(self, key)
+    return key == "ESC"
+end
 
 local function getSpecificPlayer(pn) return playerObjs[pn] end
 local function getText(key, arg1)
@@ -180,6 +183,17 @@ Core.placeMenuTitle = function(pn, place) return "UI_MinidoracatMiniMap_PlaceMen
 Core.placesAddMenu = function(context, pn, wx, wy, blocked, place)
     handoff.places, handoff.placesMenu, handoff.place = tostring(blocked), context, place
     context:addOption("UI_MinidoracatMiniMap_GoHome")
+end
+-- 自訂道路命中（真 roadMapHit 在 _RoadDraw.lua、子選單在 _RoadTool.lua）：這裡只控命中結果、記下交出去的東西
+local roadHit = nil
+Core.roadMapHit = function(target, wx, wy)
+    handoff.roadAt = { target, wx, wy }
+    return roadHit
+end
+Core.roadMenuTitle = function(hit) return "UI_MinidoracatMiniMap_RoadMenuOf|" .. hit.road.name end
+Core.roadsMapMenu = function(menu, pn, hit)
+    handoff.roadMenu, handoff.roadPn, handoff.road = menu, pn, hit
+    menu:addOption("UI_MinidoracatMiniMap_RoadEditShape")
 end
 -- set 閘門（真 navGateAllows 在 _Nav.lua；這裡只控回傳）：gateMode＝allow／block／blockNoKey／throw
 local gateMode, gateCalls = "allow", {}
@@ -268,6 +282,7 @@ return {
     setTrip = function(state, err) tripState, tripError = state, err end,
     setInsertAnchors = function(v) insertAnchors = v end,
     setPlaceHit = function(v) placeHit = v end,
+    setRoadHit = function(v) roadHit = v end,
     setGate = function(v) gateMode = v end,
     gateCalls = gateCalls,
     handoff = handoff,
@@ -448,6 +463,30 @@ mod.clearCalls(); mod.resetMenus()
 wm1:onRightMouseUp(5, 6)
 assert(names(mod.menu(1)) == OURS and mod.handoff.place == nil, "R4c: 沒點中收藏＝原本的「收藏」與子選單")
 mod.clearCalls(); mod.resetMenus()
+-- RD1: 游標下沒有收藏、有自訂道路：「收藏」那格換成「道路：名稱」子選單，第一層仍 6 項；命中判定拿這張地圖與
+--      原始世界座標；子選單內容交給 Core.roadsMapMenu（帶這位玩家）
+mod.handoff.place = nil
+mod.setRoadHit({ road = { id = "r3", name = "Back" }, kind = "own" })
+wm1:onRightMouseUp(5, 6)
+local mrd = mod.menu(1)
+assert(names(mrd) == SET .. ",UI_MinidoracatMiniMap_TripAdd,UI_MinidoracatMiniMap_RoadMenuOf|Back"
+    .. ",UI_MinidoracatMiniMap_CopyHere|12, 34, 0," .. TRIP_OPEN .. ",UI_MinidoracatMiniMap_SearchMenu",
+    "RD1: 道路上的父項換成道路名、第一層 6 項（實得 " .. names(mrd) .. "）")
+assert(mod.handoff.roadMenu == mrd.options[3].sub and mod.handoff.roadPn == 1 and mod.handoff.road.road.id == "r3"
+    and mod.handoff.place == nil, "RD1: 道路子選單交給 roadsMapMenu（分割畫面帶自己的 pn），不再列收藏")
+assert(mod.handoff.roadAt[1] == wm1 and mod.handoff.roadAt[2] == 12.7 and mod.handoff.roadAt[3] == 34.2,
+    "RD1: 道路命中收到這張地圖與原始世界座標")
+-- RD2: 收藏圖標和道路疊在一起：收藏優先，道路連判都不判
+mod.clearCalls(); mod.resetMenus()
+mod.handoff.roadAt = nil
+mod.setPlaceHit({ id = 7, label = "Shop" })
+wm1:onRightMouseUp(5, 6)
+assert(names(mod.menu(1)):find("PlaceMenuOf|Shop", 1, true) and mod.handoff.roadAt == nil,
+    "RD2: 收藏圖標優先於自訂道路")
+mod.setPlaceHit(nil)
+mod.setRoadHit(nil)
+mod.clearCalls(); mod.resetMenus()
+
 
 --------------------------------------------------------------------------------
 -- L1-L4: set 閘門擋住時會設導航的項變灰＋說明原因（原版 notAvailable＋ISToolTip）；
@@ -682,6 +721,15 @@ assert(#mod.printed == before + 1 and mod.printed[#mod.printed]:find("worldmap n
 mod.setDrawFail(false, false)
 mod.clearCalls()
 
+-- K1: 工具作用中，工具要的鍵（道路工具的 Enter／Backspace）不讓遊戲收到；沒有工具＝照原版（只認原版的鍵）
+local wmK = mkWM(0)
+wmK.symbolsUI.isKeyConsumed = function(_, key) return key == "ENTER" end
+assert(wmK:isKeyConsumed("ESC") == true and wmK:isKeyConsumed("ENTER") == false,
+    "K1: 沒有工具時只照原版")
+wmK.symbolsUI.currentTool = {}
+assert(wmK:isKeyConsumed("ENTER") == true and wmK:isKeyConsumed("W") == false,
+    "K1: 工具作用中，工具要的鍵吃掉、其他鍵照常給遊戲")
+
 --------------------------------------------------------------------------------
 -- X1-X9: Extraction Mode（3785397275）滿版 overlay 右鍵相容
 -- 症狀：它的 overlay 是 ISPanel 子類、蓋滿整張地圖，setWantMouseEvents(false)
@@ -808,6 +856,6 @@ assert(passiveInstance(otherPanel):onRightMouseUp(1, 2) == nil,
 assert(passiveInstance(otherPanel):onRightMouseDown(1, 2) == nil, "X9: down 同理")
 ExtractionMode = nil
 
-print("test_worldmap_nav: OK（R1-R9＋N1-N5＋L1-L4＋X1-X9（含 X8b）：工具透傳/前手選單合併/自建/歸屬/殘留選單/"
-    .. "行程選項閘/回呼分流/開圖重包/冪等/重包上限/加繪順序/log-once/"
+print("test_worldmap_nav: OK（R1-R9＋RD1-RD2＋N1-N5＋L1-L4＋K1＋X1-X9（含 X8b）：工具透傳/前手選單合併/自建/歸屬/"
+    .. "殘留選單/行程選項閘/回呼分流/道路子選單與收藏優先/開圖重包/冪等/重包上限/加繪順序/log-once/工具鍵/"
     .. "Extraction Mode 被動 overlay 右鍵放行）")

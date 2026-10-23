@@ -1,5 +1,5 @@
 -- MinidoracatMiniMap_Search.lua
--- 本檔範圍：地圖搜尋／收藏／行程視窗（0.17.0 搜尋；v6 多停靠點行程頁；收藏頁見下）——單一視窗三頁，
+-- 本檔範圍：地圖搜尋／收藏／行程／道路視窗（0.17.0 搜尋；v6 多停靠點行程頁；收藏頁、道路頁見下）——單一視窗四頁，
 -- 共用放大鏡入口、標題列與 owner-transfer。
 --
 -- 【搜尋頁】輸入自動判別「座標 or 關鍵字」：
@@ -370,7 +370,10 @@ local KIND_COLORS = {
     street = { r = 0.05, g = 0.86, b = 1.0 }, -- 青（同路線色語）
     poi = { r = 0.3, g = 0.95, b = 0.4 },     -- 綠
     place = { r = 1, g = 0.55, b = 0.8 },     -- 粉：收藏（家另有文字標籤，不靠顏色區分）
+    road = { r = 0.95, g = 0.92, b = 0.82 },  -- 米白：自訂道路（同地圖上的虛線）
+    draft = { r = 1, g = 0.85, b = 0.4 },     -- 琥珀：未存的道路
 }
+local ROAD_OFF_COLOR = { r = 0.45, g = 0.45, b = 0.45 } -- 不用於導航／路網容量已滿的路：圓點變灰
 
 -- 站點編號徽章色（與 _Nav 地圖上的編號標記同語義，跨 lane 對齊）
 local STOP_COLORS = {
@@ -427,12 +430,19 @@ end
 -- 按實測字寬換行：有空白的語言優先在空白處斷，CJK 直接按 unit 斷。
 -- maxLines 省略＝不限行數（站名／說明列一律完整可讀，寧可列變高）；
 -- 有給＝版面已預留固定行數（狀態列／訊息列），最後一行補 "..." 並標 truncated
+-- 不限行數時框架有 UI.Text.wrap（rev 16 CAPABILITIES.textWrap）就交給它：中日韓斷點與行首／行尾禁則
+-- （「。」「、」不起行）只維護一份（家族 pitfalls「判斷能不能逐字斷行要看中日韓碼位範圍」）
 local function wrapLines(text, maxW, maxLines)
     local lines = {}
     if type(text) ~= "string" or text == "" then return lines end
     if maxW < 16 then -- 版面異常窄：不硬切成一堆單字元，交給繪製端自然裁切
         lines[1] = text
         return lines
+    end
+    local UI = not maxLines and MinidoracatUI and MinidoracatUI.v1
+    if UI and UI.CAPABILITIES and UI.CAPABILITIES.textWrap and UI.Text and UI.Text.wrap then
+        local ok, wrapped = pcall(UI.Text.wrap, text, maxW, UIFont.Small)
+        if ok and type(wrapped) == "table" and wrapped[1] ~= nil then return wrapped end
     end
     local rest = text
     while rest ~= "" do
@@ -530,7 +540,7 @@ local function winMessage(pn, text, good)
         -- 訊息列只預留固定行數：放不下就把完整文字併進可捲清單（錯誤原因不得只剩
         -- 「...」）；兩頁的刷新 cache 一併作廢，那一列才會長出來／收回去
         win.msgFull = win.msgLines.truncated and text or nil
-        win._tRev, win._lastText = nil, nil
+        win._tRev, win._lastText, win._rRev = nil, nil, nil
         return
     end
     local playerObj = getSpecificPlayer(pn)
@@ -584,6 +594,33 @@ local function placeName(pn, place)
     local label = Core.placeLabel
     if label then return label(pn, place) end
     return place.label or string.format("%d, %d", place.x, place.y)
+end
+
+-- 自訂道路轉接（資料權威在 _Roads.lua，工具在 _RoadTool／_RoadRecord／_RoadShare）。遊戲內字母序 _Road* 先於
+-- 本檔，但離線測試會單獨抽載本檔、對方檔也可能載入失敗：Core.roads* 一律
+-- 事件期現查，缺席＝通用錯誤，不丟錯。失敗原因由 Core.roadsErrorText 決定
+local function roadReport(pn, ok, reason, okKey)
+    if ok then
+        if okKey then winMessage(pn, getText(okKey), true) end
+        return
+    end
+    local text = Core.roadsErrorText and Core.roadsErrorText(reason)
+    winMessage(pn, text or getText("UI_MinidoracatMiniMap_RoadError"))
+end
+
+-- 改資料的道路操作（回 ok, reason；複製回新 id）：結果一律說出來
+local function roadEdit(pn, okKey, name, a, b)
+    local fn = Core[name]
+    local ok, reason = false, "failed"
+    if fn then ok, reason = fn(pn, a, b) end
+    roadReport(pn, ok, reason, okKey)
+end
+
+-- 開工具／表單的道路操作（對方自己回饋）：只有對方檔缺席時才由這裡說
+local function roadOpen(pn, name, a, b)
+    local fn = Core[name]
+    if fn then return fn(pn, a, b) end
+    roadReport(pn, false, "failed")
 end
 
 -- 單筆原子編輯統一入口：失敗必顯示原因（不得靜默）。
@@ -680,6 +717,7 @@ end
 --------------------------------------------------------------------------------
 local function focusEntries(win)
     if win.page == "itinerary" then return win.tripFocus end
+    if win.page == "roads" then return win.roadsFocus end
     return win.page == "places" and win.placesFocus or win.searchFocus
 end
 
@@ -768,12 +806,21 @@ local function styleTab(btn, on)
         or { r = 0.4, g = 0.4, b = 0.4, a = 1 }
 end
 
--- 各頁標題：{ 標題, 放不下時的短標題 }。收藏頁沿用設定視窗的「家與收藏點」與分頁名「收藏」
+-- 各頁標題：{ 標題, 放不下時的短標題 }。收藏頁沿用設定視窗的「家與收藏點」與分頁名「收藏」。
+-- 鍵＝合法頁名（setPage 與 toggleSearchWindow 的白名單）
 local PAGE_TITLES = {
     search = { "UI_MinidoracatMiniMap_SearchTitle", "UI_MinidoracatMiniMap_SearchTabSearch" },
     places = { "UI_MinidoracatMiniMap_RowPlaces", "UI_MinidoracatMiniMap_PlaceMenu" },
     itinerary = { "UI_MinidoracatMiniMap_TripTitle", "UI_MinidoracatMiniMap_TripManage" },
+    roads = { "UI_MinidoracatMiniMap_RoadTitle", "UI_MinidoracatMiniMap_RoadTab" },
 }
+
+-- 各頁的底部按鈕與「動作…」鈕：收藏頁與搜尋頁共用一份，行程頁、道路頁各一份
+local function pageButtons(win)
+    if win.page == "itinerary" then return win.tripBtns, win.tripMoreBtn end
+    if win.page == "roads" then return win.roadBtns, win.roadMoreBtn end
+    return win.searchBtns, win.searchMoreBtn
+end
 
 -- 依「目前頁 × 是否收合 × 次要動作是否展開」決定每顆按鈕可見性。
 -- 收合時只留標題列兩顆鈕：其餘元件不可見、輸入框解焦，完全不吃鍵盤。
@@ -796,11 +843,12 @@ local function applyPage(win)
         win.tabs[i].btn:setVisible(shown)
         styleTab(win.tabs[i].btn, win.tabs[i].page == win.page)
     end
-    for _, defs in ipairs({ win.searchBtns, win.tripBtns }) do
-        local onPage = shown and ((defs == win.tripBtns) == trip)
+    local pageDefs = pageButtons(win)
+    for _, defs in ipairs({ win.searchBtns, win.tripBtns, win.roadBtns }) do
+        local onPage = shown and defs == pageDefs
         for i = 1, #defs do
             local d = defs[i]
-            d.btn:setVisible(onPage and d.group ~= "more")
+            d.btn:setVisible(onPage and d.group ~= "more" and not d.hide)
         end
     end
     win.g = win.geom[win.page]
@@ -833,20 +881,23 @@ local function applyPage(win)
     win._tRev = nil
     win._tripSel = nil
     win._searchSel = nil
+    win._rRev = nil
+    win._roadSel = nil
 end
 
 local function setPage(win, page)
-    if page ~= "itinerary" and page ~= "places" then page = "search" end
+    if not (page and PAGE_TITLES[page]) then page = "search" end
     if win.page == page then return end
     -- 離開搜尋頁必解焦：不可見的輸入框仍會攔截遊戲鍵盤
     -- （UITextBox2.java:652 只有 unfocus() 清 currentTextEntryBox）
     if page ~= "search" and win.entry and win.entry.unfocus then win.entry:unfocus() end
+    win.roadLost = nil -- 錄製中斷的警告只在道路頁顯示一次：離開就收掉
     win.page = page
     applyPage(win)
 end
 
 -- 分頁順序＝分頁列由左到右。wrap＝手把 X 到最後一頁再回第一頁；方向鍵停在兩端
-local PAGES = { "search", "places", "itinerary" }
+local PAGES = { "search", "places", "itinerary", "roads" }
 local function stepPage(win, delta, wrap)
     local at = 1
     for i = 1, #PAGES do
@@ -897,19 +948,28 @@ local function openNativeMenu(win, button, fill)
     return menu
 end
 
+-- 選單選項的說明（原版 ISToolTip，同 _Nav.lua navMenuLock 寫法）：選單裡只有這裡看得到說明或停用原因
+local function optionTip(option, text)
+    local tip = ISToolTip:new()
+    tip:initialise()
+    tip:setVisible(false)
+    tip.description = text
+    option.toolTip = tip
+end
+
 -- 「動作…」鈕與清單右鍵共用同一份原生選單（可捲動、走原版鍵盤／手把路由）。
 -- 按鈕只列次要動作（主要動作已在底部）；右鍵列出該頁全部動作。d.shown(win) 回 false 的項
 -- 整項不列（不是灰掉）；有 d.fill 的項自己往選單加（收藏：依選中項列出那幾項）。anchor＝相對視窗的
 -- 定位框，後續二層選單（插入位置）沿用同一處
+-- 按鈕的 tooltip 只有滑鼠看得到，收進選單後跟著搬到選項上（介面審查 #4）
 local function openActions(win, anchor, all)
-    local trip = win.page == "itinerary"
-    local defs = trip and win.tripBtns or win.searchBtns
-    local moreBtn = trip and win.tripMoreBtn or win.searchMoreBtn
+    local defs, moreBtn = pageButtons(win)
     win.actionAnchor = anchor or moreBtn
     openNativeMenu(win, win.actionAnchor, function(menu)
         for i = 1, #defs do
             local d = defs[i]
-            if d.btn ~= moreBtn and (all or d.group == "more") and (not d.shown or d.shown(win)) then
+            if d.btn ~= moreBtn and (all or d.group == "more") and not d.hide
+                    and (not d.shown or d.shown(win)) then
                 if d.fill then
                     d.fill(menu, win)
                 else
@@ -917,6 +977,7 @@ local function openActions(win, anchor, all)
                         and { phase = win._tPhase, revision = win._tRev } or nil
                     local option = menu:addOption(d.btn.title, win, d.action, intent)
                     option.notAvailable = d.btn.enable == false
+                    if d.btn.tooltip then optionTip(option, d.btn.tooltip) end
                 end
             end
         end
@@ -930,6 +991,7 @@ end
 local function closeWindow(win)
     if win.entry and win.entry.unfocus then win.entry:unfocus() end
     win.focus = nil
+    win.roadLost = nil
     local menu = activeNativeMenu(win)
     if menu then menu:closeAll() end
     if win.confirm then
@@ -1097,6 +1159,24 @@ local function confirmApply(panel)
         else
             winMessage(pn, placesErrorText(reason))
         end
+        return
+    end
+    if payload.op == "roadDraftDrop" then
+        -- 確認期間草稿可能已存檔或換成新的：只捨棄當初看到的那一份，新草稿不碰
+        if not (Core.roadsDraft and Core.roadsDraft(pn) == payload.draft) then
+            roadReport(pn, false, "notfound")
+            return
+        end
+        roadOpen(pn, "roadsClearDraft")
+        return
+    end
+    if payload.op == "roadDelete" then
+        -- 道路與行程無關：同收藏只驗那條路還在（確認期間可能已在別處刪掉）
+        if not (Core.roadsGet and Core.roadsGet(pn, payload.roadId)) then
+            roadReport(pn, false, "notfound")
+            return
+        end
+        roadEdit(pn, "UI_MinidoracatMiniMap_RoadDeleted", "roadsDelete", payload.roadId)
         return
     end
     local st = tripState(pn)
@@ -1530,6 +1610,174 @@ local function tripGoHome(win)
     go(pn)
 end
 
+-- 找不到道路時「畫自訂道路」（介面審查 #2；設計稿 1.5）：地圖開在離這站最近的道路點，從那裡畫過來；
+-- 路網沒好或附近沒有道路＝開在這站本身
+local function tripDrawRoad(win)
+    local pn = win.playerNum or 0
+    local st = tripState(pn)
+    local stop = tripStopById(st, st and st.currentStopId) or tripStopById(st, tripFirstPending(st))
+    if not stop then return end
+    -- ponytail: 固定 2000 格搜尋半徑；要依地圖大小調再改
+    local road = Core.navNearestRoad and Core.navNearestRoad(pn, stop.x, stop.y, 2000)
+    roadOpen(pn, "roadToolStart", { mode = "draw",
+        near = road and { x = road.x, y = road.y } or { x = stop.x, y = stop.y } })
+end
+
+--------------------------------------------------------------------------------
+-- 道路頁動作（2026-10-23 設計稿 minimap-custom-roads-1023 主張 3）：資料與工具都在別的檔，
+-- 本檔只把選中列轉成契約呼叫
+--------------------------------------------------------------------------------
+-- 道路頁選中列（草稿或道路）；群組標題與說明列是 info，不算
+local function roadSelected(win)
+    local row = win.list.items and win.list.items[win.list.selected]
+    local it = row and row.item or nil
+    if it and (it.kind == "road" or it.kind == "draft") then return it end
+    return nil
+end
+
+-- 刪除自訂道路：共用確認面板（按鈕寫明動作、預設焦點在取消；confirmApply 只驗 owner 與道路仍在）。
+-- 分享出去的路（有 sid）刪除時 _Roads.lua 會一併收回分享，確認文要先講。地圖右鍵的道路子選單也呼叫這裡
+Core.roadsPromptDelete = function(pn, id)
+    pn = pn or 0
+    local road = Core.roadsGet and Core.roadsGet(pn, id)
+    if not road then
+        roadReport(pn, false, "notfound")
+        return
+    end
+    tripPrompt(pn, road.sid and "UI_MinidoracatMiniMap_RoadConfirmDeleteShared"
+            or "UI_MinidoracatMiniMap_RoadConfirmDelete", road.name,
+        "UI_MinidoracatMiniMap_RoadDeleteAction", { op = "roadDelete", roadId = id })
+end
+
+-- 捨棄草稿：草稿只在記憶體，誤按就沒了，要確認（按鈕寫「捨棄」、預設焦點在取消）；0–1 點沒什麼可丟，直接捨棄
+local function roadDiscard(pn, draft)
+    if #(draft.pts or {}) <= 2 then
+        roadOpen(pn, "roadsClearDraft")
+        return
+    end
+    tripPrompt(pn, "UI_MinidoracatMiniMap_RoadConfirmDiscard", nil,
+        "UI_MinidoracatMiniMap_RoadDraftDiscard", { op = "roadDraftDrop", draft = draft })
+end
+
+-- 改名：原版 ISTextBox（同 _Places.lua promptName；ISTextBox.lua:178 以 maxChars 擋 OK）。
+-- 按下時角色已換＝不寫入新角色。地圖右鍵的道路子選單也呼叫這裡
+Core.roadsPromptRename = function(pn, id)
+    pn = pn or 0
+    local player = getSpecificPlayer(pn)
+    local road = player and Core.roadsGet and Core.roadsGet(pn, id)
+    if not road then
+        roadReport(pn, false, "notfound")
+        return
+    end
+    local modal = ISTextBox:new(0, 0, 280, 180, getText("UI_MinidoracatMiniMap_RoadNameTitle"),
+        road.name or "", nil, function(_, button)
+            if button.internal ~= "OK" or getSpecificPlayer(pn) ~= player then return end
+            roadEdit(pn, "UI_MinidoracatMiniMap_RoadRenamed", "roadsRename", id, button.parent.entry:getText())
+        end, pn)
+    modal:initialise()
+    modal:addToUIManager()
+    local codec = MinidoracatMiniMapRoadCodec
+    modal.maxChars = codec and codec.MAX_NAME or 128
+    if getJoypadData(pn) then
+        modal:centerOnScreen(pn)
+        modal.prevFocus = getJoypadFocus(pn)
+        setJoypadFocus(pn, modal)
+    end
+end
+
+local function roadDrawNew(win)
+    local pn = win.playerNum or 0
+    local playerObj = getSpecificPlayer(pn)
+    if not playerObj then return end
+    roadOpen(pn, "roadToolStart", { mode = "draw", near = { x = playerObj:getX(), y = playerObj:getY() } })
+end
+
+local function roadRecordToggle(win)
+    local pn = win.playerNum or 0
+    local recording = Core.roadRecordState and Core.roadRecordState(pn) ~= nil
+    roadOpen(pn, recording and "roadRecordStop" or "roadRecordStart")
+end
+
+-- 在世界地圖顯示；草稿＝回到地圖接著畫或確認（草稿只活在工具裡，顯示它就是打開工具）
+local function roadShow(win)
+    local it = roadSelected(win)
+    if not it then return end
+    local pn = win.playerNum or 0
+    if it.kind == "draft" then
+        roadOpen(pn, "roadToolStart", { mode = "review", draft = it.draft })
+    elseif it.own then
+        roadOpen(pn, "roadsShowOnMap", "own", it.id)
+    else
+        roadOpen(pn, "roadsShowOnMap", "received", it.sid)
+    end
+end
+
+-- 選單點擊：建立選項時捕捉 owner 與目標（同 placeMenuApply），延遲點擊先驗 owner；道路是否仍在由 Core 回報
+local function roadMenuApply(_, p)
+    local pn, op = p.pn, p.op
+    if getSpecificPlayer(pn) ~= p.owner then return end
+    if op == "continue" then
+        roadOpen(pn, "roadToolStart", { mode = "review", draft = p.draft })
+    elseif op == "discard" then
+        roadDiscard(pn, p.draft)
+    elseif op == "edit" then
+        roadOpen(pn, "roadToolStart", { mode = "edit", roadId = p.id })
+    elseif op == "rename" then
+        Core.roadsPromptRename(pn, p.id)
+    elseif op == "share" then
+        roadOpen(pn, "roadsOpenShare", p.id)
+    elseif op == "enable" then
+        roadEdit(pn, nil, "roadsSetEnabled", p.id, p.on)
+    elseif op == "delete" then
+        Core.roadsPromptDelete(pn, p.id)
+    elseif op == "off" then
+        roadEdit(pn, nil, "roadsSetReceivedOff", p.sid, p.on)
+    elseif op == "copy" then
+        roadEdit(pn, "UI_MinidoracatMiniMap_RoadCopied", "roadsCopyReceived", p.sid)
+    end
+end
+
+-- 「動作…」與清單右鍵的道路項（依選中列）：草稿＝繼續／捨棄；我的路＝編輯形狀、改名、分享、
+-- 用於／不用於導航、刪除（會刪資料的排最後）；收到的路只能停用或複製一份
+local function roadOptions(menu, win)
+    local it = roadSelected(win)
+    local pn = win.playerNum or 0
+    local owner = getSpecificPlayer(pn)
+    if not (it and owner) then
+        menu:addOption(getText("UI_MinidoracatMiniMap_RoadEditShape")).notAvailable = true
+        return
+    end
+    local function add(key, payload)
+        payload.pn, payload.owner = pn, owner
+        return menu:addOption(getText(key), win, roadMenuApply, payload)
+    end
+    if it.kind == "draft" then
+        add("UI_MinidoracatMiniMap_RoadDraftContinue", { op = "continue", draft = it.draft })
+        add("UI_MinidoracatMiniMap_RoadDraftDiscard", { op = "discard", draft = it.draft })
+    elseif it.own then
+        add("UI_MinidoracatMiniMap_RoadEditShape", { op = "edit", id = it.id })
+        add("UI_MinidoracatMiniMap_RoadRename", { op = "rename", id = it.id })
+        -- 分享：單機不列；多人時不能分享（沙盒關、沒有陣營也沒有安全屋）照原版慣例紅字＋原因，
+        -- RoadShare 缺席時當不可用、不寫原因
+        if isClient() then
+            local share = add("UI_MinidoracatMiniMap_RoadShare", { op = "share", id = it.id })
+            local ok, reasonKey = false, nil
+            if Core.roadShareAvailable then ok, reasonKey = Core.roadShareAvailable(pn) end
+            if not ok then
+                share.notAvailable = true
+                if reasonKey then optionTip(share, getText(reasonKey)) end
+            end
+        end
+        add(it.enabled and "UI_MinidoracatMiniMap_RoadNavOff" or "UI_MinidoracatMiniMap_RoadNavOn",
+            { op = "enable", id = it.id, on = not it.enabled })
+        add("UI_MinidoracatMiniMap_RoadDelete", { op = "delete", id = it.id })
+    else
+        add(it.off and "UI_MinidoracatMiniMap_RoadNavOn" or "UI_MinidoracatMiniMap_RoadNavOff",
+            { op = "off", sid = it.sid, on = not it.off })
+        add("UI_MinidoracatMiniMap_RoadCopy", { op = "copy", sid = it.sid })
+    end
+end
+
 --------------------------------------------------------------------------------
 -- 刷新
 --------------------------------------------------------------------------------
@@ -1771,6 +2019,10 @@ local function tripRefresh(win, force)
     local st = tripState(pn)
     local err = tripErrorReason(pn)
     local pstate, pdone, ptotal, pdist = Core.navPreviewState(pn)
+    -- 預覽 idle 混了「沒有待前往站」「路網還沒好」「路網好了、下個 tick 才排」三種情況，要分開說
+    -- （介面審查 #3）；路網狀態進 cache key，路網一好就換字
+    local graph = Core.navGraphState and Core.navGraphState()
+        or (Core.navEngineState and Core.navEngineState()) or nil
     local bucketX, bucketY = math.floor(px / 8), math.floor(py / 8)
     local rev = tripRevision(st)
     local phase = st and st.phase or nil
@@ -1780,15 +2032,22 @@ local function tripRefresh(win, force)
     local auto = st ~= nil and st.autoContinue == true
     if not force and rev == win._tRev and phase == win._tPhase and reason == win._tReason
         and count == win._tCount and current == win._tCur and err == win._tErr
-        and auto == win._tAuto
+        and auto == win._tAuto and graph == win._tGraph
         and pstate == win._tPs and pdone == win._tPd and ptotal == win._tPt
         and pdist == win._tPdist and bucketX == win._tBx and bucketY == win._tBy then
         return
     end
+    -- 目前這站找不到道路（介面審查 #2；設計稿 1.5）：亮出「畫自訂道路」。按鈕出現或收起要重排底部
+    -- 按鈕，先重排再建清單（重排會作廢 cache，下面馬上寫回），清單才照新寬度排
+    local noroad = phase == "paused" and reason == "noroad"
+    if win.roadDrawDef.hide == noroad then
+        win.roadDrawDef.hide = not noroad
+        relayoutWindow(win, pn)
+    end
     win._tRev, win._tPhase, win._tReason = rev, phase, reason
     win._tCount, win._tCur, win._tErr, win._tAuto = count, current, err, auto
     win._tPs, win._tPd, win._tPt, win._tPdist = pstate, pdone, ptotal, pdist
-    win._tBx, win._tBy = bucketX, bucketY
+    win._tBx, win._tBy, win._tGraph = bucketX, bucketY, graph
     local tm = getTextManager()
     local textW = win.width - 20
     -- 狀態列：phase＋目標名＋後續站數＋計數＋接續模式。無路／規劃失敗／設備不可用
@@ -1860,7 +2119,14 @@ local function tripRefresh(win, force)
     -- 且它含兩端越野接線＝估計值不是精確門到門里程；其餘一律標「已算出部分」。
     -- 行程剛編輯完的 ("pending",0,0,0) 是刻意的重排空窗，distance 0 不得當總長
     local previewOn = pstate ~= "off" and pstate ~= "disabled"
-    local sub = getText("UI_MinidoracatMiniMap_TripPreview_" .. tostring(pstate or "off"))
+    local sub
+    if pstate == "idle" and pending == 0 then
+        sub = getText("UI_MinidoracatMiniMap_RoadPreviewNoStops") -- 空行程或走完：沒有東西要算，不是在等道路資料
+    elseif pstate == "idle" and graph == "ready" then
+        sub = getText("UI_MinidoracatMiniMap_TripPreview_pending")
+    else
+        sub = getText("UI_MinidoracatMiniMap_TripPreview_" .. tostring(pstate or "off"))
+    end
     if pstate == "pending" then
         sub = sub .. getText("UI_MinidoracatMiniMap_TripPreviewProgress",
             tostring(pdone or 0), tostring(ptotal or 0))
@@ -1894,6 +2160,8 @@ local function tripRefresh(win, force)
         addInfoRow(list, head)
         addInfoRow(list, sub)
     end
+    -- 找不到道路：狀態列下面寫出兩條出路
+    if noroad then addInfoRow(list, getText("UI_MinidoracatMiniMap_RoadNoRoadHint")) end
     if win.msgFull then addInfoRow(list, win.msgFull) end
     if err then
         addInfoRow(list, tripErrorText(err))
@@ -1980,9 +2248,138 @@ local function tripRefresh(win, force)
     styleTab(win.stopModeBtn, modeUsable and not auto)
 end
 
+-- 道路列右欄（設計稿 3 mock）：收到的路先寫作者，再寫停用／容量已滿，接著路面與路寬、長度，最後是分享旗。
+-- 錄的路逐段量，路面取段數最多的、路寬寫範圍；草稿可能還沒有路寬路面，只寫長度
+local function roadMeta(road, off)
+    local parts, n = {}, 0
+    local function put(text)
+        n = n + 1
+        parts[n] = text
+    end
+    if road.author then put(road.author) end
+    if off then put(getText("UI_MinidoracatMiniMap_RoadNavOffMark")) end
+    if road.overBudget then put(getText("UI_MinidoracatMiniMap_RoadOverBudget")) end
+    local pts = road.pts or {}
+    local widths, surfaces = road.segWidth, road.segSurface
+    local wmin, wmax, len = nil, nil, 0
+    local tally, best, bestN = {}, "unknown", 0
+    for i = 1, math.floor(#pts / 2) - 1 do
+        local w = widths and widths[i]
+        if type(w) == "number" then
+            wmin, wmax = math.min(wmin or w, w), math.max(wmax or w, w)
+        end
+        local s = surfaces and surfaces[i] or "unknown"
+        tally[s] = (tally[s] or 0) + 1
+        if tally[s] > bestN then best, bestN = s, tally[s] end
+        local j = i * 2 - 1
+        len = len + math.sqrt(dist2(pts[j], pts[j + 1], pts[j + 2], pts[j + 3]))
+    end
+    if wmin then
+        put(getText("UI_MinidoracatMiniMap_RoadSurface_" .. best) .. " " .. (wmin == wmax
+            and getText("UI_MinidoracatMiniMap_RoadWidth", tostring(wmin))
+            or getText("UI_MinidoracatMiniMap_RoadWidthRange", tostring(wmin), tostring(wmax))))
+    end
+    put(fmtDist(len))
+    local share = road.share
+    if not off and share then
+        if share.faction then put(getText("UI_MinidoracatMiniMap_RoadShareFactionMark")) end
+        if share.safehouse then put(getText("UI_MinidoracatMiniMap_RoadShareSafehouseMark")) end
+    end
+    return table.concat(parts, getText("UI_MinidoracatMiniMap_RoadSep"), 1, n)
+end
+
+-- 群組標題與警告：照說明列換行，每一行都上色
+local function addNoteRows(list, text, color)
+    local from = #list.items + 1
+    addInfoRow(list, text)
+    for i = from, #list.items do list.items[i].item.color = color end
+end
+
+-- 道路列沿用搜尋列的畫法（圓點＋名稱＋右欄），沒有類型字。回這一列（保留選取用）
+local function addRoadRow(list, item)
+    item.tag, item.tagW = "", 0
+    item.rightW = measureSmall(item.right)
+    local row = list:addItem(item.label, item)
+    prepareRow(list, row, item, 34, item.rightW)
+    return row
+end
+
+-- 道路頁刷新：清單只在 Core.roadsRevision() 變了（含草稿變動）或版面／訊息作廢時重建；每幀只做
+-- 純量比較——錄製狀態決定按鈕字、選取決定按鈕可用性、錄製中斷旗（讀了就清）出現時強制重建
+local function roadsRefresh(win, force)
+    local pn = win.playerNum or 0
+    local recording = Core.roadRecordState ~= nil and Core.roadRecordState(pn) ~= nil
+    if recording ~= win._rRec then
+        win._rRec = recording
+        win.roadRecordBtn:setTitle(getText(recording and "UI_MinidoracatMiniMap_RoadRecordStop"
+            or "UI_MinidoracatMiniMap_RoadRecordStart"))
+    end
+    if Core.roadRecordLastLost and Core.roadRecordLastLost(pn) then
+        win.roadLost = true -- 頂端警告留到離開這一頁（setPage／關窗清掉）
+        force = true
+    end
+    if win.list.selected ~= win._roadSel then
+        win._roadSel = win.list.selected
+        win.roadShowBtn:setEnable(roadSelected(win) ~= nil)
+    end
+    local rev = Core.roadsRevision and Core.roadsRevision() or 0
+    if not force and rev == win._rRev then return end
+    win._rRev = rev
+    local keep = roadSelected(win)
+    local keepKey = keep and keep.key or nil
+    local list = win.list
+    list:clear()
+    win._roadSel = nil -- 下個 prerender 依新的選取重算按鈕可用性
+    local first, kept
+    local function add(item)
+        local row = addRoadRow(list, item)
+        first = first or row.itemindex
+        if item.key == keepKey then kept = row.itemindex end
+    end
+    if win.roadLost then
+        addNoteRows(list, getText("UI_MinidoracatMiniMap_RoadRecordLost"), WARN_COLOR)
+    end
+    local draft = Core.roadsDraft and Core.roadsDraft(pn) or nil
+    if draft then
+        addNoteRows(list, getText("UI_MinidoracatMiniMap_RoadGroupDraft"), MUTED_COLOR)
+        add({ kind = "draft", key = "draft", draft = draft, right = roadMeta(draft),
+            label = getText(draft.source == "record" and "UI_MinidoracatMiniMap_RoadDraft_record"
+                or "UI_MinidoracatMiniMap_RoadDraft_draw") })
+    end
+    local own, readOnly = nil, nil
+    if Core.roadsList then own, readOnly = Core.roadsList(pn) end
+    own = own or {}
+    addNoteRows(list, getText("UI_MinidoracatMiniMap_RoadGroupOwn", tostring(#own)), MUTED_COLOR)
+    if #own == 0 then addInfoRow(list, getText("UI_MinidoracatMiniMap_RoadEmpty")) end
+    for i = 1, #own do
+        local road = own[i]
+        local off = road.enabled == false
+        add({ kind = "road", own = true, key = "o" .. tostring(road.id), id = road.id,
+            enabled = not off, label = road.name or "", right = roadMeta(road, off),
+            dot = (off or road.overBudget) and ROAD_OFF_COLOR or nil })
+    end
+    if readOnly then addInfoRow(list, getText("UI_MinidoracatMiniMap_RoadReadOnly_" .. tostring(readOnly))) end
+    local got = Core.roadsReceived and Core.roadsReceived(pn) or {}
+    if #got > 0 then
+        addNoteRows(list, getText("UI_MinidoracatMiniMap_RoadGroupShared", tostring(#got)), MUTED_COLOR)
+        for i = 1, #got do
+            local road = got[i]
+            local off = road.off == true
+            add({ kind = "road", own = false, key = "s" .. tostring(road.sid), sid = road.sid,
+                off = off, label = road.name or "", right = roadMeta(road, off),
+                dot = (off or road.overBudget) and ROAD_OFF_COLOR or nil })
+        end
+    end
+    if win.msgFull then addInfoRow(list, win.msgFull) end
+    -- 沒有可保留的選取時選第一條路：清單第一列是群組標題，停在那裡「動作…」會整片灰掉
+    if kept or first then list.selected = kept or first end
+end
+
 local function pageRefresh(win, force)
     if win.page == "itinerary" then
         tripRefresh(win, force)
+    elseif win.page == "roads" then
+        roadsRefresh(win, force)
     else
         winRefresh(win, force)
     end
@@ -2021,14 +2418,16 @@ local function drawLines(self, lines, x, ty, r, g, b)
     return ty + #lines * lineH
 end
 
--- 畫名稱各行，回下一個可用的文字 y（meta 行用）
+-- 畫名稱各行，回下一個可用的文字 y（meta 行用）。it.color＝上色的說明列（道路頁的群組標題與警告）
 local function drawNameLines(self, it, ty)
+    local c = it.color
+    local r, g, b = c and c.r or 1, c and c.g or 1, c and c.b or 1
     local lines = it.lines
     if not lines then
-        self:drawText(it.label, it.nameX or 12, ty, 1, 1, 1, 1, UIFont.Small)
+        self:drawText(it.label, it.nameX or 12, ty, r, g, b, 1, UIFont.Small)
         return ty + self._minidoracatLineH
     end
-    return drawLines(self, lines, it.nameX, ty, 1, 1, 1)
+    return drawLines(self, lines, it.nameX, ty, r, g, b)
 end
 
 -- 畫右欄（狀態徽章＋座標與距離）。放得下就右對齊貼在名稱那一列，狀態再貼在
@@ -2064,7 +2463,7 @@ local function listDrawItem(self, y, item, alt)
     drawRowBackground(self, y, item, hgt)
     local ty = y + self._minidoracatTextY
     if it and it.kind and it.kind ~= "info" then
-        local kc = KIND_COLORS[it.kind] or KIND_COLORS.coord
+        local kc = it.dot or KIND_COLORS[it.kind] or KIND_COLORS.coord
         self:drawRect(12, y + math.floor(self.itemheight / 2) - 3, 6, 6, 1, kc.r, kc.g, kc.b)
         self:drawText(it.tag, 24, ty, kc.r, kc.g, kc.b, 1, UIFont.Small)
         local hintY = drawMeta(self, it, ty, drawNameLines(self, it, ty), nil)
@@ -2107,13 +2506,14 @@ end
 -- 版面
 --------------------------------------------------------------------------------
 -- 按實際字寬貪婪換列：放不進本列就換下一列，單顆超寬就獨佔整列（不截字）。
--- 次要動作（group=="more"）不排在底部，改由「動作…」選單提供。回總高
+-- 次要動作（group=="more"）不排在底部，改由「動作…」選單提供；d.hide 的主要動作（只在特定狀態出現，
+-- 例如找不到道路時的「畫自訂道路」）不留位，狀態一變由刷新端重排。回總高
 local function layoutButtons(defs, x, y, availW, btnH, gap)
     local tm = getTextManager()
     local cx, cy, rows = x, y, 1
     for i = 1, #defs do
         local d = defs[i]
-        if d.group ~= "more" then
+        if d.group ~= "more" and not d.hide then
             local bw = tm:MeasureStringX(UIFont.Small, d.btn.title or d.text) + 24
             if d.altKey then bw = math.max(bw, tm:MeasureStringX(UIFont.Small, d.text) + 24) end
             if bw > availW then bw = availW end
@@ -2173,7 +2573,13 @@ local function focusListFor(win, listEl, defs, entryEl, topDefs)
         end }
     end
     out[#out + 1] = { el = listEl, isList = true, action = function(w)
-        if w.page == "itinerary" then tripShowOnMap(w) else winGoto(w) end
+        if w.page == "itinerary" then
+            tripShowOnMap(w)
+        elseif w.page == "roads" then
+            roadShow(w)
+        else
+            winGoto(w)
+        end
     end }
     for i = 1, #defs do
         local d = defs[i]
@@ -2216,7 +2622,7 @@ relayoutWindow = function(win, pn)
         -- 收合：只留標題列。其餘元件由 applyPage 設為不可見，鍵盤完全不攔
         win:setHeight(titleH)
         win.geom = { search = { headY = 0, msgY = 0 }, places = { headY = 0, msgY = 0 },
-            itinerary = { headY = 0, msgY = 0 } }
+            itinerary = { headY = 0, msgY = 0 }, roads = { headY = 0, msgY = 0 } }
         applyPage(win)
         return
     end
@@ -2234,7 +2640,8 @@ relayoutWindow = function(win, pn)
     local baseY = math.max(listY.search, listY.itinerary)
     local block = math.max(
         layoutButtons(win.searchBtns, pad, 0, availW, btnH, gap),
-        layoutButtons(win.tripBtns, pad, 0, availW, btnH, gap))
+        layoutButtons(win.tripBtns, pad, 0, availW, btnH, gap),
+        layoutButtons(win.roadBtns, pad, 0, availW, btnH, gap))
     local function heightFor(rows)
         return baseY + block + rowH * rows + msgH + pad + 8
     end
@@ -2247,7 +2654,7 @@ relayoutWindow = function(win, pn)
     local h = math.min(heightFor(8), maxH)
     win:setHeight(h)
     local btnTop = h - pad - block
-    -- 窄版大字時分頁列可能換到兩三列（三個分頁）：行程清單連一列都放不下時，訊息列只留一行，
+    -- 窄版大字時分頁列可能換到兩三列（四個分頁）：行程清單連一列都放不下時，訊息列只留一行，
     -- 放不下的全文照舊接進可捲清單（winMessage 的 msgFull），清單至少留一列可選
     win.msgMaxLines = MSG_LINES
     if btnTop - msgH - 4 - listY.itinerary < rowH then
@@ -2257,6 +2664,7 @@ relayoutWindow = function(win, pn)
     local msgY = btnTop - msgH
     layoutButtons(win.searchBtns, pad, btnTop, availW, btnH, gap)
     layoutButtons(win.tripBtns, pad, btnTop, availW, btnH, gap)
+    layoutButtons(win.roadBtns, pad, btnTop, availW, btnH, gap)
     layoutButtons(win.modeBtns, pad, bodyY, availW, btnH, gap)
     local function fitList(listEl, y)
         listEl:setX(pad)
@@ -2269,10 +2677,12 @@ relayoutWindow = function(win, pn)
     end
     fitList(win.list, listY.search)
     fitList(win.tripList, listY.itinerary)
-    -- 收藏頁與搜尋頁共用 win.list：收藏頁沒有搜尋框，清單往上接到分頁列下面（applyPage 依頁套用）
+    -- 收藏頁、道路頁與搜尋頁共用 win.list：這兩頁沒有搜尋框，清單往上接到分頁列下面（applyPage 依頁套用）
+    local under = { y = bodyY, h = math.max(0, msgY - 4 - bodyY) }
     win.listAt = {
         search = { y = listY.search, h = math.max(0, msgY - 4 - listY.search) },
-        places = { y = bodyY, h = math.max(0, msgY - 4 - bodyY) },
+        places = under,
+        roads = under,
     }
     win.entry:setX(pad)
     win.entry:setY(bodyY)
@@ -2282,10 +2692,12 @@ relayoutWindow = function(win, pn)
         search = { msgY = msgY, headY = bodyY },
         places = { msgY = msgY, headY = bodyY },
         itinerary = { msgY = msgY, headY = modeTop },
+        roads = { msgY = msgY, headY = bodyY },
     }
     win.searchFocus = focusListFor(win, win.list, win.searchBtns, win.entry, nil)
     win.placesFocus = focusListFor(win, win.list, win.searchBtns, nil, nil)
     win.tripFocus = focusListFor(win, win.tripList, win.tripBtns, nil, win.modeBtns)
+    win.roadsFocus = focusListFor(win, win.list, win.roadBtns, nil, nil)
     applyPage(win)
 end
 
@@ -2445,12 +2857,13 @@ local function createSearchWindow(pn)
     styleButton(win.closeBtn)
     win.closeBtn.tooltip = getText("UI_MinidoracatMiniMap_StudioClose")
     win:addChild(win.closeBtn)
-    -- 分頁鈕（鍵盤／手把可達的收藏頁與行程頁入口；滑鼠、TAB、左右鍵、X 鈕四路等價）。
-    -- 由左到右的順序同 PAGES：搜尋、收藏、行程
+    -- 分頁鈕（鍵盤／手把可達的收藏頁、行程頁與道路頁入口；滑鼠、TAB、左右鍵、X 鈕四路等價）。
+    -- 由左到右的順序同 PAGES：搜尋、收藏、行程、道路
     win.tabs = {
         { key = "UI_MinidoracatMiniMap_SearchTabSearch", page = "search" },
         { key = "UI_MinidoracatMiniMap_PlaceMenu", page = "places" },
         { key = "UI_MinidoracatMiniMap_TripManage", page = "itinerary" },
+        { key = "UI_MinidoracatMiniMap_RoadTab", page = "roads" },
     }
     for i = 1, #win.tabs do
         local tab = win.tabs[i]
@@ -2481,7 +2894,7 @@ local function createSearchWindow(pn)
     win:addChild(win.list)
     win.list.onRightMouseUp = rowMenu
     win.list:setOnMouseDoubleClick(win, function(target)
-        winGoto(target)
+        if target.page == "roads" then roadShow(target) else winGoto(target) end
     end)
     win.tripList = ISScrollingListBox:new(0, 0, 10, 10)
     win.tripList:initialise()
@@ -2529,10 +2942,14 @@ local function createSearchWindow(pn)
             action = function(target) setContinuation(target, false) end },
     }
     makeButtons(win, win.modeBtns)
-    -- 行程頁：主要＝開始/繼續、停止、回家（永遠可按）；次要＝手動前往、檢視、分享與清單編輯
+    -- 行程頁：主要＝開始/繼續、停止、回家（永遠可按）；次要＝手動前往、檢視、分享與清單編輯。
+    -- 「畫自訂道路」只在目前這站找不到道路時出現（tripRefresh 切 hide 並重排）
+    win.roadDrawDef = { key = "UI_MinidoracatMiniMap_RoadDrawHere", action = tripDrawRoad,
+        field = "roadDrawBtn", hide = true }
     win.tripBtns = {
         { key = "UI_MinidoracatMiniMap_TripStart", altKey = "UI_MinidoracatMiniMap_TripContinue",
             action = tripStart, field = "startBtn" },
+        win.roadDrawDef,
         { key = "UI_MinidoracatMiniMap_TripPause", action = tripPause, field = "pauseBtn" },
         { key = "UI_MinidoracatMiniMap_GoHome", action = tripGoHome, field = "homeBtn" },
         { key = "UI_MinidoracatMiniMap_TripMoreShow", action = openActions, field = "tripMoreBtn" },
@@ -2566,6 +2983,18 @@ local function createSearchWindow(pn)
             field = "clearBtn", group = "more" },
     }
     makeButtons(win, win.tripBtns)
+    -- 道路頁（設計稿 3）：主要＝畫新道路、錄製道路（錄製中換「停止錄製」）、在世界地圖顯示；
+    -- 次要＝依選中列的道路動作（roadOptions），清單右鍵開同一份
+    win.roadBtns = {
+        { key = "UI_MinidoracatMiniMap_RoadDrawNew", action = roadDrawNew, field = "roadNewBtn" },
+        { key = "UI_MinidoracatMiniMap_RoadRecordStart", altKey = "UI_MinidoracatMiniMap_RoadRecordStop",
+            action = roadRecordToggle, field = "roadRecordBtn" },
+        { key = "UI_MinidoracatMiniMap_RoadShowOnMap", action = roadShow, field = "roadShowBtn" },
+        { key = "UI_MinidoracatMiniMap_TripMoreShow", action = openActions, field = "roadMoreBtn" },
+        { key = "UI_MinidoracatMiniMap_TripMoreShow", fill = roadOptions, field = "roadActBtn", group = "more" },
+    }
+    makeButtons(win, win.roadBtns)
+    win.roadRecordBtn.tooltip = getText("UI_MinidoracatMiniMap_RoadRecordHint")
     installInput(win)
     -- 皮膚 prerender：圓角底板＋邊框＋上圓角標題列＋標題字＋狀態列＋焦點環
     win.prerender = function(self)
@@ -2604,7 +3033,7 @@ local function createSearchWindow(pn)
                 if self.msgFull then
                     -- 訊息退場：清單裡的全文列跟著收回去（兩頁的 cache 一併作廢）
                     self.msgFull = nil
-                    self._tRev, self._lastText = nil, nil
+                    self._tRev, self._lastText, self._rRev = nil, nil, nil
                 end
             else
                 local c = self.msgGood and GOOD_COLOR or WARN_COLOR
@@ -2658,7 +3087,7 @@ end
 
 -- 開關搜尋／收藏／行程視窗（按鈕/右鍵選單/快捷鍵入口共用）。引擎冷啟動由 winRefresh 的
 -- Core.navKickAvailable 負責（開窗後首個 prerender 即泵）。
--- page＝"search"／"places"／"itinerary" 時語意是「開啟或切到該頁」，**絕不關窗**——
+-- page＝"search"／"places"／"itinerary"／"roads" 時語意是「開啟或切到該頁」，**絕不關窗**——
 -- 右鍵「搜尋、收藏與行程...」「管理收藏...」「行程規劃...」按兩次不該把視窗關掉；不帶 page
 -- （按鈕列放大鏡、快捷鍵）保留原本的 toggle。
 -- 收合狀態下再按等於展開，不用先展開再按一次；被世界地圖蓋住時再按＝叫到前面（看不見的窗不關）。
@@ -2666,7 +3095,7 @@ end
 -- 不誤關別人的視窗
 Core.toggleSearchWindow = function(pn, page)
     pn = pn or 0
-    if page ~= "search" and page ~= "places" and page ~= "itinerary" then page = nil end
+    if not (page and PAGE_TITLES[page]) then page = nil end -- nil 鍵查表在 Kahlua 不保證安全，先擋
     if searchWin and searchWin:isVisible() then
         if (searchWin.playerNum or 0) == pn then
             if searchWin.collapsed then

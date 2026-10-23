@@ -32,6 +32,8 @@
     "Sandbox_MinidoracatMiniMapSafehouseNameDistance_tooltip": "0 = sem limite de distância.\nN > 0 = mostra um nome só quando o ponto mais próximo da área\nestá a até N quadrados do jogador.\nAs bases do próprio jogador (dono ou membro) sempre aparecem.\nIndependente da distância do contorno. Um quadrado tem cerca de um metro;\na distância é 2D e ignora andares.\nAs mudanças do admin valem logo após Aplicar.",
     "Sandbox_MinidoracatMiniMapAllowNavShare": "Permitir compartilhar destino com a facção",
     "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "Permite que os jogadores compartilhem destinos de navegação com membros da facção (repassados pelo servidor). Quando desativado, o servidor recusa os pedidos de compartilhamento.",
+    "Sandbox_MinidoracatMiniMapAllowRoadShare": "Permitir compartilhar estradas personalizadas",
+    "Sandbox_MinidoracatMiniMapAllowRoadShare_tooltip": "Permite que os jogadores compartilhem estradas personalizadas com a facção ou a base. O servidor guarda as estradas compartilhadas no próprio arquivo, e a navegação dos membros as usa diretamente. Ligado por padrão. Quando desativado, o servidor recusa novos compartilhamentos e para de enviar as estradas compartilhadas; as já salvas continuam no arquivo do servidor.",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay": "Direção de outros jogadores",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_tooltip": "Adiciona setas de direção e cones de visão aos outros jogadores no minimapa e no mapa do mundo: Desligado / Só facção e base / Todos no mapa. Só jogadores próximos são desenhados, e nunca alguém que o mapa original esconde (opção do servidor MapRemotePlayerVisibility).",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option1": "Desligado",

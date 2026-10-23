@@ -23,7 +23,7 @@ local LAYERS = {
 }
 local OTHERS = {
     { "places", "UI_MinidoracatMiniMap_RowPlaces" }, { "navRoute", "UI_MinidoracatMiniMap_RowNavRoute" },
-    { "shared", "UI_MinidoracatMiniMap_RowShared" },
+    { "customRoads", "UI_MinidoracatMiniMap_RoadSecTitle" }, { "shared", "UI_MinidoracatMiniMap_RowShared" },
 }
 
 local Panel = WorldMapOptions:derive("MinidoracatMiniMapWorldPanel")

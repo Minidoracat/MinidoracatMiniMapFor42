@@ -32,6 +32,8 @@
     "Sandbox_MinidoracatMiniMapSafehouseNameDistance_tooltip": "0＝距離制限なし。\nN＞0＝セーフハウス範囲の最寄り点がプレイヤーから N マス以内の場合のみ名前を表示します。\nプレイヤー自身が所属するセーフハウス（所有者またはメンバー）は距離に関係なく常に表示されます。\n範囲表示距離とは独立。1 マスは約 1 メートル、距離は2次元で階層は考慮しません。\n管理者が「適用」を押すと即時反映されます。",
     "Sandbox_MinidoracatMiniMapAllowNavShare": "陣営目標共有を許可",
     "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "プレイヤーがナビ目標を陣営メンバーと共有すること（サーバー経由転送）を許可します。無効にするとサーバーが共有リクエストを拒否します。",
+    "Sandbox_MinidoracatMiniMapAllowRoadShare": "カスタム道路の共有を許可",
+    "Sandbox_MinidoracatMiniMapAllowRoadShare_tooltip": "プレイヤーがカスタム道路を同じ派閥やセーフハウスの仲間と共有できるようにします。共有した道路はサーバーが専用ファイルに保存し、仲間のナビがそのまま使います。初期値はオンです。無効にするとサーバーは新しい共有を拒否し、共有道路の送信も止めます。保存済みの道路はサーバーのファイルに残ります。",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay": "ほかのプレイヤーの向き",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_tooltip": "ミニマップとワールドマップで、ほかのプレイヤーに向きの矢印と視野の扇形を加えます：オフ／派閥とセーフハウスのみ／マップに見える全員。近くのプレイヤーだけを描き、バニラのマップで見えない人は表示しません（バニラのサーバー設定 MapRemotePlayerVisibility）。",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option1": "オフ",

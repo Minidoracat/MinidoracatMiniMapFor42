@@ -417,4 +417,35 @@ return {
     eq(ty, 3499, "空白說明不得改導航 Y")
 end
 
+-- 道路頁右欄（roadMeta）：錄的路逐段量，路面取段數最多的（同數取先出現的）、路寬寫範圍、長度照各段加總；
+-- 停用的路不寫分享旗；收到的路作者寫最前；草稿還沒有路寬路面時只寫長度
+do
+    local metaSeg = assert(source:match("(local function roadMeta.-\nend)\n"), "找不到 roadMeta 區段")
+    local helpers = assert(source:match("(local function dist2.-\nend)\n")) .. "\n"
+        .. assert(source:match("(local function fmtDist.-\nend)\n"))
+    local chunk4 = assert((loadstring or load)(helpers .. [[
+
+local function getText(k, a, b)
+    local s = k:gsub("^UI_MinidoracatMiniMap_", "")
+    if k == "UI_MinidoracatMiniMap_RoadSep" then return " / " end
+    if a then s = s .. "|" .. a end
+    if b then s = s .. "|" .. b end
+    return s
+end
+]] .. metaSeg .. "\nreturn roadMeta", "road-meta"))
+    local roadMeta = chunk4()
+    eq(roadMeta({ pts = { 0, 0, 300, 400, 300, 900, 300, 1000 }, segWidth = { 3, 5, 4 },
+            segSurface = { "dirt", "gravel", "gravel" }, share = { faction = true, safehouse = true } }),
+        "RoadSurface_gravel RoadWidthRange|3|5 / 1.1km / RoadShareFactionMark / RoadShareSafehouseMark",
+        "段數最多的路面、路寬範圍、各段加總長度、兩種分享旗")
+    eq(roadMeta({ pts = { 0, 0, 0, 10, 0, 20 }, segWidth = { 4, 4 }, segSurface = { "dirt", "gravel" } }),
+        "RoadSurface_dirt RoadWidth|4 / 20m", "同數取先出現的路面；路寬一致寫單值")
+    eq(roadMeta({ pts = { 0, 0, 0, 10 }, segWidth = { 4 }, segSurface = { "dirt" },
+            share = { faction = true } }, true),
+        "RoadNavOffMark / RoadSurface_dirt RoadWidth|4 / 10m", "停用的路寫不用於導航、不寫分享旗")
+    eq(roadMeta({ author = "Alice", overBudget = true, pts = { 0, 0, 0, 10 }, segWidth = { 6 } }),
+        "Alice / RoadOverBudget / RoadSurface_unknown RoadWidth|6 / 10m", "作者最前；沒有路面寫路面不明")
+    eq(roadMeta({ pts = { 0, 0, 0, 300 } }), "300m", "草稿沒有路寬路面：只寫長度")
+end
+
 print("test_search_logic: 全數通過")

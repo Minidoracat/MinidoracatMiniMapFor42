@@ -254,6 +254,8 @@ ISContextMenu = { get = function(pn, x, y)
     end
     return menu
 end }
+-- 原版 ISToolTip（選單選項的 toolTip；_Nav.lua navMenuLock 同寫法）：只記 description 供斷言
+ISToolTip = { new = function() return newElement(0, 0, 0, 0) end }
 function isShiftKeyDown() return false end
 
 local fontHeights = { [UIFont.Small] = 14, [UIFont.Medium] = 18 }
@@ -1006,15 +1008,18 @@ win.entry.onOtherKey(win.entry, Keyboard.KEY_TAB)
 falsy(win.entry:isFocused(), "G10: 打字中 TAB 解焦")
 truthy(win.focus, "G10: 並接手到焦點環")
 
--- 分頁列由左到右：搜尋、收藏、行程。←／→ 一次換一頁、停在兩端；手把 X 依序換頁、到最後一頁回第一頁
+-- 分頁列由左到右：搜尋、收藏、行程、道路。←／→ 一次換一頁、停在兩端；手把 X 依序換頁、到最後一頁回第一頁
 key(win, Keyboard.KEY_RIGHT)
 eq(win.page, "places", "G11: 右方向鍵往右一頁（收藏）")
 key(win, Keyboard.KEY_RIGHT)
 eq(win.page, "itinerary", "G11: 再按一次到行程頁")
 key(win, Keyboard.KEY_RIGHT)
-eq(win.page, "itinerary", "G11: 停在最後一頁，不繞回")
+eq(win.page, "roads", "G11: 再按一次到道路頁")
+key(win, Keyboard.KEY_RIGHT)
+eq(win.page, "roads", "G11: 停在最後一頁，不繞回")
 key(win, Keyboard.KEY_LEFT)
-eq(win.page, "places", "G11: 左方向鍵往左一頁")
+eq(win.page, "itinerary", "G11: 左方向鍵往左一頁")
+key(win, Keyboard.KEY_LEFT)
 key(win, Keyboard.KEY_LEFT)
 eq(win.page, "search", "G11: 左方向鍵回搜尋頁")
 key(win, Keyboard.KEY_LEFT)
@@ -1023,6 +1028,8 @@ win:onJoypadDown(Joypad.XButton)
 eq(win.page, "places", "G12: 手把 X 依序換頁（收藏）")
 win:onJoypadDown(Joypad.XButton)
 eq(win.page, "itinerary", "G12: 手把 X 依序換頁（行程）")
+win:onJoypadDown(Joypad.XButton)
+eq(win.page, "roads", "G12: 手把 X 依序換頁（道路）")
 win:onJoypadDown(Joypad.XButton)
 eq(win.page, "search", "G12: 手把 X 到最後一頁回第一頁")
 win:onJoypadDirRight()
@@ -1061,7 +1068,7 @@ JoypadState.players[1] = nil
 -- I. 版面：視窗絕不大於 viewport；主要動作固定可達；次要動作空間不足時折疊
 --------------------------------------------------------------------------------
 local function assertLayout(tag)
-    for _, page in ipairs({ "search", "places", "itinerary" }) do
+    for _, page in ipairs({ "search", "places", "itinerary", "roads" }) do
         Core.toggleSearchWindow(0, page)
         local w
         for i = #UI.added, 1, -1 do
@@ -1069,7 +1076,7 @@ local function assertLayout(tag)
         end
         local trip = page == "itinerary"
         local list = trip and w.tripList or w.list
-        local defs = trip and w.tripBtns or w.searchBtns
+        local defs = trip and w.tripBtns or page == "roads" and w.roadBtns or w.searchBtns
         local where = tag .. " " .. page .. "："
         truthy(w.width <= screen.w - 20, where .. "視窗寬不得超出 viewport")
         truthy(w.height <= screen.h - 20, where .. "視窗高不得超出 viewport")
@@ -1077,9 +1084,9 @@ local function assertLayout(tag)
         truthy(list.y + list.height <= defs[1].btn.y,
             where .. "主要動作須在清單之外（不會被捲走）")
         truthy(list.y >= 0 and list.y + list.height <= w.height, where .. "清單須落在視窗內")
-        if page == "places" then
-            -- 收藏頁沒有搜尋框：清單從搜尋框的位置開始，比搜尋頁多出那一列的高度
-            falsy(w.entry:isVisible(), where .. "收藏頁沒有搜尋框")
+        if page == "places" or page == "roads" then
+            -- 收藏頁、道路頁沒有搜尋框：清單從搜尋框的位置開始，比搜尋頁多出那一列的高度
+            falsy(w.entry:isVisible(), where .. "這一頁沒有搜尋框")
             eq(list.y, w.entry.y, where .. "清單從搜尋框的位置開始")
             truthy(list.height > w.listAt.search.h, where .. "清單比搜尋頁高（沒有搜尋框那一列）")
         else
@@ -1095,8 +1102,8 @@ local function assertLayout(tag)
                 truthy(btn.y >= list.y + list.height and btn.y + btn.height <= w.height,
                     where .. "可見按鈕須全部落在清單之下且在視窗內")
             end
-            -- 次要動作只在「動作…」選單，主要動作必須留在底部
-            truthy(btn:isVisible() or defs[i].group == "more",
+            -- 次要動作只在「動作…」選單，主要動作必須留在底部（hide＝只在特定狀態出現的主要動作）
+            truthy(btn:isVisible() or defs[i].group == "more" or defs[i].hide,
                 where .. "主要動作不得被折疊")
         end
         if trip then
@@ -1132,7 +1139,11 @@ Core.toggleSearchWindow(0)
 screen = { w = 320, h = 540 }
 Core.toggleSearchWindow(0, "itinerary") -- 回到 I4 結束時的狀態（視窗開著）
 -- 次要動作一律在「動作…」原生選單，主清單仍保留至少一列且可保持選取。
+-- 假 getText 回鍵名（約 30 字）：四個分頁各佔一列，比任何語系都長。道路分頁名在各語系都是一個詞，
+-- 這裡用真實長度（擠進第三列），其餘照舊用鍵名當最壞情況；四個分頁全用真文案另見 P 段
 Core.toggleSearchWindow(0)
+local roadTabTitle = win.tabs[4].btn.title
+win.tabs[4].btn:setTitle("Roads")
 win = openWindow(0, "itinerary")
 falsy(win.upBtn:isVisible(), "I5: 次要動作不佔底部按鈕列")
 pressButton(win.tripMoreBtn)
@@ -1151,6 +1162,7 @@ win._tRev = nil
 win:prerender()
 contains(listText(win.tripList), "long message", "I6b: 訊息全文接進可捲清單")
 Core.toggleSearchWindow(0)
+win.tabs[4].btn:setTitle(roadTabTitle)
 screen = { w = 1920, h = 1080 }
 fontHeights = { [UIFont.Small] = 14, [UIFont.Medium] = 18 }
 textManager.getFontHeight = function(_, font) return fontHeights[font] or 14 end
@@ -1476,6 +1488,12 @@ end
 
 do
     local translations = loadCH()
+    -- 道路頁的鍵由整合者統一加進 UI.json；還沒加之前用同一份 CH 文案（keys-RoadsUI），版面才照真字量
+    local roadCH = { UI_MinidoracatMiniMap_RoadTab = "道路", UI_MinidoracatMiniMap_RoadDrawNew = "畫新道路",
+        UI_MinidoracatMiniMap_RoadRecordStart = "錄製道路", UI_MinidoracatMiniMap_RoadRecordStop = "停止錄製",
+        UI_MinidoracatMiniMap_RoadShowOnMap = "在世界地圖顯示", UI_MinidoracatMiniMap_RoadDrawHere = "畫自訂道路",
+        UI_MinidoracatMiniMap_RoadTitle = "自訂道路" }
+    for k, v in pairs(roadCH) do translations[k] = translations[k] or v end
     local oldText, oldMeasure = getText, textManager.MeasureStringX
     getText = function(keyName) return translations[keyName] or oldText(keyName) end
     screen = { w = 320, h = 540 }
@@ -1486,7 +1504,7 @@ do
             local _, count = text:gsub("[^\128-\191]", "")
             return count * metrics[3]
         end
-        for _, defs in ipairs({ win.tabs, win.modeBtns, win.searchBtns, win.tripBtns }) do
+        for _, defs in ipairs({ win.tabs, win.modeBtns, win.searchBtns, win.tripBtns, win.roadBtns }) do
             for _, d in ipairs(defs) do
                 d.text = getText(d.key)
                 if d.altKey and utf8.len(getText(d.altKey)) > utf8.len(d.text) then
@@ -1499,13 +1517,13 @@ do
         pressButton(win.collapseBtn)
         truthy(win.width <= screen.w - 20 and win.height <= screen.h - 20,
             "P0: 重排真的使用窄 viewport 與新字級")
-        for _, page in ipairs({ "search", "itinerary" }) do
+        for _, page in ipairs({ "search", "roads", "itinerary" }) do -- 行程頁最後：下面 P4-P5 接著在行程頁量
             win = openWindow(0, page)
-            local list = page == "search" and win.list or win.tripList
+            local list = page == "itinerary" and win.tripList or win.list
             truthy(list.height >= list.itemheight, "P1: 窄版大字保留可閱讀清單")
             truthy(win.titleX + win.titleW <= win.collapseBtn.x - 8,
                 "P2: 標題不覆蓋收合按鈕")
-            local defs = page == "search" and win.searchBtns or win.tripBtns
+            local defs = page == "search" and win.searchBtns or page == "roads" and win.roadBtns or win.tripBtns
             for _, d in ipairs(defs) do
                 if d.btn:isVisible() then
                     truthy(textManager:MeasureStringX(UIFont.Small, d.btn.title) <= d.btn.width - 16,
@@ -2409,7 +2427,7 @@ do
     local tabNames = {}
     for i, tab in ipairs(win.tabs) do tabNames[i] = tab.page .. "=" .. tostring(tab.key) end
     eq(table.concat(tabNames, ","), "search=" .. P .. "SearchTabSearch,places=" .. P .. "PlaceMenu,itinerary="
-        .. P .. "TripManage", "PT1: 分頁列＝搜尋、收藏、行程，收藏分頁沿用「收藏」字樣")
+        .. P .. "TripManage,roads=" .. P .. "RoadTab", "PT1: 分頁列＝搜尋、收藏、行程、道路，收藏分頁沿用「收藏」字樣")
     win.entry.text = "zzz" -- 搜尋框留著上次的字（玩家回報的情境：重開視窗後空白頁不見了）
     win._lastText = nil
     win:prerender(); win:prerender()
@@ -2459,7 +2477,7 @@ do
         end
     end
     falsy(hasEntry, "PT8: 收藏頁的焦點環不含搜尋框")
-    truthy(hasList and tabCount == 3, "PT8: 收藏頁的焦點環有三個分頁與清單")
+    truthy(hasList and tabCount == 4, "PT8: 收藏頁的焦點環有四個分頁與清單")
     setPlaces({}, nil)
     win:prerender()
     linesContain(win.list.items[1].item.lines, "PlacesEmpty", "PT9: 沒有收藏時說明怎麼加入")
@@ -2554,6 +2572,7 @@ do
         "%-%- test:nav%-menu%-lock:start\n(.-)\n%-%- test:nav%-menu%-lock:end"),
         "找不到 _Nav nav-menu-lock 測試區段")
     lockFile:close()
+    local baseToolTip = ISToolTip
     ISToolTip = { new = function()
         return { initialise = function() end, setVisible = function(self, v) self.visible = v end }
     end }
@@ -2635,7 +2654,331 @@ do
     MinidoracatUI.v1.Toast.show = function() error("injected toast failure") end
     Core.navMessage(0, "NeedGPS")
     eq(#halos, halosBefore + 4, "LK8: Toast 拋錯退 halo，訊息不得消失")
-    MinidoracatUI, ISWorldMap_instance, ISToolTip = nil, nil, nil
+    MinidoracatUI, ISWorldMap_instance, ISToolTip = nil, nil, baseToolTip
+end
+
+--------------------------------------------------------------------------------
+-- RD. 道路頁（設計稿 minimap-custom-roads-1023 主張 3）與找不到道路的出口（介面審查 #2-#4）
+--------------------------------------------------------------------------------
+do
+    local P = "UI_MinidoracatMiniMap_"
+    local roadRev, recState, lost = 1, nil, false
+    local own = {
+        { id = "r1", name = "Hill", pts = { 0, 0, 300, 400, 300, 1400 }, segWidth = { 4, 6 },
+            segSurface = { "dirt", "dirt" }, enabled = true, share = { faction = true, safehouse = false } },
+        { id = "r2", name = "Old farm", pts = { 0, 0, 10, 0 }, segWidth = { 4 }, segSurface = { "gravel" },
+            enabled = false, share = { faction = true, safehouse = false } },
+        { id = "r3", name = "Far", pts = { 0, 0, 0, 50 }, segWidth = { 5 }, segSurface = { "paved" },
+            enabled = true, overBudget = true },
+    }
+    local got = { { sid = "s7", name = "Mine", author = "Alice", pts = { 0, 0, 0, 2100 }, segWidth = { 6 },
+        segSurface = { "gravel" }, off = false } }
+    local draft = { pts = { 0, 0, 20, 0 }, source = "record", ends = { "snap", "snap" } }
+    local roadCalls = {}
+    local function roadCall(kind, t) t.kind = kind; roadCalls[#roadCalls + 1] = t; return t end
+    Core.roadsRevision = function() return roadRev end
+    Core.roadsList = function() return own, nil end
+    Core.roadsReceived = function() return got end
+    Core.roadsDraft = function() return draft end
+    Core.roadsGet = function(_, id)
+        for _, r in ipairs(own) do if r.id == id then return r end end
+    end
+    Core.roadsDelete = function(pn, id) roadCall("delete", { pn = pn, id = id }); return true end
+    Core.roadRecordState = function() return recState end
+    Core.roadRecordLastLost = function() local v = lost; lost = false; return v end
+    Core.roadRecordStart = function(pn) roadCall("recStart", { pn = pn }) end
+    Core.roadRecordStop = function(pn) roadCall("recStop", { pn = pn }) end
+    Core.roadToolStart = function(pn, opts) roadCall("tool", { pn = pn, opts = opts }) end
+    Core.roadsClearDraft = function(pn) roadCall("clearDraft", { pn = pn }); draft = nil; roadRev = roadRev + 1 end
+    local mp = false
+    isClient = function() return mp end
+    local function rowTexts(w)
+        local out = {}
+        for i, row in ipairs(w.list.items) do out[i] = linesText(row.item.lines) or row.item.label end
+        return out
+    end
+    local function rowOf(w, key)
+        for i, row in ipairs(w.list.items) do
+            if row.item.key == key then return i, row.item end
+        end
+    end
+    local function option(w, text)
+        for i, o in ipairs(w.nativeMenu.options) do
+            if o.text == text then return i, o end
+        end
+    end
+
+    -- RD1. 兩個入口都開得到道路頁：右鍵／按鈕帶 page，以及分頁鈕（setPage）
+    setTrip(0, "draft", { stop(1, 100, 100) }, nil, nil, 501)
+    win = openWindow(0, "roads")
+    eq(win.page, "roads", "RD1: toggleSearchWindow 帶 roads 開在道路頁")
+    falsy(win.entry:isVisible(), "RD1: 道路頁沒有搜尋框")
+    truthy(win.list:isVisible() and win.roadNewBtn:isVisible() and win.roadRecordBtn:isVisible(),
+        "RD1: 清單與畫、錄按鈕看得到")
+    falsy(win.addBtn:isVisible(), "RD1: 搜尋頁的按鈕不留在道路頁")
+    win.tabs[1].action(win)
+    eq(win.page, "search", "RD1 前提: 回搜尋頁")
+    win.tabs[4].action(win)
+    eq(win.page, "roads", "RD1: 分頁鈕（setPage）切到道路頁")
+
+    -- RD2. 分組與計數：未存的、我的（3）、分享（1）；右欄寫出路面路寬長度、分享旗、停用、容量已滿、作者
+    win:prerender()
+    local texts = table.concat(rowTexts(win), "\n")
+    local gDraft = texts:find(P .. "RoadGroupDraft", 1, true)
+    local gOwn = texts:find(P .. "RoadGroupOwn|3", 1, true)
+    local gShared = texts:find(P .. "RoadGroupShared|1", 1, true)
+    truthy(gDraft and gOwn and gShared and gDraft < gOwn and gOwn < gShared,
+        "RD2: 三組依序出現且計數正確")
+    local _, r1 = rowOf(win, "or1")
+    contains(r1.right, P .. "RoadSurface_dirt", "RD2: 寫路面")
+    contains(r1.right, P .. "RoadWidthRange|4|6", "RD2: 逐段不同的路寬寫範圍")
+    contains(r1.right, "1.5km", "RD2: 長度照各段加總（500＋1000 格）")
+    contains(r1.right, P .. "RoadShareFactionMark", "RD2: 分享旗")
+    local _, r2 = rowOf(win, "or2")
+    contains(r2.right, P .. "RoadNavOffMark", "RD2: 停用的路寫不用於導航")
+    falsy(r2.right:find(P .. "RoadShareFactionMark", 1, true), "RD2: 停用的路不寫分享旗")
+    contains(select(2, rowOf(win, "or3")).right, P .. "RoadOverBudget", "RD2: 超出容量寫路網容量已滿")
+    contains(select(2, rowOf(win, "ss7")).right, "Alice", "RD2: 收到的路寫作者")
+    eq(win.list.selected, (rowOf(win, "draft")), "RD2: 沒有舊選取時選第一條（不停在群組標題）")
+    win:prerender() -- 可用性跟選取走，下一幀才依重建後的選取重算
+    truthy(win.roadShowBtn.enable, "RD2: 選到道路時「在世界地圖顯示」可按")
+    -- 收到的路只能停用或複製：不得出現刪除、改名
+    win.list.selected = (rowOf(win, "ss7"))
+    win:prerender()
+    win.roadMoreBtn.onclick(win)
+    truthy(option(win, P .. "RoadCopy") and option(win, P .. "RoadNavOff"), "RD2: 收到的路可複製、可停用")
+    falsy(option(win, P .. "RoadDelete") or option(win, P .. "RoadRename"), "RD2: 收到的路不能刪除或改名")
+    win.nativeMenu:closeAll()
+    -- RD2b. 「分享...」：單機不列；多人可分享時可按；不能分享時紅字並把原因放進選項說明；RoadShare 缺席＝不可用、不寫原因
+    local function shareOption()
+        win.list.selected = (rowOf(win, "or1"))
+        win:prerender()
+        win.roadMoreBtn.onclick(win)
+        local _, o = option(win, P .. "RoadShare")
+        win.nativeMenu:closeAll()
+        return o
+    end
+    falsy(shareOption(), "RD2b: 單機不列分享")
+    mp = true
+    Core.roadShareAvailable = function() return true end
+    local shareOpt = shareOption()
+    truthy(shareOpt and not shareOpt.notAvailable, "RD2b: 多人可分享時列出可按的分享")
+    Core.roadShareAvailable = function() return false, "UI_MinidoracatMiniMap_RoadShareNoGroup" end
+    shareOpt = shareOption()
+    truthy(shareOpt and shareOpt.notAvailable, "RD2b: 不能分享時紅字")
+    eq(shareOpt.toolTip and shareOpt.toolTip.description, "UI_MinidoracatMiniMap_RoadShareNoGroup",
+        "RD2b: 選項說明寫出不能分享的原因")
+    Core.roadShareAvailable = nil
+    shareOpt = shareOption()
+    truthy(shareOpt and shareOpt.notAvailable and not shareOpt.toolTip, "RD2b: 分享模組缺席＝不可用、不寫原因")
+    mp = false
+    win.list.selected = (rowOf(win, "ss7"))
+    win:prerender()
+    -- 資料版本沒變不重建（選取保留），版本一變照新資料重建
+    local before = win.list.items[1]
+    win:prerender()
+    eq(win.list.items[1], before, "RD2: roadsRevision 沒變不重建清單")
+    own[4] = { id = "r4", name = "New", pts = { 0, 0, 0, 10 }, enabled = true }
+    roadRev = roadRev + 1
+    win:prerender()
+    contains(table.concat(rowTexts(win), "\n"), P .. "RoadGroupOwn|4", "RD2: 版本變了照新資料重建")
+    eq(win.list.items[win.list.selected].item.key, "ss7", "RD2: 重建後保留選取")
+    own[4] = nil
+    roadRev = roadRev + 1
+
+    -- RD3. 錄製中按鈕換字，按下去送停止；停了換回來
+    recState = { km = 0.2 }
+    win:prerender()
+    eq(win.roadRecordBtn.title, P .. "RoadRecordStop", "RD3: 錄製中按鈕寫停止錄製")
+    pressButton(win.roadRecordBtn)
+    eq(roadCalls[#roadCalls].kind, "recStop", "RD3: 錄製中按下＝停止錄製")
+    recState = nil
+    win:prerender()
+    eq(win.roadRecordBtn.title, P .. "RoadRecordStart", "RD3: 停了換回錄製道路")
+    pressButton(win.roadRecordBtn)
+    eq(roadCalls[#roadCalls].kind, "recStart", "RD3: 沒在錄按下＝開始錄製")
+
+    -- RD4. 刪除要確認：選單只開確認框，預設焦點在取消；Enter 取消不刪，移到刪除才刪
+    win.list.selected = (rowOf(win, "or1"))
+    win:prerender()
+    win.roadMoreBtn.onclick(win)
+    local delRow = option(win, P .. "RoadDelete")
+    truthy(delRow, "RD4: 我的道路有刪除...")
+    win.nativeMenu.mouseOver = delRow
+    win.nativeMenu:onJoypadDown(Joypad.AButton)
+    local dialog = UI.confirm
+    truthy(dialog and dialog:isVisible(), "RD4: 刪除先開確認框")
+    eq(#roadCalls, 2, "RD4: 確認前不刪")
+    eq(dialog.actionBtn.title, P .. "RoadDeleteAction", "RD4: 確認鈕寫明動作")
+    linesContain(dialog.lines, "RoadConfirmDelete|Hill", "RD4: 確認文寫出路名")
+    falsy(dialog.onConfirm, "RD4: 預設焦點在取消")
+    key(dialog, Keyboard.KEY_RETURN)
+    eq(#roadCalls, 2, "RD4: 直接 Enter＝取消，不刪")
+    Core.roadsPromptDelete(0, "r1")
+    dialog = UI.confirm
+    key(dialog, Keyboard.KEY_TAB)
+    key(dialog, Keyboard.KEY_RETURN)
+    eq(roadCalls[#roadCalls].kind, "delete", "RD4: 焦點移到刪除再按才刪")
+    eq(roadCalls[#roadCalls].id, "r1", "RD4: 刪的是選中的那條")
+    -- 確認期間路已不在：不刪、說明
+    Core.roadsPromptDelete(0, "r2")
+    dialog = UI.confirm
+    local saved = own
+    own = {}
+    key(dialog, Keyboard.KEY_TAB)
+    key(dialog, Keyboard.KEY_RETURN)
+    own = saved
+    eq(roadCalls[#roadCalls].id, "r1", "RD4: 路已不在就不刪")
+
+    -- RD4b. 分享出去的路（有 sid）刪除會一併收回分享：確認文換成講明這件事的那一段
+    own[2].sid = "s41"
+    Core.roadsPromptDelete(0, "r2")
+    dialog = UI.confirm
+    linesContain(dialog.lines, "RoadConfirmDeleteShared|Old farm", "RD4b: 有 sid 的路用收回分享的確認文")
+    key(dialog, Keyboard.KEY_ESCAPE)
+    own[2].sid = nil
+    Core.roadsPromptDelete(0, "r2")
+    dialog = UI.confirm
+    falsy(linesText(dialog.lines):find("Shared", 1, true), "RD4b: 沒分享的路不提收回分享")
+    key(dialog, Keyboard.KEY_ESCAPE)
+
+    -- RD4c. 捨棄草稿要確認（草稿只在記憶體）：按鈕寫捨棄、預設取消；確認期間換了新草稿就不碰；0–1 點直接捨棄
+    local function discardDraft()
+        win:prerender()
+        win.list.selected = (rowOf(win, "draft"))
+        win:prerender()
+        win.roadMoreBtn.onclick(win)
+        win.nativeMenu.mouseOver = option(win, P .. "RoadDraftDiscard")
+        win.nativeMenu:onJoypadDown(Joypad.AButton)
+    end
+    local function cleared()
+        local n = 0
+        for _, c in ipairs(roadCalls) do if c.kind == "clearDraft" then n = n + 1 end end
+        return n
+    end
+    local first = draft
+    UI.confirm = nil
+    discardDraft()
+    dialog = UI.confirm
+    truthy(dialog and dialog:isVisible(), "RD4c: 捨棄先開確認框")
+    eq(dialog.actionBtn.title, P .. "RoadDraftDiscard", "RD4c: 確認鈕寫捨棄")
+    linesContain(dialog.lines, "RoadConfirmDiscard", "RD4c: 確認文說明捨棄")
+    falsy(dialog.onConfirm, "RD4c: 預設焦點在取消")
+    key(dialog, Keyboard.KEY_RETURN)
+    eq(cleared(), 0, "RD4c: 直接 Enter＝取消，草稿還在")
+    discardDraft()
+    dialog = UI.confirm
+    draft = { pts = { 0, 0, 5, 5, 9, 9 }, source = "draw" } -- 確認期間換成新草稿
+    key(dialog, Keyboard.KEY_TAB)
+    key(dialog, Keyboard.KEY_RETURN)
+    eq(cleared(), 0, "RD4c: 確認期間草稿換了，不捨棄新的")
+    draft = first
+    roadRev = roadRev + 1
+    discardDraft()
+    dialog = UI.confirm
+    key(dialog, Keyboard.KEY_TAB)
+    key(dialog, Keyboard.KEY_RETURN)
+    eq(cleared(), 1, "RD4c: 焦點移到捨棄再按才捨棄")
+    draft = { pts = { 7, 7 }, source = "draw" }
+    roadRev = roadRev + 1
+    UI.confirm = nil
+    discardDraft()
+    falsy(UI.confirm, "RD4c: 只有一點的草稿不開確認框")
+    eq(cleared(), 2, "RD4c: 只有一點的草稿直接捨棄")
+    draft = first
+    roadRev = roadRev + 1
+
+    -- RD5. 錄製中斷：頂端警告一次，離開分頁就收掉、不再出現
+    lost = true
+    win:prerender()
+    contains(rowTexts(win)[1], P .. "RoadRecordLost", "RD5: 錄製中斷的警告在清單最上面")
+    win:prerender()
+    contains(rowTexts(win)[1], P .. "RoadRecordLost", "RD5: 留在道路頁時警告還在")
+    win.tabs[3].action(win)
+    win.tabs[4].action(win)
+    win:prerender()
+    falsy(table.concat(rowTexts(win), "\n"):find("RoadRecordLost", 1, true), "RD5: 離開再回來不再出現")
+
+    -- RD5b. 鍵盤（沿用收藏頁的焦點環）：TAB 走得到道路清單，清單上 Enter＝在世界地圖顯示選中的路
+    Core.roadsShowOnMap = function(pn, kind, id) roadCall("show", { pn = pn, k = kind, id = id }) end
+    win.list.selected = (rowOf(win, "or1"))
+    win:prerender()
+    local guard = 0
+    repeat
+        key(win, Keyboard.KEY_TAB)
+        guard = guard + 1
+    until (win.focus and win.roadsFocus[win.focus].isList) or guard > 20
+    truthy(win.roadsFocus[win.focus].isList, "RD5b: TAB 走得到道路清單")
+    key(win, Keyboard.KEY_RETURN)
+    local shown = roadCalls[#roadCalls]
+    eq(shown.kind .. ":" .. tostring(shown.k) .. ":" .. tostring(shown.id), "show:own:r1",
+        "RD5b: 清單上 Enter 在世界地圖顯示選中的路")
+    key(win, Keyboard.KEY_ESCAPE)
+
+    -- RD6. 「動作…」選項帶按鈕說明（介面審查 #4：tooltip 在選單裡才看得到）
+    setTrip(0, "navigating", { stop(1, 100, 100) }, 1, nil, 502)
+    win.tabs[3].action(win)
+    win:prerender()
+    pressButton(win.tripMoreBtn)
+    local _, manual = option(win, win.manualBtn.title)
+    truthy(manual and manual.toolTip, "RD6: 改用直線指引的選項帶 tooltip")
+    eq(manual.toolTip.description, win.manualBtn.tooltip, "RD6: 選項說明＝按鈕說明")
+    win.nativeMenu:closeAll()
+
+    -- RD7. 預覽列：沒有待前往站不寫「等待道路資料」；路網沒好才寫；路網好了寫計算中
+    local oldPreview = result.preview
+    result.preview = { state = "idle", done = 0, total = 0, distance = 0 }
+    setTrip(0, "completed", { stop(1, 100, 100, "arrived") }, 1, nil, 503)
+    win:prerender()
+    falsy(linesText(win.subLines):find("TripPreview_idle", 1, true), "RD7: 走完的行程不寫等待道路資料")
+    linesContain(win.subLines, P .. "RoadPreviewNoStops", "RD7: 走完的行程寫沒有待前往的站")
+    setTrip(0, "draft", {}, nil, nil, 504)
+    win:prerender()
+    linesContain(win.subLines, P .. "RoadPreviewNoStops", "RD7: 空行程寫沒有待前往的站")
+    Core.navGraphState = function() return "building" end
+    setTrip(0, "draft", { stop(1, 100, 100), stop(2, 200, 200) }, nil, nil, 505)
+    win:prerender()
+    linesContain(win.subLines, "TripPreview_idle", "RD7: 有站、路網還沒好才寫等待道路資料")
+    Core.navGraphState = function() return "ready" end
+    win:prerender()
+    linesContain(win.subLines, "TripPreview_pending", "RD7: 路網一好就換成計算中（不必等行程變動）")
+    Core.navGraphState = nil
+    result.preview = oldPreview
+
+    -- RD8. 目前這站找不到道路：狀態列下多一列出路說明＋「畫自訂道路」，從離這站最近的道路畫
+    local asked
+    Core.navNearestRoad = function(pn, x, y, maxDist)
+        asked = { pn = pn, x = x, y = y, maxDist = maxDist }
+        return { x = 880, y = 870, dist = 30 }
+    end
+    setTrip(0, "paused", { stop(1, 100, 100, "arrived"), stop(2, 900, 900) }, 2, "noroad", 506)
+    win:prerender()
+    truthy(win.roadDrawBtn:isVisible(), "RD8: 找不到道路時亮出畫自訂道路")
+    contains(listText(win.tripList), P .. "RoadNoRoadHint", "RD8: 清單頂端寫出兩條出路")
+    truthy(win.tripList.y + win.tripList.height <= win.roadDrawBtn.y,
+        "RD8: 新按鈕排在清單之外")
+    pressButton(win.roadDrawBtn)
+    local drew = roadCalls[#roadCalls]
+    eq(drew.kind, "tool", "RD8: 按下開畫線工具")
+    eq(drew.opts.mode, "draw", "RD8: 畫新路")
+    eq(asked.x .. "," .. asked.y, "900,900", "RD8: 找的是離這站最近的道路")
+    eq(drew.opts.near.x .. "," .. drew.opts.near.y, "880,870", "RD8: 地圖開在那個道路點")
+    Core.navNearestRoad = function() return nil end
+    pressButton(win.roadDrawBtn)
+    eq(roadCalls[#roadCalls].opts.near.x .. "," .. roadCalls[#roadCalls].opts.near.y, "900,900",
+        "RD8: 路網沒好或附近沒路就開在這站")
+    setTrip(0, "paused", { stop(1, 100, 100, "arrived"), stop(2, 900, 900) }, 2, "manual", 507)
+    win:prerender()
+    falsy(win.roadDrawBtn:isVisible(), "RD8: 不是找不到道路就收起按鈕")
+    falsy(listText(win.tripList):find("RoadNoRoadHint", 1, true), "RD8: 也收起說明")
+    Core.navNearestRoad = nil
+    Core.toggleSearchWindow(0)
+    for _, name in ipairs({ "roadsRevision", "roadsList", "roadsReceived", "roadsDraft", "roadsGet",
+        "roadsDelete", "roadRecordState", "roadRecordLastLost", "roadRecordStart", "roadRecordStop",
+        "roadToolStart", "roadsShowOnMap", "roadsClearDraft" }) do
+        Core[name] = nil
+    end
+    isClient = nil
 end
 
 -- X. 真 Core／UI 聯測：raw trip 與 public claim 表面必須真的接得上。
@@ -2812,4 +3155,4 @@ print("test_itinerary_ui: 全數通過（A 開窗切頁收合 / B 提示列防�
     .. "S 逐站停等與認領鎖定 / T 搜尋頁動作可用性 / U 全文出口 / "
     .. "V 全文列逐行可讀 / W 插入錨點有界標籤與全文出口 / X 真 Core 接管與直線指引 / Y 按鈕錨定 / "
     .. "Z 收藏清單與回家 / PT 收藏頁 / PS 搜尋比對收藏名稱 / LK 右鍵「加入行程」子選單與鎖定、世界地圖 Toast / "
-    .. "SH 分享的鍵盤與手把入口）")
+    .. "SH 分享的鍵盤與手把入口 / RD 道路頁與找不到道路的出口）")

@@ -32,6 +32,8 @@
     "Sandbox_MinidoracatMiniMapSafehouseNameDistance_tooltip": "0 = no distance limit.\nN > 0 = show a name only when the area's nearest point\nis within N tiles of the player.\nA player's own safehouses (owner or member) are always shown.\nIndependent from the outline distance. One tile is about one metre;\ndistance is 2D and ignores floors.\nAdmin changes take effect immediately after Apply.",
     "Sandbox_MinidoracatMiniMapAllowNavShare": "Allow faction target sharing",
     "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "Allow players to share navigation targets with faction members (relayed by the server). When disabled the server rejects share requests.",
+    "Sandbox_MinidoracatMiniMapAllowRoadShare": "Allow custom road sharing",
+    "Sandbox_MinidoracatMiniMapAllowRoadShare_tooltip": "Allow players to share custom roads with their faction or safehouse. The server keeps shared roads in its own file, and members' navigation uses them directly. On by default. When disabled the server rejects new shares and stops sending shared roads; roads already saved stay in the server file.",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay": "Other players' facing",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_tooltip": "Adds facing arrows and view cones to other players on the mini-map and the world map: Off / Faction and safehouse only / Everyone on the map. Only nearby players are drawn, and never anyone the vanilla map hides (vanilla server option MapRemotePlayerVisibility).",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option1": "Off",

@@ -1002,6 +1002,22 @@ do
     eq(trip(t).phase, "navigating", "功能閘門放行不得暫停")
 end
 
+-- 找不到道路：暫停並只通知一次（重複回報、已暫停後再回報都不再發）；規劃失敗不發這則
+do
+    local t = fixture(); t.player(0)
+    local msgs = {}
+    t.core.navMessage = function(pn, text, good) msgs[#msgs + 1] = { pn = pn, text = text, good = good } end
+    assert(edit(t, "append", 100, 0)); assert(start(t))
+    t.core.navRouteResult(0, "noroad")
+    eq(trip(t).phase, "paused", "noroad 暫停"); eq(trip(t).reason, "noroad", "原因 noroad")
+    eq(#msgs, 1, "暫停當下通知一次"); eq(msgs[1].text, "UI_MinidoracatMiniMap_RoadNoRoadHint", "通知寫出路")
+    eq(msgs[1].good, false, "通知是警告")
+    t.core.navRouteResult(0, "noroad")
+    eq(#msgs, 1, "已暫停的行程不再通知")
+    assert(start(t)); t.core.navRouteResult(0, "failed")
+    eq(#msgs, 1, "規劃失敗不發找不到道路的通知")
+end
+
 print("test_itinerary: PASS (feature-gate nav revocation, ordered stops, token ownership, stopping, editing, persistence, "
     .. "split-screen, continuation mode, stop holds, passive auto-continue, gate hold-off, "
     .. "insert/priority anchors, report dispositions, lane-side arrival at route anchor, v1/v2 migration)")

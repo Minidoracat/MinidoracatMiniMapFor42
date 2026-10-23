@@ -32,6 +32,8 @@
     "Sandbox_MinidoracatMiniMapSafehouseNameDistance_tooltip": "0 = bez limitu zasięgu.\nN > 0 = nazwa jest widoczna tylko, gdy najbliższy punkt obszaru\njest w promieniu N pól od gracza.\nWłasne schronienia gracza (właściciel lub członek) są zawsze widoczne.\nNiezależne od zasięgu obrysów. Jedno pole to około metra;\nodległość liczona jest w 2D, bez uwzględniania pięter.\nZmiany administratora działają od razu po kliknięciu „Zastosuj”.",
     "Sandbox_MinidoracatMiniMapAllowNavShare": "Zezwól na udostępnianie celów frakcji",
     "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "Pozwala graczom udostępniać cele nawigacji członkom frakcji (przekazywane przez serwer). Po wyłączeniu serwer odrzuca prośby o udostępnienie.",
+    "Sandbox_MinidoracatMiniMapAllowRoadShare": "Zezwól na udostępnianie własnych dróg",
+    "Sandbox_MinidoracatMiniMapAllowRoadShare_tooltip": "Pozwala graczom udostępniać własne drogi frakcji lub schronieniu. Serwer przechowuje udostępnione drogi we własnym pliku, a nawigacja członków od razu z nich korzysta. Domyślnie włączone. Po wyłączeniu serwer odrzuca nowe udostępnienia i przestaje wysyłać udostępnione drogi; zapisane drogi zostają w pliku serwera.",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay": "Kierunek innych graczy",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_tooltip": "Dodaje strzałki kierunku i stożki widzenia innym graczom na minimapie i mapie świata: Wył. / Tylko frakcja i schronienie / Wszyscy na mapie. Rysuje tylko pobliskich graczy i nigdy nikogo, kogo ukrywa oryginalna mapa (opcja serwera MapRemotePlayerVisibility).",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option1": "Wył.",

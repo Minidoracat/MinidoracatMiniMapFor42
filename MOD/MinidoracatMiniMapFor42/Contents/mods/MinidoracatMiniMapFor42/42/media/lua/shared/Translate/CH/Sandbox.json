@@ -32,6 +32,8 @@
     "Sandbox_MinidoracatMiniMapSafehouseNameDistance_tooltip": "0＝無距離限制。\nN＞0＝安全屋範圍的最近點距玩家 N 格內才顯示名稱。\n玩家自己所屬的安全屋（屋主或成員）一律顯示，不受此距離限制。\n與範圍顯示距離獨立；1 格約 1 公尺，採二維直線距離，不計樓層。\n管理員按「套用」後立即生效。",
     "Sandbox_MinidoracatMiniMapAllowNavShare": "允許陣營目標分享",
     "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "允許玩家把導航目標分享給同陣營成員（經伺服器轉送）。關閉後伺服器直接拒收分享請求。",
+    "Sandbox_MinidoracatMiniMapAllowRoadShare": "允許分享自訂道路",
+    "Sandbox_MinidoracatMiniMapAllowRoadShare_tooltip": "允許玩家把自訂道路分享給同陣營或同安全屋的人；伺服器把分享的道路存成自己的檔案，成員的導航直接使用。預設開啟。關閉後伺服器拒收新的分享，也不再送出分享的道路；已存的道路留在伺服器檔裡。",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay": "其他玩家的朝向",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_tooltip": "在小地圖與世界地圖上，替其他玩家加上朝向箭頭與視野扇形：關閉／只限陣營與安全屋成員／地圖上看得到的所有玩家。只畫附近的人；不會多顯示原版地圖看不到的人（原版選項 MapRemotePlayerVisibility）。",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option1": "關閉",

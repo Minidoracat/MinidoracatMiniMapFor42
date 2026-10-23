@@ -6,6 +6,9 @@ option MinidoracatMiniMap.AllInfoDistance
 option MinidoracatMiniMap.AllowNavShare
 {type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowNavShare,}
 
+option MinidoracatMiniMap.AllowRoadShare
+{type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowRoadShare,}
+
 option MinidoracatMiniMap.RemoteFacingDisplay
 {type = enum, numValues = 3, default = 2, page = MinidoracatMiniMap, translation = MinidoracatMiniMapRemoteFacingDisplay,}
 
