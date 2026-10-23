@@ -127,8 +127,8 @@ local MAX_WORLD_COORD = 32767.5
 local MAX_GATE_SEGMENTS = 65535
 local EP_PAIR_BASE = (MAX_GATE_SEGMENTS + 1) * 2 -- 每段至多兩個端點，無向pair key不碰撞
 local MAX_GRAPH_NODES = 99999
-local MAX_PAIR_WORK = 100000 -- official security-pass=8059；>12x headroom
-local MAX_PAIR_SCAN_WORK = 125000 -- official=30320；>4x headroom
+local MAX_PAIR_WORK = 100000 -- 外框預篩後：官方=2730、自訂道路 6000 段密集＝16586；>6x headroom
+local MAX_PAIR_SCAN_WORK = 6000000 -- 官方=43645、自訂道路 6000 段密集＝2.24M（test 甲十三）；>2.5x
 local MAX_CUT_RECORDS = 10000 -- official=1917；>5x headroom
 local MAX_CUTS_PER_SEGMENT = 128 -- official max=22；>5x headroom
 local MAX_EP_MOVES = 10000    -- official=1779；>5x headroom
@@ -612,6 +612,7 @@ function NavCore.newBuild(streets, winnerOf)
         phase = "gate", si = 1, pi = 1,
         gx1 = {}, gy1 = {}, gx2 = {}, gy2 = {}, gsid = {},
         gwidth = {}, gsurface = {}, gmask = {}, gn = 0,
+        gminx = {}, gmaxx = {}, gminy = {}, gmaxy = {}, -- 段外框（stepPairs 預篩用）
         buck = {}, bkeys = {}, bn = 0, peakBucket = 0, bucketReferenceCount = 0,
         cuts = {},
         seenPair = {}, pairWork = 0, pairScanWork = 0, cutRecords = 0,
@@ -657,6 +658,8 @@ local function gateEmit(b, x1, y1, x2, y2, sid, width, surface, pinStart)
     b.epLink[o1 * EP_PAIR_BASE + o2] = true
     b.gx1[n], b.gy1[n], b.gx2[n], b.gy2[n], b.gsid[n] = x1, y1, x2, y2, sid
     b.gwidth[n], b.gsurface[n] = width, surface
+    if x1 < x2 then b.gminx[n], b.gmaxx[n] = x1, x2 else b.gminx[n], b.gmaxx[n] = x2, x1 end
+    if y1 < y2 then b.gminy[n], b.gmaxy[n] = y1, y2 else b.gminy[n], b.gmaxy[n] = y2, y1 end
     -- 配對 bucket 登記外擴 padTol（最大半寬和＋餘裕）：吸附容差跨桶（主線
     -- y=-1、支路端 y=0 分居 64 格桶界）時不擴張就永遠配不到對（codex 反例）
     local bx1, bx2, by1, by2 = bucketRange(x1, y1, x2, y2, b.padTol)
@@ -973,8 +976,14 @@ end
 -- state，超額即中斷、下 tick 續跑（codex 反例：100 段同桶時舊版 step(b,1)
 -- 一次做完 4950 對——密集第三方地圖單 tick 尖峰）。同對跨桶以 seenPair 去重
 -- （段數 <65536，i*65536+j 數字 key 在 2^53 精度內安全）
+-- 外框預篩：兩段外框各外擴 processPair 的吸附容差仍不相交＝交叉與吸附都不可能（tryAttach
+-- 第一步就是 d2>tol² 返回），跳過且不記 seenPair；剩下的組合照原順序處理，結果逐點不變。
+-- 密集的自訂道路（6000 段）同桶上百段，沒有預篩時 130 萬組都要處理、seenPair 也存 130 萬筆
+-- （2026-10-23 RoadsPerfE2E 實機建圖一律失敗）。剔除的組合只算 1/8 次操作。
 local function stepPairs(b, budget)
     local ops = 0
+    local gsid, gw, gm = b.gsid, b.gwidth, b.gmask
+    local minx, maxx, miny, maxy = b.gminx, b.gmaxx, b.gminy, b.gmaxy
     while ops < budget do
         local key = b.bkeys[b.bi]
         if not key then
@@ -997,20 +1006,26 @@ local function stepPairs(b, budget)
                     error("pair scan work limit exceeded")
                 end
                 local j = list[jj]
-                if b.gsid[i] ~= b.gsid[j] then -- 同街段對跳過（含自交，vanilla 無自交街）
-                    local a, c = i, j
-                    if a > c then a, c = c, a end
-                    local pk = a * 65536 + c
-                    if not b.seenPair[pk] then
-                        b.pairWork = b.pairWork + 1
-                        if b.pairWork > MAX_PAIR_WORK then
-                            error("pair work limit exceeded")
+                local cost = 0.125
+                if gsid[i] ~= gsid[j] then -- 同街段對跳過（含自交，vanilla 無自交街）
+                    local tol = (gw[i] + gw[j]) * 0.5 + ((gm[i] or gm[j]) and CUSTOM_SLACK or ATTACH_SLACK)
+                    if minx[j] - tol <= maxx[i] and minx[i] - tol <= maxx[j]
+                        and miny[j] - tol <= maxy[i] and miny[i] - tol <= maxy[j] then
+                        cost = 1
+                        local a, c = i, j
+                        if a > c then a, c = c, a end
+                        local pk = a * 65536 + c
+                        if not b.seenPair[pk] then
+                            b.pairWork = b.pairWork + 1
+                            if b.pairWork > MAX_PAIR_WORK then
+                                error("pair work limit exceeded")
+                            end
+                            b.seenPair[pk] = true
+                            processPair(b, a, c)
                         end
-                        b.seenPair[pk] = true
-                        processPair(b, a, c)
                     end
                 end
-                ops = ops + 1
+                ops = ops + cost
                 jj = jj + 1
             end
             ii = ii + 1

@@ -232,27 +232,30 @@ do
         "形狀同 RoadPatch add、不參與搜尋、沒有來源目錄")
 end
 
+-- 正式路網（RoadPatches 的官方幾何＋修正），甲十一與甲十三共用
+dofile("MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/shared/MinidoracatMiniMapRoadPatches.lua")
+local officialMembers = {}
+for m in pairs(MinidoracatMiniMapRoadPatches.geometrySet) do officialMembers[#officialMembers + 1] = m end
+table.sort(officialMembers)
+local function officialStreets()
+    local patch = MinidoracatMiniMapRoadPatches
+    local out = {}
+    for _, member in ipairs(officialMembers) do
+        local geometry, widthQ = member:match("^(.-)|w:(%-?%d+)$")
+        local pts, field = {}, 0
+        for token in geometry:gmatch("[^:]+") do
+            field = field + 1
+            if field > 1 then pts[#pts + 1] = tonumber(token) / 2 end
+        end
+        out[#out + 1] = { name = "s" .. #out, src = patch.targetSrc, width = tonumber(widthQ) / 2, pts = pts }
+    end
+    assert(mod.applyRoadPatches(out, patch))
+    return out
+end
+
 -- 甲十一、官方圖加了不相干的自訂道路：官方路線逐點不變（含分批建圖）
 do
-    dofile("MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/shared/MinidoracatMiniMapRoadPatches.lua")
-    local patch = MinidoracatMiniMapRoadPatches
-    local members = {}
-    for m in pairs(patch.geometrySet) do members[#members + 1] = m end
-    table.sort(members)
-    local function streets()
-        local out = {}
-        for _, member in ipairs(members) do
-            local geometry, widthQ = member:match("^(.-)|w:(%-?%d+)$")
-            local pts, field = {}, 0
-            for token in geometry:gmatch("[^:]+") do
-                field = field + 1
-                if field > 1 then pts[#pts + 1] = tonumber(token) / 2 end
-            end
-            out[#out + 1] = { name = "s" .. #out, src = patch.targetSrc, width = tonumber(widthQ) / 2, pts = pts }
-        end
-        assert(mod.applyRoadPatches(out, patch))
-        return out
-    end
+    local streets = officialStreets
     local wof = function(_, _, src) return src end
     local plain = build(streets(), nil, wof, 5000)
     local far = road({ 1000, 1000, 1000, 1300, 1300, 1300 }, { width = 16 })
@@ -289,6 +292,31 @@ do
     local car = assert(find(g, 0, 5, 150, 63, 0), "車上有路")
     assert(customCount(car) > 0 and math.abs(car.ex - 150) < 1e-6 and math.abs(car.ey - 63) < 1e-6,
         "車上：沿自訂道路開到目標")
+end
+
+-- 甲十三、6000 段自訂道路擠在鎮上也建得出圖（2026-10-23 RoadsPerfE2E：實機建圖一律
+-- pair scan work limit exceeded）。外框預篩只處理真的靠近的段對；每 tick 預算 900 下，
+-- 建圖 tick 數要和官方路網同一量級（沒預篩要 2593 tick≈60fps 43 秒，預篩後 430）。
+do
+    local list = {}
+    for r = 1, 20 do
+        local pts = {}
+        for k = 0, 299 do
+            pts[#pts + 1] = 10500 + 2 * k
+            pts[#pts + 1] = 9400 + 20 * r + 6 * math.sin(k / 8)
+        end
+        list[r] = road(pts, { id = "dense" .. r, name = "Dense" .. r })
+    end
+    local streets = officialStreets()
+    assert(mod.customStreets(list, streets) == 20, "20 條密集自訂道路都要收")
+    local b = mod.newBuild(streets, function(_, _, src) return src end)
+    local ticks = 0
+    repeat ticks = ticks + 1 until mod.step(b, 900)
+    assert(ticks < 1000, "6000 段密集自訂道路要在 1000 tick 內建完：" .. ticks)
+    local sx, sy = 10520, 9600 + 6 * math.sin(10 / 8)
+    local tx, ty = 11080, 9600 + 6 * math.sin(290 / 8)
+    local r = assert(find(b.graph, sx, sy, tx, ty, 0), "沿密集區中間那條自訂道路走得通")
+    assert(customCount(r) > 0, "路線走在自訂道路上")
 end
 
 --------------------------------------------------------------------------------

@@ -300,9 +300,9 @@ do
         if scanCap.phase == "pairs" then break end
         mod.step(scanCap, 1)
     end
-    scanCap.pairScanWork = 125000
+    scanCap.pairScanWork = 1e15 -- 驗的是「有上限、超過就中止」，不綁上限數值
     assert(not pcall(mod.step, scanCap, 10),
-        "limits：pair scan 超過 125k terminal（含同街/duplicate）")
+        "limits：pair scan 超過上限 terminal（含同街/duplicate）")
     assert(not pcall(mod.addCut, { cutRecords = 10000, cuts = {} }, 1, 0.5, 0, 0),
         "limits：cut records 超過 10k terminal")
     local perSegCuts = {}
