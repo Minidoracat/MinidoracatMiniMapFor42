@@ -319,6 +319,106 @@ do
     assert(customCount(r) > 0, "路線走在自訂道路上")
 end
 
+-- 甲十四、自訂道路鏈（stepChains）：A* 從路口沿鏈直接到下一個路口，路線重建再補回中間點。同一張圖拿掉
+-- skipTo／chainOf 就是逐點展開，兩邊要給同一條路線：經過整條跳過的鏈（逐段路面、路寬、自訂標記都補回）、
+-- 起訖在鏈中間、起訖在同一條鏈、避讓圈壓在跳過的鏈上（懲罰不能漏算）、遮罩不含這位玩家、環狀鏈、死路支線。
+-- 正方形官方路（400×300）；A＝y150 橫越的鋸齒路（pn0，路面路寬逐段換），B＝x200 縱越（只給 pn1），兩條在中心交叉；
+-- C＝頂邊 (100,300) 出去再回到同一點的環；D＝底邊 (300,0) 往下的死路。起訖刻意不對稱，避免兩條路線同成本。
+do
+    local function zigzag(x1, y1, x2, y2, n)
+        local dx, dy = (x2 - x1) / n, (y2 - y1) / n
+        local len = math.sqrt(dx * dx + dy * dy)
+        local pts = {}
+        for k = 0, n do
+            local off = (k == 0 or k == n) and 0 or (k % 2 == 0 and 1 or -1)
+            pts[#pts + 1] = x1 + dx * k - dy / len * off
+            pts[#pts + 1] = y1 + dy * k + dx / len * off
+        end
+        return pts
+    end
+    local SURF = { "paved", "gravel", "dirt" }
+    local A = road(zigzag(0, 150, 400, 150, 100), { name = "A" })
+    for k = 1, 100 do A.road.segSurface[k], A.road.segWidth[k] = SURF[1 + math.floor(k / 9) % 3], 3 + k % 4 end
+    local streetsIn = {
+        official({ 0, 0, 400, 0 }), official({ 400, 0, 400, 300 }),
+        official({ 400, 300, 0, 300 }), official({ 0, 300, 0, 0 }),
+    }
+    local entries = {
+        A,
+        road(zigzag(200, 0, 200, 300, 75), { name = "B", mask = 2 }),
+        road({ 100, 300, 100, 340, 140, 340, 140, 320, 100, 300 }, { name = "C" }),
+        road(zigzag(300, 0, 300, -80, 20), { name = "D", ends = { "snap", "free" } }),
+    }
+    local g, ref = build(streetsIn, entries), build(streetsIn, entries)
+    ref.skipTo, ref.chainOf = nil, nil
+    assert(g.chainCount and g.chainCount >= 4, "自訂道路建成鏈（否則以下比對沒有意義）")
+    local function both(sx, sy, tx, ty, pn, w, ax, ay, ar)
+        return mod.findRoute(g, sx, sy, tx, ty, ax, ay, ar, w, nil, nil, pn),
+            mod.findRoute(ref, sx, sy, tx, ty, ax, ay, ar, w, nil, nil, pn)
+    end
+    local function same(label, sx, sy, tx, ty, pn, ax, ay, ar)
+        local a, b = both(sx, sy, tx, ty, pn, 12, ax, ay, ar)
+        assert(a and b, label .. "：兩邊都有路")
+        assert(#a.pts == #b.pts, label .. "：點數相同")
+        for i = 1, #a.pts do assert(a.pts[i] == b.pts[i], label .. "：逐點相同") end
+        for i = 1, #a.pts / 2 - 1 do
+            assert(a.segSurface[i] == b.segSurface[i] and a.segWidth[i] == b.segWidth[i]
+                and a.segCustom[i] == b.segCustom[i], label .. "：逐段路面、路寬、自訂標記相同")
+        end
+        assert(a.len == b.len and a.cost == b.cost and a.avoidPenalty == b.avoidPenalty, label .. "：長度與成本相同")
+        return a
+    end
+    local across = same("起訖在官方路、中間整條跳過 A 的兩段", -5, 100, 405, 200, 0)
+    assert(customCount(across) > 90 and passes(across, 0, 150) and passes(across, 400, 150), "走 A 橫越")
+    same("起訖在 A 的兩條鏈中間", 50, 153, 330, 147, 0)
+    same("起訖在 A 的同一條鏈", 50, 153, 150, 147, 0)
+    local detour = same("避讓圈壓在 A 右半", -5, 100, 405, 230, 0, 300, 150, 10)
+    assert(customCount(detour) == 0 and detour.avoidPenalty == 0, "繞官方路避開")
+    assert(customCount(same("pn1 沿 B 縱越", 180, -5, 205, 305, 1)) > 60, "pn1 走 B")
+    assert(customCount(same("pn0 不能走 B", 180, -5, 205, 305, 0)) == 0, "pn0 繞官方路")
+    same("起點在環上", 120, 343, 405, 250, 0)
+    same("起點在死路支線中間", 303, -60, -5, 280, 0)
+    -- 隨機起訖：同成本的路線可能不同，只比總成本（route 成本＋懲罰＋兩端接近距離×權重）
+    local function objective(r, sx, sy, tx, ty, w)
+        return r.cost + r.avoidPenalty + w * (math.sqrt((sx - r.sx) ^ 2 + (sy - r.sy) ^ 2)
+            + math.sqrt((tx - r.ex) ^ 2 + (ty - r.ey) ^ 2))
+    end
+    math.randomseed(14)
+    for q = 1, 300 do
+        local sx, sy, tx, ty = math.random(-20, 420), math.random(-100, 360), math.random(-20, 420), math.random(-100, 360)
+        local pn, w = q % 2, q % 3 == 0 and 3 or 12
+        local ax, ay, ar
+        if q % 4 == 0 then ax, ay, ar = math.random(0, 400), math.random(-80, 340), math.random(3, 30) end
+        local a, b = both(sx, sy, tx, ty, pn, w, ax, ay, ar)
+        assert((a == nil) == (b == nil), "隨機 #" .. q .. "：有無路線一致")
+        if a then
+            assert(math.abs(objective(a, sx, sy, tx, ty, w) - objective(b, sx, sy, tx, ty, w)) < 1e-6,
+                "隨機 #" .. q .. "：總成本相同")
+        end
+    end
+end
+
+-- 甲十四之一、兩條遮罩不同的自訂道路首尾相接：接點只有兩條邊也是路口，不能併成一條鏈（否則 pn0 會被放進
+-- 只給 pn1 的那一半）。O1、O2 兩條官方路只靠東邊 360 格的繞路相通；E（pn0）從 O1 到 (50,30)、F（只給 pn1）接到 O2。
+do
+    local streetsIn = {
+        official({ 0, 0, 100, 0 }), official({ 0, 60, 100, 60 }),
+        official({ 100, 0, 400, 0, 400, 60, 100, 60 }),
+    }
+    local entries = {
+        road({ 50, 0, 52, 10, 48, 20, 50, 30 }, { name = "E" }),
+        road({ 50, 30, 52, 40, 48, 50, 50, 60 }, { name = "F", mask = 2 }),
+    }
+    local g, ref = build(streetsIn, entries), build(streetsIn, entries)
+    ref.skipTo, ref.chainOf = nil, nil
+    local a = assert(find(g, 40, -5, 40, 65, 0), "pn0 有路")
+    local b = assert(find(ref, 40, -5, 40, 65, 0), "逐點展開也有路")
+    assert(customCount(a) == 0 and a.len == b.len and a.cost == b.cost, "pn0 不走 F，繞東邊官方路")
+    assert(customCount(assert(find(g, 40, -5, 40, 65, 1))) == 0, "pn1 不能走 E，同樣繞路")
+    local fromE = assert(find(g, 52, 25, 40, 65, 0), "pn0 從 E 中間出發有路")
+    assert(not passes(fromE, 52, 40) and not passes(fromE, 48, 50) and fromE.len > 300, "pn0 從 E 中間出發也不能接 F")
+end
+
 --------------------------------------------------------------------------------
 -- 乙、整檔載入：重建生命週期
 --------------------------------------------------------------------------------

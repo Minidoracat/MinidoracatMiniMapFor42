@@ -49,7 +49,8 @@
 --   （<0.5s）完成；kickEngine 同步部分只做容器蒐集（輕）。
 -- - 建圖（一次性，OnTick 分幀）：cell gate 預切 → 段對交點/T 字投影（64 格
 --   spatial bucket，桶內配對、桶內游標＝budget 硬上限）→ 吸附鏈共同根解析
---   → 切割成節點/邊（座標量化 join）。每 tick 固定操作預算（STEP_BUDGET），60fps 下 1~3 秒
+--   → 切割成節點/邊（座標量化 join）→ 自訂道路鏈（給 A* 跳過鏈中間點）。
+--   每 tick 固定操作預算（STEP_BUDGET），60fps 下 1~3 秒
 --   完成，不卡渲染幀（對比：Navigator 在 OnGameStart 同步全算，是其負評
 --   「黑屏/卡頓」主因）。
 -- - 尋路（設目標/偏航重算時）：A* 二元堆＋generation stamp 陣列（免每次清表）；
@@ -1203,7 +1204,7 @@ local function stepCut(b, budget)
     while ops < budget do
         local i = b.ci
         if i > b.gn then
-            b.phase = "done"
+            b.phase = "chains" -- 自訂道路鏈（NavCore.stepChains）
             -- 建圖完成即釋放中間產物（bucket/切點/去重表佔記憶體大頭）
             b.buck, b.bkeys, b.cuts, b.seenPair = nil, nil, nil, nil
             b.epMove, b.epStreet, b.junction, b.epKeys = nil, nil, nil, nil
@@ -1285,6 +1286,8 @@ function NavCore.step(b, budget)
             spent = spent + stepResolve(b, budget - spent)
         elseif b.phase == "cut" then
             spent = spent + stepCut(b, budget - spent)
+        elseif b.phase == "chains" then
+            spent = spent + NavCore.stepChains(b, budget - spent)
         else
             return true
         end
@@ -1486,6 +1489,124 @@ local function segmentAvoidPenalty(len, x1, y1, x2, y2, av)
     return 0
 end
 
+-- 自訂道路鏈（2026-10-24 使用者同意做）：自訂道路每個頂點都是圖節點，A* 經過時逐點展開，6000 段時長程算路
+-- 30–81 ms。中間點＝恰好兩條邊、兩條都是自訂邊而且遮罩相同的節點，其他節點都是路口；A* 從路口沿鏈直接到下一個
+-- 路口，不展開中間點。官方邊不壓縮：沒有自訂道路時 A* 與壓縮前逐步相同。鄰接表不動（getNavGraph 照舊是完整圖），
+-- 另記 skipTo／skipCost／skipChain[e]（路口走進鏈的邊 e → 另一端路口、整條鏈的 edgeTravelCost 和、鏈號）、
+-- chainOf[中間點]＝鏈號、chainEdge[c]＝走鏈的起始邊、chainX1／Y1／X2／Y2[c]＝外框（避讓懲罰預篩）。
+-- 只由中間點組成、不接路口的環沒有鏈號，照一般節點展開。
+function NavCore.chainInner(g, v)
+    local e1 = g.adjHead[v]
+    if e1 == 0 then return false end
+    local e2 = g.adjNext[e1]
+    if e2 == 0 or g.adjNext[e2] ~= 0 then return false end
+    local m = g.adjCustom[e1]
+    return m ~= nil and m == g.adjCustom[e2]
+end
+
+-- 建圖階段四（stepCut 之後）：逐一看節點，路口沿每條通往中間點的邊走到下一個路口，兩頭的入口邊一起記好。
+-- 每個看過或走過的節點算一次操作。沒有自訂邊＝不建這些表（Kahlua 沒有 next，用 pairs 試一筆）。
+function NavCore.stepChains(b, budget)
+    local g = b.graph
+    if b.chi == nil then
+        local any = false
+        for _ in pairs(g.adjCustom) do
+            any = true
+            break
+        end
+        if not any then
+            b.phase = "done"
+            return 1
+        end
+        g.skipTo, g.skipCost, g.skipChain, g.chainOf, g.chainEdge = {}, {}, {}, {}, {}
+        g.chainX1, g.chainY1, g.chainX2, g.chainY2 = {}, {}, {}, {}
+        g.chainCount, g.chainOpen, g.chainPenGen, g.chainPen = 0, {}, {}, {}
+        b.chi = 1
+    end
+    local inner = NavCore.chainInner
+    local adjHead, adjNext, adjTo, adjLen = g.adjHead, g.adjNext, g.adjTo, g.adjLen
+    local adjSurface, adjWidth, adjBridge = g.adjSurface, g.adjWidth, g.adjBridge
+    local nx, ny, skipTo, chainOf = g.nx, g.ny, g.skipTo, g.chainOf
+    local ops = 0
+    while ops < budget do
+        local j = b.chi
+        if j > g.nodeCount then
+            b.phase = "done"
+            return ops
+        end
+        ops = ops + 1
+        if not inner(g, j) then
+            local e = adjHead[j]
+            while e ~= 0 do
+                if skipTo[e] == nil and inner(g, adjTo[e]) then
+                    local c = g.chainCount + 1
+                    g.chainCount = c
+                    local x1, y1, x2, y2 = nx[j], ny[j], nx[j], ny[j]
+                    local cost = edgeTravelCost(adjLen[e], adjSurface[e], adjWidth[e], adjBridge[e])
+                    local prev, v, last = j, adjTo[e], e
+                    -- 中間點只有兩條邊，往不是來時的那條走；從路口出發一定走到路口（可能是自己）
+                    while inner(g, v) do
+                        chainOf[v] = c
+                        local x, y = nx[v], ny[v]
+                        if x < x1 then x1 = x elseif x > x2 then x2 = x end
+                        if y < y1 then y1 = y elseif y > y2 then y2 = y end
+                        local e1 = adjHead[v]
+                        local nxt = adjTo[e1] == prev and adjNext[e1] or e1
+                        cost = cost + edgeTravelCost(adjLen[nxt], adjSurface[nxt], adjWidth[nxt], adjBridge[nxt])
+                        prev, v, last = v, adjTo[nxt], nxt
+                        ops = ops + 1
+                    end
+                    local x, y = nx[v], ny[v]
+                    if x < x1 then x1 = x elseif x > x2 then x2 = x end
+                    if y < y1 then y1 = y elseif y > y2 then y2 = y end
+                    -- 邊成對配置：奇數號是正向、下一號是反向（graphEdge）
+                    local back = last % 2 == 1 and last + 1 or last - 1
+                    skipTo[e], g.skipCost[e], g.skipChain[e] = v, cost, c
+                    skipTo[back], g.skipCost[back], g.skipChain[back] = j, cost, c
+                    g.chainEdge[c] = e
+                    g.chainX1[c], g.chainY1[c], g.chainX2[c], g.chainY2[c] = x1, y1, x2, y2
+                end
+                e = adjNext[e]
+            end
+        end
+        b.chi = j + 1
+    end
+    return ops
+end
+
+-- 整條跳過的鏈吃到的避讓懲罰＝逐段 segmentAvoidPenalty 的和；外框離每個圈都超過半徑＝0（不可能有段命中）。
+-- gen＝這次查詢的 generation，同一次查詢每條鏈只算一次。
+function NavCore.chainPenalty(g, c, av, gen, query)
+    if g.chainPenGen[c] == gen then return g.chainPen[c] end
+    local x1, y1, x2, y2 = g.chainX1[c], g.chainY1[c], g.chainX2[c], g.chainY2[c]
+    local pen, near = 0, false
+    for i = 1, #av, 3 do
+        local ax, ay = av[i], av[i + 1]
+        local dx = ax < x1 and x1 - ax or (ax > x2 and ax - x2 or 0)
+        local dy = ay < y1 and y1 - ay or (ay > y2 and ay - y2 or 0)
+        if dx * dx + dy * dy <= av[i + 2] then
+            near = true
+            break
+        end
+    end
+    if near then
+        local nx, ny, adjHead, adjNext, adjTo, adjLen = g.nx, g.ny, g.adjHead, g.adjNext, g.adjTo, g.adjLen
+        local chainOf, e = g.chainOf, g.chainEdge[c]
+        local prev, v = adjTo[e % 2 == 1 and e + 1 or e - 1], adjTo[e]
+        pen = segmentAvoidPenalty(adjLen[e], nx[prev], ny[prev], nx[v], ny[v], av)
+        while chainOf[v] == c do
+            queryStep(query, 1)
+            local e1 = adjHead[v]
+            local nxt = adjTo[e1] == prev and adjNext[e1] or e1
+            local w = adjTo[nxt]
+            pen = pen + segmentAvoidPenalty(adjLen[nxt], nx[v], ny[v], nx[w], ny[w], av)
+            prev, v = v, w
+        end
+    end
+    g.chainPenGen[c], g.chainPen[c] = gen, pen
+    return pen
+end
+
 -- A*（多源多終點，2026-10-23 起）：每個起點候選的投影點→所在段兩端當種子（g＝起點 approach×權重＋段內
 -- 成本），每個終點候選注入一個臨時節點 Q_k（段兩端→Q_k 的邊另加終點 approach×權重），搜完回滾。一次搜完
 -- 所有起訖組合，結果等同逐組跑單源單終點 A* 再比總成本（之前的寫法），工作量約剩一組：補比官方候選
@@ -1496,6 +1617,8 @@ end
 -- adjLen，且都不含兩端 approach；sx/sy、ex/ey＝勝出那組起訖候選的投影點。
 -- pn：跳過遮罩不含這位本機玩家的自訂道路邊（分割畫面：別人的私路不給走）；起訖候選
 -- 已由 snapCandidates 依同一 pn 過濾。route.segCustom[i]＝true 標出走在自訂道路上的段。
+-- 自訂道路鏈（NavCore.stepChains）：路口沿 skipTo 一次走完整條鏈；起訖候選所在的鏈這次逐點展開（起點或終點
+-- 可能在鏈中間）。路線重建時補回跳過的中間點，每段用自己那條邊的 metadata，輸出和逐點展開時同一種形狀。
 local function runAStar(g, starts, ends, sx, sy, tx, ty, w, av, query, pn)
     if type(g.nx) ~= "table" or type(g.ny) ~= "table" or type(g.adjHead) ~= "table"
         or type(g.adjTo) ~= "table" or type(g.adjLen) ~= "table"
@@ -1527,6 +1650,7 @@ local function runAStar(g, starts, ends, sx, sy, tx, ty, w, av, query, pn)
     local nodeCount, eBase = g.nodeCount, g.edgeCount
     local adjHead, adjTo, adjLen, adjNext = g.adjHead, g.adjTo, g.adjLen, g.adjNext
     local adjSurface, adjWidth, adjBridge, adjCustom = g.adjSurface, g.adjWidth, g.adjBridge, g.adjCustom
+    local skipTo, skipCost, skipChain, chainOpen = g.skipTo or {}, g.skipCost, g.skipChain, g.chainOpen
     local bit = PN_BIT[pn]
     local eqx, eqy, ewa = {}, {}, {}
     for k = 1, nEnd do
@@ -1542,6 +1666,13 @@ local function runAStar(g, starts, ends, sx, sy, tx, ty, w, av, query, pn)
         return hv
     end
     local gen = g.gen + 1
+    if g.chainOf then
+        for k = 1, nStart + nEnd do
+            local s = (k <= nStart and starts[k] or ends[k - nStart]).seg
+            local c = g.chainOf[g.sA[s]] or g.chainOf[g.sB[s]]
+            if c then chainOpen[c] = gen end
+        end
+    end
     local gS, fromN, fromEdge = g.gScore, g.fromN, g.fromEdge
     local stamp, closed = g.stamp, g.closed
     local hI, hF = {}, {}
@@ -1597,11 +1728,17 @@ local function runAStar(g, starts, ends, sx, sy, tx, ty, w, av, query, pn)
                     queryStep(query, 1)
                     local m = adjCustom[e]
                     if m == nil or (bit and m % (bit + bit) >= bit) then
-                        local to = adjTo[e]
-                        local edgeLen = adjLen[e]
-                        local ng = gn + edgeTravelCost(edgeLen, adjSurface[e], adjWidth[e], adjBridge[e])
-                            + segmentAvoidPenalty(edgeLen, nx[n], ny[n], nx[to], ny[to], av)
-                        if e > eBase then ng = ng + extra[e] end
+                        local to, ng = skipTo[e], nil
+                        if to and chainOpen[skipChain[e]] ~= gen then
+                            ng = gn + skipCost[e]
+                            if av then ng = ng + NavCore.chainPenalty(g, skipChain[e], av, gen, query) end
+                        else
+                            to = adjTo[e]
+                            local edgeLen = adjLen[e]
+                            ng = gn + edgeTravelCost(edgeLen, adjSurface[e], adjWidth[e], adjBridge[e])
+                                + segmentAvoidPenalty(edgeLen, nx[n], ny[n], nx[to], ny[to], av)
+                            if e > eBase then ng = ng + extra[e] end
+                        end
                         if stamp[to] ~= gen or ng < gS[to] then
                             stamp[to], gS[to], fromN[to], fromEdge[to], closed[to] = gen, ng, n, e, false
                             heapPush(hI, hF, to, ng + (to > nodeCount and 0 or heur(nx[to], ny[to])), query)
@@ -1639,30 +1776,11 @@ local function runAStar(g, starts, ends, sx, sy, tx, ty, w, av, query, pn)
     local pts, segSurface, segWidth, segCustom = {}, {}, {}, {}
     local np, routeLen, routeCost, avoidPenalty = 2, 0, 0, 0
     pts[1], pts[2] = sc.qx, sc.qy -- 起錨（玩家 snap 投影點）
-    for i = cn, 1, -1 do
-        local node = chain[i]
-        local x, y
-        if node == reached then
-            x, y = ec.qx, ec.qy
-        else
-            x, y = nx[node], ny[node]
-        end
-        -- 與前一點重合（起錨=首節點）時跳過，metadata 也不可多一格。
+    -- 接一點：與前一點重合（起錨=首節點）時跳過，metadata 也不可多一格。
+    local function emit(x, y, surface, width, bridge, mask)
         local prevX, prevY = pts[np - 1], pts[np]
         local edgeLen = sqrt(dist2(prevX, prevY, x, y))
         if edgeLen > 1e-6 then
-            local surface, width, bridge, mask
-            if fromN[node] == 0 then          -- 起點種子：走的是勝出起點候選的 snap 段
-                local s = sc.seg
-                surface, width, bridge, mask = g.sSurface[s], g.sWidth[s], g.sBridge[s], g.sCustom[s]
-            elseif node == reached then       -- 注入邊已回滾，改用勝出終點候選的 snap 段
-                local s = ec.seg
-                surface, width, bridge, mask = g.sSurface[s], g.sWidth[s], g.sBridge[s], g.sCustom[s]
-            else
-                local edge = fromEdge[node]
-                surface, width, bridge = adjSurface[edge], adjWidth[edge], adjBridge[edge]
-                mask = adjCustom[edge]
-            end
             np = np + 2
             pts[np - 1], pts[np] = x, y
             local segmentIndex = np / 2 - 1
@@ -1672,6 +1790,28 @@ local function runAStar(g, starts, ends, sx, sy, tx, ty, w, av, query, pn)
             routeCost = routeCost + edgeTravelCost(edgeLen, surface, width, bridge)
             avoidPenalty = avoidPenalty
                 + segmentAvoidPenalty(edgeLen, prevX, prevY, x, y, av)
+        end
+    end
+    for i = cn, 1, -1 do
+        local node = chain[i]
+        if fromN[node] == 0 then          -- 起點種子：走的是勝出起點候選的 snap 段
+            local s = sc.seg
+            emit(nx[node], ny[node], g.sSurface[s], g.sWidth[s], g.sBridge[s], g.sCustom[s])
+        elseif node == reached then       -- 注入邊已回滾，改用勝出終點候選的 snap 段
+            local s = ec.seg
+            emit(ec.qx, ec.qy, g.sSurface[s], g.sWidth[s], g.sBridge[s], g.sCustom[s])
+        else
+            local edge = fromEdge[node]
+            if skipTo[edge] == node then  -- 整條跳過的鏈：補回中間點（注入邊已回滾，中間點只剩兩條邊）
+                local prev, v = fromN[node], adjTo[edge]
+                while v ~= node do
+                    emit(nx[v], ny[v], adjSurface[edge], adjWidth[edge], adjBridge[edge], adjCustom[edge])
+                    local e1 = adjHead[v]
+                    edge = adjTo[e1] == prev and adjNext[e1] or e1
+                    prev, v = v, adjTo[edge]
+                end
+            end
+            emit(nx[node], ny[node], adjSurface[edge], adjWidth[edge], adjBridge[edge], adjCustom[edge])
         end
     end
     return {
