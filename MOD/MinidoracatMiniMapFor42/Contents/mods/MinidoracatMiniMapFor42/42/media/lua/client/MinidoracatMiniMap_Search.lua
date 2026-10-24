@@ -2638,10 +2638,14 @@ relayoutWindow = function(win, pn)
         itinerary = modeTop + HEAD_LINES * lineH * 2 + 8,
     }
     local baseY = math.max(listY.search, listY.itinerary)
-    local block = math.max(
-        layoutButtons(win.searchBtns, pad, 0, availW, btnH, gap),
-        layoutButtons(win.tripBtns, pad, 0, availW, btnH, gap),
-        layoutButtons(win.roadBtns, pad, 0, availW, btnH, gap))
+    -- 視窗高照按鈕最多列的那一頁（換頁不變高）；每頁的按鈕各自貼齊底邊，列數較少的頁把多出的高度給清單，
+    -- 不在按鈕下面留白（EN 道路頁四顆鈕換成兩列時，其他頁原本多一條空白）
+    local blocks = {
+        search = layoutButtons(win.searchBtns, pad, 0, availW, btnH, gap),
+        itinerary = layoutButtons(win.tripBtns, pad, 0, availW, btnH, gap),
+        roads = layoutButtons(win.roadBtns, pad, 0, availW, btnH, gap),
+    }
+    local block = math.max(blocks.search, blocks.itinerary, blocks.roads)
     local function heightFor(rows)
         return baseY + block + rowH * rows + msgH + pad + 8
     end
@@ -2653,7 +2657,7 @@ relayoutWindow = function(win, pn)
     end
     local h = math.min(heightFor(8), maxH)
     win:setHeight(h)
-    local btnTop = h - pad - block
+    local btnTop = h - pad - blocks.itinerary
     -- 窄版大字時分頁列可能換到兩三列（四個分頁）：行程清單連一列都放不下時，訊息列只留一行，
     -- 放不下的全文照舊接進可捲清單（winMessage 的 msgFull），清單至少留一列可選
     win.msgMaxLines = MSG_LINES
@@ -2661,38 +2665,41 @@ relayoutWindow = function(win, pn)
         win.msgMaxLines = 1
         msgH = lineH + 6
     end
-    local msgY = btnTop - msgH
-    layoutButtons(win.searchBtns, pad, btnTop, availW, btnH, gap)
+    local msgY = {
+        search = h - pad - blocks.search - msgH,
+        itinerary = btnTop - msgH,
+        roads = h - pad - blocks.roads - msgH,
+    }
+    layoutButtons(win.searchBtns, pad, h - pad - blocks.search, availW, btnH, gap)
     layoutButtons(win.tripBtns, pad, btnTop, availW, btnH, gap)
-    layoutButtons(win.roadBtns, pad, btnTop, availW, btnH, gap)
+    layoutButtons(win.roadBtns, pad, h - pad - blocks.roads, availW, btnH, gap)
     layoutButtons(win.modeBtns, pad, bodyY, availW, btnH, gap)
-    local function fitList(listEl, y)
+    local function fitList(listEl, y, bottom)
         listEl:setX(pad)
         listEl:setY(y)
         listEl:setWidth(availW)
-        listEl:setHeight(math.max(0, msgY - 4 - y))
+        listEl:setHeight(math.max(0, bottom - 4 - y))
         listEl.itemheight = rowH
         listEl._minidoracatTextY = math.floor((rowH - fhS) / 2)
         listEl._minidoracatLineH = lineH
     end
-    fitList(win.list, listY.search)
-    fitList(win.tripList, listY.itinerary)
+    fitList(win.list, listY.search, msgY.search)
+    fitList(win.tripList, listY.itinerary, msgY.itinerary)
     -- 收藏頁、道路頁與搜尋頁共用 win.list：這兩頁沒有搜尋框，清單往上接到分頁列下面（applyPage 依頁套用）
-    local under = { y = bodyY, h = math.max(0, msgY - 4 - bodyY) }
     win.listAt = {
-        search = { y = listY.search, h = math.max(0, msgY - 4 - listY.search) },
-        places = under,
-        roads = under,
+        search = { y = listY.search, h = math.max(0, msgY.search - 4 - listY.search) },
+        places = { y = bodyY, h = math.max(0, msgY.search - 4 - bodyY) },
+        roads = { y = bodyY, h = math.max(0, msgY.roads - 4 - bodyY) },
     }
     win.entry:setX(pad)
     win.entry:setY(bodyY)
     win.entry:setWidth(availW)
     win.entry:setHeight(entryH)
     win.geom = {
-        search = { msgY = msgY, headY = bodyY },
-        places = { msgY = msgY, headY = bodyY },
-        itinerary = { msgY = msgY, headY = modeTop },
-        roads = { msgY = msgY, headY = bodyY },
+        search = { msgY = msgY.search, headY = bodyY },
+        places = { msgY = msgY.search, headY = bodyY },
+        itinerary = { msgY = msgY.itinerary, headY = modeTop },
+        roads = { msgY = msgY.roads, headY = bodyY },
     }
     win.searchFocus = focusListFor(win, win.list, win.searchBtns, win.entry, nil)
     win.placesFocus = focusListFor(win, win.list, win.searchBtns, nil, nil)

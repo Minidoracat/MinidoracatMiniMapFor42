@@ -663,5 +663,6 @@
     "UI_MinidoracatMiniMap_RoadError_invalid": "Эту дорогу нельзя сохранить. Проверьте точки, ширину и название.",
     "UI_MinidoracatMiniMap_RoadError_notfound": "Этой дороги больше нет.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "Нет персонажа, для которого можно сохранить дороги.",
-    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Не удалось добавить свои дороги в навигацию (предел дорожной сети). Маршруты по-прежнему используют дороги до этого изменения."
+    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Не удалось добавить свои дороги в навигацию (предел дорожной сети). Маршруты по-прежнему используют дороги до этого изменения.",
+    "UI_MinidoracatMiniMap_WhatsNew": "Свои дороги: нарисуйте на карте или запишите на ходу (Поиск по карте > Дороги). Навигация их использует."
 }

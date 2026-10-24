@@ -663,5 +663,6 @@
     "UI_MinidoracatMiniMap_RoadError_invalid": "Esta estrada não pode ser salva. Confira os pontos, a largura e o nome.",
     "UI_MinidoracatMiniMap_RoadError_notfound": "Essa estrada não existe mais.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "Não há personagem para salvar estradas.",
-    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Não foi possível adicionar as estradas personalizadas à navegação (limite da rede de estradas). As rotas continuam usando as estradas de antes desta mudança."
+    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Não foi possível adicionar as estradas personalizadas à navegação (limite da rede de estradas). As rotas continuam usando as estradas de antes desta mudança.",
+    "UI_MinidoracatMiniMap_WhatsNew": "Estradas personalizadas: desenhe ou grave dirigindo (Busca no mapa > Estradas). A navegação as usa."
 }

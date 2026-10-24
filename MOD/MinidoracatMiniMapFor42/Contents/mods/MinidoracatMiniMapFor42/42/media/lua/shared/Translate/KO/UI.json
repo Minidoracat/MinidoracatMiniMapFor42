@@ -663,5 +663,6 @@
     "UI_MinidoracatMiniMap_RoadError_invalid": "이 도로는 저장할 수 없습니다. 점, 폭, 이름을 확인하세요.",
     "UI_MinidoracatMiniMap_RoadError_notfound": "그 도로는 더 이상 없습니다.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "도로를 저장할 캐릭터가 없습니다.",
-    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "사용자 도로를 내비게이션에 추가하지 못했습니다(도로망 용량 한도). 경로는 이번 변경 전의 도로를 계속 사용합니다."
+    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "사용자 도로를 내비게이션에 추가하지 못했습니다(도로망 용량 한도). 경로는 이번 변경 전의 도로를 계속 사용합니다.",
+    "UI_MinidoracatMiniMap_WhatsNew": "사용자 도로 추가: \"지도 검색\"의 \"도로\" 탭에서 지도에 그리거나 운전하며 기록하면 내비게이션이 그 길을 사용합니다. 멀티에서는 조직·은신처와 공유할 수 있습니다."
 }

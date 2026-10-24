@@ -663,5 +663,6 @@
     "UI_MinidoracatMiniMap_RoadError_invalid": "Diese Straße kann nicht gespeichert werden. Prüfe Punkte, Breite und Namen.",
     "UI_MinidoracatMiniMap_RoadError_notfound": "Diese Straße gibt es nicht mehr.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "Keine Spielfigur, für die Straßen gespeichert werden können.",
-    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Eigene Straßen konnten nicht in die Navigation aufgenommen werden (Grenze des Straßennetzes). Routen nutzen weiter die Straßen von vor dieser Änderung."
+    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Eigene Straßen konnten nicht in die Navigation aufgenommen werden (Grenze des Straßennetzes). Routen nutzen weiter die Straßen von vor dieser Änderung.",
+    "UI_MinidoracatMiniMap_WhatsNew": "Eigene Straßen zeichnen oder beim Fahren aufzeichnen (Kartensuche > Straßen). Die Navigation nutzt sie."
 }

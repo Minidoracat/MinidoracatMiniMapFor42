@@ -663,5 +663,6 @@
     "UI_MinidoracatMiniMap_RoadError_invalid": "這條路無法儲存，請檢查點數、路寬與名稱。",
     "UI_MinidoracatMiniMap_RoadError_notfound": "這條路已經不存在。",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "目前沒有角色，無法儲存道路。",
-    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "自訂道路無法加入導航（超過路網容量上限），路線會沿用這次變更前的道路。"
+    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "自訂道路無法加入導航（超過路網容量上限），路線會沿用這次變更前的道路。",
+    "UI_MinidoracatMiniMap_WhatsNew": "新增自訂道路：在「地圖搜尋」的「道路」分頁畫路或開車錄路，導航會走這些路；多人可分享給陣營與安全屋。"
 }

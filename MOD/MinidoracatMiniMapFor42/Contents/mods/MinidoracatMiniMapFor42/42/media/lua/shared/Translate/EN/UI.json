@@ -663,5 +663,6 @@
     "UI_MinidoracatMiniMap_RoadError_invalid": "This road can't be saved. Check its points, width, and name.",
     "UI_MinidoracatMiniMap_RoadError_notfound": "That road no longer exists.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "No character to save roads for.",
-    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Custom roads could not be added to navigation (road network limit). Routes keep using the roads from before this change."
+    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Custom roads could not be added to navigation (road network limit). Routes keep using the roads from before this change.",
+    "UI_MinidoracatMiniMap_WhatsNew": "Custom roads: draw on the map or record while driving (Map Search > Roads). Navigation uses them."
 }

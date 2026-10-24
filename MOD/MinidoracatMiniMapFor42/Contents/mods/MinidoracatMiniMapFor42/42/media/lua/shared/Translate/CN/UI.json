@@ -663,5 +663,6 @@
     "UI_MinidoracatMiniMap_RoadError_invalid": "这条路无法保存，请检查点数、路宽和名称。",
     "UI_MinidoracatMiniMap_RoadError_notfound": "这条路已经不存在。",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "当前没有角色，无法保存道路。",
-    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "自定义道路无法加入导航（超过路网容量上限），路线会沿用这次变更前的道路。"
+    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "自定义道路无法加入导航（超过路网容量上限），路线会沿用这次变更前的道路。",
+    "UI_MinidoracatMiniMap_WhatsNew": "新增自定义道路：在「地图搜索」的「道路」页画路或开车录路，导航会走这些路；多人可分享给阵营与安全屋。"
 }

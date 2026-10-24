@@ -663,5 +663,6 @@
     "UI_MinidoracatMiniMap_RoadError_invalid": "Cette route ne peut pas être enregistrée. Vérifiez ses points, sa largeur et son nom.",
     "UI_MinidoracatMiniMap_RoadError_notfound": "Cette route n'existe plus.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "Aucun personnage pour qui enregistrer des routes.",
-    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Les routes personnalisées n'ont pas pu être ajoutées à la navigation (limite du réseau routier). Les itinéraires utilisent toujours les routes d'avant ce changement."
+    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Les routes personnalisées n'ont pas pu être ajoutées à la navigation (limite du réseau routier). Les itinéraires utilisent toujours les routes d'avant ce changement.",
+    "UI_MinidoracatMiniMap_WhatsNew": "Tracez ou enregistrez vos routes (Recherche sur la carte > Routes) : la navigation les utilise."
 }

@@ -663,5 +663,6 @@
     "UI_MinidoracatMiniMap_RoadError_invalid": "この道路は保存できません。点、道幅、名前を確認してください。",
     "UI_MinidoracatMiniMap_RoadError_notfound": "その道路はもう存在しません。",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "道路を保存するキャラクターがいません。",
-    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "カスタム道路をナビに追加できませんでした（道路網の容量上限）。ルートはこの変更前の道路を引き続き使います。"
+    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "カスタム道路をナビに追加できませんでした（道路網の容量上限）。ルートはこの変更前の道路を引き続き使います。",
+    "UI_MinidoracatMiniMap_WhatsNew": "カスタム道路を追加：「マップ検索」の「道路」タブで地図に描くか運転しながら記録すると、ナビが使います。マルチでは派閥・セーフハウスと共有できます。"
 }

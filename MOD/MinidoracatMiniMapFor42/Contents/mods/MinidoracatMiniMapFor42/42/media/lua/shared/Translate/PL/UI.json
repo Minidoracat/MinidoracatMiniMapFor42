@@ -663,5 +663,6 @@
     "UI_MinidoracatMiniMap_RoadError_invalid": "Tej drogi nie można zapisać. Sprawdź punkty, szerokość i nazwę.",
     "UI_MinidoracatMiniMap_RoadError_notfound": "Ta droga już nie istnieje.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "Brak postaci, dla której można zapisać drogi.",
-    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Nie udało się dodać własnych dróg do nawigacji (limit sieci dróg). Trasy nadal korzystają z dróg sprzed tej zmiany."
+    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Nie udało się dodać własnych dróg do nawigacji (limit sieci dróg). Trasy nadal korzystają z dróg sprzed tej zmiany.",
+    "UI_MinidoracatMiniMap_WhatsNew": "Własne drogi: narysuj na mapie lub nagraj podczas jazdy (Wyszukiwanie na mapie > Drogi). Nawigacja z nich korzysta."
 }

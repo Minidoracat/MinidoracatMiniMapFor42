@@ -1,7 +1,7 @@
 <!-- 指南網址：https://steamcommunity.com/sharedfiles/filedetails/?id=3817841972 -->
 <!-- Steam guide source (English): the full reference for this mod; the Workshop description only summarizes. Format and sync: pz-family-docs/release.md「完整說明：Steam 指南」 -->
 <!-- 標題：📖 MiniMap Mod Guide: Features, Navigation & Road Data -->
-<!-- 摘要：Illustrated guide to the Minidoracat MiniMap mod: map imagery, resource points, parking lots, search and multi-target navigation, home and favorites, mini-map controls, facing arrows and floors, icons, Map Display Settings and server sandbox options, and road data for mod maps. -->
+<!-- 摘要：Illustrated guide to the Minidoracat MiniMap mod: map imagery, resource points, parking lots, search and multi-target navigation, home and favorites, custom roads, mini-map controls, facing arrows and floors, icons, Map Display Settings and server sandbox options, and road data for mod maps. -->
 === 🚀 Quick start
 [b]繁體中文版：[/b][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817841920]小地圖 MOD 完整說明[/url]
 
@@ -77,7 +77,7 @@ Both go by the room names inside buildings, which are also what decides the loot
 === 🧰 Search & trip window
 {{img:05-search-street.jpg}}
 [list]
-[*] [b]Open[/b]: the magnifier in the mini-map or world map button row, right-click the map → "Search, favorites & itinerary...", or [b];[/b]. The window has three tabs: Search, Favorites and Itinerary (←/→ on the keyboard, X on a gamepad).
+[*] [b]Open[/b]: the magnifier in the mini-map or world map button row, right-click the map → "Search, favorites & itinerary...", or [b];[/b]. The window has four tabs: Search, Favorites, Itinerary and Roads (←/→ on the keyboard, X on a gamepad).
 [*] [b]Type[/b]:
 [list]
 [*] coordinates (e.g. 12895,3499)
@@ -103,12 +103,14 @@ Both go by the room names inside buildings, which are also what decides the loot
 [*] [b]Arriving[/b]: for a target on the road, stopping in the lane beside it counts as arrived (no need to cross to the other side of the centre line); for an off-road target, reaching the roadside tells you to walk the rest.
 [*] [b]After the last stop[/b]: the numbered stop markers disappear from the maps (the trip page still lists the results); to keep them, turn on "Keep finished trip on map" in the "Players & navigation" category of Map Display Settings.
 [*] [b]New trip[/b]: adding a stop or setting a navigation target after a trip has finished starts a new trip numbered from 1, no clearing needed.
+[*] [b]No road to a stop[/b]: the trip pauses and tells you; draw a custom road to it, or choose "Use straight-line guidance" under "Actions…" on the trip page.
 [/list]
 {{img:09-nav-route-minimap.jpg}}
 [h3]Routes[/h3]
 [list]
 [*] [b]Roads[/b]: routes follow roads and slightly prefer paved ones when there is a reasonable alternative; places reachable only by gravel or dirt roads are still reachable.
 [*] [b]Off course[/b]: routes replan automatically when you go off course.
+[*] [b]Custom roads[/b]: where there is no road data, draw a road or record one while driving, and navigation treats it like any other road (see "Custom roads").
 [*] [b]Hands-free driving[/b]: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817845953]AutoDrive Guide[/url].
 [/list]
 [h3]Sharing with your faction (MP)[/h3]
@@ -129,6 +131,43 @@ Both go by the room names inside buildings, which are also what decides the loot
 [*] [b]Favorites list[/b]: the window's Favorites tab lists home and every favorite; right-click the map → "Favorites" → "Manage favorites…" opens it. Right-click a favorite (or select it and press "Actions…") to rename, remove or set it as home.
 [*] [b]Saved[/b]: kept on your PC per account (one set per server account in multiplayer, one per save in single player), so a new character still has them after death; to move them to another PC, copy the Zomboid/Lua/MinidoracatMiniMap/places folder.
 [*] [b]Hide icons[/b]: turn off "Show home & favorites" in "Players & navigation"; Go Home, the Favorites tab and the right-click menu still work.
+[/list]
+=== 🧰 Custom roads
+{{img:14-custom-roads.jpg}}
+Where a mod map has no road data, on roads players built themselves, or on dirt roads the map doesn't include, navigation used to draw a straight line. Draw or record a road and navigation treats it like any other road.
+[h3]Making a road[/h3]
+[list]
+[*] [b]Where[/b]: the Roads tab of the search window ([b];[/b]): "Draw new road" or "Record road".
+[*] [b]Drawing[/b]: on the world map, left-click adds a point, right-click undoes, Enter finishes; hold Shift to stop snapping.
+[*] [b]Leaving midway[/b]: Esc exits and keeps the line; continue or discard it from the Roads tab.
+[*] [b]Recording[/b]: drive (or walk) along the road you want to keep, then press "Stop recording" to check and trim it on the world map before saving.
+[*] [b]Width and surface[/b]: measured while recording where possible; widths that couldn't be measured are marked as estimated. The save form lets you change the surface (paved, gravel, dirt) and width.
+[*] [b]Joining roads[/b]: ends snap to nearby roads while drawing; the save form lists ends with a road within 30 tiles that aren't connected, and "Connect to road" joins them. Dead ends are fine.
+[*] [b]Warnings[/b]: sharp turns and possible buildings in the way are only flagged; they don't block saving.
+[*] [b]Editing the shape[/b]: drag a point to move it, click a small circle to add one, right-click a point for its menu.
+[/list]
+[h3]Navigation and managing roads[/h3]
+[list]
+[*] [b]Navigation[/b]: a saved road joins navigation within a few seconds and is compared with the existing roads, so the shorter way wins; to force a road, add a stop on it.
+[*] [b]AutoDrive[/b]: with AutoDrive installed, it drives custom roads by their width and surface and still avoids obstacles.
+[*] [b]Right-click menu[/b]: right-click a custom road on the map and the "Favorites" entry becomes "Road: <name>": edit shape, rename, share, don't use for navigation, or delete.
+[*] [b]Limits[/b]: 6000 segments across all active custom roads and 300 points per road; roads past the limit show "Road network full" and aren't used for navigation.
+[*] [b]Saved[/b]: kept on your PC per account (same rules as favorites) with a backup copy; to move them to another PC, copy the Zomboid/Lua/MinidoracatMiniMap/roads folder.
+[/list]
+[h3]Sharing with your faction and safehouse (MP)[/h3]
+[list]
+[*] [b]How[/b]: "Share…" in the road's right-click menu or on the Roads tab, then tick faction or safehouse.
+[*] [b]Receivers[/b]: get it when they come online and navigation uses it right away; they can't change it, but can set it to not be used for navigation or "Copy to My roads" and edit the copy.
+[*] [b]Sync[/b]: the author's edits are synced and deleting a road withdraws it; leaving the faction or safehouse stops receiving it.
+[*] [b]Limit[/b]: up to 30 shared roads per player.
+[*] [b]Server[/b]: the sandbox option "Allow custom road sharing" turns it off (on by default).
+[/list]
+[h3]Style and display[/h3]
+[list]
+[*] [b]Style[/b]: "Road surface" by default (gray paved, light-brown gravel, brown dirt, with a yellow center line on paved roads when zoomed in), or "Outlined corridor" or "Map line".
+[*] [b]Roads from others[/b]: outlined in blue with the author's name; roads not used for navigation are drawn fainter.
+[*] [b]Settings[/b]: the "Custom roads" category in Map Display Settings: which maps, road names, roads shared by others, roads not used for navigation, style, opacity and minimum width when zoomed out.
+[*] [b]Display only[/b]: turning the layer off only hides the roads; navigation still uses them.
 [/list]
 === 🧰 Mini-map controls
 [list]
@@ -226,7 +265,7 @@ Both go by the room names inside buildings, which are also what decides the loot
 [list]
 [*] [b]Four groups[/b] in the side list:
 [list]
-[*] Map layers: Base map & text, Players & navigation, Remote Symbols (MP only), Resource points, Parking lot, Zombies, Animals, Vehicles, Safehouses
+[*] Map layers: Base map & text, Players & navigation, Remote Symbols (MP only), Custom roads, Resource points, Parking lot, Zombies, Animals, Vehicles, Safehouses
 [*] Window & controls: Mini-map window, Performance notes
 [*] Add-ons
 [*] Admin: only when the server allows Tactical view and you have the permission
@@ -239,7 +278,7 @@ Both go by the room names inside buildings, which are also what decides the loot
 [/list]
 [h3]Previews, filters and reset[/h3]
 [list]
-[*] [b]Live previews[/b]: at the top of the zombie, animal, vehicle, resource point, safehouse, players & navigation and custom zone categories; they show size, color, opacity, style and name changes the way the map draws them, even with nothing nearby.
+[*] [b]Live previews[/b]: at the top of the zombie, animal, vehicle, resource point, safehouse, players & navigation, custom roads and custom zone categories; they show size, color, opacity, style and name changes the way the map draws them, even with nothing nearby.
 [*] [b]Filter chips[/b]: resource point categories, animal species and vehicle categories are clickable chips, with icons colored as on the map.
 [*] [b]Tooltips[/b]: every toggle has the same help text as the ESC page (hover it).
 [*] [b]Reset this category[/b]: restores this mod's defaults only; vanilla map-engine options stay.
@@ -255,7 +294,7 @@ Both go by the room names inside buildings, which are also what decides the loot
 [/list]
 [h3]ESC → Options → MOD[/h3]
 [list]
-[*] The mini-map page follows the same categories with titles (Base map & text, Players & navigation, Resource points, Zombies, Animals, Vehicles, Safehouses, Mini-map window, Advanced).
+[*] The mini-map page follows the same categories with titles (Base map & text, Players & navigation, Custom roads, Resource points, Zombies, Animals, Vehicles, Safehouses, Mini-map window, Advanced).
 [*] It holds every setting; both stay in sync.
 [/list]
 === ⚙️ Server settings (sandbox)
@@ -269,6 +308,7 @@ Both go by the room names inside buildings, which are also what decides the loot
 [*] four livestock-visibility levels
 [*] safehouse display scope
 [*] faction sharing toggle
+[*] custom road sharing toggle ("General" page)
 [*] who can see other players' facing, and whether floor marks are allowed ("General" page)
 [/list]
 [*] [b]Live[/b]: changes apply live.
@@ -303,6 +343,7 @@ MiniMap doesn't detect the real road surface to correct coordinates; it only has
 [list]
 [*] [b]Source[/b]: street names on the map, street search, navigation and the AutoDrive road network all come from the native streets.xml the map author ships in the mod.
 [*] [b]Without it[/b]: the image still shows, but that area has no street names, search or navigation — it's not a missing translation in the map pack.
+[*] [b]Fill the gaps yourself[/b]: where there is no road data, draw or record a custom road and navigation will use it (see "Custom roads").
 [*] [b]Accuracy[/b]: road coordinates, widths, bends and junctions must match the real surface; gaps, breaks or offsets can mean no route, detours or going off-road.
 [*] [b]Overlapping maps[/b]: roads follow map priority (in MP, the server Map= order); streets in lower-priority areas can drop out, so neither original nor translated names are found.
 [*] [b]Which maps have road data[/b]: which maps have author road data and which had roads added by the map pack: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817840392]MOD Maps supported map list[/url].
@@ -320,6 +361,7 @@ MiniMap doesn't detect the real road surface to correct coordinates; it only has
 [h3]No street names or navigation in a mod map area?[/h3]
 [list]
 [*] Usually the map's author didn't include road data, or a higher-priority map covers that area.
+[*] You can draw a custom road or record one while driving, and navigation will use it (see "Custom roads").
 [*] See "Mod maps & road data" and the MOD Maps supported map list.
 [/list]
 [h3]Can't see teammates' arrows in multiplayer?[/h3]

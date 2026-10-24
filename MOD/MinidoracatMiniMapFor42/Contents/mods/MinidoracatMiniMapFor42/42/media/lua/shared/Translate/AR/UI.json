@@ -663,5 +663,6 @@
     "UI_MinidoracatMiniMap_RoadError_invalid": "Esta carretera no se puede guardar. Revisa sus puntos, ancho y nombre.",
     "UI_MinidoracatMiniMap_RoadError_notfound": "Esa carretera ya no existe.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "No hay personaje para el que guardar carreteras.",
-    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "No se pudieron añadir las carreteras personalizadas a la navegación (límite de la red de carreteras). Las rutas siguen usando las carreteras de antes de este cambio."
+    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "No se pudieron añadir las carreteras personalizadas a la navegación (límite de la red de carreteras). Las rutas siguen usando las carreteras de antes de este cambio.",
+    "UI_MinidoracatMiniMap_WhatsNew": "Carreteras personalizadas: dibújalas o grábalas (Búsqueda en el mapa > Carreteras); la navegación las usa."
 }

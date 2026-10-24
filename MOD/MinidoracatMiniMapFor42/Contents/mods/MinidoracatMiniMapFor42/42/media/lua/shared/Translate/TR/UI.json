@@ -663,5 +663,6 @@
     "UI_MinidoracatMiniMap_RoadError_invalid": "Bu yol kaydedilemiyor. Noktalarını, genişliğini ve adını kontrol edin.",
     "UI_MinidoracatMiniMap_RoadError_notfound": "O yol artık yok.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "Yolları kaydedecek karakter yok.",
-    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Özel yollar navigasyona eklenemedi (yol ağı sınırı). Rotalar bu değişiklikten önceki yolları kullanmaya devam ediyor."
+    "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Özel yollar navigasyona eklenemedi (yol ağı sınırı). Rotalar bu değişiklikten önceki yolları kullanmaya devam ediyor.",
+    "UI_MinidoracatMiniMap_WhatsNew": "Özel yollar: haritada çizin ya da sürerken kaydedin (Harita Araması > Yollar). Navigasyon bunları kullanır."
 }

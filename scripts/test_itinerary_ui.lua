@@ -1085,10 +1085,13 @@ local function assertLayout(tag)
             where .. "主要動作須在清單之外（不會被捲走）")
         truthy(list.y >= 0 and list.y + list.height <= w.height, where .. "清單須落在視窗內")
         if page == "places" or page == "roads" then
-            -- 收藏頁、道路頁沒有搜尋框：清單從搜尋框的位置開始，比搜尋頁多出那一列的高度
+            -- 收藏頁、道路頁沒有搜尋框：清單從搜尋框的位置開始。收藏頁和搜尋頁共用底部按鈕，所以多出那一列的高度；
+            -- 道路頁的按鈕可能比搜尋頁多一列（EN），清單高度不和搜尋頁比
             falsy(w.entry:isVisible(), where .. "這一頁沒有搜尋框")
             eq(list.y, w.entry.y, where .. "清單從搜尋框的位置開始")
-            truthy(list.height > w.listAt.search.h, where .. "清單比搜尋頁高（沒有搜尋框那一列）")
+            if page == "places" then
+                truthy(list.height > w.listAt.search.h, where .. "清單比搜尋頁高（沒有搜尋框那一列）")
+            end
         else
             truthy(not trip == w.entry:isVisible(), where .. "搜尋框只在搜尋頁")
         end
@@ -1106,6 +1109,12 @@ local function assertLayout(tag)
             truthy(btn:isVisible() or defs[i].group == "more" or defs[i].hide,
                 where .. "主要動作不得被折疊")
         end
+        -- 視窗高照按鈕最多列的那一頁；列數較少的頁按鈕照樣貼齊底邊（EN 道路頁換兩列時，搜尋頁按鈕下面曾空一條）
+        local bottom = 0
+        for i = 1, #defs do
+            if defs[i].btn:isVisible() then bottom = math.max(bottom, defs[i].btn.y + defs[i].btn.height) end
+        end
+        eq(bottom, w.height - 10, where .. "按鈕列貼齊視窗底邊，下面不留空白")
         if trip then
             -- 模式列是整趟行程的前提：不得被折疊、不得超出視窗、不得壓到清單上
             for i = 1, #w.modeBtns do
