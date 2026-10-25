@@ -20,9 +20,14 @@ local compile = loadstring or load
 local body = assert(source:match(
     "%-%- test:nav%-api:start[^\n]*\n(.-)\n%-%- test:nav%-api:end"),
     "找不到 nav-api 測試區段")
+-- 快取失效三處（世界重置、clearRoute／Core.navInvalidateRoute、failNavEngine）跑 production 本體：v11 待接受的改道
+-- 要跟著撤銷（base＝nil 時只比 base 分不出「清過了」）
+local invalidateBody = assert(source:match(
+    "%-%- test:nav%-invalidate:start[^\n]*\n(.-)\n%-%- test:nav%-invalidate:end"),
+    "找不到 nav-invalidate 測試區段")
 
 -- prelude 提供本區段於 _NavRoute.lua「之前」已存在的環境：engine／ensureRoute／
--- navRoutes／getSpecificPlayer／MinidoracatMiniMapAPI。
+-- navRoutes／navDetours／getSpecificPlayer／MinidoracatMiniMapAPI；中間接 nav-invalidate 區段（production）。
 -- 注意：長字串 [=[ 後的首個換行會被 Lua 吃掉，body 與 suffix 之間須補顯式 "\n"
 local prelude = [=[
 local MinidoracatMiniMapAPI = {}
@@ -30,6 +35,12 @@ local engine = {
     state = "ready", graph = nil, patchState = "applied", searchState = "ok",
 }
 local navRoutes = {}
+local navPreview = {}
+local navDetours = {}
+local logOnce = {}
+local Core = {}
+local worldReset = nil
+local Events = { OnGameStart = { Add = function(fn) worldReset = fn end } }
 local players = {}
 local calls = {}
 local nextRoute, nextRouteState = nil, nil
@@ -46,12 +57,9 @@ local NavCore = {
 }
 local function logf() end
 local function getTimestampMs() return 12345 end
+]=] .. invalidateBody .. "\n" .. [=[
 -- approachWeightFor 定義在 nav-cache 區段（production 同檔在前），這裡給同語意樁
 local function approachWeightFor(p) return p:getVehicle() and 12 or 3 end
-local function failNavEngine()
-    engine.state, engine.graph = "failed", nil
-    for key in pairs(navRoutes) do navRoutes[key] = nil end
-end
 local function getSpecificPlayer(pn) return players[pn] end
 -- ensureRoute stub：記下實際收到的引數（含 target 表 identity，驗證重用暫存契約）
 local function ensureRoute(key, target, px, py, weight)
@@ -64,6 +72,7 @@ end
 local suffix = [=[
 return { API = MinidoracatMiniMapAPI, engine = engine, navRoutes = navRoutes,
     players = players, calls = calls, detourCalls = detourCalls,
+    invalidate = Core.navInvalidateRoute, worldReset = worldReset, failNavEngine = failNavEngine,
     setRoute = function(r, state) nextRoute, nextRouteState = r, state end,
     setDetour = function(r, err) nextDetourRoute, nextDetourError = r, err end }
 ]=]
@@ -367,6 +376,120 @@ for label, bad in pairs({
         "A22: maxSnap " .. label .. " → badargs 且不進 A*")
 end
 
+-- A23（v11）：第 9 參 deferCommit=true——算出照回、引數照轉，但不寫快取（藍線與 requestRoute 維持原線）
+local function detourRoute(tag)
+    return { tag = tag, pts = { 1, 2, 3, 4 }, len = 2, cost = 2, avoidPenalty = 0,
+        segSurface = { "paved" }, segWidth = { 6 }, sx = 1, sy = 2, ex = 3, ey = 4 }
+end
+local function deferredSetup()
+    resetAll()
+    T.players[0] = player(7, 8)
+    T.engine.graph = { id = "graph" }
+    local base = { state = "ok", route = detourRoute("base"), tx = 10, ty = 20 }
+    T.navRoutes[0] = base
+    return base
+end
+local base = deferredSetup()
+local dA = detourRoute("A")
+T.setDetour(dA, nil)
+detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5, nil, 20, true)
+assert(detour == dA and detourState == "ok" and T.detourCalls[1].maxSnap == 20 and T.navRoutes[0] == base,
+    "A23: deferCommit=true 回改道線但不寫快取")
+-- A24：commitDetour 收這條＝寫進快取（同 v10 覆寫的欄位），重複 commit 冪等
+local cok, cstate = API.commitDetour(0, dA)
+local rs0 = T.navRoutes[0]
+assert(cok == true and cstate == "ok" and rs0 ~= base and rs0.route == dA and rs0.state == "ok"
+    and rs0.progressIdx == 1 and rs0.tx == 10 and rs0.ty == 20 and rs0.buildX == 7 and rs0.buildY == 8
+    and rs0.lastBuildMs == 12345 and rs0.approachWeight == 3, "A24: commit 後快取＝改道線（欄位同 v10 覆寫）")
+cok, cstate = API.commitDetour(0, dA)
+assert(cok == true and cstate == "ok" and T.navRoutes[0] == rs0, "A24: 快取已是這條＝再 commit 仍 ok、不換條目")
+-- A25：stale 一律不寫——別的表、被新請求取代、快取期間換過、引擎失敗、別的槽、非 deferred／無路請求之後
+local function staleCase(label, prep, route, pn)
+    local b = deferredSetup()
+    local d = detourRoute("S")
+    T.setDetour(d, nil)
+    API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, true)
+    local r = prep and prep(d) or d
+    local okc, st = API.commitDetour(pn or 0, route or r)
+    assert(okc == false and st == "stale" and (T.navRoutes[0] == b or T.navRoutes[0] == nil
+        or T.navRoutes[0].route ~= d), "A25: " .. label .. " → (false, stale) 且不寫，實得 " .. tostring(st))
+end
+staleCase("別的 table", nil, detourRoute("other"))
+staleCase("新的 deferred 請求取代", function(d)
+    T.setDetour(detourRoute("B"), nil)
+    API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, true)
+    return d
+end)
+staleCase("之後的非 deferred 請求", function(d)
+    local b2 = detourRoute("C")
+    T.setDetour(b2, nil)
+    API.requestDetour(0, 10, 20, 30, 40, 5)
+    assert(T.navRoutes[0].route == b2, "A25: 不帶第 9 參照 v10 覆寫快取")
+    return d
+end)
+staleCase("之後的無路請求", function(d)
+    T.setDetour(nil, nil)
+    API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, true)
+    return d
+end)
+staleCase("快取期間被重算換掉", function(d)
+    T.navRoutes[0] = { state = "ok", route = detourRoute("rebuilt"), tx = 10, ty = 20 }
+    return d
+end)
+staleCase("快取期間被清掉（換目標）", function(d) T.navRoutes[0] = nil return d end)
+staleCase("引擎失敗", function(d) T.engine.state = "failed" return d end)
+staleCase("別的槽位", nil, nil, 1)
+-- A26：deferCommit=false 等同不傳（v10 覆寫）；壞值 badargs 且不進 A*
+deferredSetup()
+T.setDetour(dA, nil)
+detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, false)
+assert(detourState == "ok" and T.navRoutes[0].route == dA, "A26: deferCommit=false 照 v10 覆寫快取")
+for label, bad in pairs({ ["字串"] = "true", ["數字"] = 1, ["表"] = {} }) do
+    deferredSetup()
+    detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, bad)
+    assert(detour == nil and detourState == "badargs" and #T.detourCalls == 0,
+        "A26: deferCommit " .. label .. " → badargs 且不進 A*")
+end
+-- A27：commitDetour 驗參——槽位同 requestRoute、route 須是表
+for label, args in pairs({ ["槽位 4"] = { 4, dA }, ["槽位 0.5"] = { 0.5, dA }, ["槽位 NaN"] = { NAN, dA },
+    ["槽位字串"] = { "0", dA }, ["route nil"] = { 0, nil }, ["route 字串"] = { 0, "r" } }) do
+    cok, cstate = API.commitDetour(args[1], args[2])
+    assert(cok == false and cstate == "badargs", "A27: commitDetour " .. label .. " → badargs")
+end
+
+-- A28（v11）：快取原本是 nil（base＝nil）時，快取失效也要讓待接受的改道失效——清成 nil 前後都是 nil，只比 base 分不出來。
+-- 三處失效（production nav-invalidate 區段）：Core.navInvalidateRoute（_Itinerary 換目標／取消活動站走這條）、世界重置、
+-- 引擎失敗。後兩者把 engine 打成 idle／failed，這裡手動拉回 ready（＝之後重建好），只驗 navDetours 有沒有被撤銷。
+local function nilBaseSetup()
+    resetAll()
+    T.players[0], T.players[1] = player(7, 8), player(1, 1)
+    T.engine.graph = { id = "graph" }
+    local d = detourRoute("nil-base")
+    T.setDetour(d, nil)
+    detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, true)
+    assert(detour == d and detourState == "ok" and T.navRoutes[0] == nil, "A28: 前提：快取是 nil 時 deferred 照回、不寫")
+    return d
+end
+local dn = nilBaseSetup()
+cok, cstate = API.commitDetour(0, dn)
+assert(cok == true and cstate == "ok" and T.navRoutes[0] and T.navRoutes[0].route == dn,
+    "A28: 快取是 nil、中間沒失效＝照常 commit（nil 基底不是一律拒）")
+dn = nilBaseSetup()
+T.invalidate(1)
+cok, cstate = API.commitDetour(0, dn)
+assert(cok == true and cstate == "ok", "A28: 別的槽位清快取不影響這一槽待接受的改道")
+for label, invalidate in pairs({
+    ["換目標／取消（Core.navInvalidateRoute）"] = function() T.invalidate(0) end,
+    ["世界重置（OnGameStart）"] = function() T.worldReset(); T.engine.state = "ready" end,
+    ["引擎失敗（failNavEngine）"] = function() T.failNavEngine("boom"); T.engine.state = "ready" end,
+}) do
+    dn = nilBaseSetup()
+    invalidate()
+    cok, cstate = API.commitDetour(0, dn)
+    assert(cok == false and cstate == "stale" and T.navRoutes[0] == nil,
+        "A28: 快取 nil→" .. label .. "→commit＝(false, stale) 且不寫，實得 " .. tostring(cok) .. "/" .. tostring(cstate))
+end
+
 --------------------------------------------------------------------------------
 -- 六、ensureRoute 快取／偏航（test:nav-cache 區段；跑 production 本體）
 -- 實測病灶（2026-09-01 AutoDrive telemetry）：車在 (10716,9756) 拿到首點
@@ -549,5 +672,5 @@ do
         "C8: 已在折返路線後段，不因落在首段後方誤判重算")
 end
 
-print("test_nav_api: OK（requestRoute A1-A12＋requestDetour A13-A22"
+print("test_nav_api: OK（requestRoute A1-A12＋requestDetour A13-A22＋deferCommit／commitDetour A23-A28"
     .. "＋ensureRoute 快取/偏航 C0-C8）")

@@ -1828,7 +1828,7 @@ end
 -- 所有起訖組合一起比（同段直達＋一次多源多終點 A*），取最便宜。第二回傳＝A* 內部例外（呼叫端 log）
 -- extraAvoid（v9，可省）＝更多避讓圈的扁平表 { x1, y1, r1, … }（同一次查詢的懲罰與主圈相同；requestDetour 已驗參）。
 -- maxSnap（v10，可省）＝起點候選的投影距離上限：超過的候選不參賽——改道時跳出避讓圈、從百米外的路起步
--- 會比繞合法迴圈便宜（AutoDrive 拖車調頭 why=far）。最近的候選也超過時只留它（＝舊行為，消費者看 snapDist 拒收）。
+-- 會比繞合法迴圈便宜（AutoDrive 拖車調頭 why=far）。最近的候選也超過時不剪，與不傳相同（消費者看 snapDist 拒收）。
 -- pn（可省）＝本機玩家槽：只用它能走的自訂道路；nil＝只走官方街道。
 -- 候選裡有自訂道路時，另補最近 2 個官方候選再比（officialExtras），自訂道路只多出選項、不擠掉官方候選。
 local function findRouteInner(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachWeight, extraAvoid, maxSnap, pn)
@@ -2084,6 +2084,10 @@ local navRoutes = {} -- [pn] = { state="ok|noroad", route=, tx=, ty=, progressId
 -- 重置管轄，但兩張表永不互相讀寫（活動段 identity／進度只屬 navRoutes）。
 -- [pn] = { state=, revision=, graph=, weight=, segs=, total=, done=, dist= }
 local navPreview = {}
+-- v11 待接受的改道（requestDetour 第 9 參 deferCommit）：[pn] = { entry＝要寫進 navRoutes 的快取條目, base＝算的當下
+-- navRoutes[pn] }。宣告在這裡＝讓快取失效的三處（世界重置、clearRoute、failNavEngine）一併撤銷：base 是 nil 時
+-- 「清快取」前後都是 nil，commitDetour 只比 base 分不出來，舊候選會被寫進失效後的快取。
+local navDetours = {}
 
 -- 街道覆蓋查詢：dir 優先序取自主檔 getLoadedMapDirs（index 1＝最高）。
 -- 鏡像 MapFiles.postLoad/hasCell300（42.20.4 MapFiles.java:120-134）：
@@ -2744,6 +2748,7 @@ local function kickEngine(inner)
 end
 -- test:nav-kick:end
 
+-- test:nav-invalidate:start（scripts/test_nav_api.lua 抽本區段：快取失效三處要一併撤銷 v11 待接受的改道）
 -- 世界生命週期重置：PZ 同一程序回主選單再進另一存檔時 client Lua 不重載，
 -- 引擎單例會把上一世界的 graph／failed 終態帶進新世界（幽靈路網或永久直線）
 Events.OnGameStart.Add(function()
@@ -2756,14 +2761,17 @@ Events.OnGameStart.Add(function()
     engine.searchState = "ok"
     engine.streetIndex = nil
     for pn in pairs(navRoutes) do navRoutes[pn] = nil end
+    for pn in pairs(navDetours) do navDetours[pn] = nil end
     -- 換世界＝預覽整筆丟棄（含開關本身）：新世界的行程與路網都是另一套，
     -- 留著舊段等於在新地圖上畫幽靈線
     for pn in pairs(navPreview) do navPreview[pn] = nil end
     for k in pairs(logOnce) do logOnce[k] = nil end
 end)
 
+-- 活動目標換掉或取消一律經這裡（_Itinerary notify／guide 呼叫 Core.navInvalidateRoute，不看有沒有快取）
 local function clearRoute(pn)
     navRoutes[pn] = nil
+    navDetours[pn] = nil
 end
 Core.navInvalidateRoute = clearRoute
 
@@ -2771,7 +2779,9 @@ local function failNavEngine(err)
     logf("astar", "route search error; routing disabled this world: " .. tostring(err))
     engine.state, engine.graph, engine.builder, engine.pending = "failed", nil, nil, nil
     for key in pairs(navRoutes) do navRoutes[key] = nil end
+    for key in pairs(navDetours) do navDetours[key] = nil end
 end
+-- test:nav-invalidate:end
 
 -- 路線狀態收斂（繪製幀＋OnTick 維護各一條路徑，便宜路徑優先）：target 消失→清；
 -- target 變更→重算；增量投影更新行進進度（progressIdx/progX/progY 供裁切繪製），
@@ -3490,13 +3500,15 @@ Core.NavRouteCore = NavCore -- 除錯/測試面（離線測試另行抽取原始
 -- ±Infinity 進 A* 後所有距離比較恆為 false，會白跑完整張路網才回 nil。
 -- test:nav-api:start（scripts/test_nav_api.lua 抽本區段跑查詢面回歸測試）
 local apiTarget = { x = 0, y = 0 } -- 餵 ensureRoute 的重用暫存（它只讀 x/y、不留參考）
+local function apiSlot(playerNum)
+    return type(playerNum) == "number" and playerNum == playerNum
+        and playerNum >= 0 and playerNum <= 3 and playerNum % 1 == 0
+end
 -- 槽位／目標驗證＋玩家與 engine 就緒（requestRoute 與 requestDetour 共用）。
 -- NaN 自比不等先擋；±Infinity 由範圍比較擋。engine idle 不在此冷啟動：kickEngine
 -- 需要 mapAPI 的 streets 容器，查詢面沒有繪製表面；主線設目標的首個繪製幀會啟動。
 local function apiPlayer(playerNum, targetX, targetY)
-    if type(playerNum) ~= "number" or playerNum ~= playerNum
-        or playerNum < 0 or playerNum > 3 or playerNum % 1 ~= 0
-    then
+    if not apiSlot(playerNum) then
         return nil, "badargs"
     end
     if type(targetX) ~= "number" or type(targetY) ~= "number"
@@ -3528,15 +3540,20 @@ end
 -- requestRoute，多三個避讓參數：路徑經過 (avoidX,avoidY) 半徑 avoidR 內的路網
 -- 邊吃 AVOID_PENALTY 軟封鎖（仍可達：目標貼堵點時照樣給路，有替代就繞）。
 -- 成功時**覆寫**該玩家的路線快取——minimap 與後續 requestRoute 沿用 detour 線；
--- target 未變、ensureRoute 不會立刻重算蓋回（偏航／冷卻規則照舊）。
+-- target 未變、ensureRoute 不會立刻重算蓋回（偏航／冷卻規則照舊）。v11 第 9 參見下。
 -- 回 (route, state)：state 字彙同 requestRoute。
 -- v9：第 7 參 moreAvoid（可省）＝更多避讓圈的扁平表 { x1, y1, r1, x2, y2, r2, … }，最多 8 圈；同一次查詢裡
 -- 每圈與主圈同樣軟封鎖（路線穿任一圈 avoidPenalty>0）。AutoDrive 用它避開同一趟先前改道時已判死的堵點
 -- （只避新堵點時 A* 會原路繞回舊堵點）。每圈同主圈驗參（有限數字、r>0），長度不是 3 的倍數、超過 8 圈或
 -- 任一值不合＝badargs；舊消費者不傳＝行為與 v8 相同。
 -- v10：第 8 參 maxSnap（可省）＝起點候選離玩家的投影距離上限（米，有限正數；不合＝badargs）：超過的候選不參賽
--- （findRouteInner），最近的候選也超過時照舊回它、由消費者看 snapDist 拒收。不傳＝行為與 v9 相同。
-MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoidX, avoidY, avoidR, moreAvoid, maxSnap)
+-- （findRouteInner），最近的候選也超過時不剪，與不傳相同（消費者看 snapDist 拒收）。不傳＝行為與 v9 相同。
+-- v11：第 9 參 deferCommit（可省；給了須是 boolean）＝true 時算出的線不寫快取，只記成該玩家待接受的改道；
+-- 消費者驗收通過才 commitDetour 寫進快取（小地圖藍線與後續 requestRoute 才換線），拒收就不呼叫、藍線維持原線。
+-- 不傳／false＝v10 行為（算出即覆寫）：舊 AutoDrive 收下改道後靠下一次 requestRoute 從快取拿回那條線 cutover，
+-- 一律不寫會讓它收下卻永遠換不了線（兩包在 Workshop 各自更新）。每次進到尋路都先清掉該玩家先前待接受的改道。
+MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoidX, avoidY, avoidR, moreAvoid, maxSnap,
+    deferCommit)
     if type(avoidX) ~= "number" or type(avoidY) ~= "number" or type(avoidR) ~= "number"
         or avoidX ~= avoidX or avoidY ~= avoidY or avoidR ~= avoidR
         or avoidX == math.huge or avoidX == -math.huge
@@ -3559,8 +3576,10 @@ MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoi
     if maxSnap ~= nil and (type(maxSnap) ~= "number" or not (maxSnap > 0) or maxSnap == math.huge) then
         return nil, "badargs"
     end
+    if deferCommit ~= nil and type(deferCommit) ~= "boolean" then return nil, "badargs" end
     local playerObj, argState = apiPlayer(playerNum, targetX, targetY)
     if not playerObj then return nil, argState end
+    navDetours[playerNum] = nil
     local px, py = playerObj:getX(), playerObj:getY()
     local weight = approachWeightFor(playerObj)
     local route, aerr = NavCore.findRoute(engine.graph, px, py, targetX, targetY,
@@ -3571,10 +3590,31 @@ MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoi
     end
     if route then route.patchState = engine.patchState end
     if not route then return nil, "noroad" end
-    navRoutes[playerNum] = { state = "ok", route = route, tx = targetX, ty = targetY,
+    local entry = { state = "ok", route = route, tx = targetX, ty = targetY,
         progressIdx = 1, progX = route.sx, progY = route.sy,
         lastBuildMs = getTimestampMs(), buildX = px, buildY = py, approachWeight = weight }
+    if deferCommit then
+        navDetours[playerNum] = { entry = entry, base = navRoutes[playerNum] }
+    else
+        navRoutes[playerNum] = entry
+    end
     return route, "ok"
+end
+-- v11：把 requestDetour(…, deferCommit=true) 回傳、消費者驗收通過的那條線寫進路線快取（寫法同 v10 的覆寫）。
+-- 回 (true, "ok")｜(false, "badargs")｜(false, "stale")。只收該玩家最近一次待接受的那個 table（identity），且快取
+-- 從算的當下到現在沒換過（偏航重算、換目標或清快取、換世界、引擎失敗都會換掉或清掉 navRoutes[pn]）、引擎仍 ready；
+-- 否則 stale、不寫。快取已經是這條＝(true, "ok")（重複 commit 冪等）。不收 addon 自組的表：繪製與到站終錨都讀快取。
+MinidoracatMiniMapAPI.commitDetour = function(playerNum, route)
+    if not apiSlot(playerNum) or type(route) ~= "table" then return false, "badargs" end
+    local rs = navRoutes[playerNum]
+    if rs and rs.route == route then return true, "ok" end
+    local pending = navDetours[playerNum]
+    if not pending or pending.entry.route ~= route or pending.base ~= rs or engine.state ~= "ready" then
+        return false, "stale"
+    end
+    navDetours[playerNum] = nil
+    navRoutes[playerNum] = pending.entry
+    return true, "ok"
 end
 MinidoracatMiniMapAPI.getNavGraph = function()
     return engine.graph, engine.state, engine.patchState, engine.searchState
