@@ -2981,6 +2981,57 @@ do
     falsy(win.roadDrawBtn:isVisible(), "RD8: 不是找不到道路就收起按鈕")
     falsy(listText(win.tripList):find("RoadNoRoadHint", 1, true), "RD8: 也收起說明")
     Core.navNearestRoad = nil
+
+    -- RD9. 「畫新道路」（設計稿 minimap-roads-entry-1025 主張 1）：世界地圖沒開＝從角色位置開圖；
+    -- 自己的世界地圖已開（按鈕列的道路鈕開的道路頁）＝不帶 near，畫面不跳回角色
+    local p0 = getSpecificPlayer(0)
+    win.tabs[4].action(win)
+    win:prerender()
+    pressButton(win.roadNewBtn)
+    local fresh = roadCalls[#roadCalls]
+    eq(fresh.kind .. ":" .. fresh.opts.mode, "tool:draw", "RD9: 畫新道路開畫線工具")
+    eq(fresh.opts.near and (fresh.opts.near.x .. "," .. fresh.opts.near.y), p0:getX() .. "," .. p0:getY(),
+        "RD9: 世界地圖沒開＝從角色位置開圖")
+    ISWorldMap_instance = { playerNum = 0, visible = true }
+    function ISWorldMap_instance:isVisible() return self.visible end
+    pressButton(win.roadNewBtn)
+    falsy(roadCalls[#roadCalls].opts.near, "RD9: 自己的世界地圖開著＝不帶 near，不跳回角色")
+    ISWorldMap_instance.playerNum = 1
+    pressButton(win.roadNewBtn)
+    truthy(roadCalls[#roadCalls].opts.near, "RD9: 開著的是別人的世界地圖（分割畫面）＝照舊從角色開圖")
+    ISWorldMap_instance = nil
+
+    -- RD10. 世界地圖按鈕列的道路鈕（toggle＝true）：已停在道路頁再按＝關窗；關著＝開在道路頁；在別頁＝切到道路頁；
+    -- 被自己的世界地圖蓋住＝叫到前面不關；右鍵入口（不帶 toggle）停在道路頁再按也不關
+    local function barRoad()
+        Core.toggleSearchWindow(0, "roads", true)
+        for i = #UI.added, 1, -1 do
+            if UI.added[i].tabs then return UI.added[i] end
+        end
+    end
+    eq(win.page, "roads", "RD10 前提: 停在道路頁")
+    win = barRoad()
+    falsy(win:isVisible(), "RD10: 已在道路頁再按道路鈕＝關窗")
+    win = barRoad()
+    truthy(win:isVisible() and win.page == "roads", "RD10: 關著按道路鈕＝開在道路頁")
+    win.tabs[3].action(win)
+    win = barRoad()
+    truthy(win:isVisible() and win.page == "roads", "RD10: 停在別頁按道路鈕＝切到道路頁、不關")
+    Core.toggleSearchWindow(0, "roads")
+    truthy(win:isVisible(), "RD10: 右鍵入口（不帶 toggle）停在道路頁再按也不關")
+    local wmJava, winJava, uiList = {}, {}, {}
+    UIManager = { getUI = function()
+        return { size = function() return #uiList end, get = function(_, i) return uiList[i + 1] end }
+    end }
+    ISWorldMap_instance = { javaObject = wmJava, playerNum = 0, visible = true }
+    function ISWorldMap_instance:isVisible() return self.visible end
+    win.javaObject = winJava
+    uiList = { winJava, wmJava } -- 先開搜尋窗、後開世界地圖＝世界地圖在上
+    UI.top = nil
+    win = barRoad()
+    truthy(win:isVisible() and win.page == "roads", "RD10: 被自己的世界地圖蓋住時按道路鈕不關")
+    eq(UI.top, win, "RD10: 叫到最上層")
+    ISWorldMap_instance, UIManager, win.javaObject = nil, nil, nil
     Core.toggleSearchWindow(0)
     for _, name in ipairs({ "roadsRevision", "roadsList", "roadsReceived", "roadsDraft", "roadsGet",
         "roadsDelete", "roadRecordState", "roadRecordLastLost", "roadRecordStart", "roadRecordStop",
@@ -3091,6 +3142,21 @@ do
     end
     menu:onJoypadDown(Joypad.AButton)
     eq(api.getNavItinerary(0).phase, "navigating", "X: 新更多選單仍可正常切回道路")
+    -- 找不到道路（設計稿 minimap-roads-entry-1025 主張 3）：視窗停在行程頁時清單已列出路說明，不另寫訊息列；
+    -- 停在別頁照舊寫
+    window.msgUntil = nil -- 訊息列只在 msgUntil 有值時畫：清掉前面留下的訊息
+    Core.navRouteResult(0, "noroad")
+    local stalled = api.getNavItinerary(0)
+    eq(stalled.phase, "paused", "X: 找不到道路暫停行程")
+    falsy(window.msgUntil, "X: 停在行程頁時不另寫訊息列")
+    window:prerender()
+    contains(listText(window.tripList), "RoadNoRoadHint", "X: 行程頁清單寫出出路說明")
+    truthy(api.startNavItinerary(0, stalled.revision), "X: 重新開始導航")
+    eq(api.getNavItinerary(0).phase, "navigating", "X 前提: 回到導航中")
+    window.tabs[1].action(window)
+    Core.navRouteResult(0, "noroad")
+    truthy(window.msgUntil, "X: 停在別頁時照舊寫訊息列")
+    linesContain(window.msgLines, "RoadNoRoadHint", "X: 訊息列寫的是出路說明")
     Core.toggleSearchWindow(0)
     screen = { w = 1920, h = 1080 }
 end

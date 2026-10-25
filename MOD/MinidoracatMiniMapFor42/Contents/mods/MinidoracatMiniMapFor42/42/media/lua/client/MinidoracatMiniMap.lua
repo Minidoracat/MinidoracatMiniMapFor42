@@ -2768,7 +2768,26 @@ if ISWorldMap and ISWorldMap.createChildren then
             end
             searchBtn.tooltip = getText("UI_MinidoracatMiniMap_BtnSearch")
             self.buttonPanel:addChild(searchBtn)
-            local btn = ISButton:new(searchBtn:getRight() + 10, 0, btnSize, btnSize, "", self,
+            -- 道路鈕（2026-10-25 設計稿 minimap-roads-entry-1025 主張 1：自訂道路藏在搜尋視窗第 4 分頁、入口都沒寫道路）：
+            -- 打開搜尋視窗的「道路」分頁；已經停在道路分頁時再按就關窗（同放大鏡）。圖示沿用設定視窗分類的 32×32 白色
+            -- 道路圖示，照原尺寸畫（48px 鈕的 iconPx 是 40，放大會糊）
+            local roadBtn = ISButton:new(searchBtn:getRight() + 10, 0, btnSize, btnSize, "", self,
+                function(target)
+                    if Core.toggleSearchWindow then
+                        Core.toggleSearchWindow(target.playerNum or 0, "roads", true)
+                    end
+                end)
+            roadBtn:initialise()
+            local texRoad = getTexture("media/ui/minimap_road.png")
+            if texRoad then
+                roadBtn:setImage(texRoad)
+                roadBtn:forceImageSize(math.min(32, iconPx), math.min(32, iconPx))
+            else
+                roadBtn:setTitle("R")
+            end
+            roadBtn.tooltip = getText("UI_MinidoracatMiniMap_WMRoadBtn")
+            self.buttonPanel:addChild(roadBtn)
+            local btn = ISButton:new(roadBtn:getRight() + 10, 0, btnSize, btnSize, "", self,
                 function(target) Core.toggleSettingsWindow(target) end)
             btn:initialise()
             local paw = getTexture("media/ui/minimap_wm_paw.png") -- 白貓肉球
@@ -2785,15 +2804,17 @@ if ISWorldMap and ISWorldMap.createChildren then
             self.buttonPanel:setX(self.width - 10 - self.buttonPanel.width)
             self._minidoracatWMBtn = btn
             self._minidoracatWMSearchBtn = searchBtn
+            self._minidoracatWMRoadBtn = roadBtn
             self._minidoracatWMPanelBtn = layersBtn
             -- 手把：原版按鈕列只有一列，手把在 joypadButtonsY[1] 裡左右移（ISWorldMap.lua:358
             -- insertNewListOfButtons；方向鍵找鄰居看 allJoypadButtons，ISPanelJoypad.lua:613）。
-            -- 三顆插在關閉鈕前面＝和畫面上的順序一致
+            -- 四顆插在關閉鈕前面＝和畫面上的順序一致
             local row = self.buttonPanel.joypadButtonsY and self.buttonPanel.joypadButtonsY[1]
             if row then
                 for i = 1, #row do
                     if row[i] == self.closeBtn then
                         table.insert(row, i, btn)
+                        table.insert(row, i, roadBtn)
                         table.insert(row, i, searchBtn)
                         table.insert(row, i, layersBtn)
                         break
@@ -2803,6 +2824,7 @@ if ISWorldMap and ISWorldMap.createChildren then
                 if all then
                     all[#all + 1] = layersBtn
                     all[#all + 1] = searchBtn
+                    all[#all + 1] = roadBtn
                     all[#all + 1] = btn
                 end
             end

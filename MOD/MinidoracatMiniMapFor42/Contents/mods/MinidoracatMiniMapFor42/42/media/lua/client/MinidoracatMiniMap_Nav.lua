@@ -233,7 +233,7 @@ function ISMiniMapInner:onMinidoracatShareTarget()
     Core.navShareTarget(self.playerNum or 0)
 end
 
--- 右鍵最後一項「搜尋、收藏與行程...」：開視窗或切到搜尋頁，視窗開著也不關（按鈕列的放大鏡才是開／關）
+-- 右鍵最後一項「搜尋、收藏、行程與道路...」：開視窗或切到搜尋頁，視窗開著也不關（按鈕列的放大鏡才是開／關）
 function ISMiniMapInner:onMinidoracatSearch()
     if Core.toggleSearchWindow then
         Core.toggleSearchWindow(self.playerNum or 0, "search")
@@ -923,7 +923,7 @@ end
 -- 插在第 N 站之前／加到行程最後，_Search.lua navInsertSubMenu）→收藏（回家／設為家／加入收藏／管理收藏；
 -- 游標在收藏圖標上時父項是「收藏：名稱」、子選單換成那一筆，_Places.lua placeAt／placesAddMenu）→
 -- 複製此處座標→行程（有行程或壞資料才是子選單：行程規劃／停止導航／分享目標／清空行程，會刪資料的
--- 清空排最後；沒有行程時第一層直接放「行程規劃...」，子選單不只放一項）→搜尋、收藏與行程。第一層
+-- 清空排最後；沒有行程時第一層直接放「行程規劃...」，子選單不只放一項）→搜尋、收藏、行程與道路。第一層
 -- 兩種情況都是 6 項。set 閘門擋住時會設導航的項變紅＋原因（建選單只問一次）。
 -- target＝地圖元件：回呼是它的 onMinidoracat* 方法，複製座標的回饋畫在該張地圖上
 Core.mapMenuFill = function(context, target, pn, wx, wy, playerObj)

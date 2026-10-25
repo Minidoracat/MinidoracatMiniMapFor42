@@ -1732,6 +1732,9 @@ local function addNotes(ctx, sec)
         addNote(ctx, getText("UI_MinidoracatMiniMap_RemoteAuthorsNote"))
     elseif sec == SEC_PARKING then
         addNote(ctx, getText("UI_MinidoracatMiniMap_ParkingHow"))
+    elseif sec == MapRows.ROADS then
+        -- 這個分類只管顯示；翻設定找道路的人要在這裡看到怎麼建立（設計稿 minimap-roads-entry-1025 主張 2.3）
+        addNote(ctx, getText("UI_MinidoracatMiniMap_RoadHow"))
     end
 end
 

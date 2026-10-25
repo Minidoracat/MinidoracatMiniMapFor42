@@ -530,10 +530,13 @@ end
 -- 同 navSetTarget 既有通道——右鍵地圖直接編輯行程時不能靜默失敗）。
 -- 自己的世界地圖開著時 halo 畫在被全螢幕地圖蓋住的角色頭上：改走 UI 框架 Toast
 -- （置頂；寫法同 _Settings.lua studioNeedFramework），框架缺 toast 能力才退 halo。
--- good＝成功回饋（綠字／addGoodText），其餘一律當失敗（警告色／addBadText）
-local function winMessage(pn, text, good)
+-- good＝成功回饋（綠字／addGoodText），其餘一律當失敗（警告色／addBadText）。
+-- skipPage＝視窗正停在這一頁時不寫訊息列：那一頁自己會列出同一句（行程頁找不到道路的出路說明，
+-- 設計稿 minimap-roads-entry-1025 主張 3.2），不然同一句會在清單與訊息列各出現一次
+local function winMessage(pn, text, good, skipPage)
     local win = searchWin
     if win and win:isVisible() and not win.collapsed and (win.playerNum or 0) == pn then
+        if skipPage and win.page == skipPage then return end
         win.msgLines = wrapLines(text, win.width - 20, win.msgMaxLines or MSG_LINES)
         win.msgUntil = getTimestampMs() + MSG_MS
         win.msgGood = good == true
@@ -560,9 +563,9 @@ local function winMessage(pn, text, good)
     end
 end
 
--- 收藏（_Places.lua）共用的訊息通道：契約 places-contract「Search.lua 需提供」
-Core.navMessage = function(pn, text, good)
-    winMessage(pn or 0, text, good)
+-- 收藏（_Places.lua）共用的訊息通道：契約 places-contract「Search.lua 需提供」；skipPage 見 winMessage
+Core.navMessage = function(pn, text, good, skipPage)
+    winMessage(pn or 0, text, good, skipPage)
 end
 
 local function winError(pn, reason, detailKey)
@@ -1689,7 +1692,12 @@ local function roadDrawNew(win)
     local pn = win.playerNum or 0
     local playerObj = getSpecificPlayer(pn)
     if not playerObj then return end
-    roadOpen(pn, "roadToolStart", { mode = "draw", near = { x = playerObj:getX(), y = playerObj:getY() } })
+    -- 這位玩家的世界地圖已經開著（例：按鈕列的道路鈕開的道路頁）：從目前畫面開始畫，不跳回角色
+    -- （RT.openMapAt 沒有 near 就不 centerOn）
+    local wm = ISWorldMap_instance
+    local mapOpen = wm and wm:isVisible() and (wm.playerNum or 0) == pn
+    roadOpen(pn, "roadToolStart", { mode = "draw",
+        near = not mapOpen and { x = playerObj:getX(), y = playerObj:getY() } or nil })
 end
 
 local function roadRecordToggle(win)
@@ -3095,12 +3103,13 @@ end
 -- 開關搜尋／收藏／行程視窗（按鈕/右鍵選單/快捷鍵入口共用）。引擎冷啟動由 winRefresh 的
 -- Core.navKickAvailable 負責（開窗後首個 prerender 即泵）。
 -- page＝"search"／"places"／"itinerary"／"roads" 時語意是「開啟或切到該頁」，**絕不關窗**——
--- 右鍵「搜尋、收藏與行程...」「管理收藏...」「行程規劃...」按兩次不該把視窗關掉；不帶 page
--- （按鈕列放大鏡、快捷鍵）保留原本的 toggle。
+-- 右鍵「搜尋、收藏、行程與道路...」「管理收藏...」「行程規劃...」按兩次不該把視窗關掉；不帶 page
+-- （按鈕列放大鏡、快捷鍵）保留原本的 toggle。toggle＝true（世界地圖按鈕列的道路鈕）：已經停在
+-- 這一頁再按就關窗，和旁邊的放大鏡一樣；切頁、展開、叫到前面照舊。
 -- 收合狀態下再按等於展開，不用先展開再按一次；被世界地圖蓋住時再按＝叫到前面（看不見的窗不關）。
 -- 分割畫面：同人再按＝關；他人按＝owner-transfer 重刷（同 _Settings 慣例），
 -- 不誤關別人的視窗
-Core.toggleSearchWindow = function(pn, page)
+Core.toggleSearchWindow = function(pn, page, toggle)
     pn = pn or 0
     if not (page and PAGE_TITLES[page]) then page = nil end -- nil 鍵查表在 Kahlua 不保證安全，先擋
     if searchWin and searchWin:isVisible() then
@@ -3112,7 +3121,8 @@ Core.toggleSearchWindow = function(pn, page)
                 searchWin:bringToTop()
                 return
             end
-            if page then
+            -- toggle 而且已經停在這一頁、沒被世界地圖蓋住：不切頁，往下走到關窗
+            if page and not (toggle and searchWin.page == page and not Core.isBehindWorldMap(searchWin, pn)) then
                 setPage(searchWin, page)
                 searchWin:bringToTop()
                 return

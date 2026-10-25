@@ -327,7 +327,7 @@ end
 local SET = "UI_MinidoracatMiniMap_SetTarget"
 local REPLACE = "UI_MinidoracatMiniMap_SearchSetTarget"
 -- 沒有行程時第一層六項：設定導航目標／加到行程最後／收藏▸／複製座標／行程規劃...（平的，開行程頁）／
--- 搜尋、收藏與行程（有待前往站見 R10；有行程時第五項是「行程▸」子選單，見 R6）
+-- 搜尋、收藏、行程與道路（有待前往站見 R10；有行程時第五項是「行程▸」子選單，見 R6）
 local TRIP_OPEN = "UI_MinidoracatMiniMap_TripOpen"
 local OURS = SET
     .. ",UI_MinidoracatMiniMap_TripAdd"
@@ -423,7 +423,7 @@ menu.options[5].fn(menu.options[5].target)
 assert(mod.calls[#mod.calls] == "toggle:1:itinerary", "R9: 沒有行程時第一層的行程規劃開行程頁")
 menu.options[6].fn(menu.options[6].target)
 assert(mod.calls[#mod.calls] == "toggle:1:search",
-    "R9: 「搜尋、收藏與行程...」開或切到搜尋頁（帶頁名＝視窗開著也不關）")
+    "R9: 「搜尋、收藏、行程與道路...」開或切到搜尋頁（帶頁名＝視窗開著也不關）")
 -- R10: 有待前往站時第一項改「取代並導航」（同一個 replace 回呼，確認在 navPromptTarget），
 --      第二項一律委派 Core 共用的錨點組裝
 mod.clearCalls(); mod.resetMenus()

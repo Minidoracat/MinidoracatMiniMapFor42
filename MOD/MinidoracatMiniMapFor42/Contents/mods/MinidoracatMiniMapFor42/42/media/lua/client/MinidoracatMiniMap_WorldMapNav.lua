@@ -35,7 +35,7 @@ function ISWorldMap:onMinidoracatCopyCoords(wx, wy)
 end
 
 -- 搜尋視窗（本體 _Search.lua；引擎冷啟動由其 winRefresh 泵對 live 表面處理）。右鍵最後一項
--- 「搜尋、收藏與行程...」：開視窗或切到搜尋頁，視窗開著也不關（按鈕列的放大鏡才是開／關）
+-- 「搜尋、收藏、行程與道路...」：開視窗或切到搜尋頁，視窗開著也不關（按鈕列的放大鏡才是開／關）
 function ISWorldMap:onMinidoracatSearch()
     if Core.toggleSearchWindow then
         Core.toggleSearchWindow(self.playerNum or 0, "search")

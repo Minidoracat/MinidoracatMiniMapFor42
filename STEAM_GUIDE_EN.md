@@ -77,7 +77,7 @@ Both go by the room names inside buildings, which are also what decides the loot
 === 🧰 Search & trip window
 {{img:05-search-street.jpg}}
 [list]
-[*] [b]Open[/b]: the magnifier in the mini-map or world map button row, right-click the map → "Search, favorites & itinerary...", or [b];[/b]. The window has four tabs: Search, Favorites, Itinerary and Roads (←/→ on the keyboard, X on a gamepad).
+[*] [b]Open[/b]: the magnifier in the mini-map or world map button row, right-click the map → "Search, favorites, itinerary & roads...", or [b];[/b]. The window has four tabs: Search, Favorites, Itinerary and Roads (←/→ on the keyboard, X on a gamepad); the road button in the world map button row opens the Roads tab directly.
 [*] [b]Type[/b]:
 [list]
 [*] coordinates (e.g. 12895,3499)
@@ -103,7 +103,7 @@ Both go by the room names inside buildings, which are also what decides the loot
 [*] [b]Arriving[/b]: for a target on the road, stopping in the lane beside it counts as arrived (no need to cross to the other side of the centre line); for an off-road target, reaching the roadside tells you to walk the rest.
 [*] [b]After the last stop[/b]: the numbered stop markers disappear from the maps (the trip page still lists the results); to keep them, turn on "Keep finished trip on map" in the "Players & navigation" category of Map Display Settings.
 [*] [b]New trip[/b]: adding a stop or setting a navigation target after a trip has finished starts a new trip numbered from 1, no clearing needed.
-[*] [b]No road to a stop[/b]: the trip pauses and tells you; draw a custom road to it, or choose "Use straight-line guidance" under "Actions…" on the trip page.
+[*] [b]No road to a stop[/b]: the trip pauses and tells you; on the trip page press "Draw custom road" to connect one, or choose "Use straight-line guidance" under "Actions…".
 [/list]
 {{img:09-nav-route-minimap.jpg}}
 [h3]Routes[/h3]
@@ -137,7 +137,7 @@ Both go by the room names inside buildings, which are also what decides the loot
 Where a mod map has no road data, on roads players built themselves, or on dirt roads the map doesn't include, navigation used to draw a straight line. Draw or record a road and navigation treats it like any other road.
 [h3]Making a road[/h3]
 [list]
-[*] [b]Where[/b]: the Roads tab of the search window ([b];[/b]): "Draw new road" or "Record road".
+[*] [b]Where[/b]: the road button at the bottom right of the world map, or the Roads tab of the search window ([b];[/b], or right-click the map → "Search, favorites, itinerary & roads..."): "Draw new road" or "Record road". With the world map open, drawing starts from where you are looking.
 [*] [b]Drawing[/b]: on the world map, left-click adds a point, right-click undoes, Enter finishes; hold Shift to stop snapping.
 [*] [b]Leaving midway[/b]: Esc exits and keeps the line; continue or discard it from the Roads tab.
 [*] [b]Recording[/b]: drive (or walk) along the road you want to keep, then press "Stop recording" to check and trim it on the world map before saving.

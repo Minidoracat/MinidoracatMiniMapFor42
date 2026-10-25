@@ -27,7 +27,7 @@ Keep every Minidoracat MiniMap series mod up to date and restart the game after 
 [*] [b]Image-based maps[/b]: full-color top-down images on both maps, with POIs and parking lots marked
 [*] [b]Search[/b]: coordinates, street names (original/translated) and facility categories; show results on the map or add them to your trip
 [*] [b]Multi-target navigation & trips[/b]: up to 16 targets, road-following routes that replan when you go off course
-[*] [b]Custom roads[/b]: where the map has no road data, draw a road or record one while driving, and navigation uses it
+[*] [b]Custom roads[/b]: where the map has no road data, use the road button at the bottom right of the world map to draw a road or record one while driving, and navigation uses it
 [*] [b]Home & favorites[/b]: right-click the map → "Favorites" to set home or add favorites; one-click Go home
 [*] [b]Icons & facing[/b]: zombies, animals, vehicles, street names and safehouses, plus which way you and your teammates face and who is on another floor
 [*] [b]Ghost mode & free resizing[/b]: a permanent overlay that never blocks play; icon and text sizes adjustable

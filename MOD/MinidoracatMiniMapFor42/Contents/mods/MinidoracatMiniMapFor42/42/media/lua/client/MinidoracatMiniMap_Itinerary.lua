@@ -699,8 +699,10 @@ Core.navRouteResult = function(pn, state)
     local slot = slots[pn]
     if slot and slot.trip and slot.trip.phase == "navigating" and (state == "noroad" or state == "failed") then
         pause(slot, state)
-        if state == "noroad" and Core.navMessage then -- 視窗開著寫訊息列；只開地圖走 Toast；都沒開用頭上文字
-            Core.navMessage(pn, getText("UI_MinidoracatMiniMap_RoadNoRoadHint"), false)
+        -- 視窗開著寫訊息列；只開地圖走 Toast；都沒開用頭上文字。視窗停在行程頁時不寫：行程頁清單本來就列出
+        -- 同一句（_Search.lua tripRefresh），不然同一句出現兩次（設計稿 minimap-roads-entry-1025 主張 3.2）
+        if state == "noroad" and Core.navMessage then
+            Core.navMessage(pn, getText("UI_MinidoracatMiniMap_RoadNoRoadHint"), false, "itinerary")
         end
     end
 end

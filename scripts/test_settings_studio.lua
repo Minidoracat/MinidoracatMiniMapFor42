@@ -1290,6 +1290,8 @@ do
         "RD7 single player hides the shared-roads tick")
     check(not searchHit(sp, sst, "UI_MinidoracatMiniMap_RoadReceived", "CustomRoadReceived"),
         "RD7 single player search skips it too")
+    -- RD8 自訂道路分類只管顯示：翻設定找道路的人要在這裡看到怎麼建立（設計稿 minimap-roads-entry-1025 主張 2）
+    check(textShown(sp, T("UI_MinidoracatMiniMap_RoadHow")), "RD8 roads category says how to add a road")
 end
 
 io.write(string.format("test_settings_studio: %d assertions, %d failures\n", assertions, failures))
