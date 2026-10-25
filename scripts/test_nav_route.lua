@@ -2432,4 +2432,64 @@ do
     assert(car.snapDist < 2, "approach 權重：車上路線起點就在車旁")
 end
 
+--------------------------------------------------------------------------------
+-- addon streetRepairs.noJunction（2026-10-26 德克丹 ND6／ND7）：列了的兩街不切交點、不互相吸附；
+-- 沒列的照舊相通；舊資料（沒有欄位）逐點不變；對方沒有相符修正（repairIndex）就不生效。
+-- 十字：A 東西 (0,0)-(100,0)，B 南北 (50,-50)-(50,50) 穿過 A；C 南端 (90,6) T 字吸附到 A；
+-- D 接 B 北端與 C 北端（共用端點）。A→B 北端直走交點＝100，繞 C、D≈191。
+--------------------------------------------------------------------------------
+do
+    local function fixture(aList, bList, bIndex, cIndex)
+        return {
+            { name = "A", src = "M", width = 8, pts = { 0, 0, 100, 0 }, repairIndex = 3, noJunction = aList },
+            { name = "B", src = "M", width = 8, pts = { 50, -50, 50, 50 }, repairIndex = bIndex, noJunction = bList },
+            { name = "C", src = "M", width = 8, pts = { 90, 6, 90, 60 }, repairIndex = cIndex },
+            { name = "D", src = "M", width = 8, pts = { 50, 50, 90, 60 } },
+        }
+    end
+    local function passes(r, x, y)
+        for k = 1, #r.pts, 2 do
+            if math.abs(r.pts[k] - x) < 0.01 and math.abs(r.pts[k + 1] - y) < 0.01 then return true end
+        end
+        return false
+    end
+    local plain = {
+        { name = "A", src = "M", width = 8, pts = { 0, 0, 100, 0 } },
+        { name = "B", src = "M", width = 8, pts = { 50, -50, 50, 50 } },
+        { name = "C", src = "M", width = 8, pts = { 90, 6, 90, 60 } },
+        { name = "D", src = "M", width = 8, pts = { 50, 50, 90, 60 } },
+    }
+    local base = route(buildAll(plain, nil, 7), 0, 0, 50, 50)
+    assert(base and math.abs(base.len - 100) < 0.01 and passes(base, 50, 0), "noJunction 基準：十字直走交點")
+    -- 舊資料：有 repairIndex、沒有 noJunction＝不配置、逐點相同
+    local b0 = mod.newBuild(fixture(nil, nil, 7, 9), nil)
+    assert(b0.noJunction == nil and b0.noJunctionMissing == 0, "noJunction：沒人列就不配置")
+    local same0 = route(buildAll(fixture(nil, nil, 7, 9), nil, 7), 0, 0, 50, 50)
+    assert(#same0.pts == #base.pts, "noJunction：舊資料路線點數不變")
+    for k = 1, #base.pts do assert(same0.pts[k] == base.pts[k], "noJunction：舊資料路線逐點不變") end
+    -- 交點不切：A 列 B（B 有相符修正）→ 不經 (50,0)，改繞 C、D；A–C 沒列照舊吸附
+    for _, case in ipairs({ { { 7 }, nil, "A 列 B" }, { nil, { 3 }, "B 列 A（不必對稱）" } }) do
+        local r = route(buildAll(fixture(case[1], case[2], 7, 9), nil, 7), 0, 0, 50, 50)
+        assert(r and not passes(r, 50, 0) and r.len > 180 and passes(r, 90, 0),
+            "noJunction " .. case[3] .. "：交點不切、繞沒列的 C（len=" .. tostring(r and r.len) .. "）")
+    end
+    -- 對方沒有相符修正：不生效、計數給 log
+    local missing = mod.newBuild(fixture({ 7 }, nil, nil, 9), nil)
+    assert(missing.noJunction ~= nil and next(missing.noJunction) == nil and missing.noJunctionMissing == 1,
+        "noJunction：對方沒有 repairIndex＝不生效並計數")
+    local r1 = route(buildAll(fixture({ 7 }, nil, nil, 9), nil, 7), 0, 0, 50, 50)
+    assert(math.abs(r1.len - 100) < 0.01 and passes(r1, 50, 0), "noJunction：對方沒 pin 照舊相通")
+    -- 指向自己、別張圖的同序號：不生效
+    local selfRef = mod.newBuild(fixture({ 3 }, nil, 7, 9), nil)
+    assert(selfRef.noJunctionMissing == 1 and next(selfRef.noJunction) == nil, "noJunction：指向自己不算")
+    local other = fixture({ 7 }, nil, 7, 9); other[2].src = "N"
+    assert(mod.newBuild(other, nil).noJunctionMissing == 1, "noJunction：只認同圖序號")
+    -- 端點吸附也不做：A 列 C → C 南端 (90,6) 不接到 A，A 到 C 中段 (90,30) 只能經 B、D（50+50+41.2+30）
+    local rc = route(buildAll(fixture({ 9 }, nil, 7, 9), nil, 7), 0, 0, 90, 30)
+    local rcBase = route(buildAll(plain, nil, 7), 0, 0, 90, 30)
+    assert(passes(rcBase, 90, 0) and rcBase.len < 125, "noJunction 基準：C 南端 T 字吸附到 A")
+    assert(rc and not passes(rc, 90, 0) and passes(rc, 50, 50) and rc.len > 160,
+        "noJunction：列了的街端點不吸附（len=" .. tostring(rc and rc.len) .. "）")
+end
+
 print("test_nav_route: 全數通過")

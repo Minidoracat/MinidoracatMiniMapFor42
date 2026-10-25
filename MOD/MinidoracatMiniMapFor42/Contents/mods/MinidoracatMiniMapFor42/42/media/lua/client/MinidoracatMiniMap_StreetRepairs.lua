@@ -1,6 +1,8 @@
 -- 語系無關的 MOD 道路修正。僅套來源、原始點列及路寬完全符合的已核准資料。
 -- 資料由 addon streetRepairs 提供；不在此猜測道路、不依街名/語言決定幾何。
 -- replacementWidth 換路寬（點列不動）：WorldMapStreet.width 是 int，只收整數。
+-- noJunction＝同圖其他街的序號（0-based）：只給導航建圖用，這條街和列出的街不切交點、不互相吸附。
+-- navCut＝套用後點列的段序（0-based）：只從導航拿掉這幾段（顯示照畫），給穿過硬分隔帶的那一小段用。
 local Core = MinidoracatMiniMapCore
 if not (Core and Core.ready) then return end
 local reported = {}
@@ -44,7 +46,21 @@ local function exactFloat32(value)
     return value == math.floor(value)
 end
 
-local function validOperation(op, validPoints, validWidth)
+-- 0-based 序號清單：1..16 個互異整數、0 <= v < limit、不等於 exclude；稀疏表或混雜鍵不猜哪幾個算數。
+local function validIndexList(list, limit, exclude)
+    if type(list) ~= "table" or #list < 1 or #list > 16 then return false end
+    local seen, count = {}, 0
+    for _ in pairs(list) do count = count + 1 end
+    if count ~= #list then return false end
+    for i = 1, #list do
+        local v = list[i]
+        if type(v) ~= "number" or v < 0 or v >= limit or v % 1 ~= 0 or v == exclude or seen[v] then return false end
+        seen[v] = true
+    end
+    return true
+end
+
+local function validOperation(op, validPoints, validWidth, at)
     if type(op) ~= "table" or not validWidth(op.expectedWidth) or not validPoints(op.expectedPoints) then return false end
     if op.replacementPoints ~= nil then
         if not validPoints(op.replacementPoints) or #op.replacementPoints > 766 then return false end
@@ -62,7 +78,14 @@ local function validOperation(op, validPoints, validWidth)
         return false
     end
     if op.hideLabel ~= nil and type(op.hideLabel) ~= "boolean" then return false end
-    if not op.replacementPoints and op.replacementWidth == nil and op.hideLabel ~= true then return false end
+    if op.noJunction ~= nil and not validIndexList(op.noJunction, 65536, at) then return false end
+    if op.navCut ~= nil then
+        -- 段序對的是套用後的點列；至少留一段給導航（全切等於偷刪路）
+        local segments = #(op.replacementPoints or op.expectedPoints) / 2 - 1
+        if not validIndexList(op.navCut, segments) or #op.navCut >= segments then return false end
+    end
+    if not op.replacementPoints and op.replacementWidth == nil and op.hideLabel ~= true
+        and op.noJunction == nil and op.navCut == nil then return false end
     if op.hideLabel then
         local ref = op.reference
         if type(ref) ~= "table" or type(ref.index) ~= "number" or ref.index < 0 or ref.index % 1 ~= 0
@@ -88,7 +111,7 @@ Core.streetRepair = function(street, dir, at)
     local op = repairs.operations[at]
     if op == nil then return nil end
     if not Core.validStreetPoints or not Core.validStreetWidth
-        or not validOperation(op, Core.validStreetPoints, Core.validStreetWidth) then
+        or not validOperation(op, Core.validStreetPoints, Core.validStreetWidth, at) then
         report("invalid:" .. dir, "invalid operation in " .. dir .. " (first index " .. at .. "); keeping raw street")
         return nil
     end

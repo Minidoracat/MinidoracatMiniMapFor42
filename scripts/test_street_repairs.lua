@@ -56,6 +56,7 @@ local function setup(op, lang, options)
     local referenceRel = options.carrier and "media/maps/Riverside, KY/streets.xml" or "media/maps/Muldraugh, KY/streets.xml"
     local data = { [rel] = { street } }
     if options.existingLine then table.insert(data[rel], 1, rawStreet(LINE, "Existing")) end
+    for _, extra in ipairs(options.extra or {}) do data[rel][#data[rel] + 1] = rawStreet(extra, "Extra") end
     if options.reference then data[referenceRel] = { rawStreet(options.reference) } end
     local visibleClears, scratchClears = 0, 0
     local function makeMap(scratch)
@@ -87,7 +88,7 @@ local function setup(op, lang, options)
             mapDir = "Fixture", mapMod = "FixtureMod",
             streetNames = not options.noNames and { Main = "UI_Fixture_name" } or nil,
             streetRepairs = { schemaVersion = 1, mapMod = options.owner or "FixtureMod", mapDir = "Fixture",
-                operations = { [options.existingLine and 1 or 0] = op } },
+                operations = options.ops or { [options.existingLine and 1 or 0] = op } },
         } } } },
     }
     local env = setmetatable({
@@ -269,4 +270,63 @@ local wideNested = setup(widthOp, "CH", { points = LINE, nestedNoReference = tru
 assert(wideNested.ok, wideNested.err)
 assert(wideNested.shown[1].width == 11 and wideNested.nestedShown[1].width == 11, "nested windows both get the new width")
 assert(wideNested.street.width == 8, "nested windows restore the raw width")
-print("test_street_repairs: PASS (four languages, live navigation, source drift, restore, independent dictionaries, replacement width)")
+-- noJunction（只給導航建圖）：LINE (100,105)-(200,105) 與 CROSS (150,50)-(150,200) 十字；
+-- 繞路＝WEST (100,105)-(100,200)＋NORTH (100,200)-(150,200)。到 (150,190) 直走交點 135、繞路 155（貼著 LINE 落點＋approach 更貴）。
+local CROSS, WEST, NORTH = { 150, 50, 150, 200 }, { 100, 105, 100, 200 }, { 100, 200, 150, 200 }
+local function junctionRoute(ops, cross)
+    local w = setup(nil, "EN", { points = LINE, extra = { cross or CROSS, WEST, NORTH }, ops = ops })
+    assert(w.ok, w.err)
+    w.core.navKickEngine(w.ui)
+    for _ = 1, 100 do w.ticks.fire() end
+    local route, state = w.api.requestRoute(0, 150, 190)
+    assert(state == "ok", tostring(state))
+    local viaCross = false
+    for i = 1, #route.pts, 2 do
+        if route.pts[i] == 150 and route.pts[i + 1] == 105 then viaCross = true end
+    end
+    return route, viaCross, w
+end
+local function njOp(points, list) return { expectedWidth = 8, expectedPoints = points, noJunction = list } end
+local direct, directVia = junctionRoute(nil)
+assert(directVia and direct.len == 135, "no repairs: the crossing is a junction")
+local split, splitVia, splitW = junctionRoute({ [0] = njOp(LINE, { 1 }), [1] = njOp(CROSS, { 0 }) })
+assert(not splitVia and split.len > 150, "noJunction pair: no junction at the crossing (len " .. split.len .. ")")
+assert(#splitW.shown == 4 and same(splitW.shown[1].points, LINE) and same(splitW.shown[2].points, CROSS),
+    "noJunction-only repairs leave the display untouched")
+local oneSided, oneVia = junctionRoute({ [0] = njOp(LINE, { 1 }), [1] = { expectedWidth = 8, expectedPoints = CROSS, replacementWidth = 8 } })
+assert(not oneVia and oneSided.len > 150, "one side listing is enough when the other street has a matching repair")
+local unpinned, unpinnedVia = junctionRoute({ [0] = njOp(LINE, { 1 }) })
+assert(unpinnedVia and unpinned.len == 135, "listed street without its own matching repair keeps the junction")
+local movedCross = { 150, 50, 150, 201 }
+local drift, driftVia = junctionRoute({ [0] = njOp(LINE, { 1 }), [1] = njOp(CROSS, { 0 }) }, movedCross)
+assert(driftVia, "upstream drift on the listed street keeps the junction")
+local unlisted, unlistedVia = junctionRoute({ [0] = njOp(LINE, { 2 }), [2] = njOp(WEST, { 0 }) })
+assert(unlistedVia and unlisted.len == 135, "streets not listed keep their junctions")
+for _, bad in ipairs({ {}, { 0 }, { 1, 1 }, { -1 }, { 1.5 }, { "1" }, { 65536 }, { [1] = 1, [3] = 2 }, { 1, x = 2 }, "1",
+    { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17 } }) do
+    local w = setup(nil, "EN", { points = LINE, extra = { CROSS }, ops = { [0] = njOp(LINE, bad) } })
+    assert(w.core.streetRepair(w.street, "Fixture", 0) == nil, "invalid noJunction must reject the operation")
+end
+local good = setup(nil, "EN", { points = LINE, extra = { CROSS }, ops = { [0] = njOp(LINE, { 1 }) } })
+assert(good.core.streetRepair(good.street, "Fixture", 0) ~= nil, "noJunction alone is a valid operation")
+-- navCut：只從導航拿掉那一段（顯示照畫套用後的點列）；段序 0-based、對的是套用後的點列。
+local CUT_LINE = { 100, 105, 140, 105, 160, 105, 200, 105 }
+local cutW = setup({ expectedWidth = 8, expectedPoints = LINE, replacementPoints = CUT_LINE, navCut = { 1 } }, "EN", { points = LINE })
+assert(cutW.ok, cutW.err)
+assert(same(cutW.shown[1].points, CUT_LINE), "navCut keeps the display polyline")
+cutW.core.navKickEngine(cutW.ui)
+for _ = 1, 100 do cutW.ticks.fire() end
+local cutRoute = cutW.api.requestRoute(0, 200, 105)
+assert(cutRoute, "navCut: the near half is still routable")
+for i = 1, #cutRoute.pts, 2 do
+    assert(cutRoute.pts[i] <= 140, "navigation must not cross the cut segment")
+end
+local whole = setup({ expectedWidth = 8, expectedPoints = LINE, replacementPoints = CUT_LINE }, "EN", { points = LINE })
+assert(routeWidth(whole) == 8, "collinear points without navCut stay drivable")
+for _, bad in ipairs({ { 3 }, { 0, 1, 2 }, { -1 }, { 0.5 }, { 1, 1 }, {}, "1" }) do
+    local w = setup({ expectedWidth = 8, expectedPoints = LINE, replacementPoints = CUT_LINE, navCut = bad }, "EN", { points = LINE })
+    assert(w.core.streetRepair(w.street, "Fixture", 0) == nil, "invalid navCut must reject the operation")
+end
+local cutOnly = setup({ expectedWidth = 8, expectedPoints = CUT_LINE, navCut = { 1 } }, "EN", { points = CUT_LINE })
+assert(cutOnly.core.streetRepair(cutOnly.street, "Fixture", 0) ~= nil, "navCut alone is a valid operation")
+print("test_street_repairs: PASS (four languages, live navigation, source drift, restore, independent dictionaries, replacement width, noJunction, navCut)")

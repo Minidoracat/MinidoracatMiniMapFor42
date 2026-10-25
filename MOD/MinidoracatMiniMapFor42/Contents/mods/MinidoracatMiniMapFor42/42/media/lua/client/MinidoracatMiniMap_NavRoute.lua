@@ -303,6 +303,7 @@ local function cloneStreet(street)
         originalName = street.originalName,
         src = street.src, width = street.width, pts = pts,
         canonicalSrc = street.canonicalSrc,
+        repairIndex = street.repairIndex, noJunction = street.noJunction,
         searchable = street.searchable,
         segRemoved = {}, segWidth = {}, segSurface = {},
     }
@@ -560,6 +561,8 @@ end
 -- 建圖狀態機：NavCore.newBuild(streets, winnerOf) → builder；
 -- NavCore.step(builder, budget) 推進，回傳 true＝完成（builder.graph 就緒）。
 -- streets[i] = { name=街名, src=來源地圖目錄, pts={x1,y1,x2,y2,...} 扁平 }
+-- 選用：repairIndex＝這條街套了 addon streetRepairs 第幾號修正（同圖 0-based 序號），
+-- noJunction＝{ 同圖序號, ... }（那筆修正的 noJunction）——兩條街不切交點、不互相吸附。
 -- winnerOf(cx,cy)→dir|nil：cell 勝出地圖目錄；整個參數為 nil＝fail-open 不裁段。
 function NavCore.newBuild(streets, winnerOf)
     -- （斷口橋接已撤回 2026-08-20：曾以「端點對齊＋距離」合成短街修雙線公路
@@ -607,8 +610,37 @@ function NavCore.newBuild(streets, winnerOf)
             end
         end
     end
+    -- noJunction：一邊列了另一邊就生效（不必對稱），但兩條街都要有相符的修正（repairIndex）——
+    -- 對方沒有 pin，上游一改序號就會指到別條街；找不到的照舊相通，計數給呼叫端 log。
+    -- 量化點完全相同的共用端點仍是同一節點（gateEmit），不在這裡拆。沒人用時不配置。
+    local noJunction, byIndex, noJunctionMissing = nil, nil, 0
+    for i = 1, #streets do
+        local list, src = streets[i].noJunction, streets[i].src
+        if type(list) == "table" and type(src) == "string" and streets[i].repairIndex ~= nil then
+            if not byIndex then
+                noJunction, byIndex = {}, {}
+                for k = 1, #streets do
+                    local s = streets[k]
+                    if s.repairIndex ~= nil and type(s.src) == "string" then
+                        byIndex[s.src] = byIndex[s.src] or {}
+                        byIndex[s.src][s.repairIndex] = k
+                    end
+                end
+            end
+            for n = 1, #list do
+                local j = byIndex[src][list[n]]
+                if j and j ~= i then
+                    noJunction[i] = noJunction[i] or {}
+                    noJunction[j] = noJunction[j] or {}
+                    noJunction[i][j], noJunction[j][i] = true, true
+                else
+                    noJunctionMissing = noJunctionMissing + 1
+                end
+            end
+        end
+    end
     return {
-        streets = streets, winnerOf = winnerOf,
+        streets = streets, winnerOf = winnerOf, noJunction = noJunction, noJunctionMissing = noJunctionMissing,
         padTol = maxHalf * 2 + ATTACH_SLACK,
         phase = "gate", si = 1, pi = 1,
         gx1 = {}, gy1 = {}, gx2 = {}, gy2 = {}, gsid = {},
@@ -983,7 +1015,7 @@ end
 -- （2026-10-23 RoadsPerfE2E 實機建圖一律失敗）。剔除的組合只算 1/8 次操作。
 local function stepPairs(b, budget)
     local ops = 0
-    local gsid, gw, gm = b.gsid, b.gwidth, b.gmask
+    local gsid, gw, gm, noJunction = b.gsid, b.gwidth, b.gmask, b.noJunction
     local minx, maxx, miny, maxy = b.gminx, b.gmaxx, b.gminy, b.gmaxy
     while ops < budget do
         local key = b.bkeys[b.bi]
@@ -1008,7 +1040,10 @@ local function stepPairs(b, budget)
                 end
                 local j = list[jj]
                 local cost = 0.125
-                if gsid[i] ~= gsid[j] then -- 同街段對跳過（含自交，vanilla 無自交街）
+                local si, sj = gsid[i], gsid[j]
+                local nj = noJunction and noJunction[si]
+                -- 同街段對跳過（含自交，vanilla 無自交街）；addon noJunction 列的兩街也跳過
+                if si ~= sj and not (nj and nj[sj]) then
                     local tol = (gw[i] + gw[j]) * 0.5 + ((gm[i] or gm[j]) and CUSTOM_SLACK or ATTACH_SLACK)
                     if minx[j] - tol <= maxx[i] and minx[i] - tol <= maxx[j]
                         and miny[j] - tol <= maxy[i] and miny[i] - tol <= maxy[j] then
@@ -2426,7 +2461,14 @@ local function stepExtract(ex)
                         ex.out[ex.outN] = {
                             name = name, src = entry.src, width = width, pts = pts,
                             originalName = originalName, searchable = searchable,
+                            repairIndex = repair and ex.si - 1 or nil, noJunction = repair and repair.noJunction or nil,
                         }
+                        local navCut = repair and repair.navCut
+                        if navCut then -- 只從導航拿掉這幾段（0-based 段序；顯示照畫），NavCore 與 RoadPatch 共用 segRemoved
+                            local removed = {}
+                            for k = 1, #navCut do removed[navCut[k] + 1] = true end
+                            ex.out[ex.outN].segRemoved = removed
+                        end
                         if upgrade and entry.cert then
                             local ups, upN = entry.ups or {}, entry.upN or 0
                             ups[upN + 1], ups[upN + 2] = ex.outN, upgrade
@@ -2484,6 +2526,10 @@ local function newGraphBuilder(withCustom)
     end
     local b = NavCore.newBuild(streets, engine.baseWof)
     b.customRev, b.customCount = engine.customRev, custom
+    if b.noJunctionMissing > 0 then
+        logf("nojunction", string.format("street repair noJunction: %d listed streets have no matching repair;"
+            .. " those pairs stay connected", b.noJunctionMissing))
+    end
     return b
 end
 
