@@ -287,6 +287,82 @@ do
     eq(select(2, t.api.goNavHome(0)), "ok", "超過 5 格才回家")
 end
 
+-- 公開 setNavTarget（navApiVersion 12）：任意座標走回家同一路徑；站名可自訂、nil／空白顯示座標；
+-- 壞參數一律 badargs 且不建立行程；API 不顯示 MiniMap 訊息。
+do
+    local t = fixture(); local p = t.player(0)
+    eq(t.api.navApiVersion, 12, "setNavTarget 隨 navApiVersion 12 宣告")
+    local ok, why = t.api.setNavTarget(0, 100, 50, "  My car  ")
+    eq(ok, true, "設定成功"); eq(why, "ok", "直接開始")
+    local it = t.api.getNavItinerary(0)
+    eq(it.count, 1, "單站"); eq(it.phase, "navigating", "立即導航")
+    eq(it.stops[1].label, "My car", "站名去頭尾空白")
+    local gx, gy = t.api.getNavTarget(0)
+    eq(gx, 100, "目標 x"); eq(gy, 50, "目標 y")
+    assert(t.api.setNavTarget(0, 200.5, -7))
+    it = t.api.getNavItinerary(0)
+    eq(it.count, 1, "單站時直接取代"); eq(it.stops[1].x, 200.5, "小數座標照存")
+    eq(it.stops[1].label, nil, "nil 站名＝顯示座標")
+    assert(t.api.setNavTarget(0, 300, 0, " \t"))
+    eq(t.api.getNavItinerary(0).stops[1].label, nil, "空白站名＝顯示座標")
+    eq(#t.log.messages, 0, "API 呼叫不顯示訊息"); eq(#t.log.prompts, 0, "單站不確認")
+    -- 壞參數：playerNum 非 0-3 整數、座標非有限數或超界、站名非字串或過長
+    local before = t.api.getNavItinerary(0).revision
+    local huge, nan = math.huge, 0 / 0
+    local bad = {
+        { -1, 1, 1 }, { 4, 1, 1 }, { 0.5, 1, 1 }, { nan, 1, 1 }, { "0", 1, 1 }, { nil, 1, 1 },
+        { 0, nan, 1 }, { 0, huge, 1 }, { 0, -huge, 1 }, { 0, "1", 1 }, { 0, nil, 1 }, { 0, 2e9, 1 },
+        { 0, 1, nan }, { 0, 1, huge }, { 0, 1, nil }, { 0, 1, {} },
+        { 0, 1, 1, 5 }, { 0, 1, 1, {} }, { 0, 1, 1, string.rep("x", 129) },
+    }
+    for i = 1, #bad do
+        local b = bad[i]
+        local bok, bwhy = t.api.setNavTarget(b[1], b[2], b[3], b[4])
+        eq(bok, false, "壞參數不成功 case " .. i); eq(bwhy, "badargs", "壞參數原因 case " .. i)
+    end
+    eq(t.api.getNavItinerary(0).revision, before, "壞參數不動行程")
+    assert(t.api.setNavTarget(0, 50, 50, string.rep("x", 128)), "128 字站名可用")
+    -- 沒有玩家／已死亡
+    eq(select(2, t.api.setNavTarget(1, 10, 10)), "noplayer", "空槽位")
+    p.dead = true
+    eq(select(2, t.api.setNavTarget(0, 10, 10)), "noplayer", "死亡")
+    p.dead = nil
+    -- 5 格內不建立會立刻到站的行程
+    local near = fixture(); near.player(0)
+    eq(select(2, near.api.setNavTarget(0, 3, 4)), "nearby", "5 格內")
+    eq(near.api.getNavItinerary(0), nil, "nearby 不建行程")
+    eq(select(2, near.api.setNavTarget(0, 9, 0)), "ok", "超過 5 格才導航")
+    -- set 閘門擋住：回 blocked＋detailKey，原目標不變
+    local gated = fixture(); gated.player(0)
+    assert(gated.api.setNavTarget(0, 100, 0, "A"))
+    gated.core.navGateAllows = function() return false, "UI_Test_NeedGPS" end
+    local gok, gwhy, gkey = gated.api.setNavTarget(0, 200, 0, "B")
+    eq(gok, false, "閘門擋住"); eq(gwhy, "blocked", "閘門原因"); eq(gkey, "UI_Test_NeedGPS", "閘門 detailKey")
+    eq(gated.api.getNavTarget(0), 100, "被擋不覆蓋原目標")
+end
+
+-- setNavTarget 的確認門檻與自駕同回家：丟 ≥2 待前往站開確認（帶自訂站名）、多站 claim 中 busy、
+-- 單站自駕中沿用 claim 只換目的地。
+do
+    local t = fixture(); vehicle(t.player(0))
+    assert(edit(t, "append", 10, 0)); assert(edit(t, "append", 20, 0))
+    local before = t.api.getNavItinerary(0).revision
+    local ok, why = t.api.setNavTarget(0, 500, 0, "My car")
+    eq(ok, true, "多站時開確認"); eq(why, "prompted", "回報已開確認")
+    eq(#t.log.prompts, 1, "確認窗一次"); eq(t.log.prompts[1].op, "replace", "確認後走既有取代")
+    eq(t.log.prompts[1].x, 500, "確認的是目標座標"); eq(t.log.prompts[1].label, "My car", "確認帶站名")
+    eq(t.api.getNavItinerary(0).revision, before, "確認前行程不變")
+    assert(t.api.claimNavLeg(0, "Auto", assert(t.api.startNavItinerary(0, t.api.getNavItinerary(0).revision))))
+    eq(select(2, t.api.setNavTarget(0, 500, 0)), "busy", "多站自駕中")
+    local s = fixture(); local sp = s.player(0); local v = vehicle(sp)
+    assert(s.core.navSetTarget(0, 100, 0))
+    local claimed = assert(s.api.claimNavLeg(0, "Auto", s.api.getNavLeg(0)))
+    v.stopped = false
+    eq(select(2, s.api.setNavTarget(0, 400, 0, "My car")), "ok", "單站自駕中直接換目的地")
+    local leg, _, lx = s.api.getNavLeg(0)
+    eq(leg, claimed, "沿用 claim token"); eq(lx, 400, "目的地換成新座標")
+end
+
 -- 收藏：新增／改名／移除／設為家；超過 16 筆可保存載回；移除家清掉家；長度與空白。
 do
     local t = fixture(); t.player(0)

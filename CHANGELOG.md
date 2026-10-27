@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### 新增
+
+- 其他 MOD 可以直接把小地圖的導航目的地設到地圖上任一點並開始導航，例如 Tesla Collection 手機 App 的「導航到車」。行為和按「回家」一樣：原本有兩站以上沒走完的行程時，會先跳確認視窗。
+
+> 技術要點：`navApiVersion` 11→12：新增 `setNavTarget(playerNum, x, y, label)`，回 `(true, "ok"|"prompted")` 或 `(false, reason)`；reason 為 `badargs`、`noplayer`、`nearby`（距目標 5 格內）、`busy`、`notstopped`、`blocked` 等。`label` 是顯示用站名，可為 nil（顯示座標）。外部 MOD 以 `navApiVersion >= 12` 且函式存在偵測。
+
 ## [42.21.0-0.52.0] - 2026-10-27
 
 ### 新增

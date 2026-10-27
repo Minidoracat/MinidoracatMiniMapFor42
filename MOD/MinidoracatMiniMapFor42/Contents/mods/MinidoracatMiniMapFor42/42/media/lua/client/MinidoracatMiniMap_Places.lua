@@ -310,17 +310,10 @@ local function setHomeAt(pn, x, y)
     return done == true, why
 end
 
--- 回家（公開 API 與 UI 共用；本函式不顯示訊息）。回 (true,"ok")／(true,"prompted")／
--- (false, reason, detailKey)。確認窗之後才真正取代，所以先擋掉「確認後必定失敗」的情況。
-local function goHome(pn)
-    if not validPlayerNum(pn) then return false, "badargs" end
-    local player = getSpecificPlayer(pn)
-    if not player or player:isDead() then return false, "noplayer" end
-    local home = homeOf(pn)
-    if not home then return false, "nohome" end
-    local dx, dy = player:getX() - home.x, player:getY() - home.y
-    if dx * dx + dy * dy <= HOME_RADIUS2 then return false, "athome" end
-    local label = labelOf(pn, home)
+-- 導航到 (x, y)（回家與公開 setNavTarget 共用；本函式不顯示訊息，呼叫端已驗過 pn、玩家與座標）。
+-- 回 (true,"ok")／(true,"prompted")／(false, reason, detailKey)。確認窗之後才真正取代，所以先擋掉
+-- 「確認後必定失敗」的情況。
+local function navigateTo(pn, player, x, y, label)
     local trip = Core.navItineraryState and Core.navItineraryState(pn)
     local pending = 0
     for i = 1, (trip and trip.count or 0) do
@@ -333,13 +326,27 @@ local function goHome(pn)
         local vehicle = player:getVehicle()
         if vehicle and not vehicle:isStopped() then return false, "notstopped" end
         if not Core.navPromptTarget then return false, "failed" end
-        Core.navPromptTarget(pn, home.x, home.y, label, "replace")
+        Core.navPromptTarget(pn, x, y, label, "replace")
         return true, "prompted"
     end
     if not Core.navSetTarget then return false, "failed" end
-    local ok, reason, detailKey = Core.navSetTarget(pn, home.x, home.y, label)
+    local ok, reason, detailKey = Core.navSetTarget(pn, x, y, label)
     if not ok then return false, reason, detailKey end
     return true, "ok"
+end
+local function near(player, x, y)
+    local dx, dy = player:getX() - x, player:getY() - y
+    return dx * dx + dy * dy <= HOME_RADIUS2
+end
+-- 回家（公開 API 與 UI 共用）
+local function goHome(pn)
+    if not validPlayerNum(pn) then return false, "badargs" end
+    local player = getSpecificPlayer(pn)
+    if not player or player:isDead() then return false, "noplayer" end
+    local home = homeOf(pn)
+    if not home then return false, "nohome" end
+    if near(player, home.x, home.y) then return false, "athome" end
+    return navigateTo(pn, player, home.x, home.y, labelOf(pn, home))
 end
 
 local ERROR_KEYS = {
@@ -594,6 +601,18 @@ API.getNavHome = function(pn)
     return home.x, home.y, labelOf(pn, home)
 end
 API.goNavHome = goHome
+-- 導航到任意世界座標（navApiVersion 12；例：手機 App「導航到車」）。與回家同一路徑、同樣不顯示訊息；
+-- label 只是顯示用站名（nil／空白＝清單顯示座標）。5 格內回 nearby，不建立會立刻到站的行程。
+API.setNavTarget = function(pn, x, y, label)
+    local text, labelOk = cleanLabel(label)
+    if not validPlayerNum(pn) or not coordinate(x) or not coordinate(y) or not labelOk then
+        return false, "badargs"
+    end
+    local player = getSpecificPlayer(pn)
+    if not player or player:isDead() then return false, "noplayer" end
+    if near(player, x, y) then return false, "nearby" end
+    return navigateTo(pn, player, x, y, text)
+end
 
 Events.OnGameStart.Add(function()
     for pn = 0, 3 do slots[pn], labelCache[pn] = nil, nil end
