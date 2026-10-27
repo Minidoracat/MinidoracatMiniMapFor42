@@ -291,7 +291,7 @@ end
 -- 壞參數一律 badargs 且不建立行程；API 不顯示 MiniMap 訊息。
 do
     local t = fixture(); local p = t.player(0)
-    eq(t.api.navApiVersion, 12, "setNavTarget 隨 navApiVersion 12 宣告")
+    eq(t.api.navApiVersion >= 12, true, "setNavTarget 隨 navApiVersion 12 宣告（之後的版本照樣有）")
     local ok, why = t.api.setNavTarget(0, 100, 50, "  My car  ")
     eq(ok, true, "設定成功"); eq(why, "ok", "直接開始")
     local it = t.api.getNavItinerary(0)
