@@ -560,6 +560,7 @@ _lua_tests = [
     ("test_title_status.lua", "小地圖標題列狀態 registerTitleStatus", False),
     ("test_scan_listener.lua", "定時掃描更新通知 registerScanListener", False),
     ("test_zombie_floors.lua", "殭屍點別層變淡：取樣記樓層、畫時比地圖的玩家", False),
+    ("test_heat_void.lua", "殭屍熱度：視野碰到沒有地圖資料的格子就關（防引擎閃退）", False),
     ("test_nav_gate.lua", "addon 導航閘門／繪製唯讀／目標查詢", False),
     ("test_itinerary.lua", "多站行程權威與 token 擁有權", False),
     ("test_places.lua", "家／收藏點與一鍵回家", False),

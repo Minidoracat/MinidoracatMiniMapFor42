@@ -2858,6 +2858,60 @@ end
 -- 本檔只接繪製與 UI 重建，不持有另一份導航目標。
 --------------------------------------------------------------------------------
 
+-- test:heat-void:start
+-- 殭屍熱度（引擎 ZombieIntensity）只能畫在有地圖資料（lotheader）的格子上。引擎 renderZombieIntensity
+-- 對 getCellData 回來的 metaCell 直接讀 info（WorldMapRenderer.java:1885）；B42 metaGrid 含程序生成區
+-- （[-250,250] 格，IsoMetaGrid.java:1453-1456），zone 會替沒有 lotheader 的格子建 info＝nil 的 metaCell
+-- （:126-131、:858）。畫到那格就 NPE，Drawer 接住例外卻跳過 GL 狀態還原（WorldMapRenderer.java:2259-2260
+-- restoreVbos），下一筆 UI 繪製在顯示卡驅動裡存取違規，遊戲直接閃退（2026-10-28 Workshop 回報：
+-- Railroader RV 把玩家傳到 (20050,2050)；E2E void-teleport-sp 重現）。
+-- 回 true＝這一幀不能開熱度：拉遠到引擎改畫整張世界（1/worldScale > 100，:2350-2358），或視野外接框
+-- （含引擎以 mult 格塊點陣化的外擴，:2366-2388）有任一格沒有 lotheader。
+-- 連續 4 幀安全才回 false：Drawer.init 只快照視野（:805-820），熱度開關在 render thread 畫的當下才讀
+-- （:2222），前幾幀排的 Drawer 可能還沒畫（SpriteRenderer 有 populating／ready／rendering 三格）。
+-- 中間有一幀沒檢查（熱度關著）就重新數。lotheader 整場不變：逐格快取，外接框沒變就沿用上次結果。
+function Core.heatViewUnsafe(inner)
+    local unsafe = true
+    if inner.mapAPI:getWorldScale() > 0.0105 then
+        local minX, maxX, minY, maxY = visibleWorldAABB(inner)
+        local cx1, cx2 = math.floor(minX / 256), math.floor(maxX / 256)
+        local cy1, cy2 = math.floor(minY / 256), math.floor(maxY / 256)
+        local m = 1
+        while (cx2 - cx1 + 1) * (cy2 - cy1 + 1) > 80 * m * m do m = m + 1 end
+        cx1, cx2, cy1, cy2 = cx1 - m, cx2 + m, cy1 - m, cy2 + m
+        local r = inner._minidoracatHeatRange
+        if r and r[1] == cx1 and r[2] == cx2 and r[3] == cy1 and r[4] == cy2 then
+            unsafe = r[5]
+        else
+            local lots = Core.lotCells
+            unsafe = false
+            for cy = cy1, cy2 do
+                for cx = cx1, cx2 do
+                    local k = cy * 8192 + cx
+                    local has = lots[k]
+                    if has == nil then
+                        has = IsoLot.getHeader(cx, cy) ~= nil -- IsoLot.java:194（LuaManager.java:2183 exposed）
+                        lots[k] = has
+                    end
+                    if not has then unsafe = true; break end
+                end
+                if unsafe then break end
+            end
+            inner._minidoracatHeatRange = { cx1, cx2, cy1, cy2, unsafe }
+        end
+    end
+    local frame = inner._minidoracatFrame or 0
+    local safe = 0
+    if not unsafe then
+        safe = inner._minidoracatHeatAt == frame - 1 and (inner._minidoracatHeatSafe or 0) + 1 or 1
+    end
+    inner._minidoracatHeatAt = frame
+    inner._minidoracatHeatSafe = safe
+    return safe < 4
+end
+Core.lotCells = {}
+-- test:heat-void:end
+
 if ISMiniMapInner and ISMiniMapInner.prerender then
     local originalInnerPrerender = ISMiniMapInner.prerender
     function ISMiniMapInner:prerender()
@@ -2871,12 +2925,15 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
         -- 已回寫 ModOptions（見齒輪面板 onTickBox wrap），它即單一真相，
         -- 壓制期間玩家改勾選也會在重新允許時恢復成玩家要的值。
         -- 無 PZAPI（面板不回寫）時維持舊行為：恢復為開。功能閘門 zombie 被擋同樣壓回
-        -- （熱度跟偵測一起閘）。
+        -- （熱度跟偵測一起閘）。視野碰到沒有地圖資料的格子也壓回（Core.heatViewUnsafe：
+        -- 引擎畫到那種格子會讓遊戲閃退），熱度開著或被壓著時才檢查。
         -- （置於 WM-1 早退之前：沙盒不變式須每幀維持，且引擎側小地圖 Java render
         -- 在遮蔽下照跑，本段只設引擎旗標、不繪製，順序與 zone 填色互不影響）
+        local ziOn = self.mapAPI:getBoolean("ZombieIntensity")
         if sandboxGate("AllowZombieIntensity", true, pn) == false
-            or (fa and not fa(pn, "zombie", "mini")) then
-            if self.mapAPI:getBoolean("ZombieIntensity") then
+            or (fa and not fa(pn, "zombie", "mini"))
+            or ((ziOn or self._minidoracatZISuppressed) and Core.heatViewUnsafe(self)) then
+            if ziOn then
                 self._minidoracatZISuppressed = true
                 self.mapAPI:setBoolean("ZombieIntensity", false)
             end

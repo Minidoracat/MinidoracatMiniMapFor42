@@ -11,6 +11,12 @@
 >
 > `navApiVersion` 12→13：新增 `requestRouteFrom(playerNum, fromX, fromY, toX, toY)` 與 `requestDetourFrom(playerNum, fromX, fromY, toX, toY, avoidX, avoidY, avoidR, moreAvoid, maxSnap)`，回 `(route, state)`，形狀與 state 字彙同 `requestRoute`／`requestDetour`。起點是傳入座標而非玩家，approach 權重固定 12，自訂道路照 playerNum 的遮罩；路線快取在獨立的 `"from:<playerNum>"` 那一格（不畫、不通知行程、玩家換導航目標不清它；換路網、引擎失敗、換世界時清）。`requestRouteFrom` 在引擎 idle 時會先冷啟動一次。`requestDetourFrom` 一律 deferCommit，驗收後照舊呼叫 `commitDetour(playerNum, route)`，它現在也會找 `"from:"` 那一格。`requestDetour`、`commitDetour` 簽名與既有行為不變。外部 MOD 以 `navApiVersion >= 13` 且兩支函式都存在偵測。
 
+### 修正
+
+- **開著「顯示殭屍熱度」時，角色被其他 MOD 傳送到地圖外，遊戲會直接閃退**（玩家回報：Railroader RV 進出房車空間時閃退）。現在小地圖畫面碰到沒有地圖資料的區域時，殭屍熱度先不畫，回到地圖內就恢復。小地圖拉遠到看見地圖外的區域時也一樣。沒開殭屍熱度的玩家不受影響。
+
+> 技術要點：原版 `WorldMapRenderer.renderZombieIntensity` 直接讀 `metaCell.info`（WorldMapRenderer.java:1885）。B42 的 metaGrid 包含 [-250,250] 格的程序生成區，zone 會在沒有 lotheader 的格子建出 `info` 為 nil 的 metaCell，畫到這種格子就 NPE。Drawer 接住例外，但跳過了 `restoreVbos`（:2259-2260），下一筆 UI 繪製在顯示卡驅動 `nvoglv64.dll` 存取違規。小地圖 prerender 每幀檢查畫面範圍，範圍要加上引擎以 mult 格塊點陣化時多畫的格子；其中有 `IsoLot.getHeader` 為 nil 的格子，或拉遠到引擎改畫整張世界時，就把引擎的 `ZombieIntensity` 設成 false。之後要連續 4 幀安全才恢復，因為 render thread 畫的當下才讀這個開關。世界地圖（M）沒有加這道檢查：本 MOD 不替世界地圖開熱度。
+
 ## [42.21.0-0.52.0] - 2026-10-27
 
 ### 新增
