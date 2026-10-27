@@ -46,11 +46,13 @@ local calls = {}
 local nextRoute, nextRouteState = nil, nil
 local detourCalls = {}
 local nextDetourRoute, nextDetourError = nil, nil
+local kicks = {}
+local nextKickState = nil
 local NavCore = {
-    findRoute = function(graph, sx, sy, tx, ty, ax, ay, ar, approachWeight, more, maxSnap)
+    findRoute = function(graph, sx, sy, tx, ty, ax, ay, ar, approachWeight, more, maxSnap, pn)
         detourCalls[#detourCalls + 1] = {
             graph = graph, sx = sx, sy = sy, tx = tx, ty = ty,
-            ax = ax, ay = ay, ar = ar, w = approachWeight, more = more, maxSnap = maxSnap,
+            ax = ax, ay = ay, ar = ar, w = approachWeight, more = more, maxSnap = maxSnap, pn = pn,
         }
         return nextDetourRoute, nextDetourError
     end,
@@ -61,19 +63,27 @@ local function getTimestampMs() return 12345 end
 -- approachWeightFor 定義在 nav-cache 區段（production 同檔在前），這裡給同語意樁
 local function approachWeightFor(p) return p:getVehicle() and 12 or 3 end
 local function getSpecificPlayer(pn) return players[pn] end
+-- navKickAvailable 定義在 nav-preview 區段（production 同檔在前）：記下槽位，可模擬泵完的引擎狀態
+local function navKickAvailable(pn)
+    kicks[#kicks + 1] = pn
+    if nextKickState then engine.state = nextKickState end
+    return engine.state
+end
 -- ensureRoute stub：記下實際收到的引數（含 target 表 identity，驗證重用暫存契約）
-local function ensureRoute(key, target, px, py, weight)
+local function ensureRoute(key, target, px, py, weight, notify, pn)
     calls[#calls + 1] = {
         key = key, target = target, tx = target.x, ty = target.y, px = px, py = py, w = weight,
+        notify = notify, pn = pn,
     }
     return nextRoute, nextRouteState
 end
 ]=]
 local suffix = [=[
-return { API = MinidoracatMiniMapAPI, engine = engine, navRoutes = navRoutes,
-    players = players, calls = calls, detourCalls = detourCalls,
+return { API = MinidoracatMiniMapAPI, engine = engine, navRoutes = navRoutes, navDetours = navDetours,
+    players = players, calls = calls, detourCalls = detourCalls, kicks = kicks,
     invalidate = Core.navInvalidateRoute, worldReset = worldReset, failNavEngine = failNavEngine,
     setRoute = function(r, state) nextRoute, nextRouteState = r, state end,
+    setKick = function(state) nextKickState = state end,
     setDetour = function(r, err) nextDetourRoute, nextDetourError = r, err end }
 ]=]
 local T = assert(compile(prelude .. body .. "\n" .. suffix, "nav-api"))()
@@ -90,11 +100,14 @@ local function resetAll()
     T.engine.patchState = "applied"
     T.engine.graph = nil
     T.players[0], T.players[1], T.players[2], T.players[3] = nil, nil, nil, nil
-    T.navRoutes[0], T.navRoutes[1], T.navRoutes[2], T.navRoutes[3] = nil, nil, nil, nil
+    for k in pairs(T.navRoutes) do T.navRoutes[k] = nil end
+    for k in pairs(T.navDetours) do T.navDetours[k] = nil end
     T.setRoute(nil)
+    T.setKick(nil)
     T.setDetour(nil, nil)
     clear(T.calls)
     clear(T.detourCalls)
+    clear(T.kicks)
 end
 
 local NAN = 0 / 0
@@ -491,6 +504,177 @@ for label, invalidate in pairs({
 end
 
 --------------------------------------------------------------------------------
+-- 五b、v13 requestRouteFrom／requestDetourFrom：從指定起點算路，快取在 "from:"..pn，不碰玩家那一格
+-- （navRoutes[pn] 會畫藍線、判行程到站；召喚寫進去＝玩家的導航被換成車的路線）
+--------------------------------------------------------------------------------
+-- F1：起點／槽位／目標壞值＝badargs，零副作用（不泵引擎、不進 ensureRoute）
+for label, args in pairs({
+    ["起點 NaN"] = { 0, NAN, 5, 10, 10 }, ["起點 Infinity"] = { 0, 5, INF, 10, 10 },
+    ["起點字串"] = { 0, "5", 5, 10, 10 }, ["起點 nil"] = { 0, nil, 5, 10, 10 },
+    ["槽位 4"] = { 4, 5, 5, 10, 10 }, ["槽位表"] = { {}, 5, 5, 10, 10 },
+    ["目標 NaN"] = { 0, 5, 5, NAN, 10 }, ["目標 nil"] = { 0, 5, 5, 10, nil },
+}) do
+    resetAll()
+    T.players[0] = player(1, 2)
+    T.engine.state = "idle"
+    local r, st = API.requestRouteFrom(args[1], args[2], args[3], args[4], args[5])
+    assert(r == nil and st == "badargs" and #T.calls == 0 and #T.kicks == 0,
+        "F1: requestRouteFrom " .. label .. " → badargs 且不泵、不進 ensureRoute，實得 " .. tostring(st))
+end
+-- F2：沒有玩家＝noplayer，不泵引擎
+resetAll()
+T.engine.state = "idle"
+route, state = API.requestRouteFrom(1, 5, 5, 10, 10)
+assert(route == nil and state == "noplayer" and #T.kicks == 0 and #T.calls == 0, "F2: noplayer 早退且不泵")
+-- F3：引擎 idle＝先泵一次（召喚時玩家多半沒有導航目標，沒人會啟動它），回泵完的狀態；其他狀態不泵、原樣回
+resetAll()
+T.players[2] = player(1, 2)
+T.engine.state = "idle"
+T.setKick("extracting")
+route, state = API.requestRouteFrom(2, 5, 5, 10, 10)
+assert(route == nil and state == "extracting" and #T.kicks == 1 and T.kicks[1] == 2 and #T.calls == 0,
+    "F3: idle 先 navKickAvailable(pn)，回泵完的狀態、不進 ensureRoute，實得 " .. tostring(state))
+resetAll()
+T.players[0] = player(1, 2)
+T.engine.state = "idle"
+route, state = API.requestRouteFrom(0, 5, 5, 10, 10)
+assert(state == "idle" and #T.kicks == 1, "F3: 泵不動（沒有地圖表面）照回 idle")
+for _, es in ipairs({ "extracting", "building", "failed" }) do
+    resetAll()
+    T.players[0] = player(1, 2)
+    T.engine.state = es
+    route, state = API.requestRouteFrom(0, 5, 5, 10, 10)
+    assert(route == nil and state == es and #T.kicks == 0 and #T.calls == 0, "F3: " .. es .. " 不泵、原樣回")
+end
+resetAll()
+T.players[0] = player(1, 2)
+T.engine.state = "idle"
+API.requestRoute(0, 10, 10)
+assert(#T.kicks == 0, "F3: requestRoute 照舊不泵（契約不變）")
+-- F4：ready＝ensureRoute("from:"..pn, {toX,toY}, 起點, 權重 12, 不通知行程, pn)；玩家那一格不動
+resetAll()
+T.players[3] = player(1, 2)
+local base3 = { state = "ok", route = { tag = "player" }, tx = 99, ty = 99 }
+T.navRoutes[3] = base3
+local fromRoute = { tag = "from", snapDist = 1.5 }
+T.setRoute(fromRoute, nil)
+T.navRoutes["from:3"] = { state = "ok", route = fromRoute }
+route, state = API.requestRouteFrom(3, 500.5, 600.5, 700, 800)
+local fc = T.calls[1]
+assert(route == fromRoute and state == "ok", "F4: route 原樣回、state 取 from 格")
+assert(fc.key == "from:3" and fc.tx == 700 and fc.ty == 800 and fc.px == 500.5 and fc.py == 600.5
+    and fc.w == 12 and fc.notify == nil and fc.pn == 3,
+    "F4: ensureRoute 收到 from key、起點座標、權重 12、notify=nil、pn")
+assert(T.navRoutes[3] == base3, "F4: 玩家自己的導航快取不動")
+T.navRoutes["from:3"] = { state = "noroad" }
+T.setRoute(nil, nil)
+route, state = API.requestRouteFrom(3, 500.5, 600.5, 700, 800)
+assert(route == nil and state == "noroad", "F4: from 格 noroad 直通")
+T.setRoute(nil, "failed")
+route, state = API.requestRouteFrom(3, 500.5, 600.5, 700, 800)
+assert(route == nil and state == "failed", "F4: ensureRoute terminal 狀態直通")
+
+-- F5：requestDetourFrom 驗參同 requestDetour（另驗起點），壞值不進 A*；槽位不是數字也不得拋錯
+for label, args in pairs({
+    ["起點 NaN"] = { 0, NAN, 5, 10, 10, 30, 40, 5 }, ["起點 nil"] = { 0, nil, 5, 10, 10, 30, 40, 5 },
+    ["槽位表"] = { {}, 5, 5, 10, 10, 30, 40, 5 }, ["槽位 nil"] = { nil, 5, 5, 10, 10, 30, 40, 5 },
+    ["avoidR 0"] = { 0, 5, 5, 10, 10, 30, 40, 0 }, ["avoidX Infinity"] = { 0, 5, 5, 10, 10, INF, 40, 5 },
+    ["moreAvoid 長度"] = { 0, 5, 5, 10, 10, 30, 40, 5, { 1, 2 } }, ["maxSnap 0"] = { 0, 5, 5, 10, 10, 30, 40, 5, nil, 0 },
+    ["目標 NaN"] = { 0, 5, 5, NAN, 10, 30, 40, 5 },
+}) do
+    resetAll()
+    T.players[0] = player(1, 2)
+    T.engine.graph = { id = "graph" }
+    local ok, r, st = pcall(API.requestDetourFrom, args[1], args[2], args[3], args[4], args[5], args[6], args[7],
+        args[8], args[9], args[10])
+    assert(ok and r == nil and st == "badargs" and #T.detourCalls == 0,
+        "F5: requestDetourFrom " .. label .. " → badargs 且不進 A*，實得 " .. tostring(ok) .. "/" .. tostring(st))
+end
+-- F6：從起點算、權重 12、帶 pn；一律 deferCommit：兩格都不寫，commitDetour 才寫進 from 格，玩家那一格不動
+local function fromSetup()
+    resetAll()
+    T.players[0] = player(7, 8)
+    T.engine.graph = { id = "graph" }
+    local playerBase = { state = "ok", route = detourRoute("player"), tx = 10, ty = 20 }
+    local fromBase = { state = "ok", route = detourRoute("from-base"), tx = 10, ty = 20 }
+    T.navRoutes[0], T.navRoutes["from:0"] = playerBase, fromBase
+    return playerBase, fromBase
+end
+local pBase, fBase = fromSetup()
+local dF = detourRoute("F")
+T.setDetour(dF, nil)
+local more2 = { 1, 1, 3 }
+detour, detourState = API.requestDetourFrom(0, 500, 600, 10, 20, 30, 40, 5, more2, 20)
+dc = T.detourCalls[1]
+assert(detour == dF and detourState == "ok", "F6: 改道線原樣回")
+assert(dc.sx == 500 and dc.sy == 600 and dc.tx == 10 and dc.ty == 20 and dc.ax == 30 and dc.ay == 40 and dc.ar == 5
+    and dc.more == more2 and dc.maxSnap == 20 and dc.w == 12 and dc.pn == 0,
+    "F6: findRoute 從起點算、權重 12、避讓參數與 pn 原樣轉遞")
+assert(T.navRoutes[0] == pBase and T.navRoutes["from:0"] == fBase, "F6: deferCommit 固定開：兩格都不寫")
+cok, cstate = API.commitDetour(0, dF)
+local fr = T.navRoutes["from:0"]
+assert(cok == true and cstate == "ok" and fr ~= fBase and fr.route == dF and fr.tx == 10 and fr.ty == 20
+    and fr.buildX == 500 and fr.buildY == 600 and fr.approachWeight == 12 and fr.progressIdx == 1,
+    "F6: commitDetour 寫進 from 格（起點、權重 12）")
+assert(T.navRoutes[0] == pBase, "F6: commit 召喚改道不動玩家的藍線")
+cok, cstate = API.commitDetour(0, dF)
+assert(cok == true and cstate == "ok" and T.navRoutes["from:0"] == fr, "F6: 重複 commit 冪等")
+-- F7：兩格同時有待接受的改道：各自 commit 到自己那一格
+pBase, fBase = fromSetup()
+local dP = detourRoute("P")
+T.setDetour(dP, nil)
+API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, true)
+dF = detourRoute("F2")
+T.setDetour(dF, nil)
+API.requestDetourFrom(0, 500, 600, 10, 20, 30, 40, 5)
+assert(T.navDetours[0].entry.route == dP and T.navDetours["from:0"].entry.route == dF,
+    "F7: requestDetourFrom 不清玩家那一格待接受的改道")
+cok = API.commitDetour(0, dF)
+assert(cok and T.navRoutes["from:0"].route == dF and T.navRoutes[0] == pBase, "F7: 召喚改道進 from 格")
+cok = API.commitDetour(0, dP)
+assert(cok and T.navRoutes[0].route == dP and T.navRoutes["from:0"].route == dF, "F7: 玩家改道進玩家那一格")
+-- F8：from 格的 stale：快取換過、引擎失敗、別的槽位；玩家換目標（clearRoute(pn)）不打斷召喚
+local function fromStale(label, prep, pn)
+    local _, fb = fromSetup()
+    local d = detourRoute("S")
+    T.setDetour(d, nil)
+    API.requestDetourFrom(0, 500, 600, 10, 20, 30, 40, 5)
+    prep()
+    local okc, st = API.commitDetour(pn or 0, d)
+    assert(okc == false and st == "stale" and not (T.navRoutes["from:0"] and T.navRoutes["from:0"].route == d),
+        "F8: " .. label .. " → (false, stale) 且不寫，實得 " .. tostring(st))
+    return fb
+end
+fromStale("from 格被重算換掉", function()
+    T.navRoutes["from:0"] = { state = "ok", route = detourRoute("rebuilt"), tx = 10, ty = 20 }
+end)
+fromStale("新的 requestDetourFrom 取代", function()
+    T.setDetour(detourRoute("newer"), nil)
+    API.requestDetourFrom(0, 500, 600, 10, 20, 30, 40, 5)
+end)
+fromStale("引擎失敗（failNavEngine）", function() T.failNavEngine("boom"); T.engine.state = "ready" end)
+fromStale("世界重置", function() T.worldReset(); T.engine.state = "ready" end)
+fromStale("別的槽位", function() end, 1)
+fromSetup()
+dF = detourRoute("keep")
+T.setDetour(dF, nil)
+API.requestDetourFrom(0, 500, 600, 10, 20, 30, 40, 5)
+T.invalidate(0)
+assert(T.navRoutes[0] == nil and T.navRoutes["from:0"] ~= nil, "F8: clearRoute(pn) 不清 from 格")
+cok, cstate = API.commitDetour(0, dF)
+assert(cok == true and cstate == "ok" and T.navRoutes["from:0"].route == dF and T.navRoutes[0] == nil,
+    "F8: 玩家換目標不打斷召喚的改道（commit 照常、玩家那一格仍空）")
+-- F9：requestDetour 照舊帶玩家槽位當 pn、從玩家位置算（抽 detourCore 後行為不變）
+resetAll()
+T.players[1] = player(3, 4)
+T.engine.graph = { id = "graph" }
+T.setDetour(detourRoute("p1"), nil)
+API.requestDetour(1, 10, 20, 30, 40, 5)
+dc = T.detourCalls[1]
+assert(dc.sx == 3 and dc.sy == 4 and dc.w == 3 and dc.pn == 1 and T.navRoutes[1].route.tag == "p1"
+    and T.navRoutes["from:1"] == nil, "F9: requestDetour 起點是玩家、pn 是槽位、只寫玩家那一格")
+
+--------------------------------------------------------------------------------
 -- 六、ensureRoute 快取／偏航（test:nav-cache 區段；跑 production 本體）
 -- 實測病灶（2026-09-01 AutoDrive telemetry）：車在 (10716,9756) 拿到首點
 -- (10716,9737) 的舊線——偏航 19 格 < 舊 DEVIATION_DIST=28 就一直沿用快取。
@@ -530,8 +714,8 @@ local function dist2(ax, ay, bx, by)
 end
 local NavCore = {
     distToRoute = routeDistance,
-    findRoute = function(graph, sx, sy, tx, ty, ax, ay, ar, approachWeight)
-        findCalls[#findCalls + 1] = { sx = sx, sy = sy, tx = tx, ty = ty, w = approachWeight }
+    findRoute = function(graph, sx, sy, tx, ty, ax, ay, ar, approachWeight, more, maxSnap, pn)
+        findCalls[#findCalls + 1] = { sx = sx, sy = sy, tx = tx, ty = ty, w = approachWeight, pn = pn }
         if nextErr then return nil, nextErr end
         if not nextRoute then return nil end
         local pts = {}
@@ -672,5 +856,21 @@ do
         "C8: 已在折返路線後段，不因落在首段後方誤判重算")
 end
 
+-- C9（v13）：第 7 參 pn＝自訂道路遮罩的槽位。不傳＝照舊從 key 推（數字 key 本身、分享路線 "pn:作者" 取冒號前）；
+-- "from:<pn>" 推不出來（tonumber("from")＝nil），所以 requestRouteFrom 一定要帶
+do
+    local target = { x = 9000, y = 9000 }
+    C.setNext({ 9000, 8000, 9000, 9000 })
+    local function pnOf(key, pn)
+        C.navRoutes[key] = nil
+        C.ensureRoute(key, target, 9000, 8000, 12, nil, pn)
+        return C.findCalls[#C.findCalls].pn
+    end
+    assert(pnOf(2) == 2, "C9: 數字 key 不傳 pn＝key 本身")
+    assert(pnOf("1:alice") == 1, "C9: 分享路線 key 不傳 pn＝冒號前的槽位")
+    assert(pnOf("from:3") == nil, "C9: from key 推不出槽位（requestRouteFrom 必須帶 pn）")
+    assert(pnOf("from:3", 3) == 3, "C9: 帶 pn＝照用")
+end
+
 print("test_nav_api: OK（requestRoute A1-A12＋requestDetour A13-A22＋deferCommit／commitDetour A23-A28"
-    .. "＋ensureRoute 快取/偏航 C0-C8）")
+    .. "＋requestRouteFrom／requestDetourFrom F1-F9＋ensureRoute 快取/偏航 C0-C9）")

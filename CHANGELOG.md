@@ -5,8 +5,11 @@
 ### 新增
 
 - 其他 MOD 可以直接把小地圖的導航目的地設到地圖上任一點並開始導航，例如 Tesla Collection 手機 App 的「導航到車」。行為和按「回家」一樣：原本有兩站以上沒走完的行程時，會先跳確認視窗。
+- 自動駕駛 MOD 可以向小地圖要一條從車子位置出發的路線，給「召喚」把車開到玩家身邊用。這條路線和玩家自己的導航分開：小地圖上的導航線不會換掉，行程也不會因此判定到站。
 
 > 技術要點：`navApiVersion` 11→12：新增 `setNavTarget(playerNum, x, y, label)`，回 `(true, "ok"|"prompted")` 或 `(false, reason)`；reason 為 `badargs`、`noplayer`、`nearby`（距目標 5 格內）、`busy`、`notstopped`、`blocked` 等。`label` 是顯示用站名，可為 nil（顯示座標）。外部 MOD 以 `navApiVersion >= 12` 且函式存在偵測。
+>
+> `navApiVersion` 12→13：新增 `requestRouteFrom(playerNum, fromX, fromY, toX, toY)` 與 `requestDetourFrom(playerNum, fromX, fromY, toX, toY, avoidX, avoidY, avoidR, moreAvoid, maxSnap)`，回 `(route, state)`，形狀與 state 字彙同 `requestRoute`／`requestDetour`。起點是傳入座標而非玩家，approach 權重固定 12，自訂道路照 playerNum 的遮罩；路線快取在獨立的 `"from:<playerNum>"` 那一格（不畫、不通知行程、玩家換導航目標不清它；換路網、引擎失敗、換世界時清）。`requestRouteFrom` 在引擎 idle 時會先冷啟動一次。`requestDetourFrom` 一律 deferCommit，驗收後照舊呼叫 `commitDetour(playerNum, route)`，它現在也會找 `"from:"` 那一格。`requestDetour`、`commitDetour` 簽名與既有行為不變。外部 MOD 以 `navApiVersion >= 13` 且兩支函式都存在偵測。
 
 ## [42.21.0-0.52.0] - 2026-10-27
 
