@@ -1034,3 +1034,4 @@ Core.drawZoneIcons = drawZoneIcons
 Core.drawBasementBadge = drawBasementBadge -- _Legend.lua：圖例的地下設施列
 Core.drawZoneIcon = drawZoneIcon -- _Settings.lua：效果預覽與地圖同一套圖標畫法
 Core.drawZoneName = drawZoneName
+Core.zoneFrame = zoneFrame -- _Markers.lua、_Nav.lua：同幀共用的視野仿射，畫面外的 marker 與其他玩家先剔除

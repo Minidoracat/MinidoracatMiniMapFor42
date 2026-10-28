@@ -404,6 +404,56 @@ check(near(el.polys[2][1], W / 2 + 10 * S) and near(el.polys[2][2], H / 2 + 2 * 
     "R11 in a vehicle the arrow stays on the vehicle")
 mate.getVehicle, mate.net = walk, nil
 
+-- R12 畫面外的人先略過：位置用同幀仿射（Core.zoneFrame；這裡以主檔 test:derive-affine 真實作從本測試的投影導出）
+-- 投影，離元件邊超過餘量的隊友不讀朝向、不呼叫 getPlayerInfo；徒步的餘量多 8 格（網路位置離角色不到 8 格），
+-- 角色在元件外 4 格、網路位置在畫面內的照畫；畫出來的與不剔除時逐筆相同（俯視與等軸測）
+do
+    local mf = assert(io.open("MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua", "rb"))
+    local slice = assert(mf:read("*a"):gsub("\r\n", "\n"):match("%-%- test:derive%-affine:start\n(.-)\n%-%- test:derive%-affine:end"))
+    mf:close()
+    local derive = assert(compile(slice .. "\nreturn deriveAffine", "@derive-affine", "t", {}))()
+    local far = remote(CX + 200, CY, 0, "far")
+    local rim = remote(CX + W / 2 / S + 4, CY, -math.pi / 2, "rim")
+    rim.net = { RealX = javaFloat(CX + W / 2 / S - 3), RealY = javaFloat(CY) }
+    faction.far, faction.rim = "F", "F"
+    local farReads = 0
+    local farAngle = far.getAnimAngleRadians
+    far.getAnimAngleRadians = function(p) farReads = farReads + 1; return farAngle(p) end
+    local infoOf = env.getPlayerInfo
+    env.getPlayerInfo = function(p) if p == far then farReads = farReads + 1 end; return infoOf(p) end
+    online = { me, mate, bob, ghost, corpse, far, rim }
+    local function dump(e)
+        local out = {}
+        for _, p in ipairs(e.polys) do out[#out + 1] = table.concat({ p[1], p[2], p[3], p[4], p.r, p.a }, ",") end
+        for _, q in ipairs(e.quads) do out[#out + 1] = table.concat({ q[1], q[2], q[5], q[6], q.a }, ",") end
+        for _, r in ipairs(e.rects) do out[#out + 1] = table.concat({ r.x, r.y }, ",") end
+        return table.concat(out, ";")
+    end
+    local function culledDraw(iso)
+        Core.zoneFrame = function(e)
+            local f = { acx = CX, acy = CY }
+            f.p0x, f.p0y, f.sxx, f.sxy, f.syx, f.syy = derive(e.mapAPI, CX, CY)
+            return f
+        end
+        now = now + 2000
+        local e = draw(iso, { [0] = me })
+        Core.zoneFrame = nil
+        return e
+    end
+    local plain = mpDraw()
+    local readsPlain = farReads
+    farReads = 0
+    local culled = culledDraw(false)
+    check(dump(culled) == dump(plain) and bodies(culled, "team") == 2, "R12 view cull draws exactly what the uncull path draws")
+    check(readsPlain == 2 and farReads == 0, "R12 an off-view teammate is skipped before reading facing and network position")
+    check(near(culled.polys[4][1], W - 3 * S), "R12 a teammate just outside the map is drawn at its on-screen network position")
+    now = now + 2000
+    local isoPlain = draw(true, { [0] = me })
+    check(dump(culledDraw(true)) == dump(isoPlain), "R12 isometric: the cull draws exactly what the uncull path draws")
+    env.getPlayerInfo, far.getAnimAngleRadians = infoOf, farAngle
+    online = { me, mate, bob, ghost, corpse }
+end
+
 -- 別層：mate 在樓上、bob（陌生人）在地下室；自己在地面。預設 FloorMarks 開、BFH 式
 sandbox.RemoteFacingDisplay = 3
 mate.z, bob.z = 1, -1
@@ -463,7 +513,7 @@ el = mpDraw()
 check(near(el.polys[2].r, 0.95 * 0.55) and near(H / 2 - el.polys[4][2], tip(R)),
     "FL5 on the stairs a player counts as the lower floor")
 
-local EXPECTED_ASSERTIONS = 59
+local EXPECTED_ASSERTIONS = 63
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS .. ", actual " .. assertions)
     os.exit(1)

@@ -426,6 +426,7 @@ return {
     edges = function() return table.concat(edgeLog, ";", 1, drawCount) end,
     resetCandidates = function() inner._minidoracatShCand = nil end,
     candidateCount = function() return inner._minidoracatShCand and inner._minidoracatShCand.n end,
+    candidateRows = function() return inner._minidoracatShCand and inner._minidoracatShCand.rows end,
     lastIcon = function() return lastIcon end,
     lastName = function() return lastName end,
     setSlider = function(id, value) sliders[id] = value end,
@@ -1210,6 +1211,18 @@ do
     assert(icons == 1 and names == 1, "多塊：同一間只標一次圖標與名稱")
     local icon = H.lastIcon()
     assert(icon.x + icon.size / 2 == 12 and icon.y + icon.size / 2 == 16, "多塊：標在最大那塊（直條）的中心")
+    -- 列快取每秒重建：各塊座標沒變就沿用上次的外緣段（同一張段表），畫出來逐筆相同；挪動一塊就重算
+    H.setView(-1000, 1000, -1000, 1000)
+    H.draw()
+    local log1, rows1 = H.edges(), H.candidateRows()
+    H.draw()
+    local rows2 = H.candidateRows()
+    assert(rows2 ~= rows1 and rows2[1].segs == rows1[1].segs and rows2[2].segs == rows1[2].segs and H.edges() == log1,
+        "多塊：列快取重建時座標沒變的屋沿用上次的外緣段，畫法不變")
+    H.setHouses({ H.safehouse(10, 10, 14, 22, true, "@MSH:9", "Base"), H.safehouse(14, 18, 22, 23, true, "@MSH:9", "Base") })
+    H.draw()
+    assert(H.candidateRows()[2].segs ~= rows2[2].segs and H.edges() ~= log1, "多塊：挪動一塊就重算外緣段")
+    H.setView(nil)
     -- 對照：原版屋主（同一人相鄰的兩間）與不同標記的兩間不合併
     L("Bob", "Bob")
     edges, icons, names = H.draw()

@@ -251,27 +251,44 @@ local function drawMarkerAt(inner, m, cx, cy, surface, sizePx, label, tz)
 end
 Core.drawMarkerAt = drawMarkerAt
 
+-- 畫面外剔除：marker 中心先用同幀共用的仿射（_Zones.lua zoneFrame，錨在視野中心）投影，離元件邊超過 VIEW_PAD px
+-- 就略過——drawMarkerAt 只畫整顆在元件內的，中心在元件外的本來就不畫；VIEW_PAD 吃掉仿射與逐點投影的浮點差。
+-- 留下的照舊逐點 worldToUI，繪製呼叫序列不變。圖層偏好每個 provider 同步一次，逐筆只查表。
+-- 2026-10-29 正式服 client 取樣：車隊幾十台、多數在畫面外時，逐筆投影＋逐筆 markerLayer 是 Markers 的主要成本
+local VIEW_PAD = 4
 local function drawProvider(inner, provider, pn, surface)
     local res = provider.fn(pn, surface)
     local markers = type(res) == "table" and res.markers
-    if type(markers) ~= "table" then return end
+    if type(markers) ~= "table" or #markers == 0 then return end
     local mapAPI = inner.mapAPI
-    local owner = provider.owner
+    local defs = layerDefs[provider.owner]
+    if defs then syncLayers() end
+    local fr = Core.zoneFrame and Core.zoneFrame(inner)
+    local w, h = inner.width, inner.height
+    local acx, acy, p0x, p0y, sxx, sxy, syx, syy
+    if fr then acx, acy, p0x, p0y, sxx, sxy, syx, syy = fr.acx, fr.acy, fr.p0x, fr.p0y, fr.sxx, fr.sxy, fr.syx, fr.syy end
     -- 沒有圖層的 marker 跟玩家「標記大小」；標籤跟「地圖文字大小」（每 provider 讀一次）
     local defSize = Core.markerIconSize()
     local tz = Core.mapTextZoom()
-    -- ponytail: 每個 marker 各投影一次（2 次 Java 呼叫）；個人車隊量級足夠，上百點再改 deriveAffine
     for i = 1, #markers do
         local m = markers[i]
-        if m.texture then
-            local lay = m.layer ~= nil and markerLayer(owner, m.layer) or nil
+        local x, y = m.x, m.y
+        local show = m.texture
+        if show and fr then
+            local ax, ay = x - acx, y - acy
+            local ux, uy = p0x + ax * sxx + ay * syx, p0y + ax * sxy + ay * syy
+            show = ux > -VIEW_PAD and ux < w + VIEW_PAD and uy > -VIEW_PAD and uy < h + VIEW_PAD
+        end
+        if show then
+            local rec = m.layer ~= nil and defs and defs[m.layer]
+            local lay = rec and rec.prefs
             if not lay then
-                drawMarkerAt(inner, m, mapAPI:worldToUIX(m.x, m.y), mapAPI:worldToUIY(m.x, m.y),
+                drawMarkerAt(inner, m, mapAPI:worldToUIX(x, y), mapAPI:worldToUIY(x, y),
                     surface, defSize, m.label, tz)
             elseif lay.show[surface] then
                 local label = m.label
                 if lay.names and lay.names[surface] == false then label = nil end
-                drawMarkerAt(inner, m, mapAPI:worldToUIX(m.x, m.y), mapAPI:worldToUIY(m.x, m.y),
+                drawMarkerAt(inner, m, mapAPI:worldToUIX(x, y), mapAPI:worldToUIY(x, y),
                     surface, lay.size, label, tz)
             end
         end

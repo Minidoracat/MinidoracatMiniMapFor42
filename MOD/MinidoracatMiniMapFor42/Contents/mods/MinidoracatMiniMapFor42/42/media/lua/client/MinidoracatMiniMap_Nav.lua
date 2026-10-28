@@ -742,21 +742,45 @@ Core.remoteNetPos = function(o, x, y)
 end
 -- 其他玩家（設計稿 minimap-team-facing-1019）：getOnlinePlayers＝伺服器有同步給這台客戶端的玩家
 -- （約等於周圍載入範圍；遠處玩家引擎只送座標、沒有朝向，只剩原版紅點）。隊友青、其他人白，比自己小一號。
--- myFloor＝這張地圖的玩家所在樓層（別層標示關＝nil，樓層差一律 0）
+-- myFloor＝這張地圖的玩家所在樓層（別層標示關＝nil，樓層差一律 0）。
+-- 畫面外的人先略過，不讀朝向與網路位置（getPlayerInfo 每次建一張十幾欄的表）：facingPush 只收中心在元件內的，
+-- 先用同幀共用的仿射（_Zones.lua Core.zoneFrame，第一位要判的人才取）投影角色或車的位置，離元件邊超過餘量就不收。
+-- 餘量＝4 px（仿射與逐點投影的浮點差）；徒步另加 8 格的畫面量（畫在網路位置，離角色每軸不到 8 格，remoteNetPos）。
+-- 2026-10-29 正式服 client 取樣：同步範圍內的隊友多數在小地圖外，逐位讀朝向＋getPlayerInfo 是這段的主要成本
 Core.collectRemoteFacing = function(el, api, k, size, level, myFloor)
     local now = getTimestampMs()
     local admin = Core.facingAdmin(now)
     local opt = getServerOptions():getInteger("MapRemotePlayerVisibility") or 1
     local list = getOnlinePlayers()
+    local fr, walkX, walkY
     for i = 0, list:size() - 1 do
         local o = list:get(i)
         if o and not o:isLocalPlayer() and not o:isDead() then
             local team = Core.isFacingTeammate(o, now)
-            if (team or level == 3) and Core.vanillaShowsRemote(o, team, admin, opt) then
-                local wx, wy, fx, fy = Core.playerFacing(o)
-                if not o:getVehicle() then wx, wy = Core.remoteNetPos(o, wx, wy) end
-                local dz = myFloor and math.floor(o:getZ()) - myFloor or 0
-                Core.facingPush(el, api, k, wx, wy, fx, fy, team and "team" or "other", size, true, dz)
+            if team or level == 3 then
+                local v = o:getVehicle()
+                local keep = true
+                if fr == nil then
+                    fr = Core.zoneFrame and Core.zoneFrame(el) or false
+                    if fr then -- 8 格換成畫面 px 的上限（|·| 用比較，Kahlua 的 math.abs 是跨界呼叫）
+                        local a, b, c, d = fr.sxx, fr.syx, fr.sxy, fr.syy
+                        walkX = 8 * ((a < 0 and -a or a) + (b < 0 and -b or b))
+                        walkY = 8 * ((c < 0 and -c or c) + (d < 0 and -d or d))
+                    end
+                end
+                if fr then
+                    local ax, ay = (v or o):getX() - fr.acx, (v or o):getY() - fr.acy
+                    local ux, uy = fr.p0x + ax * fr.sxx + ay * fr.syx, fr.p0y + ax * fr.sxy + ay * fr.syy
+                    local px, py = 4, 4
+                    if not v then px, py = px + walkX, py + walkY end
+                    keep = ux > -px and ux < el.width + px and uy > -py and uy < el.height + py
+                end
+                if keep and Core.vanillaShowsRemote(o, team, admin, opt) then
+                    local wx, wy, fx, fy = Core.playerFacing(o)
+                    if not v then wx, wy = Core.remoteNetPos(o, wx, wy) end
+                    local dz = myFloor and math.floor(o:getZ()) - myFloor or 0
+                    Core.facingPush(el, api, k, wx, wy, fx, fy, team and "team" or "other", size, true, dz)
+                end
             end
         end
     end

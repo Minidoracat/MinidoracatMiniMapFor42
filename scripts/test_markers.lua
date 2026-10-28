@@ -231,6 +231,50 @@ local hp = Core.markerLayer("Hid", "h")
 check(hp.show.mini == true and hp.show.world == true, "show=true on a layer hidden by default opens both maps")
 Core.resetMarkerLayers("Hid")
 
+-- 畫面外剔除：marker 中心用同幀仿射（Core.zoneFrame；這裡以主檔 test:derive-affine 真實作從本測試的恆等投影導出）
+-- 投影，離元件邊超過 4 px 的不逐點投影，畫出來的與不剔除時逐筆相同；圖層偏好每次 drawMarkers 只讀一次 MarkerLayers
+do
+    local mf = assert(io.open("MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua", "rb"))
+    local body = assert(mf:read("*a"):gsub("\r\n", "\n"):match("%-%- test:derive%-affine:start\n(.-)\n%-%- test:derive%-affine:end"))
+    mf:close()
+    local derive = assert(load(body .. "\nreturn deriveAffine", "derive-affine", "t", {}))()
+    local function frame(el)
+        local f = { acx = 100, acy = 100 }
+        f.p0x, f.p0y, f.sxx, f.sxy, f.syx, f.syy = derive(el.mapAPI, f.acx, f.acy)
+        return f
+    end
+    local getOption = Core.modOptions.getOption
+    local function drawCounted(list, cull)
+        buckets[2] = { revision = 1, markers = list }
+        local d = inner(2)
+        local api, proj, reads = d.el.mapAPI, 0, 0
+        local f = cull and frame(d.el) -- 先導出（導出本身也投影），再開始數逐筆投影
+        Core.zoneFrame = f and function() return f end or nil
+        local wx, wy = api.worldToUIX, api.worldToUIY
+        api.worldToUIX = function(s, x, y) proj = proj + 1; return wx(s, x, y) end
+        api.worldToUIY = function(s, x, y) proj = proj + 1; return wy(s, x, y) end
+        Core.modOptions.getOption = function(s, id) reads = reads + 1; return getOption(s, id) end
+        Core.drawMarkers(d.el, "mini")
+        Core.modOptions.getOption, Core.zoneFrame = getOption, nil
+        return d, proj, reads
+    end
+    local function at(id, x, y, layer) local m = mk(id, layer, id); m.x, m.y = x, y; return m end
+    local list = { at("in", 100, 100, "bound"), at("left", -40, 100), at("right", 260, 150, "bound"),
+        at("up", 100, -30), at("edge", 1, 100), at("pad", 203, 100), at("beyond", 205, 100),
+        at("plain", 150, 60, "plain"), { id = "notex", x = 100, y = 100 } }
+    local plain, p0, r0 = drawCounted(list, false)
+    local culled, p1, r1 = drawCounted(list, true)
+    local function dump(d)
+        local out = {}
+        for _, t in ipairs(d.tex) do out[#out + 1] = table.concat({ t.tex, t.x, t.y, t.w, t.a, t.r or "" }, ",") end
+        for _, t in ipairs(d.text) do out[#out + 1] = table.concat({ t.s, t.x, t.y, t.r, t.a }, ",") end
+        return table.concat(out, ";")
+    end
+    check(#culled.tex == 2 and dump(culled) == dump(plain), "view cull draws exactly what the uncull path draws")
+    check(p0 == 16 and p1 == 8, "markers more than 4 px outside the map are not projected (edge and pad still are)")
+    check(r0 == 1 and r1 == 1, "MarkerLayers is read once per drawMarkers, not once per marker")
+end
+
 local dm = inner(0)
 check(Core.drawMarkerAt(dm.el, mk("p"), 100, 100, "world", 16, "P") and dm.tex[1].w == 16 and dm.text[2].s == "P",
     "drawMarkerAt draws one marker for previews (16px base, label)")

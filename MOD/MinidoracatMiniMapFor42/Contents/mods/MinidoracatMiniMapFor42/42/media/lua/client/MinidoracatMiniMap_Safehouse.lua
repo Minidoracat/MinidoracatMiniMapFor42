@@ -143,25 +143,51 @@ local function outerEdge(segs, row, group, horizontal, at, a, b, side)
 end
 
 -- 安全屋 MOD 的一間可以有多塊（每塊一個原生，屋主同為 "@MSH:<id>"，不重疊、塊與塊共用邊）：同一間只畫外緣
--- （row.segs），圖標與名稱只標在最大的那塊（其他塊 row.noMark）。原版屋主（同一人的多間）照舊各畫各的
-local function mergeSafehousePieces(groups)
-    for _, group in pairs(groups) do
-        if #group > 1 then
-            local main, best = nil, -1
-            for i = 1, #group do
-                local row = group[i]
-                local segs = {}
-                outerEdge(segs, row, group, true, row.y1, row.x1, row.x2, -1)
-                outerEdge(segs, row, group, false, row.x2, row.y1, row.y2, 1)
-                outerEdge(segs, row, group, true, row.y2, row.x1, row.x2, 1)
-                outerEdge(segs, row, group, false, row.x1, row.y1, row.y2, -1)
-                row.segs, row.noMark = segs, true
-                local area = (row.x2 - row.x1) * (row.y2 - row.y1)
-                if area > best then main, best = row, area end
+-- （row.segs），圖標與名稱只標在最大的那塊（其他塊 row.noMark）。原版屋主（同一人的多間）照舊各畫各的。
+-- 列快取每秒重建；一間的各塊座標（照清單順序）跟上次相同就沿用上次算好的外緣段（memo[屋主]，段表唯讀共用），
+-- 不重算 outerEdge——每塊都要扣掉同一間的其他每一塊，2026-10-29 正式服 client 取樣裡安全屋最貴的就是每秒整服重算它。
+-- 回傳這次的 memo（只留這次還在的屋）
+local function mergeSafehousePieces(groups, memo)
+    local out = {}
+    for owner, group in pairs(groups) do
+        local n = #group
+        if n > 1 then
+            local m = memo and memo[owner]
+            if m and #m.at == 4 * n then
+                for i = 1, n do
+                    local row, k = group[i], 4 * i
+                    if row.x1 ~= m.at[k - 3] or row.y1 ~= m.at[k - 2] or row.x2 ~= m.at[k - 1] or row.y2 ~= m.at[k] then
+                        m = nil
+                        break
+                    end
+                end
+            else
+                m = nil
             end
-            main.noMark = nil
+            if not m then
+                m = { at = {}, segs = {}, main = 1 }
+                local best = -1
+                for i = 1, n do
+                    local row, k = group[i], 4 * i
+                    local segs = {}
+                    outerEdge(segs, row, group, true, row.y1, row.x1, row.x2, -1)
+                    outerEdge(segs, row, group, false, row.x2, row.y1, row.y2, 1)
+                    outerEdge(segs, row, group, true, row.y2, row.x1, row.x2, 1)
+                    outerEdge(segs, row, group, false, row.x1, row.y1, row.y2, -1)
+                    m.segs[i] = segs
+                    m.at[k - 3], m.at[k - 2], m.at[k - 1], m.at[k] = row.x1, row.y1, row.x2, row.y2
+                    local area = (row.x2 - row.x1) * (row.y2 - row.y1)
+                    if area > best then m.main, best = i, area end
+                end
+            end
+            for i = 1, n do
+                group[i].segs = m.segs[i]
+                group[i].noMark = i ~= m.main or nil
+            end
+            out[owner] = m
         end
     end
+    return out
 end
 
 local function refreshSafehouseRows(pn, list, size, username, faction)
@@ -191,7 +217,7 @@ local function refreshSafehouseRows(pn, list, size, username, faction)
             if group then group[#group + 1] = row else groups[owner] = { row } end
         end
     end
-    if groups then mergeSafehousePieces(groups) end
+    c.merged = groups and mergeSafehousePieces(groups, c.merged) or nil
     c.at, c.size, c.user, c.faction, c.rows = now, size, username, faction, rows
     return rows
 end
