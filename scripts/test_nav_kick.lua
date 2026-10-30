@@ -203,7 +203,10 @@ end
 -- 整檔載入 → 冷啟動 → 泵 OnTick 到終態 → 查一次公開路線面。
 -- 容器同時由 by-rel（src=dir）與 byIndex（src=nil）命中＝真遊戲的樣子，
 -- 每筆 record 因此被走訪兩次，26/30 筆就能跨過 48 筆/tick 的分幀邊界
-local function runWorld(makeRecords, displayName)
+-- o（可省）＝不直接 navKickEngine，改由 legStep（有導航目標時每 LEG_TICKS 一次）泵引擎：
+--   o.minimap＝小地圖存在、inner 就是這個容器；o.holder＝Core.navStreetsHolder 回這個容器
+--   （false＝回 nil，世界地圖不准開）；兩者都不給＝兩張地圖都不存在、也沒有隱藏容器。
+local function runWorld(makeRecords, displayName, o)
     local hits, prints = { n = 0 }, {}
     local records = makeRecords(hits)
     local recordCount = #records
@@ -221,26 +224,41 @@ local function runWorld(makeRecords, displayName)
         getY = function() return LAT_ORIGIN end,
         getVehicle = function() return nil end,
     }
-    local tick = event()
+    local out = { prints = prints, container = container, recordCount = recordCount,
+        maxReads = 0, extractTicks = 0, holderCalls = 0 }
+    local tick, onTick = event(), event()
+    local core = {
+        ready = true,
+        getBoolOption = function(_, default) return default end,
+        getLoadedMapDirs = function() return { [LOT_DIR] = 1 } end,
+        streetDisplayName = displayName,
+    }
     local env = {
         math = math, string = string, table = table, pairs = pairs, ipairs = ipairs,
         type = type, tostring = tostring, tonumber = tonumber,
         error = error, pcall = pcall, select = select,
         print = function(line) prints[#prints + 1] = tostring(line) end,
-        Events = { OnTick = event(), OnTickEvenPaused = tick, OnGameStart = event() },
+        Events = { OnTick = onTick, OnTickEvenPaused = tick, OnGameStart = event() },
         MinidoracatMiniMapAPI = {},
-        MinidoracatMiniMapCore = {
-            ready = true,
-            getBoolOption = function(_, default) return default end,
-            getLoadedMapDirs = function() return { [LOT_DIR] = 1 } end,
-            streetDisplayName = displayName,
-        },
+        MinidoracatMiniMapCore = core,
         fileExists = function() return true end,
         getLotDirectories = function() return javaList({ LOT_DIR }) end,
         getStreets = function(data) return data.streets end,
         getSpecificPlayer = function(pn) return pn == 0 and player or nil end,
         getTimestampMs = function() return 1000 end,
     }
+    if o then
+        core.navGetTarget = function(pn) return pn == 0 and { x = LAT_END, y = LAT_END } or nil end
+        if o.holder ~= nil then
+            core.navStreetsHolder = function()
+                out.holderCalls = out.holderCalls + 1
+                return o.holder and surface or nil
+            end
+        end
+        if o.minimap then
+            env.getPlayerMiniMap = function(pn) return pn == 0 and { inner = surface } or nil end
+        end
+    end
     if setfenv then -- 5.1（PZ Kahlua 同代）
         local chunk = assert(compile(source, "navroute-full"))
         setfenv(chunk, env)
@@ -249,11 +267,10 @@ local function runWorld(makeRecords, displayName)
         assert(load(source, "navroute-full", "t", env))()
     end
     local api = env.MinidoracatMiniMapAPI
-    env.MinidoracatMiniMapCore.navKickEngine(surface)
-    local out = { prints = prints, container = container, recordCount = recordCount,
-        maxReads = 0, extractTicks = 0 }
+    if not o then core.navKickEngine(surface) end
     for _ = 1, 400 do
         local before = hits.n
+        onTick.fire()
         tick.fire()
         local read = hits.n - before
         if read > 0 then out.extractTicks = out.extractTicks + 1 end
@@ -262,7 +279,7 @@ local function runWorld(makeRecords, displayName)
         if out.state == "ready" or out.state == "failed" then break end
     end
     out.route, out.routeState = api.requestRoute(0, LAT_END, LAT_END)
-    out.index = env.MinidoracatMiniMapCore.navStreetIndex()
+    out.index = core.navStreetIndex()
     return out
 end
 local function why(w) return tostring(w.state) .. "｜log: " .. (w.prints[1] or "-") end
@@ -360,6 +377,25 @@ local badWidth = runWorld(function(hits)
 end)
 ok(badWidth.state == "failed" and badWidth.graph == nil,
     "width=0 仍須 error 進 failed，實為 " .. why(badWidth))
+
+-- 18. 小地圖與世界地圖都不存在（沙盒 AllowMiniMap 關、這次進遊戲還沒按過 M），導航目標是存檔帶回來的：
+-- 引擎要從主檔的隱藏街道容器（Core.navStreetsHolder）啟動，不能停在 idle 等玩家開地圖
+-- （2026-10-30 AutoDrive 回報：按自駕卡在「準備路線」15 秒逾時；開過一次 M 才好）。
+local lattice0 = function(hits) return lattice(hits, {}) end
+local noMap = runWorld(lattice0, nil, { holder = true })
+ok(noMap.state == "ready" and noMap.routeState == "ok",
+    "兩張地圖都不存在時應以隱藏容器建圖並給路線，實為 " .. why(noMap) .. " route=" .. tostring(noMap.routeState))
+ok(noMap.holderCalls >= 1, "兩張地圖都不存在時要向主檔要隱藏容器")
+
+-- 19. 世界地圖不准開（AllowWorldMap 關，主檔回 nil）：維持「沒有地圖就沒有路網」，查詢面照舊回 idle
+local blocked = runWorld(lattice0, nil, { holder = false })
+ok(blocked.state == "idle" and blocked.routeState == "idle",
+    "沒有隱藏容器時應維持 idle，實為 " .. why(blocked) .. " route=" .. tostring(blocked.routeState))
+
+-- 20. 小地圖在：照舊從小地圖抽，不建隱藏容器（多一份合併副本沒有必要）
+local withMini = runWorld(lattice0, nil, { holder = true, minimap = true })
+ok(withMini.state == "ready" and withMini.routeState == "ok", "小地圖在時應照舊建圖，實為 " .. why(withMini))
+ok(withMini.holderCalls == 0, "小地圖在時不得向主檔要隱藏容器，實得 " .. withMini.holderCalls .. " 次")
 
 if fail > 0 then
     print(string.format("test_nav_kick: %d passed, %d FAILED", pass, fail))

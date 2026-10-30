@@ -3170,7 +3170,10 @@ local previewOff = {}
 -- 隱藏／未開啟的地圖也要能泵冷引擎：kickEngine 只要 inner.mapAPI 的 streets
 -- 容器，不需要可見表面（同 _Search.lua winRefresh 的既有做法）。小地圖每次取
 -- 當下實例（Recreate 會換 inner，存快照＝抱死容器）；世界地圖用單例。
--- 不 add/clearStreetData、不開關任何視窗、不碰玩家地圖狀態。
+-- 兩張地圖都還不存在（沙盒 AllowMiniMap 關、這次進遊戲還沒按過 M）時改用主檔的隱藏街道容器
+-- （Core.navStreetsHolder，載入鏈同世界地圖）：沒有它引擎會停在 idle，requestRoute 一直回 idle，
+-- AutoDrive 按自駕等到逾時（2026-10-30 玩家回報）。
+-- 本檔不 add/clearStreetData、不開關任何視窗、不碰玩家地圖狀態。
 local function navKickAvailable(pn)
     if engine.state ~= "idle" then return engine.state end
     local mm = getPlayerMiniMap and getPlayerMiniMap(pn)
@@ -3178,6 +3181,10 @@ local function navKickAvailable(pn)
     if inner then kickEngine(inner) end
     if engine.state == "idle" and ISWorldMap_instance then
         kickEngine(ISWorldMap_instance)
+    end
+    if engine.state == "idle" and not inner and not ISWorldMap_instance and Core.navStreetsHolder then
+        local hidden = Core.navStreetsHolder()
+        if hidden then kickEngine(hidden) end
     end
     return engine.state
 end

@@ -1638,6 +1638,38 @@ local function ensureStreetData(mapUI)
 end
 -- test:street-backfill:end
 
+-- 導航引擎的隱藏街道容器（_NavRoute.lua navKickAvailable 在小地圖與世界地圖都還不存在時用）：
+-- 沙盒 AllowMiniMap 關（B42 Apocalypse／Six Months Later／Extinction 與伺服器預設）時原版不建小地圖，
+-- 本 MOD 也只在按快捷鍵時建；世界地圖第一次按 M 才建（ISWorldMap.lua:1500-1506）。兩者都不存在時
+-- 引擎沒有街道可抽、停在 idle，存檔帶回的導航目標按自駕就一直等（2026-10-30 AutoDrive「準備路線」逾時回報）。
+-- 載入鏈同世界地圖（ensureStreetData：原版 initDefaultStreetData＋_StreetData 目錄顯示窗口＋已知載體兜底）；
+-- 不加進 UIManager、不顯示。原始街道資料引擎依檔名共用（WorldMapStreets.getOrCreateData），這份只多一組合併副本。
+-- 世界地圖不准開（沙盒 AllowWorldMap 關）時不建：維持「沒有地圖就沒有路網」。每個世界一份，進新世界時丟掉舊的；
+-- 它從未顯示、之後也不再用，可以清（解除原始資料上的 listener，WorldMap.java:241-248，同 _StreetData scratch 規則）。
+Core.navStreetsHolder = function()
+    local holder = Core.navStreetsHidden
+    if holder ~= nil then return holder or nil end
+    if not (UIWorldMap and ISWorldMap.IsAllowed and ISWorldMap.IsAllowed()) then return nil end
+    holder = {}
+    local ok, err = pcall(function()
+        holder.javaObject = UIWorldMap.new(holder)
+        holder.mapAPI = holder.javaObject:getAPIv3()
+    end)
+    if not (ok and holder.mapAPI) then
+        Core.navStreetsHidden = false
+        log("hidden street container unavailable: " .. tostring(err))
+        return nil
+    end
+    pcall(ensureStreetData, holder)
+    Core.navStreetsHidden = holder
+    return holder
+end
+Events.OnGameStart.Add(function()
+    local holder = Core.navStreetsHidden
+    Core.navStreetsHidden = nil
+    if holder then pcall(function() holder.mapAPI:getStreetsAPI():clearStreetData() end) end
+end)
+
 -- 掛在 ISWorldMap:initDataAndStyle 之後：該函式建立世界地圖資料與預設樣式
 -- （內部呼叫 MapUtils.initDefaultStyleV3），是加自訂圖層的正確時機。
 -- 註：初建其實也會經內部 overlayPaper 觸發下方 wrap 補掛（instance 於
