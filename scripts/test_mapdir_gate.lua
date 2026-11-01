@@ -397,7 +397,7 @@ assert(#mod.logs == 1 and string.find(mod.logs[1], "Atlanta", 1, true),
     "只該有 Atlanta 一行提示，實得 " .. table.concat(mod.logs, " | "))
 assert(got[2].mapDir == nil and got[3].mapDir == nil, "解析失敗不得亂填")
 
--- 「顯示 MOD 地圖區塊」關閉：只剩基底，排序不動它
+-- 「顯示 MOD 地圖圖像」關閉：只剩基底，排序不動它
 collectSetup({ boolOptions = { MapPackLayers = false } })
 got = mod.collectPyramids()
 assert(zips(got) == BASE_ZIP, "關閉地圖包圖層後只該有基底，實得 " .. zips(got))

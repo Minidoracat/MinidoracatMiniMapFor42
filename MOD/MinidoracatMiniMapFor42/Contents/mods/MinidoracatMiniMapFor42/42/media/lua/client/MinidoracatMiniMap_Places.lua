@@ -558,12 +558,13 @@ Core.placesPromptRename = function(pn, id)
         report(pn, ok, reason)
     end)
 end
--- 「收藏：名稱」父項（Core.mapMenuFill）：名稱太長就截短，完整名稱在地圖標籤與確認框
+-- 「收藏：名稱」父項（Core.mapMenuFill；世界右鍵傳 key＝「地圖收藏：名稱」）：名稱太長就截短，完整名稱在
+-- 地圖標籤與確認框
 local MENU_NAME_MAX = 20
-Core.placeMenuTitle = function(pn, place)
+Core.placeMenuTitle = function(pn, place, key)
     local name = labelOf(pn, place)
     if #name > MENU_NAME_MAX then name = name:sub(1, MENU_NAME_MAX - 1) .. "..." end
-    return getText("UI_MinidoracatMiniMap_PlaceMenuOf", name)
+    return getText(key or "UI_MinidoracatMiniMap_PlaceMenuOf", name)
 end
 -- 雙地圖右鍵「收藏」子選單（Core.mapMenuFill 傳子選單；不能掛子選單時是第一層）：回家（依原版慣例
 -- notAvailable＋說明：未設家優先說明設定方法，否則 navBlocked＝Core.navMenuBlocked 的導航被擋原因）、
@@ -613,6 +614,118 @@ API.setNavTarget = function(pn, x, y, label)
     if near(player, x, y) then return false, "nearby" end
     return navigateTo(pn, player, x, y, text)
 end
+
+--------------------------------------------------------------------------------
+-- 遊戲世界與物品欄右鍵「加入地圖收藏...」（2026-11-02 設計稿 minimap-world-fav-1102 作答：先跳命名框、
+-- 名稱預填；旁邊 2 格內有收藏時另列那一筆的改名／移除；物品欄右鍵別處的物品也列）。預填名稱依序取車、
+-- 地上物品、容器、家具；不在地面層的把樓層寫進名稱（收藏檔沒有樓層欄）。原版只在能互動的地方發世界
+-- 右鍵事件（別人的安全屋不發，ISWorldObjectContextMenu.lua:211-214）
+--------------------------------------------------------------------------------
+local NEAR_PLACE2 = 4 -- 旁邊＝2 格內（距離平方）
+-- 不在地面層的把樓層寫進名稱；沒有名字時用座標（同 labelOf 沒有名稱時的顯示），樓層才不會不見
+local function withFloor(name, z, x, y)
+    z = math.floor(tonumber(z) or 0)
+    if z == 0 then return name end
+    name = name or string.format("%d, %d", math.floor(x), math.floor(y))
+    local floor = z > 0 and string.format("%dF", z + 1) or string.format("B%d", -z)
+    return getText("UI_MinidoracatMiniMap_PlaceFloor", name, floor)
+end
+-- 家具名（同原版 ISWorldObjectContextMenu.lua:93-105 getMoveableDisplayName）
+local function moveableName(obj)
+    local sprite = obj and obj.getSprite and obj:getSprite()
+    local props = sprite and sprite:getProperties()
+    if not (props and props:has("CustomName")) then return nil end
+    local name = props:get("CustomName")
+    if props:has("GroupName") then name = props:get("GroupName") .. " " .. name end
+    return Translator.getMoveableDisplayName(name)
+end
+-- 容器名：玩家改過的名字優先，否則同搜刮視窗的標題（ISInventoryPage.lua:1740-1741）
+local function containerName(obj)
+    local c = obj:getContainer()
+    if not c then return nil end
+    return c:getCustomName() or getTextOrNull("IGUI_ContainerTitle_" .. c:getType())
+        or getTextOrNull("IGUI_ContainerTitle_" .. c:getDisplayType())
+end
+-- 車：滑鼠用原版 PickVehicle；手把看互動的那幾格上有沒有車（同 ISVehicleMenu.lua:21-55，手把的 worldobjects
+-- 就是腳下與面前三格，ISButtonPrompt.lua:1037-1120）。PickVehicle 把滑鼠投影到玩家那層、只比車在地面的平面
+-- 範圍（IsoObjectPicker.java:554-565），所以別層的車不算：樓上點容器時樓下剛好停著車，要收藏的是容器
+local function pickVehicle(pn, worldobjects)
+    if JoypadState.players[pn + 1] then
+        for i = 1, #worldobjects do
+            local sq = worldobjects[i]:getSquare()
+            local car = sq and sq:getVehicleContainer()
+            if car then return car end
+        end
+        return nil
+    end
+    local car = IsoObjectPicker.Instance:PickVehicle(getMouseXScaled(), getMouseYScaled())
+    local player = getSpecificPlayer(pn)
+    if car and player and math.floor(car:getZ()) == math.floor(player:getZ()) then return car end
+    return nil
+end
+-- 回 (x, y, z, 預填名稱)；格子取中心點，車取車的中心
+local function worldSpot(pn, worldobjects)
+    local car = pickVehicle(pn, worldobjects)
+    if car then return car:getX(), car:getY(), car:getZ(), ISVehicleMenu.getVehicleDisplayName(car) end
+    local fetch = ISWorldObjectContextMenu.fetchVars
+    local w, obj, sq, name = fetch.worldItem, fetch.container, nil, nil
+    if w and w:getSquare() then
+        sq, name = w:getSquare(), w:getItem() and w:getItem():getDisplayName()
+    elseif obj and obj:getSquare() then
+        sq, name = obj:getSquare(), containerName(obj) or moveableName(obj)
+    else
+        -- 手把的 worldobjects 跨好幾格，clickedSquare 是最後處理的那一格（ISWorldObjectContextMenuLogic.java:445）：
+        -- 座標跟著取名的那個家具
+        for i = 1, #worldobjects do
+            name = moveableName(worldobjects[i])
+            if name then sq = worldobjects[i]:getSquare(); break end
+        end
+        sq = sq or fetch.clickedSquare
+        if not sq then return nil end
+    end
+    return sq:getX() + 0.5, sq:getY() + 0.5, sq:getZ(), name
+end
+-- 2 格內最近的一筆（不比樓層：收藏沒有樓層）
+local function nearestPlace(pn, x, y)
+    local state = Core.placesState(pn)
+    if not state then return nil end
+    local best, bestD2 = nil, NEAR_PLACE2
+    for i = 1, state.count do
+        local p = state.places[i]
+        local d2 = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y)
+        if d2 <= bestD2 then best, bestD2 = p, d2 end
+    end
+    return best
+end
+local function onFillWorld(pn, context, worldobjects, test)
+    local x, y, z, name = worldSpot(pn, worldobjects)
+    if not x then return end
+    if test then return ISWorldObjectContextMenu.setTest() end -- 手把只問有沒有選項（原版規則 :122-128）
+    context:addOption(getText("UI_MinidoracatMiniMap_PlaceAddHere"), pn, Core.placesPromptAdd,
+        x, y, withFloor(name, z, x, y))
+    local place = nearestPlace(pn, x, y)
+    if not place then return end
+    local sub = Core.mapSubMenu(context, nil, Core.placeMenuTitle(pn, place, "UI_MinidoracatMiniMap_PlaceMenuOfHere"))
+        or context
+    sub:addOption(getText("UI_MinidoracatMiniMap_PlaceRename"), pn, Core.placesPromptRename, place.id)
+    if Core.navPromptPlaceRemove then -- 確認框在 _Search.lua（同搜尋視窗）
+        sub:addOption(getText("UI_MinidoracatMiniMap_PlaceRemove"), pn, Core.navPromptPlaceRemove, place.id)
+    end
+end
+-- 物品欄右鍵：只列不在自己身上的物品（地上、容器、車裡、屍體）；位置交給引擎 ItemContainer.getSquare
+-- （背包裡的背包往外找到最外層，再看車、地面、所屬物件；ItemContainer.java:3563-3595）
+local function onFillInventory(pn, context, items)
+    local player = getSpecificPlayer(pn)
+    local item = player and ISInventoryPane.getActualItems(items)[1]
+    if not item or player:getInventory():containsRecursive(item) then return end
+    local w, c = item:getWorldItem(), item:getContainer()
+    local sq = w and w:getSquare() or c and c:getSquare()
+    if not sq then return end
+    context:addOption(getText("UI_MinidoracatMiniMap_PlaceAddHere"), pn, Core.placesPromptAdd,
+        sq:getX() + 0.5, sq:getY() + 0.5, withFloor(item:getDisplayName(), sq:getZ()))
+end
+Events.OnFillWorldObjectContextMenu.Add(onFillWorld)
+Events.OnFillInventoryObjectContextMenu.Add(onFillInventory)
 
 Events.OnGameStart.Add(function()
     for pn = 0, 3 do slots[pn], labelCache[pn] = nil, nil end

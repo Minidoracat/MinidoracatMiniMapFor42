@@ -39,7 +39,7 @@ local Policy = Core.policy
 -- 分類資料：每個分類是一張表，欄位依「標題（主開關）→ 效果預覽 →「顯示在」列 → 開關 → 篩選 →
 -- 樣式 → 大小／透明度 → 名稱 → 顯示距離 → 額外 → 重設此分類」的順序畫出；
 -- 重設與搜尋索引讀同一份欄位（maps／ticks／chips／combos／sliders／nameTicks／nameSliders／
--- distance），新增選項只改這裡。分類可帶 combosFirst（下拉放在開關之前）。
+-- distance），新增選項只改這裡。分類可帶 combosFirst（下拉放在開關之前）、ticksFirst（開關放在「顯示在」列之前）。
 --   maps：{ { label, cells＝Core.LAYER_MAPS 的一層, mpOnly? } }——每列一行標籤＋小地圖、世界地圖兩顆 chip
 --   tick：{ id, label, default, engine?（直寫引擎選項，重設不動）, mpOnly?, gate?（沙盒閘）,
 --           livestock?（牲畜模式 4 停用）, offMode?（Core 上的沙盒模式函式名，回 1＝伺服器關閉、停用）,
@@ -348,8 +348,10 @@ local SEC_ZONES = { id = "zones", label = "UI_MinidoracatMiniMap_SecZones", icon
     },
     distance = {},
 }
+-- 「MOD 地圖」分類（設計稿 minimap-mapbounds-1102）：圖像開關在最上面（ticksFirst），下面是框線「顯示在」列、
+-- 顏色、透明度
 local SEC_MAPPACK = { id = "mappack", label = "UI_MinidoracatMiniMap_SecMapPack", icon = "globe",
-    group = "addon", order = 2, seq = 0, ticks = {}, combos = {} }
+    group = "addon", order = 2, seq = 0, ticks = {}, combos = {}, ticksFirst = true }
 -- 「管理員檢視」分類：三把鑰匙的第三把（玩家自己的本機旗標）唯一的操作面。
 -- 分類本身也是三選一才存在——Policy 缺席、玩家沒有 CanSeeAll、或伺服器沒開
 -- 戰術政策時整個分類不出現：不合格的玩家連「有這個東西」都不該看到。
@@ -384,23 +386,27 @@ Events.OnGameBoot.Add(function()
     modOptions:addTitle("UI_MinidoracatMiniMap_SecMapPack")
     modOptions:addTickBox("MapPackLayers", "UI_MinidoracatMiniMap_MapPackLayers", true,
         "UI_MinidoracatMiniMap_MapPackLayers_tooltip")
+    -- 框線兩格＝Core.LAYER_MAPS.mapBounds（兩格預設開，2026-11-02 使用者裁定）
     modOptions:addTickBox("MapBounds", "UI_MinidoracatMiniMap_MapBounds", true,
         "UI_MinidoracatMiniMap_MapBounds_tooltip")
-    local MAPB_COLOR_ITEMS = { "UI_MinidoracatMiniMap_MBColor_Green", -- 順序須同 MAPB_COLORS
+    modOptions:addTickBox("WMMapBounds", "UI_MinidoracatMiniMap_WMMapBounds", true,
+        "UI_MinidoracatMiniMap_WMCell_tooltip")
+    -- 順序須同主檔 MAPB_COLORS；預設第 5 項白
+    local MAPB_COLOR_ITEMS = { "UI_MinidoracatMiniMap_MBColor_Green",
         "UI_MinidoracatMiniMap_MBColor_Cyan", "UI_MinidoracatMiniMap_MBColor_Yellow",
         "UI_MinidoracatMiniMap_MBColor_Purple", "UI_MinidoracatMiniMap_MBColor_White" }
-    -- 框線透明度：三檔沿用小地圖 Opacity 的翻譯鍵與語意；順序須同 MAPB_ALPHAS
-    local MAPB_ALPHA_ITEMS = { "UI_MinidoracatMiniMap_Opacity_Full",
+    -- 框線透明度：不透明＋小地圖 Opacity 的後兩檔（第一檔原本借「原版」，框線沒有原版可言）；順序須同 MAPB_ALPHAS
+    local MAPB_ALPHA_ITEMS = { "UI_MinidoracatMiniMap_MBAlpha_Full",
         "UI_MinidoracatMiniMap_Opacity_Half", "UI_MinidoracatMiniMap_Opacity_Faint" }
     local mbColor = modOptions:addComboBox("MapBoundsColor", "UI_MinidoracatMiniMap_MapBoundsColor")
-    for i = 1, #MAPB_COLOR_ITEMS do mbColor:addItem(MAPB_COLOR_ITEMS[i], i == 1) end
+    for i = 1, #MAPB_COLOR_ITEMS do mbColor:addItem(MAPB_COLOR_ITEMS[i], i == 5) end
     local mbAlpha = modOptions:addComboBox("MapBoundsAlpha", "UI_MinidoracatMiniMap_MapBoundsAlpha")
     for i = 1, #MAPB_ALPHA_ITEMS do mbAlpha:addItem(MAPB_ALPHA_ITEMS[i], i == 1) end
     -- 設定視窗「MOD 地圖」分類（items 與 ESC 頁 addItem 共用同一份表）
     local t, c = SEC_MAPPACK.ticks, SEC_MAPPACK.combos
+    SEC_MAPPACK.maps = { { label = "UI_MinidoracatMiniMap_MapBoundsRow", cells = LM.mapBounds } }
     t[#t + 1] = { id = "MapPackLayers", label = "UI_MinidoracatMiniMap_MapPackLayers", default = true }
-    t[#t + 1] = { id = "MapBounds", label = "UI_MinidoracatMiniMap_MapBounds", default = true }
-    c[#c + 1] = { id = "MapBoundsColor", label = "UI_MinidoracatMiniMap_MapBoundsColor", default = 1,
+    c[#c + 1] = { id = "MapBoundsColor", label = "UI_MinidoracatMiniMap_MapBoundsColor", default = 5,
         items = MAPB_COLOR_ITEMS }
     c[#c + 1] = { id = "MapBoundsAlpha", label = "UI_MinidoracatMiniMap_MapBoundsAlpha", default = 1,
         items = MAPB_ALPHA_ITEMS }
@@ -1739,12 +1745,13 @@ local function addNotes(ctx, sec)
 end
 
 -- 內建分類的「顯示在」列（sec.maps）：每格各寫自己的 ModOptions 鍵，停用條件同 tick（沙盒閘、牲畜模式 4、
--- 安全屋整層關）。世界地圖選項面板收起了「地圖圖層」時，圖層列下面說明世界地圖那格暫時不起作用、去哪裡打開
+-- 安全屋整層關）。分類本身沒有沙盒閘、列的格有（MOD 地圖框線）時，被伺服器關掉要在列下面寫出來（分類有閘的
+-- 在標題下已經寫了）。世界地圖選項面板收起了「地圖圖層」時，圖層列下面說明世界地圖那格暫時不起作用、去哪裡打開
 function MapRows.build(ctx, sec)
     local rows = sec.maps
     if not rows then return end
     local enabled = sectionEnabled(sec, ctx.pn)
-    local layer = false
+    local layer, gated = false, false
     for i = 1, #rows do
         local row = rows[i]
         if not (row.mpOnly and not isClient()) then
@@ -1758,8 +1765,11 @@ function MapRows.build(ctx, sec)
                 btn:setEnabled(enabled and entryEnabled(cells[j], ctx.pn))
             end
             layer = layer or cells.layer == true
+            gated = gated or (not sec.gate and cells[1].gate ~= nil
+                and sandboxGate(cells[1].gate, true, ctx.pn) == false)
         end
     end
+    if gated then addNote(ctx, getText("UI_MinidoracatMiniMap_ServerDisabled"), ORANGE) end
     if layer and not getBoolOption("WMLayers", true) then
         addNote(ctx, getText("UI_MinidoracatMiniMap_WMLayersOffNote"))
     end
@@ -1769,12 +1779,13 @@ end
 local function buildSection(ctx, sec)
     addHeader(ctx, sec)
     if PREVIEWS[sec] then addPreview(ctx, sec, PREVIEWS[sec], sec.tallPreview and ctx.previewH * 2 or nil) end
+    if sec.ticksFirst then addTicks(ctx, sec, sec.ticks) end
     MapRows.build(ctx, sec)
     if sec.combosFirst then
         addCombos(ctx, sec.combos)
         addNotes(ctx, sec)
     end
-    addTicks(ctx, sec, sec.ticks)
+    if not sec.ticksFirst then addTicks(ctx, sec, sec.ticks) end
     if not sec.combosFirst then addNotes(ctx, sec) end
     if sec.chips then addChips(ctx, sec.chips) end
     if not sec.combosFirst then addCombos(ctx, sec.combos) end

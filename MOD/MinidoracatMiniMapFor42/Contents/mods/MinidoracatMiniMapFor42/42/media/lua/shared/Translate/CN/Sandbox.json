@@ -67,6 +67,8 @@
     "Sandbox_MinidoracatMiniMapPoiSourceLock_tooltip": "勾选后，所有玩家一律使用上面「资源点默认标注方式」选的那一种。\n玩家设置里的「标注方式」会变灰、不能改选；玩家原本的选择会保留，取消勾选后恢复。\n默认不勾。管理员点击「应用」后立即生效。",
     "Sandbox_MinidoracatMiniMapZoneDisplayDistance": "自定义区域显示距离（格）",
     "Sandbox_MinidoracatMiniMapZoneDisplayDistance_tooltip": "0＝无距离限制（默认）。\nN＞0＝自定义区域（zone 图层 addon 提供，如服务器推送的区域）最近点距玩家 N 格内才显示（色块、框线、名称、图标一并隐藏）。\n仅影响自定义区域图层；资源点与地图包范围框线不受影响。\n玩家还可用自己的滑条把距离收得更紧（两者取较小）。\n1 格约 1 米；采用二维直线距离，不计楼层。\n管理员点击「应用」后立即生效。",
+    "Sandbox_MinidoracatMiniMapAllowMapBounds": "允许显示 MOD 地图框线",
+    "Sandbox_MinidoracatMiniMapAllowMapBounds_tooltip": "开启后，玩家可以在小地图与世界地图上看到已启用地图 MOD 的范围框线与名称（需要地图包）。默认开启；关闭后所有玩家都不显示，玩家自己的开关会变灰（管理员改动即时生效）。",
     "Sandbox_MinidoracatMiniMapExportPlayerPositions": "导出玩家坐标文件（外部工具）",
     "Sandbox_MinidoracatMiniMapExportPlayerPositions_tooltip": "把玩家坐标写成 JSON 文件给外部工具读取（默认关闭）。\n输出到 Zomboid/Lua/MinidoracatMiniMap/，文件名 players_存档名.json（多人＝服务器名，单机＝存档文件夹名），与 poi_blocks.json 同目录。\n用途：地图重置工具在清除区域前判断该处有没有玩家，必要时先把人踢下线。\n内容：玩家名称、世界坐标、楼层、是否在线、坐标观测时间。\n注意：玩家坐标会落地成文件，仅在确实要配合外部工具时开启。\n管理员点击「应用」后立即生效。",
     "Sandbox_MinidoracatMiniMapPlayerExportInterval": "玩家坐标导出周期（秒）",

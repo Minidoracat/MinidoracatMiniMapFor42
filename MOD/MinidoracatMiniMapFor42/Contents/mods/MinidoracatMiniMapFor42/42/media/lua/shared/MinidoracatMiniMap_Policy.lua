@@ -225,8 +225,11 @@ local SCHEMA = {
     -- 鎖定資源版本：開＝所有玩家一律用 PoiSourceDefault，玩家自己的選擇保留但不生效；
     -- 不在任何旁路白名單（管理員戰術檢視也一樣）
     { "PoiSourceLock", "boolean", false },
+    -- MOD 地圖框線（主檔 drawMapBounds）：預設開（2026-11-02 使用者裁定：伺服器以預設顯示為重），關＝所有
+    -- 玩家的兩張地圖都不畫；不在任何旁路白名單（管理員戰術檢視也一樣）
+    { "AllowMapBounds", "boolean", true },
 }
-local SCHEMA_N = 28 -- 顯式筆數（家規：不用 # 依賴隱性長度）
+local SCHEMA_N = 29 -- 顯式筆數（家規：不用 # 依賴隱性長度）
 
 local KIND = {}
 for i = 1, SCHEMA_N do

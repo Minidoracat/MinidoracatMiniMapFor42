@@ -33,10 +33,14 @@ local function fixture(opts)
     local fs, world = opts.fs or newFs(), opts.world or DEFAULT_WORLD
     local handlers, players, client = {}, {}, false
     local events = {}
-    for _, name in ipairs({ "OnCreatePlayer", "OnGameStart", "OnTick" }) do
+    for _, name in ipairs({ "OnCreatePlayer", "OnGameStart", "OnTick", "OnFillWorldObjectContextMenu",
+        "OnFillInventoryObjectContextMenu" }) do
         handlers[name] = {}
         events[name] = { Add = function(fn) handlers[name][#handlers[name] + 1] = fn end }
     end
+    -- 世界右鍵的原版環境：fetch＝ISWorldObjectContextMenu.fetchVars、car＝滑鼠下的車、joypad＝手把玩家、
+    -- titles＝容器標題翻譯、tests＝手把試探（setTest）次數
+    local wm = { fetch = {}, titles = {}, joypad = {}, tests = 0 }
     local log = { messages = {}, prompts = {}, dialogs = {} }
     local core = { ready = true, navGateAllows = function() return true end,
         getBoolOption = function(id, default)
@@ -78,7 +82,21 @@ local function fixture(opts)
     local env = setmetatable({ MinidoracatMiniMapCore = core, MinidoracatMiniMapAPI = api,
         Events = events, getSpecificPlayer = function(pn) return players[pn] end,
         isClient = function() return client end,
-        getText = function(key, arg) if arg ~= nil then return key .. "|" .. tostring(arg) end return key end,
+        getText = function(key, ...)
+            local args = { ... }
+            if #args == 0 then return key end
+            for i = 1, #args do args[i] = tostring(args[i]) end
+            return key .. "|" .. table.concat(args, "|")
+        end,
+        getTextOrNull = function(key) return wm.titles[key] end,
+        JoypadState = { players = wm.joypad },
+        IsoObjectPicker = { Instance = { PickVehicle = function() return wm.car end } },
+        getMouseXScaled = function() return 0 end, getMouseYScaled = function() return 0 end,
+        ISVehicleMenu = { getVehicleDisplayName = function(car) return car.name end },
+        ISWorldObjectContextMenu = { fetchVars = wm.fetch,
+            setTest = function() wm.tests = wm.tests + 1; return true end },
+        Translator = { getMoveableDisplayName = function(name) return "MV:" .. name end },
+        ISInventoryPane = { getActualItems = function(items) return items end },
         ISTextBox = TextBox, ISToolTip = { new = function() return tooltip() end },
         getJoypadData = function() return nil end,
         HaloTextHelper = { addGoodText = function() end, addBadText = function() end },
@@ -124,14 +142,16 @@ local function fixture(opts)
         function p:getVehicle() return self.vehicle end
         function p:getX() return self.x end
         function p:getY() return self.y end
+        function p:getZ() return self.z or 0 end
         function p:isDead() return self.dead == true end
         function p:getOnlineID() return self.online end
         function p:transmitModData() self.sync = self.sync + 1 end
+        function p:getInventory() return { containsRecursive = function(_, item) return item.onPlayer == true end } end
         players[pn] = p
         core.navLoadItinerary(pn)
         return p
     end
-    return { core = core, api = api, player = player, players = players, log = log, fs = fs,
+    return { core = core, api = api, player = player, players = players, log = log, fs = fs, wm = wm,
         client = function(v) client = v end,
         fire = function(event, ...) for _, fn in ipairs(handlers[event]) do fn(...) end end }
 end
@@ -152,8 +172,8 @@ local function edit(t, op, a, b, c)
 end
 local function menu()
     local m = { options = {} }
-    function m:addOption(name, target, fn, a, b)
-        local o = { name = name, target = target, fn = fn, a = a, b = b }
+    function m:addOption(name, target, fn, a, b, c)
+        local o = { name = name, target = target, fn = fn, a = a, b = b, c = c }
         self.options[#self.options + 1] = o
         return o
     end
@@ -703,6 +723,180 @@ do
     assert(t.core.placesRename(0, barn, "Abcdefghijklmnopqrstuvwxyz"))
     eq(t.core.placeMenuTitle(0, t.core.placesState(0).places[2]),
         "UI_MinidoracatMiniMap_PlaceMenuOf|Abcdefghijklmnopqrs...", "名稱超過 20 字截短")
+end
+
+-- 世界右鍵與物品欄右鍵的假物件：格子、帶 sprite 屬性的物件、容器、物品、車
+local function square(x, y, z, car)
+    return { getX = function() return x end, getY = function() return y end, getZ = function() return z end,
+        getVehicleContainer = function() return car end }
+end
+local function object(sq, props, container)
+    local o = {}
+    function o:getSquare() return sq end
+    function o:getSprite()
+        if not props then return nil end
+        return { getProperties = function()
+            return { has = function(_, k) return props[k] ~= nil end, get = function(_, k) return props[k] end }
+        end }
+    end
+    function o:getContainer() return container end
+    return o
+end
+local function itemContainer(kind, sq, custom)
+    return { getType = function() return kind end, getDisplayType = function() return kind end,
+        getCustomName = function() return custom end, getSquare = function() return sq end }
+end
+local function item(name, opts)
+    opts = opts or {}
+    local it = { onPlayer = opts.onPlayer }
+    function it:getDisplayName() return name end
+    function it:getWorldItem() return opts.world end
+    function it:getContainer() return opts.container end
+    return it
+end
+local function worldItem(sq, name)
+    return { getSquare = function() return sq end, getItem = function() return item(name) end }
+end
+local function car(name, x, y, z)
+    return { name = name, getX = function() return x end, getY = function() return y end,
+        getZ = function() return z end }
+end
+-- 世界右鍵一次：fetchVars 換成這次的內容（同一張表，原版每次 clearFetch 後由 Java 重填），回第一層選單
+local function rightClick(t, worldobjects, fetch, test)
+    for k in pairs(t.wm.fetch) do t.wm.fetch[k] = nil end
+    for k, v in pairs(fetch) do t.wm.fetch[k] = v end
+    local m = menu()
+    t.fire("OnFillWorldObjectContextMenu", 0, m, worldobjects, test)
+    return m
+end
+local ADD_HERE = "UI_MinidoracatMiniMap_PlaceAddHere"
+
+-- 世界右鍵「加入地圖收藏...」（2026-11-02 設計稿 minimap-world-fav-1102 作答：先跳命名框、名稱預填）：
+-- 預填名稱依序取車＞地上物品＞容器（玩家改的名字＞搜刮視窗標題＞家具名）＞家具；格子取中心點、車取車的
+-- 中心；不在地面層的把樓層寫進名稱。沒有格子不列；手把試探只回答有沒有選項。
+do
+    local t = fixture(); t.player(0)
+    local function add(m) return assert(m:find(ADD_HERE), "有加入地圖收藏") end
+    local floorSq = square(7, 8, 0)
+    local floor = object(floorSq)
+    t.wm.car = car("Pickup", 100.25, 200.75, 0.4) -- 斜坡上的車 z 有小數，仍算這一層
+    local o = add(rightClick(t, { floor }, { clickedSquare = floorSq, worldItem = worldItem(floorSq, "Axe") }))
+    eq(o.a, 100.25, "車取車的中心 x"); eq(o.b, 200.75, "車取車的中心 y"); eq(o.c, "Pickup", "滑鼠下的車優先")
+    -- PickVehicle 只比平面範圍：玩家在樓上（z=1）時樓下那台車不算，收藏點到的東西
+    t.players[0].z = 1
+    local upSq = square(7, 8, 1)
+    o = add(rightClick(t, { object(upSq) }, { clickedSquare = upSq, worldItem = worldItem(upSq, "Axe") }))
+    eq(o.c, "UI_MinidoracatMiniMap_PlaceFloor|Axe|2F", "樓下的車不算，取樓上的物品")
+    t.players[0].z = nil
+    -- 手把不看滑鼠，看互動的那幾格上有沒有車
+    t.wm.car = car("Ghost", 1, 1, 0)
+    t.wm.joypad[1] = true
+    o = add(rightClick(t, { floor, object(square(9, 9, 0, car("Van", 50, 60, 0))) }, { clickedSquare = floorSq }))
+    eq(o.c, "Van", "手把用面前格子上的車")
+    t.wm.car, t.wm.joypad[1] = nil, nil
+    -- 地上物品＞容器；座標取物品那一格的中心
+    local crateSq = square(20, 30, 1)
+    local crate = object(crateSq, { CustomName = "Crate" }, itemContainer("crate", crateSq))
+    t.wm.titles.IGUI_ContainerTitle_crate = "CrateTitle"
+    o = add(rightClick(t, { crate }, { clickedSquare = crateSq, container = crate,
+        worldItem = worldItem(square(5, 6, 0), "Axe") }))
+    eq(o.a, 5.5, "格子取中心 x"); eq(o.b, 6.5, "格子取中心 y"); eq(o.c, "Axe", "地上物品優先於容器")
+    -- 容器：搜刮視窗的標題；在 2 樓（z=1）把樓層寫進名稱
+    o = add(rightClick(t, { crate }, { clickedSquare = crateSq, container = crate }))
+    eq(o.a, 20.5, "容器那格中心"); eq(o.c, "UI_MinidoracatMiniMap_PlaceFloor|CrateTitle|2F", "容器標題＋樓層")
+    local named = object(crateSq, nil, itemContainer("crate", crateSq, "My stash"))
+    o = add(rightClick(t, { named }, { clickedSquare = crateSq, container = named }))
+    eq(o.c, "UI_MinidoracatMiniMap_PlaceFloor|My stash|2F", "玩家改過的容器名優先")
+    -- 沒有標題翻譯的容器退家具名（GroupName＋CustomName，原版 getMoveableDisplayName）
+    t.wm.titles.IGUI_ContainerTitle_crate = nil
+    local counterSq = square(3, 4, 0)
+    local counter = object(counterSq, { CustomName = "Counter", GroupName = "Wooden" },
+        itemContainer("counter", counterSq))
+    o = add(rightClick(t, { counter }, { clickedSquare = counterSq, container = counter }))
+    eq(o.c, "MV:Wooden Counter", "沒有標題翻譯退家具名")
+    -- 一般格子：第一個有名字的家具；地下室寫 B1
+    local cellar = square(7, 8, -1)
+    o = add(rightClick(t, { object(cellar), object(cellar, { CustomName = "Sofa" }) }, { clickedSquare = cellar }))
+    eq(o.c, "UI_MinidoracatMiniMap_PlaceFloor|MV:Sofa|B1", "家具名＋地下樓層")
+    -- 手把的 worldobjects 跨好幾格、clickedSquare 是最後一格：座標跟著取名的那個家具
+    local sofaSq, lastSq = square(3, 4, 0), square(4, 4, 0)
+    o = add(rightClick(t, { object(sofaSq, { CustomName = "Sofa" }), object(lastSq) }, { clickedSquare = lastSq }))
+    eq(o.a, 3.5, "座標是家具那格"); eq(o.c, "MV:Sofa", "名稱是同一個家具")
+    o = add(rightClick(t, { floor }, { clickedSquare = floorSq }))
+    eq(o.c, nil, "沒有可用的名字＝不預填（清單顯示座標）")
+    -- 樓上沒有名字時用座標（同 labelOf 沒有名稱時的顯示），樓層才不會不見
+    local upFloor = square(7, 8, 1)
+    o = add(rightClick(t, { object(upFloor) }, { clickedSquare = upFloor }))
+    eq(o.c, "UI_MinidoracatMiniMap_PlaceFloor|7, 8|2F", "樓上空地：座標＋樓層")
+    -- 按下去先跳命名框（預填名稱），按確定才寫進收藏
+    o = add(rightClick(t, { crate }, { clickedSquare = crateSq, container = crate }))
+    o.fn(o.target, o.a, o.b, o.c)
+    local box = t.log.dialogs[#t.log.dialogs]
+    eq(box.default, "UI_MinidoracatMiniMap_PlaceFloor|MV:Crate|2F", "命名框預填")
+    eq(t.core.placesState(0).count, 0, "按確定前不寫入")
+    box:press("OK", "Loot room")
+    local p = t.core.placesState(0).places[1]
+    eq(p.x, 20.5, "收藏 x"); eq(p.y, 30.5, "收藏 y"); eq(p.label, "Loot room", "收藏名稱＝命名框的字")
+    eq(lastMessage(t), "UI_MinidoracatMiniMap_PlaceAdded", "加入回饋")
+    eq(#rightClick(t, {}, {}).options, 0, "沒有格子、車、物品、容器不列")
+    local before = t.wm.tests
+    eq(#rightClick(t, { floor }, { clickedSquare = floorSq }, true).options, 0, "手把試探不加選項")
+    eq(t.wm.tests, before + 1, "手把試探回報有選項（setTest）")
+    rightClick(t, {}, {}, true)
+    eq(t.wm.tests, before + 1, "沒有格子時手把試探不回報")
+end
+
+-- 旁邊 2 格內有收藏：另列「地圖收藏：名稱」子選單（最近的那一筆）＝改名／從收藏移除；超過 2 格不列
+do
+    local t = fixture(); t.player(0)
+    t.core.mapSubMenu = function(context, _, title)
+        local sub = menu()
+        context:addOption(title).sub = sub
+        return sub
+    end
+    local removed = {}
+    t.core.navPromptPlaceRemove = function(pn, id) removed[#removed + 1] = pn .. ":" .. id end
+    assert(t.core.placesAdd(0, 13.5, 10.5, "Far"))
+    local base = assert(t.core.placesAdd(0, 10.5, 10.5, "Base"))
+    local sq = square(11, 11, 0) -- 中心 11.5,11.5：離 Base 約 1.4 格、離 Far 約 2.2 格
+    local m = rightClick(t, { object(sq) }, { clickedSquare = sq })
+    eq(#m.options, 2, "加入地圖收藏＋旁邊那一筆")
+    local parent = m.options[2]
+    eq(parent.name, "UI_MinidoracatMiniMap_PlaceMenuOfHere|Base", "父項寫「地圖收藏」與最近那一筆的名稱")
+    local rename = assert(parent.sub:find("UI_MinidoracatMiniMap_PlaceRename"), "子選單有改名")
+    rename.fn(rename.target, rename.a)
+    local box = t.log.dialogs[#t.log.dialogs]
+    eq(box.default, "Base", "改名預填這一筆的名稱")
+    box:press("OK", "Home base")
+    eq(t.core.placeLabel(0, t.core.placesState(0).places[2]), "Home base", "改名寫進這一筆")
+    local remove = assert(parent.sub:find("UI_MinidoracatMiniMap_PlaceRemove"), "子選單有移除")
+    remove.fn(remove.target, remove.a)
+    eq(removed[1], "0:" .. base, "移除交給共用確認框（帶 pn 與這一筆的 id）")
+    sq = square(12, 10, 0) -- 中心 12.5,10.5：離 Base 2 格、離 Far 1 格
+    eq(rightClick(t, { object(sq) }, { clickedSquare = sq }).options[2].name,
+        "UI_MinidoracatMiniMap_PlaceMenuOfHere|Far", "取最近的那一筆")
+    sq = square(8, 10, 0) -- 中心 8.5,10.5：離 Base 正好 2 格
+    eq(#rightClick(t, { object(sq) }, { clickedSquare = sq }).options, 2, "正好 2 格還算旁邊")
+    sq = square(16, 10, 0) -- 中心 16.5,10.5：離 Far 3 格
+    eq(#rightClick(t, { object(sq) }, { clickedSquare = sq }).options, 1, "超過 2 格不列")
+end
+
+-- 物品欄右鍵：只列不在自己身上的物品；地上的取物品那一格、容器裡的交給引擎 ItemContainer.getSquare
+do
+    local t = fixture(); t.player(0)
+    local function inv(it)
+        local m = menu()
+        t.fire("OnFillInventoryObjectContextMenu", 0, m, { it })
+        return m:find(ADD_HERE)
+    end
+    eq(inv(item("Hammer", { onPlayer = true, container = itemContainer("bag", square(1, 1, 0)) })), nil,
+        "自己身上（含背包裡）的物品不列")
+    local o = assert(inv(item("Hammer", { world = worldItem(square(20, 30, 0), "Hammer") })), "地上物品有")
+    eq(o.a, 20.5, "地上物品那格中心 x"); eq(o.b, 30.5, "中心 y"); eq(o.c, "Hammer", "預填物品名稱")
+    o = assert(inv(item("Saw", { container = itemContainer("crate", square(40, 50, 1)) })), "容器裡的有")
+    eq(o.a, 40.5, "容器那格中心"); eq(o.c, "UI_MinidoracatMiniMap_PlaceFloor|Saw|2F", "物品名稱＋樓層")
+    eq(inv(item("Saw", { container = itemContainer("crate", nil) })), nil, "找不到格子不列")
+    eq(inv(item("Saw")), nil, "不在任何容器也不在地上不列")
 end
 
 print("test_places: ok")

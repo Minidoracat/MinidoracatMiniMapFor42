@@ -651,7 +651,7 @@ local function drawZoneName(inner, name, x, y, tw, th, tz)
 end
 
 -- 框線＋名稱：複用 drawClippedEdge（Liang-Barsky Lua 裁切）畫每 rect 四邊；
--- 名稱仿 drawMapBounds 置中畫法（畫在第一個 rect 中心；⚠ drawRect 參數序 a,r,g,b）
+-- 名稱畫在第一個 rect 中心（底墊同 drawMapBounds；⚠ drawRect 參數序 a,r,g,b）
 local function drawZoneLines(inner)
     if #registeredZoneProviders == 0 then return end
     local w, h = inner.width, inner.height
@@ -761,7 +761,7 @@ local function drawZoneLines(inner)
                             end
                         end
                     end
-                    -- 名稱畫在第一個 rect 的中心，僅中心落在視窗內才畫（同 drawMapBounds）；
+                    -- 名稱畫在第一個 rect 的中心，僅中心落在視窗內才畫；
                     -- 整區離屏（無 rect 在窗內）連名稱測量都省——名稱中心落在窗內必然使該
                     -- rect AABB 與視窗相交，故 zoneVisible 為真，不影響應畫的名稱
                     local name = namesOn and z.name or nil

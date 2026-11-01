@@ -361,6 +361,62 @@ seed.run()
 assert(seed.state().files[seed.marker] == nil, "S7: 無 PZAPI 仍寫了 marker")
 
 --------------------------------------------------------------------------------
+-- 一次性：MOD 地圖框線分兩張地圖、預設改白（2026-11-02 使用者裁定）：世界地圖那格從舊鍵複製、顏色停在
+-- 舊預設綠的改白；不會關掉任何人的框線；沒有地圖包（選項沒註冊）不寫 marker；marker-first＋讀回（同 pwb）
+--------------------------------------------------------------------------------
+local mbBody = assert(source:match(
+    "%-%- test:map%-bounds%-seed:start\n(.-)\n%-%- test:map%-bounds%-seed:end"),
+    "找不到 map-bounds-seed 測試區段")
+local mbSuffix = pwbSuffix:gsub("forceWholeBuildingOnOnce", "seedMapBoundsOnce")
+    :gsub("wholeBuildingDefaultV1", "mapBoundsV1")
+local mb = assert(compile(pwbPrelude .. "\n" .. mbBody .. "\n" .. mbSuffix))()
+-- 更新後第一次進主選單：WMMapBounds 是新選項（ini 沒有，取註冊預設開）
+local function mbOptions(mini, color)
+    return { MapBounds = mkTick(mini), WMMapBounds = mkTick(true), MapBoundsColor = mkTick(color) }
+end
+
+-- B1. 關過框線的人：世界地圖那格跟著關；顏色停在舊預設綠 → 白；save 一次、寫 marker
+local m1 = mbOptions(false, 1)
+mb.setup({ options = m1 })
+mb.run()
+assert(m1.MapBounds.value == false and m1.WMMapBounds.value == false, "B1: 關過框線的人兩張地圖都應維持關")
+assert(m1.MapBoundsColor.value == 5, "B1: 舊預設綠應改成白")
+assert(mb.state().saveCalls == 1 and mb.state().files[mb.marker] == "v1", "B1: 應 save 一次並寫 marker")
+
+-- B2. 開著的人兩格都開（不關掉任何人的框線）；選了別的顏色不動；沒有差異不 save、仍寫 marker
+local m2 = mbOptions(true, 3)
+mb.setup({ options = m2 })
+mb.run()
+assert(m2.MapBounds.value == true and m2.WMMapBounds.value == true, "B2: 開著的框線不得被關")
+assert(m2.MapBoundsColor.value == 3, "B2: 玩家選的顏色不得被改")
+assert(mb.state().saveCalls == 0 and mb.state().files[mb.marker] == "v1", "B2: 無差異不應 save、仍應寫 marker")
+
+-- B3. marker 已存在 → 不動（之後自己選回綠的人不會再被改白）
+local m3 = mbOptions(false, 1)
+mb.setup({ files = { [mb.marker] = "v1" }, options = m3 })
+mb.run()
+assert(m3.WMMapBounds.value == true and m3.MapBoundsColor.value == 1 and mb.state().saveCalls == 0,
+    "B3: marker 存在仍有動作")
+
+-- B4. 沒有地圖包（選項沒註冊）→ 不寫 marker，裝了地圖包再做；marker 寫入失敗 → 不改值、不 save
+mb.setup({ options = {} })
+mb.run()
+assert(mb.state().files[mb.marker] == nil, "B4: 選項沒註冊仍寫了 marker")
+local m4 = mbOptions(false, 1)
+mb.setup({ options = m4, failWrite = true })
+mb.run()
+assert(m4.WMMapBounds.value == true and m4.MapBoundsColor.value == 1 and mb.state().saveCalls == 0,
+    "B4: marker 未落地仍改了值")
+
+-- B5. 最多人的狀態：框線開著、顏色停在舊預設綠 → 兩格都開、改白、save 一次
+local m5 = mbOptions(true, 1)
+mb.setup({ options = m5 })
+mb.run()
+assert(m5.MapBounds.value == true and m5.WMMapBounds.value == true, "B5: 開著的框線不得被關")
+assert(m5.MapBoundsColor.value == 5 and mb.state().saveCalls == 1 and mb.state().files[mb.marker] == "v1",
+    "B5: 開著框線的人也要從舊預設綠改白")
+
+--------------------------------------------------------------------------------
 -- 圖片化開關 apply 決策矩陣（computeApplyPlan，主檔）：世界地圖/小地圖分側動作
 --------------------------------------------------------------------------------
 local mainPath = arg[3]
@@ -425,4 +481,4 @@ assert(p.live and not p.recreate and not p.reapplyWorldMap and not p.clearCustom
 p = plan(planSnap({ worldImagery = false, imagery = false }), planCur())
 assert(p.reapplyWorldMap and p.recreate, "P9")
 
-print("[OK] scripts/test_key_migration.lua 全部通過（選項遷移 M1-M5、強制圖片化 V1-V5、整棟預設翻轉 W1-W6、圖層分地圖播種 S1-S7、apply 決策 P1-P9；拖曳門檻情境已遷移至框架 harness）")
+print("[OK] scripts/test_key_migration.lua 全部通過（選項遷移 M1-M5、強制圖片化 V1-V5、整棟預設翻轉 W1-W6、圖層分地圖播種 S1-S7、框線分兩張地圖 B1-B5、apply 決策 P1-P9；拖曳門檻情境已遷移至框架 harness）")

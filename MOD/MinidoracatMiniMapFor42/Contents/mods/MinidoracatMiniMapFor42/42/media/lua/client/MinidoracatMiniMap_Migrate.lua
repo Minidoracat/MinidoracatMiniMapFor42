@@ -221,3 +221,52 @@ local function seedLayerMapsOnce()
 end
 -- test:layer-maps-seed:end
 Events.OnMainMenuEnter.Add(seedLayerMapsOnce) -- 同上：load() 之後、值已就緒
+
+-- ═══ 一次性：MOD 地圖框線分兩張地圖、預設改白（2026-11-02 設計稿 minimap-mapbounds-1102 使用者裁定） ═══
+-- 舊鍵 MapBounds 本來同時管兩張地圖，新的世界地圖那格 WMMapBounds 從它複製：關掉框線的人兩張都維持關，
+-- 開著的照舊開（不會關掉任何人的框線）。顏色停在舊預設綠（第 1 項）的改成新預設白（第 5 項），選了別的
+-- 顏色不動。選項只在有地圖包時註冊：沒註冊不寫 marker，裝了地圖包之後第一次進主選單才做。
+-- 同 forceWholeBuildingOnOnce：先寫 marker、讀回成功才改值（fail closed：寧可漏做，不重複干預）
+-- test:map-bounds-seed:start
+local function seedMapBoundsOnce()
+    if not modOptions then return end
+    local MARKER = "MinidoracatMiniMap/mapBoundsV1.txt"
+    local reader = getFileReader(MARKER, false)
+    if reader then
+        reader:close()
+        return -- 已處理過
+    end
+    local mini, world = modOptions:getOption("MapBounds"), modOptions:getOption("WMMapBounds")
+    local color = modOptions:getOption("MapBoundsColor")
+    if not (mini and world and color) then return end -- 沒有地圖包＝選項沒註冊：不寫 marker、下次再試
+    local writer = getFileWriter(MARKER, true, false)
+    if writer then
+        local wok = pcall(function()
+            writer:write("v1")
+            writer:close()
+        end)
+        if not wok then pcall(function() writer:close() end) end
+    end
+    local back = getFileReader(MARKER, false)
+    if not back then
+        log("map bounds marker not persisted; skipping one-time update (will retry next session)")
+        return
+    end
+    back:close()
+    local changed = false
+    local shown = mini:getValue() == true
+    if world:getValue() ~= shown then
+        world:setValue(shown)
+        changed = true
+    end
+    if color:getValue() == 1 then
+        color:setValue(5)
+        changed = true
+    end
+    if changed then
+        PZAPI.ModOptions:save()
+        log("one-time split of MOD map outlines into mini-map / world map switches; default color is now white")
+    end
+end
+-- test:map-bounds-seed:end
+Events.OnMainMenuEnter.Add(seedMapBoundsOnce) -- 同上：load() 之後、值已就緒

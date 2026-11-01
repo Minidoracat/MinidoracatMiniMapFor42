@@ -748,7 +748,7 @@ check(source:find("Events%.OnCreatePlayer%.Add%(clearLocalSlot%)") ~= nil
 --------------------------------------------------------------------------------
 -- 斷言條數守門：新增／刪除斷言必須同步改這個數字，否則整批被靜默略過也不會
 -- 有人發現；schema 與 never-bypass 迴圈產生的動態斷言亦計入總數。
-local EXPECTED_ASSERTIONS = 306
+local EXPECTED_ASSERTIONS = 308
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
         .. ", actual " .. assertions)

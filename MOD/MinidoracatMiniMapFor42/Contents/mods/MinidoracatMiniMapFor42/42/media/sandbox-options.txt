@@ -63,6 +63,9 @@ option MinidoracatMiniMap.PoiSourceLock
 option MinidoracatMiniMap.ZoneDisplayDistance
 {type = integer, min = 0, max = 10000, default = 0, page = MinidoracatMiniMapAreas, translation = MinidoracatMiniMapZoneDisplayDistance,}
 
+option MinidoracatMiniMap.AllowMapBounds
+{type = boolean, default = true, page = MinidoracatMiniMapAreas, translation = MinidoracatMiniMapAllowMapBounds,}
+
 option MinidoracatMiniMap.SafehouseDisplay
 {type = enum, numValues = 4, default = 3, page = MinidoracatMiniMapSafehouse, translation = MinidoracatMiniMapSafehouseDisplay,}
 

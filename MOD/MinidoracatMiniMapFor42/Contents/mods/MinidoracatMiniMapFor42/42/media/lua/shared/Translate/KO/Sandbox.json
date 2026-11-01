@@ -67,6 +67,8 @@
     "Sandbox_MinidoracatMiniMapPoiSourceLock_tooltip": "켜면 모든 플레이어가 위의 \"기본 자원 위치 표시 방식\"에서\n고른 방식을 사용합니다.\n플레이어 설정의 \"표시 방식\"은 회색으로 바뀌어 바꿀 수 없으며,\n각자 고른 값은 저장되어 끄면 다시 적용됩니다.\n기본값은 꺼짐입니다. 관리자가 적용을 누르는 즉시 반영됩니다.",
     "Sandbox_MinidoracatMiniMapZoneDisplayDistance": "사용자 구역 표시 거리(타일)",
     "Sandbox_MinidoracatMiniMapZoneDisplayDistance_tooltip": "0 = 거리 제한 없음(기본값).\nN > 0 = 사용자 구역(서버 지역 등 구역 레이어\n애드온이 제공)은 가장 가까운 곳이\n플레이어로부터 N타일 안에 있을 때만 표시됩니다(채우기, 테두리, 이름, 아이콘이\n함께 숨겨짐).\n사용자 구역 레이어에만 적용되며, 자원 위치와\n맵 팩 외곽선은 영향을 받지 않습니다.\n플레이어는 자신의 슬라이더로 이 값을 더 좁힐 수 있습니다\n(작은 값이 적용됨).\n1타일은 약 1미터이며, 거리는 층을 무시한 2D 거리입니다.\n관리자가 적용을 누르는 즉시 반영됩니다.",
+    "Sandbox_MinidoracatMiniMapAllowMapBounds": "MOD 맵 외곽선 허용",
+    "Sandbox_MinidoracatMiniMapAllowMapBounds_tooltip": "켜면 플레이어가 미니맵과 세계 지도에서 활성화된 각 맵 MOD의 외곽선과 이름을 볼 수 있습니다(맵 팩 필요). 기본값은 켜짐이며, 끄면 아무도 볼 수 없고 플레이어 개인 스위치는 회색으로 바뀝니다(관리자 변경은 즉시 반영).",
     "Sandbox_MinidoracatMiniMapExportPlayerPositions": "플레이어 위치 파일 내보내기(외부 도구)",
     "Sandbox_MinidoracatMiniMapExportPlayerPositions_tooltip": "외부 도구용으로 플레이어 위치를 JSON 파일에 기록합니다(기본적으로 꺼짐).\n출력 위치는 Zomboid/Lua/MinidoracatMiniMap/이며 파일 이름은 players_SAVENAME.json입니다(멀티플레이 = 서버 이름, 싱글플레이 = 저장 폴더 이름). poi_blocks.json과 같은 곳에 생성됩니다.\n용도: 맵 초기화 도구가 지역을 지우기 전에 그 안에 누가 있는지 확인하고, 필요하면 먼저 해당 플레이어를 추방할 수 있습니다.\n내용: 플레이어 이름, 월드 좌표, 층, 온라인 여부, 관측 시간.\n참고: 위치가 디스크에 기록되므로, 서버가 실제로 이런 도구와 함께 운영될 때만 켜세요.\n관리자가 적용을 누르는 즉시 반영됩니다.",
     "Sandbox_MinidoracatMiniMapPlayerExportInterval": "플레이어 내보내기 간격(초)",

@@ -750,8 +750,22 @@ do
     btn.onclick(btn.target, btn)
     checkEq(e.triggered, "b", "N4 zone action row = Dropdown + Button with the picked value")
     st.selectSection("mappack")
-    check(e.byKey("MapPackLayers") and e.byKey("MapBounds") and e.byKey("MapBoundsColor") and e.byKey("MapBoundsAlpha"),
-        "N5 map-pack options live in the MOD maps category")
+    check(e.byKey("MapPackLayers") and e.byKey("MapBounds") and e.byKey("WMMapBounds") and e.byKey("MapBoundsColor")
+        and e.byKey("MapBoundsAlpha"), "N5 map-pack options live in the MOD maps category")
+    check(e.byKey("MapBounds"):isActive() and e.byKey("WMMapBounds"):isActive(), "N5 outlines on both maps by default")
+    check(e.byKey("MapPackLayers").y < e.byKey("MapBounds").y and e.byKey("MapBounds").y < e.byKey("MapBoundsColor").y,
+        "N5 design order: imagery tick first, then the outline row, then its color")
+    check(e.byKey("MapBounds"):isEnabled() and not textShown(e, T("UI_MinidoracatMiniMap_ServerDisabled")),
+        "N5 outline chips usable while the server allows them")
+    -- 伺服器沙盒 AllowMapBounds 關：兩格停用、列下面寫原因；分類本身沒有閘，圖像開關照常
+    e.gates.AllowMapBounds = false
+    st.selectSection("zones")
+    st.selectSection("mappack")
+    check(e.byKey("MapBounds"):isEnabled() == false and e.byKey("WMMapBounds"):isEnabled() == false,
+        "N5 server sandbox off disables both outline chips")
+    check(textShown(e, T("UI_MinidoracatMiniMap_ServerDisabled")), "N5 the outline row says the server turned it off")
+    check(e.byKey("MapPackLayers")._enabled == true, "N5 map imagery tick is not gated")
+    e.gates.AllowMapBounds = nil
     -- 類別很多：換行後的按鈕不能疊在一起（沒有父元件時原版 setY 會把元件夾在螢幕內，ISUIElement.lua:188-220；
     -- 2026-10-08 實機 100 位作者，第 27 列以後的按鈕全疊在 y=981）
     local cats = {}

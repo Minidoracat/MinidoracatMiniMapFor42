@@ -67,6 +67,8 @@
     "Sandbox_MinidoracatMiniMapPoiSourceLock_tooltip": "オンにすると、すべてのプレイヤーに上の\n「資源ポイントのデフォルト表示方法」で選んだものを使います。\nプレイヤー側の「表示方法」はグレー表示になり変更できません。\n各自の選択は保存され、オフに戻すと元に戻ります。\nデフォルトはオフ。管理者が「適用」を押すと即時反映されます。",
     "Sandbox_MinidoracatMiniMapZoneDisplayDistance": "カスタムゾーンの表示距離（マス）",
     "Sandbox_MinidoracatMiniMapZoneDisplayDistance_tooltip": "0＝距離制限なし（デフォルト）。\nN＞0＝カスタムゾーン（ゾーンレイヤーアドオンが提供。サーバー区域など）の最寄り点がプレイヤーから N マス以内の場合のみ表示します（塗り・枠線・名称・アイコンを一括で非表示）。\nカスタムゾーンレイヤーのみに影響し、資源ポイントやマップパックの範囲枠線には影響しません。\nプレイヤーは自分のスライダーでさらに距離を絞れます（小さい方が有効）。\n1 マスは約 1 メートル。距離は2次元で、階層は考慮しません。\n管理者が「適用」を押すと即時反映されます。",
+    "Sandbox_MinidoracatMiniMapAllowMapBounds": "MODマップの枠線を許可",
+    "Sandbox_MinidoracatMiniMapAllowMapBounds_tooltip": "オンにすると、プレイヤーはミニマップとワールドマップで有効なマップMODの範囲の枠線と名前を表示できます（マップパックが必要）。デフォルトはオン。オフにすると誰にも表示されず、プレイヤー側のスイッチはグレー表示になります（管理者の変更は即時反映）。",
     "Sandbox_MinidoracatMiniMapExportPlayerPositions": "プレイヤー座標ファイルを出力（外部ツール用）",
     "Sandbox_MinidoracatMiniMapExportPlayerPositions_tooltip": "プレイヤー座標を JSON ファイルに書き出し、外部ツールから読めるようにします（デフォルトは無効）。\n出力先は Zomboid/Lua/MinidoracatMiniMap/ の players_セーブ名.json（マルチ＝サーバー名、シングル＝セーブフォルダ名）。poi_blocks.json と同じ場所です。\n用途：マップリセットツールが領域を消す前にそこにプレイヤーがいるかを判定し、必要ならまず切断させるため。\n内容：プレイヤー名、ワールド座標、階層、オンライン状態、観測時刻。\n注意：プレイヤー座標がファイルとして保存されます。外部ツールと併用する場合のみ有効にしてください。\n管理者が「適用」を押すと即時反映されます。",
     "Sandbox_MinidoracatMiniMapPlayerExportInterval": "プレイヤー座標の出力間隔（秒）",

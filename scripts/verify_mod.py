@@ -572,6 +572,8 @@ _lua_tests = [
     ("test_chunk_grid.lua", "chunk 格線對齊／編號範圍／縮放封頂／stencil 配對", False),
     ("test_recreate_zorder.lua", "小地圖重建維持 UI 疊放順序", False),
     ("test_zone_render.lua", "zone／資源點繪製、圖標名稱提示、地圖文字縮放與圖例資料", False),
+    ("test_map_bounds.lua", "MOD 地圖框線：顯示在兩格、伺服器沙盒、預設白、名稱在最上方頂點", False),
+    ("test_key_migration.lua", "一次性選項遷移：滑條、圖片化、整棟、圖層分地圖、框線分兩張地圖", False),
     ("test_room_resources.lua", "資源點兩種版本、房間資料分批掃描與公開查詢 API", False),
     ("test_map_legend.lua", "世界地圖資源點圖例版面與顯示", False),
     ("test_road_draw.lua", "自訂道路三款畫法、繪製預算不掉路、開關、stencil、預覽與圖例列", False),

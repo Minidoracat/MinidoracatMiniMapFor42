@@ -430,7 +430,7 @@ end
 
 -- 重建框線資料（世界地圖/小地圖各 init 一次呼叫，冪等）：來源＝已註冊地圖包；
 -- 有 bounds 且對應地圖 MOD 啟用者才畫框。框線是 Lua 自繪定位輔助——不依賴 zip
--- 是否渲染、不受「顯示 MOD 地圖區塊」與「圖片化地圖」開關影響，故自
+-- 是否渲染、不受「顯示 MOD 地圖圖像」與「圖片化地圖」開關影響，故自
 -- collectPyramids 拆出、置於圖片化閘門之前（codex review：閘門原在前會讓
 -- 關閉圖片化啟動時框線資料永遠空白）
 -- test:rebuild-overlays:start
@@ -489,7 +489,7 @@ local function collectPyramids()
     end
 
     -- (1b) 已註冊地圖包：zip 在地圖包自己的 media/minimap/。
-    -- 「顯示 MOD 地圖區塊」（MapPackLayers，地圖包裝了才有的選項）關閉時整段跳過
+    -- 「顯示 MOD 地圖圖像」（MapPackLayers，地圖包裝了才有的選項）關閉時整段跳過
     -- ——生效時機＝地圖重建（齒輪/選項頁改動會觸發小地圖 Recreate）
     if getBoolOption("MapPackLayers", true) then
         for _, pack in ipairs(registeredPacks) do
@@ -934,6 +934,13 @@ Core.LAYER_MAPS = {
             mpOnly = true },
         { id = "WMSharedTargets", label = "UI_MinidoracatMiniMap_WMSharedTargets", default = true, on = true,
             mpOnly = true } },
+    -- MOD 地圖框線（drawMapBounds）：選項只在有地圖包時註冊（_Settings.lua「MOD 地圖」分類）；不算地圖圖層，
+    -- 兩格預設都開（2026-11-02 設計稿 minimap-mapbounds-1102 使用者裁定：伺服器以預設顯示為重）
+    mapBounds = {
+        { id = "MapBounds", label = "UI_MinidoracatMiniMap_MapBounds", default = true, on = true,
+            gate = "AllowMapBounds" },
+        { id = "WMMapBounds", label = "UI_MinidoracatMiniMap_WMMapBounds", default = true, on = true,
+            gate = "AllowMapBounds" } },
 }
 -- 這一層畫不畫：surface＝"mini"／"world"（同功能閘門與 marker 的表面名）；nil＝任一張地圖有開
 -- （資料要不要建、路線要不要算；不看 WMLayers——那只收起世界地圖上的繪製）。每幀被呼叫：兩次選項查找
@@ -2591,32 +2598,35 @@ end
 -- test:clipped-edge:end
 
 --------------------------------------------------------------------------------
--- MOD 地圖範圍框線＋名稱（MapBounds，預設開）：對 manifest 裡「已啟用的地圖 MOD」
--- 依 bounds 畫青色框線，名稱畫在範圍中心（僅中心落在視窗內時畫——拉遠總覽定位用）。
+-- MOD 地圖範圍框線＋名稱：對 manifest 裡「已啟用的地圖 MOD」依 bounds 畫框線（預設白），名稱畫在
+-- 範圍最上方那個頂點的上方（整個名稱在視窗內才畫——拉遠總覽定位用；2026-11-02 設計稿
+-- minimap-mapbounds-1102 作答：放中心會被資源點與導航的標籤蓋住）。畫不畫看「顯示在」兩格
+-- （Core.LAYER_MAPS.mapBounds）與伺服器沙盒 AllowMapBounds（不在旁路白名單，管理員也一樣）。
 -- 畫法同安全屋：四角 worldToUIX/Y 投影＋逐邊裁切畫線（等軸測下矩形成菱形）；
 -- 名稱底墊同導航 label（drawRect 深底＋drawText，ISUIElement.lua:1191/1293）。
 -- 只依賴 inner.mapAPI/.width/.height 與 ISUIElement 繪製方法——
 -- 角落小地圖（ISMiniMapInner）與世界地圖（ISWorldMap，mapAPI 同為 getAPIv3，
 -- ISWorldMap.lua:268）共用本函式。
 --------------------------------------------------------------------------------
--- 框線顏色表：索引對應 MapBoundsColor 下拉順序。預設（第 1 位）＝綠——
--- getComboIndex 的 fallback 是索引 1，選項缺席時畫的也要是預設色
+-- test:map-bounds:start
+-- 框線顏色表：索引對應 MapBoundsColor 下拉順序。預設＝第 5 位白（綠和自己的安全屋、青和同陣營的安全屋
+-- 同色，2026-11-02 設計稿作答）；選項缺席時 getComboIndex 回這裡傳的 5
 local MAPB_COLORS = {
-    { 0.3, 0.95, 0.4 },  -- 綠（預設）
+    { 0.3, 0.95, 0.4 },  -- 綠
     { 0.35, 0.8, 1.0 },  -- 青
     { 1.0, 0.85, 0.25 }, -- 黃
     { 0.8, 0.45, 1.0 },  -- 紫
-    { 1.0, 1.0, 1.0 },   -- 白
+    { 1.0, 1.0, 1.0 },   -- 白（預設）
 }
--- 框線透明度倍率表：索引對應 MapBoundsAlpha 下拉順序，三檔語意與數值同小地圖
--- Opacity（CHROME_FACTORS）；乘在既有 alpha 上（框線基準 SH_EDGE_A、名稱底墊 0.6、
--- 名稱文字 0.95），第 1 檔＝1.0 保證預設外觀與加選項前逐位元相同
+-- 框線透明度倍率表：索引對應 MapBoundsAlpha 下拉順序（不透明／半透明／幾乎透明；後兩檔同小地圖
+-- Opacity 的 CHROME_FACTORS）；乘在既有 alpha 上（框線基準 SH_EDGE_A、名稱底墊 0.6、名稱文字 0.95）
 local MAPB_ALPHAS = { 1.0, 0.5, 0.15 }
 
 local function drawMapBounds(inner)
     if #mapOverlays == 0 then return end
-    if not getBoolOption("MapBounds", true) then return end
-    local c = MAPB_COLORS[getComboIndex("MapBoundsColor", 1)] or MAPB_COLORS[1]
+    if not Core.layerOn("mapBounds", inner == ISWorldMap_instance and "world" or "mini") then return end
+    if sandboxGate("AllowMapBounds", true) == false then return end
+    local c = MAPB_COLORS[getComboIndex("MapBoundsColor", 5)] or MAPB_COLORS[5]
     local af = MAPB_ALPHAS[getComboIndex("MapBoundsAlpha", 1)] or 1.0
     local mapAPI = inner.mapAPI
     local tz = Core.mapTextZoom()
@@ -2652,8 +2662,15 @@ local function drawMapBounds(inner)
         if name then
             local tw = ov._tw * tz
             local th = ov._th * tz
-            local cx = (ux1 + ux3) / 2 - tw / 2 -- 菱形中心＝對角中點
-            local cy = (uy1 + uy3) / 2 - th / 2
+            -- 錨點＝畫面最上方的頂點（等軸測＝菱形的上角；俯視時上緣兩角同高，取兩角中點）
+            local top = math.min(uy1, uy2, uy3, uy4)
+            local sx, n = 0, 0
+            if uy1 - top < 1 then sx, n = sx + ux1, n + 1 end
+            if uy2 - top < 1 then sx, n = sx + ux2, n + 1 end
+            if uy3 - top < 1 then sx, n = sx + ux3, n + 1 end
+            if uy4 - top < 1 then sx, n = sx + ux4, n + 1 end
+            local cx = sx / n - tw / 2
+            local cy = top - th - 4
             if cx >= 2 and cy >= 2 and cx + tw <= inner.width - 2 and cy + th <= inner.height - 2 then
                 inner:drawRect(cx - 3, cy - 1, tw + 6, th + 2, 0.6 * af, 0, 0, 0)
                 Core.drawMapText(inner, name, cx, cy, 1, 1, 1, 0.95 * af, UIFont.Small, tz)
@@ -2661,6 +2678,7 @@ local function drawMapBounds(inner)
         end
     end
 end
+-- test:map-bounds:end
 
 --------------------------------------------------------------------------------
 -- Zone 圖層繪製（fill/lines/icons 三 pass＋ZC 候選快取）已拆至
