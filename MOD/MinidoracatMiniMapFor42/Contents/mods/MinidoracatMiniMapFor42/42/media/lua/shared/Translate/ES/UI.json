@@ -672,5 +672,5 @@
     "UI_MinidoracatMiniMap_RoadError_notfound": "Esa carretera ya no existe.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "No hay personaje para el que guardar carreteras.",
     "UI_MinidoracatMiniMap_RoadNavBuildFailed": "No se pudieron añadir las carreteras personalizadas a la navegación (límite de la red de carreteras). Las rutas siguen usando las carreteras de antes de este cambio.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Botón de carretera abajo a la derecha del mapa del mundo: dibuja o graba carreteras para navegar."
+    "UI_MinidoracatMiniMap_WhatsNew": "Clic derecho en el mundo: añadir a favoritos del mapa. Contornos de mapas MOD ahora blancos."
 }

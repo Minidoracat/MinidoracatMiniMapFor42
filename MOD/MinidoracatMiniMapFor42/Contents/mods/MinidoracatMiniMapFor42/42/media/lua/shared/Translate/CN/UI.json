@@ -672,5 +672,5 @@
     "UI_MinidoracatMiniMap_RoadError_notfound": "这条路已经不存在。",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "当前没有角色，无法保存道路。",
     "UI_MinidoracatMiniMap_RoadNavBuildFailed": "自定义道路无法加入导航（超过路网容量上限），路线会沿用这次变更前的道路。",
-    "UI_MinidoracatMiniMap_WhatsNew": "自定义道路：没有道路数据的地方，按世界地图右下角的道路按钮，画一条路或开车录一条，导航就会走。"
+    "UI_MinidoracatMiniMap_WhatsNew": "在游戏画面按右键就能「加入地图收藏」。MOD 地图框线改成白色。"
 }

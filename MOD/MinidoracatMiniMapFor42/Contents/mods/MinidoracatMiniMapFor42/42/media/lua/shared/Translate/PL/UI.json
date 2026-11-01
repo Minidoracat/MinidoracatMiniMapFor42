@@ -672,5 +672,5 @@
     "UI_MinidoracatMiniMap_RoadError_notfound": "Ta droga już nie istnieje.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "Brak postaci, dla której można zapisać drogi.",
     "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Nie udało się dodać własnych dróg do nawigacji (limit sieci dróg). Trasy nadal korzystają z dróg sprzed tej zmiany.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Własne drogi: narysuj je lub nagraj przyciskiem drogi w prawym dolnym rogu mapy świata. Nawigacja z nich korzysta."
+    "UI_MinidoracatMiniMap_WhatsNew": "Prawy klik w świecie gry: dodaj do ulubionych na mapie. Obrysy map MOD-ów są teraz białe."
 }

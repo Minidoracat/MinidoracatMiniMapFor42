@@ -672,5 +672,5 @@
     "UI_MinidoracatMiniMap_RoadError_notfound": "その道路はもう存在しません。",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "道路を保存するキャラクターがいません。",
     "UI_MinidoracatMiniMap_RoadNavBuildFailed": "カスタム道路をナビに追加できませんでした（道路網の容量上限）。ルートはこの変更前の道路を引き続き使います。",
-    "UI_MinidoracatMiniMap_WhatsNew": "カスタム道路：ワールドマップ右下の道路ボタンから、道路を描くか運転して記録すると、ナビが使います。"
+    "UI_MinidoracatMiniMap_WhatsNew": "ゲーム画面の右クリックで「マップのお気に入りに追加」ができます。MODマップの枠線はホワイトになりました。"
 }

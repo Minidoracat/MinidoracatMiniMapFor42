@@ -124,7 +124,8 @@ Both go by the room names inside buildings, which are also what decides the loot
 === 🧰 Home & favorites
 [list]
 [*] [b]Set[/b]: right-click the map → "Favorites": "Set as home" or "Add to favorites…".
-[*] [b]Remove or rename[/b]: right-click a favorite's icon (or name) on the map → "Favorite: <name>": "Remove from favorites", "Rename…" or "Set as home"; removing asks first.
+[*] [b]From the game world[/b]: right-click in the game world, or right-click an item somewhere else in the loot window, → "Add to map favorites…". The name is filled in for you (vehicle name, item on the ground, container or furniture; upstairs or in a basement the floor is added, such as "(2F)") and can be edited; items you carry are not listed.
+[*] [b]Remove or rename[/b]: right-click a favorite's icon (or name) on the map → "Favorite: <name>": "Remove from favorites", "Rename…" or "Set as home"; removing asks first. When you right-click in the game world, favorites within 2 tiles show up as "Map favorite: <name>" for renaming or removing.
 [*] [b]Favorites[/b]: named, unlimited.
 [*] [b]New home[/b]: setting a new home keeps the old one as a favorite.
 [*] [b]Go home[/b]: replaces the trip with a single stop home and starts navigating (the mini-map's house button, right-click → "Favorites", or the trip page).
@@ -273,6 +274,7 @@ Where a mod map has no road data, on roads players built themselves, or on dirt 
 [*] [b]Side list[/b]: each category has an icon; categories with a master switch toggle right in the list.
 [*] [b]Search box[/b]: finds settings across categories.
 [*] [b]Add-on categories[/b]: Custom zones (Zones), Mod maps (MOD Maps) and series mods such as Vehicle Manager, Economy and AutoDrive each get one category, in a fixed order; an add-on shows its category once it is updated.
+[*] [b]MOD map outlines[/b] (needs the MOD Maps pack): the "Mod maps" category has two switches, "Show MOD map outlines on the mini-map" and "Show MOD map outlines on the world map", both on by default; the world map one is also in the world map's MiniMap panel. Outlines are white by default, with adjustable color and opacity; the map name sits just outside the top corner of the area. When the server turns off the sandbox option "Allow MOD map outlines", both switches are greyed out.
 [*] [b]Add-on map markers[/b]: can come in layers, each with its own on/off, "Show on" (mini-map / world map), size and separate mini-map / world-map name toggles.
 [*] [b]Performance notes[/b]: the cost of each layer and what to do about it.
 [/list]
@@ -310,6 +312,7 @@ Where a mod map has no road data, on roads players built themselves, or on dirt 
 [*] faction sharing toggle
 [*] custom road sharing toggle ("General" page)
 [*] who can see other players' facing, and whether floor marks are allowed ("General" page)
+[*] MOD map outlines toggle ("Resource Points & Custom Zones" page; needs the map pack)
 [/list]
 [*] [b]Live[/b]: changes apply live.
 [*] [b]Display distance[/b]: players can only set their own display distance stricter than the server, not looser.

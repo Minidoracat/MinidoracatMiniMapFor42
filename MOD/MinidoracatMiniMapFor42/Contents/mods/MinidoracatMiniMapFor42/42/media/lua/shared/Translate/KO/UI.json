@@ -672,5 +672,5 @@
     "UI_MinidoracatMiniMap_RoadError_notfound": "그 도로는 더 이상 없습니다.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "도로를 저장할 캐릭터가 없습니다.",
     "UI_MinidoracatMiniMap_RoadNavBuildFailed": "사용자 도로를 내비게이션에 추가하지 못했습니다(도로망 용량 한도). 경로는 이번 변경 전의 도로를 계속 사용합니다.",
-    "UI_MinidoracatMiniMap_WhatsNew": "사용자 도로: 세계 지도 오른쪽 아래의 도로 버튼으로 길을 그리거나 운전하며 기록하면 내비게이션이 사용합니다."
+    "UI_MinidoracatMiniMap_WhatsNew": "게임 화면에서 우클릭으로 지도 즐겨찾기에 추가할 수 있습니다. MOD 맵 외곽선은 흰색이 되었습니다."
 }
