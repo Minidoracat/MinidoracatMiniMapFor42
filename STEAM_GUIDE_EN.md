@@ -202,7 +202,7 @@ Where a mod map has no road data, on roads players built themselves, or on dirt 
 [h3]Other players' facing (MP only)[/h3]
 [list]
 [*] [b]Colors[/b]: teammates in your faction or safehouse are cyan, other players white, each with an arrow and a cone, one size smaller than yours.
-[*] [b]The server decides who[/b]: the sandbox option "Other players' facing": Off, Faction and safehouse only (default), or Everyone on the map.
+[*] [b]The server decides who[/b]: the sandbox option "Other players' facing": Off, Faction & safehouse (default), or Everyone on the map.
 [*] [b]No extra intel[/b]: it follows the vanilla map's rules (server option MapRemotePlayerVisibility); at 1 (the vanilla default, other players hidden on the map) nothing is drawn, so set it to 2–4 first.
 [*] [b]Far-away players[/b]: the game sends only their position, not their facing, so they keep the vanilla red dot.
 [*] [b]Turn it off yourself[/b]: untick "Show which way other players face"; it's greyed out when the server sets the option to Off.
