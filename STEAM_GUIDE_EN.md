@@ -254,6 +254,7 @@ Where a mod map has no road data, on roads players built themselves, or on dirt 
 [*] [b]Only faction and safehouse members' symbols[/b]: keeps only shares from your faction and safehouse.
 [*] [b]Show all[/b]: brings everything back.
 [*] [b]Many authors[/b]: with more than 20 authors, "Manage authors..." opens a searchable list.
+[*] [b]Share new symbols[/b]: set "Share new symbols with" to "Everyone" or "Faction and safehouse", and symbols and notes you place on the world map afterwards are shared as soon as you place them (default "Private", same as vanilla).
 [/list]
 === ⚙️ Map Display Settings (gear)
 {{img:02-settings-addons.jpg}}

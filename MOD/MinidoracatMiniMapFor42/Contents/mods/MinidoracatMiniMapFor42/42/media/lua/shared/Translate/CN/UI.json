@@ -677,5 +677,5 @@
     "UI_MinidoracatMiniMap_RoadError_notfound": "这条路已经不存在。",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "当前没有角色，无法保存道路。",
     "UI_MinidoracatMiniMap_RoadNavBuildFailed": "自定义道路无法加入导航（超过路网容量上限），路线会沿用这次变更前的道路。",
-    "UI_MinidoracatMiniMap_WhatsNew": "在游戏画面按右键就能「加入地图收藏」。MOD 地图框线改成白色。"
+    "UI_MinidoracatMiniMap_WhatsNew": "小地图会记住你拖到的位置。多人游戏新增「新标记默认分享给」，放好标记就自动分享（在「其他玩家标记」分类）。"
 }

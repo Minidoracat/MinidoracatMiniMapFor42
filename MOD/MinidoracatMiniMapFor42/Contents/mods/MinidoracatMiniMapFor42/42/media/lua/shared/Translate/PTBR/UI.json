@@ -677,5 +677,5 @@
     "UI_MinidoracatMiniMap_RoadError_notfound": "Essa estrada não existe mais.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "Não há personagem para salvar estradas.",
     "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Não foi possível adicionar as estradas personalizadas à navegação (limite da rede de estradas). As rotas continuam usando as estradas de antes desta mudança.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Clique direito no mundo: adicionar aos favoritos do mapa. Contornos dos mapas de MOD agora brancos."
+    "UI_MinidoracatMiniMap_WhatsNew": "O minimapa lembra a posição. Multijogador: compartilhe novos símbolos ao colocá-los."
 }

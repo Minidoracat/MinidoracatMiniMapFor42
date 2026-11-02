@@ -677,5 +677,5 @@
     "UI_MinidoracatMiniMap_RoadError_notfound": "Cette route n'existe plus.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "Aucun personnage pour qui enregistrer des routes.",
     "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Les routes personnalisées n'ont pas pu être ajoutées à la navigation (limite du réseau routier). Les itinéraires utilisent toujours les routes d'avant ce changement.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Clic droit dans le monde : ajouter aux favoris de la carte. Contours des cartes MOD désormais blancs."
+    "UI_MinidoracatMiniMap_WhatsNew": "La mini-carte retient sa position. Multijoueur : partage des nouveaux symboles dès leur pose."
 }

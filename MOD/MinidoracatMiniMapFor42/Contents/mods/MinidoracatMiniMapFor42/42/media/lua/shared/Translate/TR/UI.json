@@ -677,5 +677,5 @@
     "UI_MinidoracatMiniMap_RoadError_notfound": "O yol artık yok.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "Yolları kaydedecek karakter yok.",
     "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Özel yollar navigasyona eklenemedi (yol ağı sınırı). Rotalar bu değişiklikten önceki yolları kullanmaya devam ediyor.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Oyun dünyasında sağ tıklayarak harita favorilerine ekleyin. MOD harita dış hatları artık beyaz."
+    "UI_MinidoracatMiniMap_WhatsNew": "Mini harita sürüklediğiniz yeri hatırlar. Çok oyunculu: yeni semboller otomatik paylaşılabilir."
 }
