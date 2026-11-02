@@ -2042,8 +2042,8 @@ local function buildResults(ctx, hits)
 end
 
 --------------------------------------------------------------------------------
--- 版面量測與 pane：導覽寬＝最長分類名＋圖示＋開關；inspector 車道寬＝各語系標籤實測
---（夾 [字高×21, 字高×30]：Small 約 340–480、Medium 約 440–630）；放不下兩欄就單頁
+-- 版面量測與 pane：導覽寬＝最長分類名＋圖示＋開關；inspector 車道寬＝各語系標籤與選項實測
+--（至少字高×21，不設上限）；放不下兩欄就單頁
 --（導覽或 inspector 二選一，inspector 帶「返回分類」）
 -- 字型：viewport 夠高（≥900）且 Small 字不大（≤18px，玩家沒把遊戲字級調大）＝Medium，否則 Small
 --------------------------------------------------------------------------------
@@ -2105,10 +2105,11 @@ local function studioMeasure(list, fontH, font)
     end
     -- 標籤欄放得下最長標籤（lane 為它保留 180 給滑桿）；下拉框放得下最寬選項：
     -- 下拉框寬＝lane－標籤欄－8，文字可用寬再扣框邊與箭頭 33，另留 4 餘量。
-    -- 標籤欄若照 lane 比例夾，lane 為長標籤加寬也救不回截字（2026-10-09 八語 E2E，EN 也截）
+    -- 標籤欄若照 lane 比例夾，lane 為長標籤加寬也救不回截字（2026-10-09 八語 E2E，EN 也截）。
+    -- lane 不設上限：多人常載的 CatLang 翻譯包拉丁字型比原版寬，舊上限字高×30 把 FR 要的 743 夾成 600，
+    -- 選項截成「…」（2026-11-02）；視窗放不下兩欄由 studioPaneLayout 改單頁
     local laneW = math.max(fontH * 21, tickW + 44 + 8, labelW + 180, labelW + 8 + optW + 33 + 4, rowW)
-    if laneW > fontH * 30 then laneW = fontH * 30 end
-    return navW + 12, laneW, math.min(labelW, laneW - 180)
+    return navW + 12, laneW, labelW
 end
 
 --------------------------------------------------------------------------------
@@ -2219,10 +2220,11 @@ local function studioRebuild(win)
     local font = win._font or UIFont.Small
     local fontH = getTextManager():getFontHeight(font)
     local navW, laneW, labelW = studioMeasure(list, fontH, font)
-    win._labelW = labelW
     local viewportW, viewportH = getPlayerScreenWidth(pn), getPlayerScreenHeight(pn)
     local sx, sy = getPlayerScreenLeft(pn), getPlayerScreenTop(pn)
     local pane = studioPaneLayout(viewportW, laneW + 28, navW)
+    -- 單頁被 viewport 縮窄時，標籤欄照實際車道讓出 180 給滑桿與下拉框
+    win._labelW = math.min(labelW, pane.inspectorW - 28 - 180)
     local titleH = win:titleBarHeight()
     local searchH = fontH + 10
     local bodyY = titleH + 8 + searchH + 8

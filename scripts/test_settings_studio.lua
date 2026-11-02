@@ -706,6 +706,16 @@ do
     e.frame()
     st = e.studio()
     check(not st.navScroll.visible and st.inspector.visible, "C2 selecting a category opens its page")
+    -- 車道不設上限後，標籤欄不能照最長標籤撐開：單頁被 viewport 縮窄時讓出 180，下拉框至少 172 寬
+    local dd, thin = 0, {}
+    for _, el in ipairs(st.controls) do
+        if el._options then
+            dd = dd + 1
+            if el.width < 172 then thin[#thin + 1] = el.width end
+        end
+    end
+    check(dd > 0 and #thin == 0, "C5 narrow page keeps every dropdown at least 172 px wide (" .. dd .. " dropdowns, too thin: "
+        .. table.concat(thin, ",") .. ")")
     local back = byLabel(e, T("UI_MinidoracatMiniMap_StudioBack"))
     check(back ~= nil, "C2 narrow page has a back button")
     back.onclick(back.target, back)
@@ -941,32 +951,37 @@ do
     checkEq(fonts(e, st, UIFont.Medium), "", "F3 large mode: nav, search, every control and text block use Medium")
     local es, ss = openWith(899, 14)
     checkEq(fonts(es, ss, UIFont.Small), "", "F3 small mode: everything stays Small")
-    -- 版面：導覽寬＝字高×11 起、車道夾 [字高×21, 字高×30]（此處標籤夠長＝頂到上限）
+    -- 版面：導覽寬＝字高×11 起；車道至少字高×21，放得下最長標籤＋最寬選項，不設上限（2026-11-02：舊上限字高×30
+    -- 在 CatLang 拉丁字型與螢幕高不到 900 的 Small 字下把選項截成「…」）。三種字型（Medium、Small、遊戲字級調大的
+    -- Small 30px）每個分類的滑桿標籤、下拉標籤與下拉選項都不截字（2026-10-09 八語 E2E：標籤欄夾在車道 45%、
+    -- 車道沒算選項寬，EN 也截）
     e, st = openWith(1080, 14)
     es, ss = openWith(899, 14)
-    checkEq(st.inspector.width, 18 * 30 + 28, "F4 Medium lane cap = font height x 30")
-    checkEq(ss.inspector.width, 14 * 30 + 28, "F4 Small lane cap = font height x 30")
-    -- 字很大（遊戲字級調大＝Small 30px）、車道沒頂到上限時：車道在 [字高×21, 字高×30] 之內，每個分類的
-    -- 滑桿標籤、下拉標籤與下拉選項都不截字（2026-10-09 八語 E2E：標籤欄夾在車道 45%、車道沒算選項寬，EN 也截）
-    local eb, sb = openWith(1080, 30)
-    local laneB = sb.inspector.width - 28
-    check(laneB >= 30 * 21 and laneB < 30 * 30, "F4 uncapped lane stays within [font height x 21, x 30) (" .. laneB .. ")")
-    local cut = {}
-    for _, id in ipairs(sb.sections) do
-        sb.selectSection(id)
-        for _, el in ipairs(eb.studio().controls) do
-            if el._options then
-                for _, o in ipairs(el._options) do
-                    if o.w > el.width - 33 then cut[#cut + 1] = id .. ":" .. o.label end
+    local function cuts(env2, s)
+        local cut = {}
+        for _, id in ipairs(s.sections) do
+            s.selectSection(id)
+            for _, el in ipairs(env2.studio().controls) do
+                if el._options then
+                    for _, o in ipairs(el._options) do
+                        if o.w > el.width - 33 then cut[#cut + 1] = id .. ":" .. o.label end
+                    end
+                elseif el._labelW and el.label then
+                    if getTextManager():MeasureStringX(el.font, el.label) > el._labelW then cut[#cut + 1] = id .. ":" .. el.label end
+                elseif el._lines and #el._lines == 1 and el.width == s.win._labelW and el._lines[1]:sub(-3) == "..." then
+                    cut[#cut + 1] = id .. ":" .. el._lines[1]
                 end
-            elseif el._labelW and el.label then
-                if getTextManager():MeasureStringX(el.font, el.label) > el._labelW then cut[#cut + 1] = id .. ":" .. el.label end
-            elseif el._lines and #el._lines == 1 and el.width == sb.win._labelW and el._lines[1]:sub(-3) == "..." then
-                cut[#cut + 1] = id .. ":" .. el._lines[1]
             end
         end
+        return table.concat(cut, ",")
     end
-    checkEq(table.concat(cut, ","), "", "F4 uncapped lane: no slider label, dropdown label or option is cut")
+    for _, c in ipairs({ { 1080, 14, 18 }, { 899, 14, 14 }, { 1080, 30, 30 } }) do
+        local ec, sc = openWith(c[1], c[2])
+        local lane = sc.inspector.width - 28
+        check(sc.pane == "wide" and lane >= c[3] * 21,
+            "F4 two panes, lane at least font height x 21 (" .. c[3] .. " px font: " .. lane .. ")")
+        checkEq(cuts(ec, sc), "", "F4 no slider label, dropdown label or option is cut (" .. c[3] .. " px font)")
+    end
     -- 說明段落用視窗字型斷行：每行以該字型量都不超出文字塊寬
     local over
     st.selectSection("perf")

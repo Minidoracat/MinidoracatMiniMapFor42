@@ -236,8 +236,8 @@ local function create(UI, font)
     return win
 end
 
--- 開清單（設定分類的「管理作者...」）。anchor＝設定視窗：沿用它的框架與字型，放在它右邊（放不下改左邊），
--- 夾進該玩家的畫面；已開著就照新擁有者重整並放到最上層
+-- 開清單（設定分類的「管理作者...」）。anchor＝設定視窗：沿用它的框架與字型，放在它右邊（放不下改左邊；
+-- 兩邊都不夠就縮到較寬那一側，縮到最小寬還不夠才置中），夾進該玩家的畫面；已開著就照新擁有者重整並放到最上層
 function Core.openRemoteAuthors(pn, anchor)
     local UI, font = anchor and anchor._UI, anchor and anchor._font
     if not (UI and UI.Window and UI.VirtualList and UI.TextField and UI.Checkbox) then return end
@@ -260,6 +260,11 @@ function Core.openRemoteAuthors(pn, anchor)
         layout(win)
     end
     local ax, aw = anchor:getAbsoluteX(), anchor.width
+    local room = math.max(sx + sw - (ax + aw + 8), ax - 8 - sx)
+    if win.width > room and room >= win.minWidth then
+        win:setWidth(room)
+        layout(win)
+    end
     local x = ax + aw + 8
     if x + win.width > sx + sw then x = ax - win.width - 8 end
     if x < sx then x = sx + math.floor((sw - win.width) / 2) end
