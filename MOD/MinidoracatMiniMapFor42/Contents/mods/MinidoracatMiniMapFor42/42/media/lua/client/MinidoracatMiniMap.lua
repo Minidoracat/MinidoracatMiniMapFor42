@@ -1222,6 +1222,13 @@ if PZAPI and PZAPI.ModOptions then
     -- （_RemoteSymbols.lua；設定視窗、世界地圖選項面板也各有一顆）
     modOptions:addTickBox("RemoteTrustedOnly", "UI_MinidoracatMiniMap_RemoteTrustedOnly", false,
         "UI_MinidoracatMiniMap_RemoteTrustedOnly_tooltip")
+    -- 新放的標記預設分享給誰（預設私人＝原版行為，多人才有作用）：1 私人、2 全部可見、3 陣營與安全屋。
+    -- 世界地圖放好標記或文字後照這裡分享（_RemoteSymbols.lua），之後照樣能用原版「分享」個別改
+    combo = modOptions:addComboBox("SymbolShareDefault", "UI_MinidoracatMiniMap_SymbolShareDefault",
+        "UI_MinidoracatMiniMap_SymbolShareDefault_tooltip")
+    combo:addItem("UI_MinidoracatMiniMap_SymbolShareDefault_Private", true)
+    combo:addItem("UI_MinidoracatMiniMap_SymbolShareDefault_Everyone", false)
+    combo:addItem("UI_MinidoracatMiniMap_SymbolShareDefault_Team", false)
     -- 導航路線（0.17.0，兩格預設開）：右鍵目標後沿道路畫路線（_NavRoute.lua 全套引擎）。純顯示功能
     -- 不設沙盒 gate；那張地圖的格關＝那裡不畫路線；兩格都關＝退回直線旗標、設目標不觸發建圖、行程預覽停算。
     -- 例外：開啟搜尋視窗（_Search.lua）仍會 kick 引擎——街名搜尋需要索引，
@@ -2037,7 +2044,8 @@ if ISMiniMapOuter and ISMiniMapOuter.onToggleOptionsPanel then
 end
 
 -- Recreate 包裝（原版對 outer 整個 removeFromUIManager 再新建，ISMiniMap.lua:778-781）：
--- 收掉搬到頂層的舊面板（不會跟著 outer 消失，須手動移除免殘留）、帶過原生兩項開關、維持疊放順序
+-- 收掉搬到頂層的舊面板（不會跟著 outer 消失，須手動移除免殘留）、帶過原生兩項開關、維持疊放順序。
+-- 位置與版面登記另由 _Resize.lua 的 layout-memory 段在外層包一次
 -- test:recreate-zorder:start
 if ISMiniMap and ISMiniMap.Recreate then
     local originalRecreate = ISMiniMap.Recreate

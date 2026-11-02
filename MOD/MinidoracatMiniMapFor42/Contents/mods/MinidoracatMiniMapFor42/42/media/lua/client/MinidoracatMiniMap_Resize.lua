@@ -2,6 +2,7 @@
 -- 本檔範圍：小地圖邊緣拖曳縮放（熱區判定／等比與單軸夾限／CustomSize 回寫／實例與
 -- class hook 安裝）、HUD 視覺微調（外框調色 chromeTintBorder、角落括號與把手、
 -- ISMiniMapOuter prerender/render wrap、標題列鎖定、-debug 警告的繪製呼叫）、
+-- 小地圖位置記憶（layout.ini：自建小地圖登記、重建帶過位置、拖曳放開就存）、
 -- 自訂鍵位（OnGameBoot 註冊、開關小地圖與穿透熱鍵）。
 -- 載入順序假設：PZ 依字母序載入同目錄 lua，'.'(0x2E) < '_'(0x5F) → 主檔必先載入並
 -- 建好 MinidoracatMiniMapCore；本檔載入期只讀取其「一次性賦值」的穩定引用。
@@ -13,7 +14,7 @@
 -- 一律呼叫時查 Core.*＋nil 防呆；_FloatIcon 的 onClick 於 ensureFloatIcon（事件時）取
 -- Core.togglePlayerMiniMap。
 -- 拆檔緣由（2026-09-03）：主檔主 chunk locvar 134→116，段內程式碼除 RESIZE_MIN→
--- Core.RESIZE_MIN 外逐位元不變。本段無離線測試切片。
+-- Core.RESIZE_MIN 外逐位元不變。位置記憶一段有離線測試切片（test:layout-memory，scripts/test_minimap_layout.lua）。
 local Core = MinidoracatMiniMapCore
 if not (Core and Core.ready) then return end
 
@@ -158,26 +159,20 @@ local function endResize()
     -- 寫入自訂尺寸並立即落地 ModOptions.ini（PZAPI.ModOptions:save()＝ModOptions.lua:259）
     opt:setValue(baseW .. "x" .. baseH)
     PZAPI.ModOptions:save()
-    -- 重建會重錨右下（AGENTS.md 已知行為）。若位置是使用者拖過的
-    -- （userPosition 旗標，版面存讀同用 ISMiniMap.lua:660-670），重建後
-    -- 還原成預覽框位置；baseY 是「收合狀態」的 y——收合時要加回 titleBar 高
-    -- （展開時 setY(y - titleBar.height)，ISMiniMap.lua:487）。沒拖過就讓原版
-    -- 重錨右下，視覺上與拖曳前一致（右下錨點本就不動）。
+    -- 重建會帶過舊位置與 userPosition（下方 layout-memory 段的 Recreate 包裝）；拖左緣或上緣時
+    -- 位置跟著變，拖過的（userPosition，版面存讀同用 ISMiniMap.lua:660-670）改成預覽框位置。
+    -- 預覽框是拖曳起點那個狀態的外框，展開時收合 y＝y＋標題列高（ISMiniMap.lua:487）。
+    -- 沒拖過就讓原版重錨右下，視覺上與拖曳前一致（右下錨點本就不動）。
     local wasUserPosition = outer.userPosition
     local baseX = p.x
     local baseY = st.adorned and (p.y + outer.titleBar.height) or p.y
     ISMiniMap.Recreate(outer.playerNum) -- 走上方 hook 的 InitPlayer 自訂尺寸路徑
     local mm = getPlayerMiniMap(outer.playerNum)
     if mm and wasUserPosition then
-        mm.userPosition = true
         mm:setX(baseX)
-        -- 「永遠顯示」模式下重建後即是展開狀態，展開 y = 收合 y - titleBar 高
-        if mm.titleBar and mm.titleBar:isVisible() then
-            mm:setY(baseY - mm.titleBar.height)
-        else
-            mm:setY(baseY)
-        end
+        Core.setMiniMapBaseY(mm, baseY)
     end
+    Core.saveMiniMapLayout(outer.playerNum) -- 拖左緣／上緣會改位置：同標題列拖曳，放開就存
 end
 
 -- 取消進行中的拖曳並清理捕捉旗標（小地圖在拖曳中被移除——開關快捷鍵/輪盤選單
@@ -291,6 +286,98 @@ if ISMiniMapInner and ISMiniMapInner.prerenderHack then
         originalPrerenderHack(self)
     end
 end
+
+-- test:layout-memory:start
+-- 位置記憶（layout.ini，原版 ISLayoutManager）：原版只在沙盒開小地圖時登記版面（ISPlayerDataObject.lua:139-156）、
+-- 只在離開遊戲時寫檔（Events.OnPostSave；MP 被伺服器斷線時不觸發，IngameState.java:1391-1412），小地圖只存
+-- x、y、userPosition、visible（ISMiniMap.lua:660-670）。本段補三件事：
+--   1. 自己建的小地圖（沙盒沒開小地圖時按 / 或浮動圖標）照原版登記，位置才存讀得到；
+--   2. 重建（ISMiniMap.Recreate：改尺寸、圖片化、地圖包圖層、邊緣縮放）帶過位置，登記改指新視窗；
+--   3. 標題列拖曳放開就寫檔（同 _FloatIcon onMoved）。
+-- 版面另存 baseY＝收合時的 y：展開時外框上移標題列高（ISMiniMap.lua:479-497），拖曳放開那一刻是展開的，
+-- 讀回時新視窗可能是收合的（「滑鼠懸停時」模式、穿透模式）。舊檔沒有 baseY 照原版只用 y。
+function Core.miniMapBaseY(mm)
+    local tb = mm.titleBar
+    return mm:getY() + ((tb and tb:isVisible()) and tb.height or 0)
+end
+function Core.setMiniMapBaseY(mm, y)
+    local tb = mm.titleBar
+    mm:setY(y - ((tb and tb:isVisible()) and tb.height or 0))
+end
+-- 真正的 x：手把玩家開著背包時原版只把 Java x 移到螢幕外、原位記在 hideInventoryX（ISMiniMap.lua:499-515；
+-- getX 讀的是 Java x）。這個欄位只在手把分支裡設與清，手把斷線改鍵鼠後會留著舊值，所以手把還在才用它
+function Core.miniMapX(mm)
+    local pad = JoypadState and JoypadState.players[mm.playerNum + 1]
+    return pad and mm.hideInventoryX or mm:getX()
+end
+
+-- 有登記才寫：沒登記的小地圖寫了也不在檔裡（分割畫面其他玩家、Tutorial，原版都不登記）
+function Core.saveMiniMapLayout(playerNum)
+    if ISLayoutManager and ISLayoutManager.windows["miniMap" .. playerNum] then ISLayoutManager.OnPostSave() end
+end
+
+-- togglePlayerMiniMap 自建小地圖後呼叫。登記時原版依舊版面還原位置與 visible（DefaultRestoreWindow）：
+-- 要開的就是它，舊版面的 visible=false 不能把它藏起來
+function Core.registerMiniMapLayout(mm)
+    if not (ISLayoutManager and ISLayoutManager.RegisterWindow) then return end
+    ISLayoutManager.RegisterWindow("miniMap0", ISMiniMapOuter, mm)
+    mm:setVisible(true)
+end
+
+if ISMiniMapOuter and ISMiniMapOuter.SaveLayout and ISMiniMapOuter.RestoreLayout then
+    local originalSaveLayout = ISMiniMapOuter.SaveLayout
+    function ISMiniMapOuter:SaveLayout(name, layout)
+        originalSaveLayout(self, name, layout)
+        if layout.x then layout.x = Core.miniMapX(self) end -- Tutorial 時原版不寫 x
+        layout.baseY = Core.miniMapBaseY(self)
+    end
+    local originalRestoreLayout = ISMiniMapOuter.RestoreLayout
+    function ISMiniMapOuter:RestoreLayout(name, layout)
+        originalRestoreLayout(self, name, layout)
+        local y = tonumber(layout.baseY)
+        if y then Core.setMiniMapBaseY(self, y) end
+    end
+end
+
+-- 包在主檔的 Recreate 包裝外層（本檔載入在後）：原版砍舊建新（ISMiniMap.lua:778-781），新視窗在右下預設位置、
+-- userPosition 是 nil；舊視窗沒拖過就照原版右下
+if ISMiniMap and ISMiniMap.Recreate then
+    local originalRecreate = ISMiniMap.Recreate
+    function ISMiniMap.Recreate(playerNum)
+        local old = getPlayerMiniMap(playerNum)
+        local x, y, user
+        if old then x, y, user = Core.miniMapX(old), Core.miniMapBaseY(old), old.userPosition end
+        local result = originalRecreate(playerNum)
+        local mm = getPlayerMiniMap(playerNum)
+        if mm and old then
+            local reg = ISLayoutManager and ISLayoutManager.windows["miniMap" .. playerNum]
+            if reg and reg.target == old then reg.target = mm end
+            if user then
+                mm.userPosition = true
+                mm:setX(x)
+                Core.setMiniMapBaseY(mm, y)
+            end
+        end
+        return result
+    end
+end
+
+-- 標題列拖曳放開（原版 onMouseDown 設 dragging，ISMiniMap.lua:363-381）。要在下方 installResizeHooks 之前包：
+-- 縮放 hook 在最外層，縮放收尾不會落到這裡（縮放自己在 endResize 存）
+if ISMiniMapTitleBar then
+    for _, name in ipairs({ "onMouseUp", "onMouseUpOutside" }) do
+        local original = ISMiniMapTitleBar[name]
+        if original then
+            ISMiniMapTitleBar[name] = function(self, x, y)
+                local dragged = self.dragging
+                local result = original(self, x, y)
+                if dragged then Core.saveMiniMapLayout(self.miniMap.playerNum) end
+                return result
+            end
+        end
+    end
+end
+-- test:layout-memory:end
 
 if ISMiniMapOuter and ISMiniMapInner and ISMiniMapTitleBar then
     installResizeHooks(ISMiniMapOuter, function(el) return el end)
@@ -420,8 +507,10 @@ local function togglePlayerMiniMap()
             log("minimap creation failed: " .. tostring(err))
             return
         end
-        -- InitPlayer 在 MiniMap.StartVisible=true 時已直接顯示，此時再 toggle 會關掉
         local mm = getPlayerMiniMap(0)
+        -- 原版沒建小地圖就沒登記版面：自己登記，位置才存讀得到（上方 layout-memory 段）
+        if mm then Core.registerMiniMapLayout(mm) end
+        -- InitPlayer 在 MiniMap.StartVisible=true 時已直接顯示，此時再 toggle 會關掉
         if mm and mm:isReallyVisible() then return end
     end
     ISMiniMap.ToggleMiniMap(0)

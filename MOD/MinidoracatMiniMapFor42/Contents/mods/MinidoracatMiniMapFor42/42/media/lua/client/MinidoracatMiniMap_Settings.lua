@@ -150,12 +150,19 @@ MapRows.ROADS = { id = "roads", label = "UI_MinidoracatMiniMap_RoadSecTitle", ic
 }
 -- 其他玩家標記（多人）：主開關＝ModOptions RemoteSymbols（主檔 applyToggleOptions／
 -- Core.syncRemoteSymbols 同步兩張地圖與原版兩個面板）；作者清單見下方 SEC_REMOTE.chips。
--- 「只看陣營與安全屋成員」由 _RemoteSymbols.lua 用本機可見旗標篩；rebuild＝作者 chip 跟著重畫
+-- 「只看陣營與安全屋成員」由 _RemoteSymbols.lua 用本機可見旗標篩；rebuild＝作者 chip 跟著重畫。
+-- 下拉是自己新放的標記預設分享給誰（_RemoteSymbols.lua 放好後 setSharing），畫在作者清單之後
 local SEC_REMOTE = { id = "remote", label = "IGUI_MapOption_RemoteSymbols", icon = "users", mpOnly = true,
     master = { id = "RemoteSymbols", label = "IGUI_MapOption_RemoteSymbols", default = true,
         tooltip = "IGUI_MapOption_RemoteSymbols_tooltip" },
     ticks = {
         { id = "RemoteTrustedOnly", label = "UI_MinidoracatMiniMap_RemoteTrustedOnly", default = false, rebuild = true },
+    },
+    combos = {
+        { id = "SymbolShareDefault", label = "UI_MinidoracatMiniMap_SymbolShareDefault", default = 1,
+            tooltip = "UI_MinidoracatMiniMap_SymbolShareDefault_tooltip",
+            items = { "UI_MinidoracatMiniMap_SymbolShareDefault_Private", "UI_MinidoracatMiniMap_SymbolShareDefault_Everyone",
+                "UI_MinidoracatMiniMap_SymbolShareDefault_Team" } },
     },
 }
 local SEC_POI = { id = "poicat", label = "UI_MinidoracatMiniMap_SecPOI", icon = "pin",

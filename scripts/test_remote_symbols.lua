@@ -1,6 +1,6 @@
 -- 其他玩家標記：主開關存 ModOptions、三個入口同步兩張地圖（主檔切片），
--- 作者清單的可見規則、「只看陣營與安全屋成員」篩選與世界地圖右鍵「隱藏 X 的標記」（_RemoteSymbols.lua）。
--- 標準 Lua，不是 Kahlua；原版符號 API 是假物件，介面照 WorldMapSymbolsV2.java:72-149、401-406、475-513。
+-- 作者清單的可見規則、「只看陣營與安全屋成員」篩選、世界地圖右鍵「隱藏 X 的標記」與新標記預設分享（_RemoteSymbols.lua）。
+-- 標準 Lua，不是 Kahlua；原版符號 API 是假物件，介面照 WorldMapSymbolsV2.java:72-149、401-406、446-513。
 local CLIENT = arg and arg[1]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/"
 local compile = loadstring or load
@@ -68,10 +68,41 @@ env.applies, env.saves = 0, 0
 MinidoracatMiniMapCore = { ready = true, getBoolOption = function(id, default)
     if env.opts[id] == nil then return default end
     return env.opts[id]
-end, modOptions = {
+end, getComboIndex = function(id, default) return env.opts[id] or default end, modOptions = {
     getOption = function(_, id) return { setValue = function(_, v) env.opts[id] = v end } end,
     apply = function() env.applies = env.applies + 1 end,
 } }
+-- 原版放標記與放文字（ISWorldMapSymbols.lua:127-144、239-285）：先把新的一則加到清單尾端，再設顏色等；
+-- 放文字時空字或按取消就直接返回。本檔載入時包它們，所以要在載入前建好
+local function ownSymbol()
+    local s = { calls = {} }
+    function s:setRGBA() self.calls[#self.calls + 1] = "rgba" end
+    function s:isPrivate() return self.sharing == nil end
+    function s:setSharing(t) self.calls[#self.calls + 1] = "share"; self.sharing = t end
+    return s
+end
+ISWorldMapSymbolTool_AddSymbol = {}
+function ISWorldMapSymbolTool_AddSymbol:addSymbol()
+    local s = ownSymbol()
+    table.insert(self.symbolsAPI.list, s)
+    s:setRGBA(1, 0, 0, 1)
+end
+ISWorldMapSymbolTool_AddNote = {}
+function ISWorldMapSymbolTool_AddNote:onNoteAdded(button)
+    if button.internal ~= "OK" or button.text == "" then return end
+    local s = ownSymbol()
+    table.insert(self.symbolsAPI.list, s)
+    s:setRGBA(1, 1, 1, 1)
+end
+-- 移動工具（ISWorldMapSymbols.lua:560-573）：放開時拖的那則已分享就送修改、放回原位，然後放掉；按住 Shift 拖時
+-- dragging 是複本。先分享再交給原版，原版會對已經送走的那則送修改
+ISWorldMapSymbolTool_MoveAnnotation = {}
+function ISWorldMapSymbolTool_MoveAnnotation:onMouseUp()
+    if not self.dragging then return false end
+    if self.dragging.sharing then self.dragging.calls[#self.dragging.calls + 1] = "modify" end
+    self.dragging = nil
+    return true
+end
 PZAPI = { ModOptions = { save = function() env.saves = env.saves + 1 end } }
 assert(compile(readFile(CLIENT .. "MinidoracatMiniMap_RemoteSymbols.lua"), "@_RemoteSymbols.lua"))()
 local Core = MinidoracatMiniMapCore
@@ -254,6 +285,50 @@ opts[1].fn(opts[1].target)
 check(api.hidden.alice == true and Core.remoteListSig(0) ~= sig0, "L4 hiding from the right-click menu changes the signature")
 api.hidden.alice = nil
 env.opts.RemoteTrustedOnly = nil
+
+-- 新標記預設分享：世界地圖放好的標記或文字照選項分享，原版設好顏色之後才送；私人（預設）、單機、紙本地圖都不分享
+local function tool(isWorldMap) return { symbolsUI = { isWorldMap = isWorldMap }, symbolsAPI = symbolsApi({}) } end
+local function placeSymbol(t)
+    ISWorldMapSymbolTool_AddSymbol.addSymbol(t, 1, 2)
+    return t.symbolsAPI.list[#t.symbolsAPI.list]
+end
+local function placeNote(t, text)
+    ISWorldMapSymbolTool_AddNote.onNoteAdded(t, { internal = "OK", text = text }, 0)
+    return t.symbolsAPI.list[#t.symbolsAPI.list]
+end
+local wm = tool(true)
+check(placeSymbol(wm).sharing == nil, "D1 default (private): a new symbol stays private")
+env.opts.SymbolShareDefault = 2
+local placed = placeSymbol(wm)
+check(placed.sharing and placed.sharing.everyone == true, "D2 everyone: a new symbol is shared with everyone")
+checkEq(table.concat(placed.calls, ","), "rgba,share", "D2 shared after vanilla finished setting it up")
+env.opts.SymbolShareDefault = 3
+placed = placeNote(wm, "camp")
+check(placed.sharing and placed.sharing.everyone == false and placed.sharing.faction == true
+    and placed.sharing.safehouse == true, "D3 faction and safehouse: a new note is shared with both")
+env.opts.SymbolShareDefault = 1
+local mine = placeSymbol(wm)
+env.opts.SymbolShareDefault = 2
+placeNote(wm, "")
+check(mine.sharing == nil, "D4 nothing added (empty note): the last old symbol is not shared")
+check(placeSymbol(tool(false)).sharing == nil, "D5 paper map symbols are never shared")
+env.mp = false
+check(placeSymbol(wm).sharing == nil, "D6 single player: nothing is shared")
+env.mp = true
+-- 移動工具：按住 Shift 拖出的複本放開才分享；單純移動自己的私人標記不分享
+local function release(t, dragged, copying)
+    t.dragging, t.isCopying = dragged, copying
+    ISWorldMapSymbolTool_MoveAnnotation.onMouseUp(t, 1, 2)
+    return dragged
+end
+local copied = release(wm, ownSymbol(), true)
+check(copied.sharing and copied.sharing.everyone == true, "D7 Shift-drag copy: shared on release")
+checkEq(table.concat(copied.calls, ","), "share", "D7 shared after vanilla released the drag (no stray modify)")
+check(release(wm, ownSymbol(), false).sharing == nil, "D7 plain move of my private symbol: stays private")
+check(release(tool(false), ownSymbol(), true).sharing == nil, "D7 copy on a paper map: never shared")
+env.opts.SymbolShareDefault = 1
+check(release(wm, ownSymbol(), true).sharing == nil, "D7 default (private): the copy stays private")
+env.opts.SymbolShareDefault = nil
 
 -- ── 二、主開關：存 ModOptions、三個入口同步兩張地圖（主檔切片）────────────────────────
 local mainSource = readFile(CLIENT .. "MinidoracatMiniMap.lua")

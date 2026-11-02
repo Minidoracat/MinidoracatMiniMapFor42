@@ -1,6 +1,7 @@
 -- MinidoracatMiniMap_RemoteSymbols.lua
 -- 本檔範圍：其他玩家分享的地圖標記（原版 B42 多人的「分享」）——作者清單資料、切換作者的規則
--- （設定分類的作者按鈕與清單視窗 _RemoteList.lua 共用）、「只看陣營與安全屋成員」篩選，與世界地圖右鍵「隱藏 X 的標記」。
+-- （設定分類的作者按鈕與清單視窗 _RemoteList.lua 共用）、「只看陣營與安全屋成員」篩選、世界地圖右鍵「隱藏 X 的標記」，
+-- 與自己新放的標記預設分享給誰（檔尾）。
 -- 隱藏名單是原版的：WorldMapSymbolsV2.setAuthorHidden 送伺服器、存 hidden_authors.ini，
 -- 玩家登入時送回（HiddenAuthors.java:64-99、GameServer.java:2877-2895），本 MOD 不另存；
 -- 小地圖與世界地圖共用 MapItem 單例的同一份標記（ISMiniMap.lua:193），隱藏對兩張地圖同時生效。
@@ -243,4 +244,44 @@ function Core.remoteSymbolHideOption(context, mapUI, x, y)
     context:addOption(getText("UI_MinidoracatMiniMap_HideAuthor", author), author, function(name)
         Core.setRemoteSymbolHidden(name, true)
     end)
+end
+
+-- 自己新放的標記預設分享（ModOptions SymbolShareDefault：1 私人＝原版、2 全部可見、3 陣營與安全屋）。原版放好的
+-- 標記一律私人（WorldMapBaseSymbol.java:67-73），要按符號面板的「分享」再點標記才分享（ISWorldMapSharing.lua:429-459）。
+-- 包原版放標記與放文字（ISWorldMapSymbols.lua:127-144、239-285），加好後照選項 setSharing，表的寫法同 applyChanges。
+-- setSharing 把本機那份送上伺服器並移除，伺服器加好再廣播回來（WorldMapClient.java:221-241、WorldMapServer.java:80-98），
+-- 所以要等原版把顏色、大小、角度都設好才送。只管世界地圖：紙本地圖的標記存在地圖物品裡，原版也只在世界地圖給「分享」
+-- （ISWorldMapSymbols.lua:1281）
+local SHARE_DEFAULT = { [2] = { everyone = true }, [3] = { everyone = false, faction = true, safehouse = true } }
+local function shareNewSymbol(tool, s)
+    if not (isClient() and tool.symbolsUI and tool.symbolsUI.isWorldMap) then return end
+    local sharing = SHARE_DEFAULT[Core.getComboIndex("SymbolShareDefault", 1)]
+    if sharing and s:isPrivate() then s:setSharing(sharing) end
+end
+for _, hook in ipairs({ { ISWorldMapSymbolTool_AddSymbol, "addSymbol" }, { ISWorldMapSymbolTool_AddNote, "onNoteAdded" } }) do
+    local class, method = hook[1], hook[2]
+    local original = class and class[method]
+    if original then
+        class[method] = function(self, ...)
+            local api = self.symbolsAPI
+            local before = api:getSymbolCount()
+            local result = original(self, ...)
+            -- 新的一則接在清單最後（WorldMapSymbols.java:99-105）；沒加成（空字、按取消）數量不變
+            local n = api:getSymbolCount()
+            if n == before + 1 then shareNewSymbol(self, api:getSymbolByIndex(n - 1)) end
+            return result
+        end
+    end
+end
+-- 移動工具按住 Shift 拖＝複製（ISWorldMapSymbols.lua:601-617）：複本在拖曳開始就加進清單、放開才定位，而且不帶
+-- 分享資訊（WorldMapBaseSymbol.java:510-534）。拖曳中分享會把正在拖的本機那則移除，所以放開後才分享。
+-- 手把 A 放下（onJoypadDownInMap）不包：手把要另按鍵盤 Shift 才會複製
+local originalMoveUp = ISWorldMapSymbolTool_MoveAnnotation and ISWorldMapSymbolTool_MoveAnnotation.onMouseUp
+if originalMoveUp then
+    function ISWorldMapSymbolTool_MoveAnnotation:onMouseUp(x, y)
+        local copy = self.isCopying and self.dragging
+        local result = originalMoveUp(self, x, y)
+        if copy then shareNewSymbol(self, copy) end
+        return result
+    end
 end
