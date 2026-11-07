@@ -213,6 +213,34 @@ m.ensureStreetData(install({ 0, 0 }, false, true))
 ok(#added == 0 and has(m.logs[1], "load=error"), "載入拋錯不得兜底")
 activeMods, existingFiles = {}, {}
 
+-- 14. 地圖 MOD 自己的街道檔（沒有 langs 的列：Real USA 的 rusa_streets.xml，原版目錄迴圈讀不到）：
+--     不分介面語言都載它自己的檔、不退官方英文、不經翻譯載體的顯示窗口
+local RUSA = "media/maps/Real USA Country/rusa_streets.xml"
+MinidoracatMiniMapCore = { addCarrierStreetData = function(ui, file)
+    hooked[#hooked + 1] = file
+    ui.mapAPI:getStreetsAPI():addStreetData(file)
+end }
+for _, lang in ipairs({ "EN", "CN", "JP" }) do
+    m = newModule()
+    uiLang, hooked = lang, {}
+    activeMods = { "RealUSA" }
+    existingFiles = { [RUSA] = true, ["media/maps/Muldraugh, KY/streets.xml"] = true }
+    m.ensureStreetData(install({ 0, 0 }))
+    ok(#added == 1 and added[1] == RUSA and #hooked == 0,
+        lang .. " 介面：Real USA 載自己的街道檔、不經顯示窗口，實得 " .. tostring(added[1]) .. " hooked=" .. #hooked)
+    ok(has(m.logs[1], "carrier fallback (RealUSA/own)"), lang .. " 留痕標 RealUSA/own：" .. tostring(m.logs[1]))
+end
+-- 14b. 玩原版地圖（正規補載有官方街）＝不介入；沒啟用 Real USA＝不載
+m = newModule()
+m.ensureStreetData(install({ 0, 1098 }))
+ok(#added == 0, "Real USA 啟用但正規補載已有街：不得疊載")
+m = newModule()
+activeMods = {}
+m.ensureStreetData(install({ 0, 0 }))
+ok(#added == 0, "沒啟用 Real USA 不得載它的檔")
+MinidoracatMiniMapCore, uiLang = nil, "CN"
+activeMods, existingFiles = {}, {}
+
 if fail > 0 then
     print(string.format("test_street_backfill: %d passed, %d FAILED", pass, fail))
     os.exit(1)

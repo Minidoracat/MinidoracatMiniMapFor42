@@ -244,11 +244,20 @@ end
 -- gate/node/pair counter 在數字 key 假設失效前 terminal error。
 do
     assert(mod.geometryKey({ -32768, 0, -32767, 0 })
-        and mod.geometryKey({ 32766.5, 0, 32767.5, 0 }),
-        "limits：world coordinate 邊界合法")
+        and mod.geometryKey({ 262142.5, 0, 262143.5, 0 }),
+        "limits：world coordinate 邊界合法（含 Real USA 這類超大世界）")
     assert(mod.geometryKey({ -32768.5, 0, 0, 0 }) == nil
-        and mod.geometryKey({ 0, 0, 32768, 0 }) == nil,
+        and mod.geometryKey({ 0, 0, 262144, 0 }) == nil,
         "limits：world coordinate 超界拒絕")
+    -- quantKey 的 y 欄不跨欄：y 在範圍兩端、x 相鄰的點都是不同節點（舊乘數 200000 下 (0,67232) 撞 (0.5,-32768)）
+    local edgeGraph = { nodeCount = 0, nodeByKey = {}, nx = {}, ny = {}, adjHead = {} }
+    local seen = {}
+    for _, p in ipairs({ { 0, 262143.5 }, { 0.5, -32768 }, { 1, 262143.5 }, { 1, 77823 }, { 1.5, 77823 },
+        { 0, 67232 } }) do
+        local idx = mod.graphNode(edgeGraph, p[1], p[2])
+        assert(not seen[idx], "limits：量化 key 不碰撞 (" .. p[1] .. "," .. p[2] .. ")")
+        seen[idx] = true
+    end
     local maxPts = {}
     for i = 1, 4096 do
         maxPts[i * 2 - 1], maxPts[i * 2] = (i - 1) * 0.5, 0
@@ -256,12 +265,12 @@ do
     local maxKey = mod.geometryKey(maxPts)
     assert(maxKey and maxKey:match("^4096:"), "limits：4096 點 geometryKey 線性組裝")
 
-    local nodeGraph = { nodeCount = 99999, nodeByKey = {}, nx = {}, ny = {}, adjHead = {} }
+    local nodeGraph = { nodeCount = 262143, nodeByKey = {}, nx = {}, ny = {}, adjHead = {} }
     assert(not pcall(mod.graphNode, nodeGraph, 1, 1),
-        "limits：graphNode 在 100000 前 terminal")
+        "limits：graphNode 在 262144 前 terminal（邊 key＝lo*262144+hi）")
 
     local many = {}
-    for s = 1, 17 do
+    for s = 1, 33 do
         local pts = {}
         for i = 1, 4096 do
             pts[i * 2 - 1], pts[i * 2] = (i - 1) * 0.5, s
@@ -269,16 +278,16 @@ do
         many[s] = { name = "G" .. s, src = "M", width = 1, pts = pts }
     end
     assert(not pcall(mod.newBuild, many, nil),
-        "limits：raw segments 超過 16384 在 gate 前 terminal")
+        "limits：raw segments 超過 131072 在 gate 前 terminal")
     local gateState = {
-        gn = 65535, gx1 = {}, gy1 = {}, gx2 = {}, gy2 = {}, gsid = {},
+        gn = 262143, gx1 = {}, gy1 = {}, gx2 = {}, gy2 = {}, gsid = {},
         gwidth = {}, gsurface = {}, buck = {}, bkeys = {}, bn = 0,
         padTol = 0, peakBucket = 0, bucketReferenceCount = 0,
         epStreet = {}, junction = {},
         epOrd = {}, epOrdCount = 0, epLink = {},
     }
     assert(not pcall(mod.gateEmit, gateState, 0, 0, 1, 0, 1, 1, "paved"),
-        "limits：gate segment key-space 在 65536 前 terminal")
+        "limits：gate segment key-space 在 262144 前 terminal")
 
     local dense = mod.newBuild({
         { name = "A", src = "M", pts = { 0, 0, 60, 1 } },
@@ -303,23 +312,27 @@ do
     scanCap.pairScanWork = 1e15 -- 驗的是「有上限、超過就中止」，不綁上限數值
     assert(not pcall(mod.step, scanCap, 10),
         "limits：pair scan 超過上限 terminal（含同街/duplicate）")
-    assert(not pcall(mod.addCut, { cutRecords = 10000, cuts = {} }, 1, 0.5, 0, 0),
-        "limits：cut records 超過 10k terminal")
+    assert(not pcall(mod.addCut, { cutRecords = 131072, cuts = {} }, 1, 0.5, 0, 0),
+        "limits：cut records 超過上限 terminal")
     local perSegCuts = {}
     for i = 1, 128 do perSegCuts[i] = { t = i } end
     assert(not pcall(mod.addCut, {
         cutRecords = 0, cuts = { [1] = perSegCuts }, maxCutsPerSegment = 128,
     }, 1, 0.5, 0, 0), "limits：單 segment cuts 超過 128 terminal")
-    assert(not pcall(mod.mapTo, { epMoveCount = 10000, epMove = {}, epKeys = {} },
-        0, 0, 1, 1, 1), "limits：endpoint moves 超過 10k terminal")
+    assert(not pcall(mod.mapTo, { epMoveCount = 65536, epMove = {}, epKeys = {} },
+        0, 0, 1, 1, 1), "limits：endpoint moves 超過上限 terminal")
     local bucketCap = mod.newBuild({
         { name = "bucket", src = "M", pts = { 0, 0, 10, 0 } },
     }, nil)
-    bucketCap.bucketReferenceCount = 100000
+    bucketCap.bucketReferenceCount = 2097152
     assert(not pcall(mod.step, bucketCap, 2),
-        "limits：bucket references 超過 100k terminal")
-    assert(not pcall(mod.queryStep, { n = 250000 }, 1),
-        "limits：單次 route query work 超過 250k terminal")
+        "limits：bucket references 超過上限 terminal")
+    -- 查詢工作量上限：小路網 250k；大路網＝4×(節點＋邊)；超過的那一步拋錯（查詢收成無路，見下方「十一之二」）
+    local small = mod.newQuery({ nodeCount = 5000, edgeCount = 12000 })
+    local large = mod.newQuery({ nodeCount = 84742, edgeCount = 192492 })
+    assert(small.limit == 250000 and large.limit == 4 * (84742 + 192492), "limits：查詢上限隨路網放大")
+    small.n = small.limit
+    assert(not pcall(mod.queryStep, small, 1), "limits：單次 route query work 超過上限 terminal")
 end
 
 --------------------------------------------------------------------------------
@@ -684,6 +697,86 @@ do
 end
 
 --------------------------------------------------------------------------------
+-- 十一之二、超大世界的查詢收尾（Real USA）：工作量超過上限＝這次無路、不是引擎錯誤（不能停用整局導航）；
+-- 起訖候選不在同一塊路網＝不跑 A* 直接無路（Real USA 874 塊，跨塊查詢一次 29 萬步）；
+-- ALT 地標掛上後成本跟直線下界一模一樣（只是少走）。
+--------------------------------------------------------------------------------
+do
+    local streets = {}
+    for i = 0, 6 do
+        streets[#streets + 1] = { name = "H" .. i, src = "M", pts = { 0, i * 100, 600, i * 100 } }
+        streets[#streets + 1] = { name = "V" .. i, src = "M", pts = { i * 100, 0, i * 100, 600 } }
+    end
+    streets[#streets + 1] = { name = "Diag", src = "M", width = 4, pts = { 0, 0, 300, 290 } }
+    streets[#streets + 1] = { name = "IslandA", src = "M", pts = { 5000, 5000, 5400, 5000 } }
+    streets[#streets + 1] = { name = "IslandB", src = "M", pts = { 5000, 5300, 5400, 5300 } }
+    local g = buildAll(streets, nil)
+    assert(g.compCount == 3 and g.comp[1] and g.compBig, "十一之二：三塊路網（格子＋兩個孤島），實得 "
+        .. tostring(g.compCount))
+
+    local q = mod.routeQuery(g, 10, 0, 590, 600, nil, nil, nil, 3, nil, nil, 0)
+    q.query.limit = q.query.n + 5
+    assert(mod.queryRun(q, math.huge) and q.exhausted and q.route == nil and q.err == nil,
+        "十一之二：超量＝exhausted 無路，不帶 err（呼叫端不停用引擎）")
+    local r, err = mod.findRoute(g, 10, 0, 590, 600)
+    assert(r and not err, "十一之二：同一張圖照常算得到")
+
+    q = mod.routeQuery(g, 5010, 5000, 5390, 5300, nil, nil, nil, 3, nil, nil, 0)
+    assert(q.done and q.route == nil and q.err == nil and q.phase == "done",
+        "十一之二：起訖不同塊＝開查詢時就收成無路，不進 A*")
+    assert(q.query.n < 100, "十一之二：跨塊查詢只花 snap 的工作量，實得 " .. q.query.n)
+    q = mod.routeQuery(g, 5010, 5000, 5390, 5000, nil, nil, nil, 3, nil, nil, 0)
+    assert(not q.done and mod.queryRun(q, math.huge) and q.route, "十一之二：同塊照常進 A*")
+
+    local plain = {}
+    local seed = 777
+    local function rnd(n) seed = (seed * 16807) % 2147483647; return seed % n end
+    local pairsList = {}
+    for i = 1, 60 do
+        pairsList[i] = { rnd(600), rnd(600), rnd(600), rnd(600), (i % 2 == 0) and 12 or 3 }
+        local p = pairsList[i]
+        local pr = mod.findRoute(g, p[1], p[2], p[3], p[4], nil, nil, nil, p[5])
+        plain[i] = pr and pr.cost or -1
+    end
+    local job = mod.newAltJob(g)
+    local ticks = 0
+    while not mod.stepAlt(job, 50) do
+        ticks = ticks + 1
+        assert(ticks < 100000, "十一之二：地標工作要做得完")
+    end
+    assert(job.D[8], "十一之二：8 張地標表")
+    g.altD = job.D
+    for i, p in ipairs(pairsList) do
+        local ar = mod.findRoute(g, p[1], p[2], p[3], p[4], nil, nil, nil, p[5])
+        assert(math.abs((ar and ar.cost or -1) - plain[i]) < 1e-9,
+            "十一之二：ALT 成本須等於直線下界 #" .. i .. " " .. tostring(ar and ar.cost) .. " vs " .. plain[i])
+    end
+    -- 兩個查詢交錯推進、每次 1 單位（分割畫面兩位玩家、分享路線同時在背景算）：工作區與 ALT 常數各自獨立，
+    -- 結果等於各自同步算（不同權重、一個帶避讓圈）
+    local A = { 10, 0, 590, 600, nil, nil, nil, 3, nil, nil, 0 }
+    local B = { 590, 10, 5, 590, 300, 300, 40, 12, nil, nil, 0 }
+    local qa = mod.routeQuery(g, A[1], A[2], A[3], A[4], A[5], A[6], A[7], A[8], A[9], A[10], A[11])
+    local qb = mod.routeQuery(g, B[1], B[2], B[3], B[4], B[5], B[6], B[7], B[8], B[9], B[10], B[11])
+    local da, db, steps = qa.done, qb.done, 0
+    while not (da and db) do
+        if not da then da = mod.queryRun(qa, 1) end
+        if not db then db = mod.queryRun(qb, 1) end
+        steps = steps + 1
+        assert(steps < 1000000, "十一之二：交錯查詢要做得完")
+    end
+    assert(steps > 10, "十一之二：交錯查詢確實分成很多片")
+    for _, it in ipairs({ { qa.route, A }, { qb.route, B } }) do
+        local want = mod.findRoute(g, it[2][1], it[2][2], it[2][3], it[2][4], it[2][5], it[2][6], it[2][7],
+            it[2][8], it[2][9], it[2][10], it[2][11])
+        local got = it[1]
+        assert(got and want and got.cost == want.cost and #got.pts == #want.pts,
+            "十一之二：交錯推進的結果等於同步算")
+        for k = 1, #want.pts do assert(got.pts[k] == want.pts[k], "十一之二：交錯推進的路線逐點相同") end
+    end
+    g.altD = nil
+end
+
+--------------------------------------------------------------------------------
 -- 十二、同 graph 連續兩次 findRoute 一致（A* 臨時注入回滾回歸：reached 路徑
 -- 的回滾＋generation stamp 重用是最易寫錯處）
 --------------------------------------------------------------------------------
@@ -882,6 +975,60 @@ do
     -- graph 空＝真 noroad 仍 nil
     local g0 = buildAll({}, nil)
     assert(route(g0, 0, 0, 10, 10) == nil, "空 graph 仍回 nil（繪製端直線 fallback 接手）")
+end
+
+-- 十八之二、nearestSnap 粗格擴圈＝逐段全掃（超大世界：Real USA 9.6 萬段，離路 20 公里每次全掃 0.3 秒）：
+-- 三團街道散在 6 萬格內，隨機點（含離路上萬格、團與團之間、世界外側）的最近投影與距離
+-- 必須跟逐段全掃一致；同距離取段號小者（上下對稱兩條路的正中間）。
+do
+    local seed = 4242
+    local function rnd(n) seed = (seed * 16807) % 2147483647; return seed % n end
+    local streets = {}
+    for _, c in ipairs({ { 1000, 1000 }, { 40000, 9000 }, { 22000, 60000 } }) do
+        for i = 1, 40 do
+            local x, y = c[1] + rnd(3000), c[2] + rnd(3000)
+            streets[#streets + 1] = { name = "R" .. #streets, src = "M", width = 6,
+                pts = { x, y, x + rnd(400) - 200, y + rnd(400) - 200 } }
+        end
+    end
+    streets[#streets + 1] = { name = "TieN", src = "M", width = 6, pts = { 70000, 30000, 71000, 30000 } }
+    streets[#streets + 1] = { name = "TieS", src = "M", width = 6, pts = { 70000, 32000, 71000, 32000 } }
+    local g = buildAll(streets, nil)
+    local function brute(x, y)
+        local best, bx, by = math.huge, nil, nil
+        for s = 1, g.segCount do
+            local ax, ay, ex, ey = g.sx1[s], g.sy1[s], g.sx2[s], g.sy2[s]
+            local dx, dy = ex - ax, ey - ay
+            local l2 = dx * dx + dy * dy
+            local t = l2 > 0 and ((x - ax) * dx + (y - ay) * dy) / l2 or 0
+            if t < 0 then t = 0 elseif t > 1 then t = 1 end
+            local qx, qy = ax + t * dx, ay + t * dy
+            local d2 = (x - qx) * (x - qx) + (y - qy) * (y - qy)
+            if d2 < best then best, bx, by = d2, qx, qy end
+        end
+        return math.sqrt(best), bx, by
+    end
+    local probes = { { 70500, 31000 }, { -20000, -20000 }, { 250000, 250000 }, { 20000, 30000 } }
+    for _ = 1, 200 do probes[#probes + 1] = { rnd(90000) - 10000, rnd(90000) - 10000 } end
+    for _, p in ipairs(probes) do
+        local hit = mod.nearestRoad(g, 0, p[1], p[2], math.huge)
+        local d, qx, qy = brute(p[1], p[2])
+        assert(hit and math.abs(hit.dist - d) < 1e-6 and math.abs(hit.x - qx) < 1e-6 and math.abs(hit.y - qy) < 1e-6,
+            "十八之二：nearestSnap 須等於逐段全掃 @" .. p[1] .. "," .. p[2] .. " 得 "
+            .. tostring(hit and hit.dist) .. " 應 " .. d)
+    end
+    local tie = mod.nearestRoad(g, 0, 70500, 31000, math.huge)
+    assert(tie.name == "TieN", "十八之二：同距離取段號小者（先建的 TieN），實得 " .. tostring(tie.name))
+    -- 路很少、範圍很大（兩條相隔約 40 萬格的路）：粗格掃到超過段數就改全掃，不能把查詢預算耗在空格上
+    local sparse = buildAll({
+        { name = "FarA", src = "M", width = 6, pts = { -32768, -32768, -32760, -32768 } },
+        { name = "FarB", src = "M", width = 6, pts = { 262135, 262143, 262143, 262143 } },
+    }, nil)
+    local hit = mod.nearestRoad(sparse, 0, 100000, 100000, math.huge)
+    assert(hit and hit.name == "FarA", "十八之二：稀疏大範圍仍找得到最近的路，實得 " .. tostring(hit and hit.name))
+    local far, ferr = mod.findRoute(sparse, 150000, 262000, 262140, 262143)
+    assert(far and not ferr and math.abs(far.sy - 262143) < 1e-6,
+        "十八之二：起點離路 11 萬格也接到最近的 FarB 算出路線")
 end
 
 --------------------------------------------------------------------------------

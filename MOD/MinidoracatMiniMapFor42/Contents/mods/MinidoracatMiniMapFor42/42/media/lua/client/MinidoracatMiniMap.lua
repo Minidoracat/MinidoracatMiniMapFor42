@@ -1582,10 +1582,15 @@ end
 -- 整張 `???`），同 LangFor42 MapStreets_Flx 的語言閘規則。未啟用者不進判斷、
 -- 有資料者早已 return，對其他人零行為差異。它日後修好（count>0）本表自然失效。
 -- LangFor42 不在表內：它保留官方來源，只在 directory 顯示窗口翻譯文字。
+-- 沒有 langs 的列＝地圖 MOD 自己的街道檔不叫 streets.xml、原版目錄迴圈讀不到：Real USA 只在
+-- 世界地圖 init 後自己 addStreetData（RUSA_WorldMap.lua:105-108），小地圖與導航的隱藏容器都是 0 條。
+-- 照樣只在補載後仍 0 條時載（玩原版地圖時有官方街、不介入），不分語言、不退官方英文、
+-- 不走翻譯載體的顯示窗口（_StreetData activeCarrierFile 只認有 langs 的列）。
 -- Translator.getLanguage():name() 用例 MainOptions.lua:1828（實證值 CH／CN／EN／JP）
 local VANILLA_STREETS = "media/maps/Muldraugh, KY/streets.xml"
 local CARRIER_STREETS = {
     { mod = "B42Trans_CN", file = "media/maps/Riverside, KY/streets.xml", langs = { CH = true, CN = true } },
+    { mod = "RealUSA", file = "media/maps/Real USA Country/rusa_streets.xml" },
 }
 -- test:street-backfill:start（scripts/test_street_backfill.lua 抽本區段）
 local function ensureStreetData(mapUI)
@@ -1609,10 +1614,10 @@ local function ensureStreetData(mapUI)
         local okLang, lang = pcall(function() return Translator.getLanguage():name() end)
         for _, c in ipairs(CARRIER_STREETS) do
             if active[c.mod] then
-                local file = (okLang and c.langs[lang]) and c.file or VANILLA_STREETS
+                local file = (not c.langs or (okLang and c.langs[lang])) and c.file or VANILLA_STREETS
                 if fileExists(file) then
                     -- 載體自己的檔走 _StreetData 的顯示窗口（舊版官方街先換成現行幾何再建顯示副本）
-                    local loadCarrier = file == c.file and MinidoracatMiniMapCore
+                    local loadCarrier = c.langs and file == c.file and MinidoracatMiniMapCore
                         and MinidoracatMiniMapCore.addCarrierStreetData
                     if loadCarrier then
                         pcall(loadCarrier, mapUI, file)

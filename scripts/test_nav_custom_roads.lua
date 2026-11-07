@@ -217,6 +217,16 @@ do
     assert(find(g, 50, -50, 100, 100, 0), "自訂道路之間的交叉成路口")
 end
 
+-- 甲九之一、超大世界座標（Real USA 出生區 y 到 7.7 萬）：舊上限 ±32,767 會把自訂道路整條略過、畫面沒提示
+-- （林落回報）。官方路與自訂道路都在 (100000, 77000) 一帶照常建圖選路，節點不撞 key
+do
+    local g = build({ official({ 100000, 77000, 100400, 77000 }), official({ 100000, 77100, 100400, 77100 }) },
+        { road({ 100200, 77000, 100200, 77100 }, { ends = { "snap", "snap" } }) })
+    local r = assert(find(g, 100010, 77000, 100390, 77100, 0), "Real USA 座標的自訂道路可選路")
+    assert(customCount(r) >= 1, "路線經過自訂道路（兩條官方路只靠它相通）")
+    assert(nodeAt(g, 100200, 77000) and nodeAt(g, 100200, 77100), "接點成路口")
+end
+
 -- 甲十、壞資料整條略過，好的照收
 do
     local out = {}
@@ -459,17 +469,18 @@ local function fillers(list)
     end
     return list
 end
+-- 自訂道路段數超過建圖硬上限（MAX_RAW_SEGMENTS 131072）：33 條 × 4095 段
 local function overflow()
     local list = {}
-    for f = 1, 60 do
+    for f = 1, 33 do
         local pts = {}
-        for k = 0, 299 do pts[k * 2 + 1], pts[k * 2 + 2] = 8000 + k * 2, 8000 + f * 20 end
+        for k = 0, 4095 do pts[k * 2 + 1], pts[k * 2 + 2] = 8000 + k * 2, 8000 + f * 20 end
         list[#list + 1] = road(pts, { name = "Too many" })
     end
     return list
 end
 
-local function world(records, list)
+local function world(records, list, src)
     local W = { clock = 1000, prints = {}, msgs = {}, list = list, records = records }
     local container = { streets = javaList(records) }
     W.count = #records > 0 and 1 or 0
@@ -512,11 +523,11 @@ local function world(records, list)
         ISWorldMap_instance = W.surface,
     }
     if setfenv then
-        local chunk = assert(compile(source, "navroute-full"))
+        local chunk = assert(compile(src or source, "navroute-full"))
         setfenv(chunk, env)
         chunk()
     else
-        assert(load(source, "navroute-full", "t", env))()
+        assert(load(src or source, "navroute-full", "t", env))()
     end
     W.core, W.api, W.gameStart = env.MinidoracatMiniMapCore, env.MinidoracatMiniMapAPI, gameStart
     function W.run(n) for _ = 1, n or 1 do tick.fire() end end
@@ -549,7 +560,7 @@ local function routeTo(W) return W.api.requestRoute(0, 3100, 3300) end
 local W = world(baseRecords(), { V1 })
 W.core.navKickEngine(W.surface)
 assert(W.wait(function() return W.state() == "ready" end), "首次建圖 ready")
-assert(W.lastMax == 16384 - 2, "roadsActive 的段數上限扣掉官方段數")
+assert(W.lastMax == 131072 - 2, "roadsActive 的段數上限扣掉官方段數")
 local r1 = assert(routeTo(W), "經自訂道路接兩條官方街")
 assert(customCount(r1) > 0 and passes(r1, 3200, 3200) == false and W.core.navGraphState() == "ready")
 local hit = assert(W.core.navNearestRoad(0, 3205, 3200, 20), "畫線吸附到自訂道路")
@@ -668,5 +679,29 @@ midway.core.navKickEngine(midway.surface)
 assert(midway.wait(function() return midway.state() ~= "extracting" and midway.state() ~= "idle" end))
 assert(midway.wait(function() return midway.state() == "ready" end), "建圖中途失敗也退回官方街道")
 assert(#midway.msgs == 1 and midway.api.requestRoute(0, 3400, 3100), "告訴玩家一次、官方街道照常")
+
+-- 乙十：大路網（把 LARGE_GRAPH_NODES 壓到 1、查詢一定分幀）換上新圖時，行駛中的路線不能斷：換圖之後的
+-- requestRoute 先照回舊表、state 照常 ok（AutoDrive 拿到 building 會立刻交還控制），背景照新圖算完才換新表。
+-- 小路網照舊清快取、同步重算（乙二）
+local largeSrc = source:gsub("\nlocal LARGE_GRAPH_NODES = %d+", "\nlocal LARGE_GRAPH_NODES = 1")
+    :gsub("\nlocal QUERY_SYNC_WORK = %d+", "\nlocal QUERY_SYNC_WORK = 1")
+    :gsub("\nlocal QUERY_TICK_WORK = %d+", "\nlocal QUERY_TICK_WORK = 2")
+assert(largeSrc ~= source, "fixture：常數要改得到")
+local L = world(baseRecords(), { V1 }, largeSrc)
+L.core.navKickEngine(L.surface)
+assert(L.wait(function() return L.state() == "ready" end), "大路網版首次建圖 ready")
+local lr, lstate = routeTo(L)
+assert(lr == nil and lstate == "building", "大路網第一次算路回 building")
+assert(L.wait(function() return (routeTo(L)) ~= nil end), "背景算完")
+local l1 = routeTo(L)
+local lg = L.graph()
+L.change({ V2 })
+L.clock = L.clock + 1000
+assert(L.wait(function() return L.graph() ~= lg end), "換上新圖")
+local kept, keptState = routeTo(L)
+assert(kept == l1 and keptState == "ok", "換圖後先照回舊表、state ok，實得 " .. tostring(keptState))
+assert(L.wait(function() return routeTo(L) ~= l1 end), "背景照新圖算完換新表")
+local l2 = routeTo(L)
+assert(passes(l2, 3250, 3200) and not passes(l1, 3250, 3200), "新表照新形狀")
 
 print("test_nav_custom_roads: OK")

@@ -37,6 +37,7 @@ local engine = {
 local navRoutes = {}
 local navPreview = {}
 local navDetours = {}
+local navQueries = {}
 local logOnce = {}
 local Core = {}
 local worldReset = nil
@@ -80,6 +81,7 @@ end
 ]=]
 local suffix = [=[
 return { API = MinidoracatMiniMapAPI, engine = engine, navRoutes = navRoutes, navDetours = navDetours,
+    navQueries = navQueries,
     players = players, calls = calls, detourCalls = detourCalls, kicks = kicks,
     invalidate = Core.navInvalidateRoute, worldReset = worldReset, failNavEngine = failNavEngine,
     setRoute = function(r, state) nextRoute, nextRouteState = r, state end,
@@ -698,49 +700,67 @@ local coreBody = assert(source:match(
     "%-%- test:navroute%-core:start[^\n]*\n(.-)\n%-%- test:navroute%-core:end"))
 local realCore = assert(compile(coreBody .. "\nreturn NavCore", "nav-cache-core"))()
 local cachePrelude = ([=[
-local floor, sqrt = math.floor, math.sqrt
+local floor, sqrt, huge = math.floor, math.sqrt, math.huge
 local routeDistance = ...
 local DEVIATION_DIST, REBUILD_COOLDOWN_MS = %s, %s
 local REBUILD_MOVE_DIST, NOROAD_RETRY_DIST = %s, %s
+local LARGE_GRAPH_NODES, QUERY_SYNC_WORK, QUERY_TICK_WORK = %s, %s, %s
 local navRoutes = {}
-local engine = { state = "ready", graph = { id = "g" }, patchState = "applied" }
+local navQueries = {}
+local engine = { state = "ready", graph = { id = "g", nodeCount = 0 }, patchState = "applied" }
 local nowMs = 0
 local findCalls = {}
-local nextRoute, nextErr = nil, nil
+local nextRoute, nextErr, nextExhausted, nextRuns = nil, nil, nil, 0
 local cleared = {}
 local function dist2(ax, ay, bx, by)
     local dx, dy = bx - ax, by - ay
     return dx * dx + dy * dy
 end
+-- 查詢樁：routeQuery 記下引數並備好結果；queryRun 要被推進 nextRuns 次（每次記下預算）才算完
 local NavCore = {
     distToRoute = routeDistance,
-    findRoute = function(graph, sx, sy, tx, ty, ax, ay, ar, approachWeight, more, maxSnap, pn)
-        findCalls[#findCalls + 1] = { sx = sx, sy = sy, tx = tx, ty = ty, w = approachWeight, pn = pn }
-        if nextErr then return nil, nextErr end
-        if not nextRoute then return nil end
-        local pts = {}
-        for i = 1, #nextRoute do pts[i] = nextRoute[i] end
-        return {
-            pts = pts,
-            sx = nextRoute[1], sy = nextRoute[2],
-            snapDist = sqrt(dist2(sx, sy, nextRoute[1], nextRoute[2])),
-        }
+    routeQuery = function(graph, sx, sy, tx, ty, ax, ay, ar, approachWeight, more, maxSnap, pn)
+        local call = { sx = sx, sy = sy, tx = tx, ty = ty, w = approachWeight, pn = pn, budgets = {} }
+        findCalls[#findCalls + 1] = call
+        local q = { g = graph, query = { n = 0 }, left = nextRuns, call = call }
+        if nextErr then
+            q.err = nextErr
+        elseif nextExhausted then
+            q.exhausted = true
+        elseif nextRoute then
+            local pts = {}
+            for i = 1, #nextRoute do pts[i] = nextRoute[i] end
+            q.route = { pts = pts, sx = nextRoute[1], sy = nextRoute[2],
+                snapDist = sqrt(dist2(sx, sy, nextRoute[1], nextRoute[2])) }
+        end
+        return q
+    end,
+    queryRun = function(q, budget)
+        q.call.budgets[#q.call.budgets + 1] = budget
+        if q.left > 0 then
+            q.left = q.left - 1
+            q.query.n = q.query.n + 1
+            return false
+        end
+        return true
     end,
 }
 local function getTimestampMs() return nowMs end
-local function clearRoute(key) navRoutes[key] = nil; cleared[#cleared + 1] = key end
+local function clearRoute(key) navRoutes[key] = nil; navQueries[key] = nil; cleared[#cleared + 1] = key end
 local function failNavEngine()
     engine.state, engine.graph = "failed", nil
     for k in pairs(navRoutes) do navRoutes[k] = nil end
+    for k in pairs(navQueries) do navQueries[k] = nil end
 end
 local function logf() end
 ]=]):format(DEVIATION_DIST, REBUILD_COOLDOWN_MS, REBUILD_MOVE_DIST,
-    constOf("NOROAD_RETRY_DIST"))
+    constOf("NOROAD_RETRY_DIST"), constOf("LARGE_GRAPH_NODES"), constOf("QUERY_SYNC_WORK"),
+    constOf("QUERY_TICK_WORK"))
 local cacheSuffix = [=[
-return { ensureRoute = ensureRoute, navRoutes = navRoutes, engine = engine,
-    findCalls = findCalls, cleared = cleared,
+return { ensureRoute = ensureRoute, queryTick = queryTick, navRoutes = navRoutes, navQueries = navQueries,
+    engine = engine, findCalls = findCalls, cleared = cleared,
     setNow = function(v) nowMs = v end,
-    setNext = function(r, e) nextRoute, nextErr = r, e end }
+    setNext = function(r, e, runs, exhausted) nextRoute, nextErr, nextRuns, nextExhausted = r, e, runs or 0, exhausted end }
 ]=]
 local C = assert(compile(cachePrelude .. cacheBody .. "\n" .. cacheSuffix, "nav-cache"))(realCore.distToRoute)
 local tgt = { x = 10744.8, y = 9717.5 }
@@ -872,5 +892,99 @@ do
     assert(pnOf("from:3", 3) == 3, "C9: 帶 pn＝照用")
 end
 
+-- C10（超大世界）：大路網的查詢分幀。小路網照舊同步算完（預算 huge）；大路網這一幀先算 QUERY_SYNC_WORK，
+-- 沒算完的交給 queryTick。算完前：同目標同權重有舊線就回舊線（AutoDrive 行駛中拿到非 ok 會立刻交還控制），
+-- 沒有舊線回 (nil, "building")；算完照同步路徑寫快取。
+do
+    local LARGE_GRAPH_NODES, QUERY_SYNC_WORK = constOf("LARGE_GRAPH_NODES"), constOf("QUERY_SYNC_WORK")
+    local QUERY_TICK_WORK = constOf("QUERY_TICK_WORK")
+    local target = { x = 5000, y = 5000 }
+    local function freshQueries() for k in pairs(C.navQueries) do C.navQueries[k] = nil end end
+    -- 小路網：一次算完，預算 huge
+    C.engine.graph = { id = "small", nodeCount = LARGE_GRAPH_NODES - 1 }
+    C.navRoutes[0] = nil
+    C.setNow(100000)
+    C.setNext({ 5000, 4000, 5000, 5000 })
+    assert(C.ensureRoute(0, target, 5000, 4000, 12), "C10: 小路網同步回路線")
+    assert(C.findCalls[#C.findCalls].budgets[1] == math.huge, "C10: 小路網不分幀")
+
+    -- 大路網、沒有舊線：這一幀回 building，queryTick 推完寫快取
+    C.engine.graph = { id = "large", nodeCount = LARGE_GRAPH_NODES }
+    C.navRoutes[0] = nil
+    freshQueries()
+    C.setNext({ 5000, 4000, 5000, 5000 }, nil, 2)
+    local r, state = C.ensureRoute(0, target, 5000, 4000, 12, true)
+    local call = C.findCalls[#C.findCalls]
+    assert(r == nil and state == "building" and C.navQueries[0], "C10: 大路網沒算完＝building、留背景查詢")
+    assert(call.budgets[1] == QUERY_SYNC_WORK, "C10: 發出查詢的那一幀只算 QUERY_SYNC_WORK")
+    local calls = #C.findCalls
+    r, state = C.ensureRoute(0, target, 5001, 4001, 12)
+    assert(r == nil and state == "building" and #C.findCalls == calls, "C10: 算完前不重開查詢")
+    C.queryTick()
+    assert(C.navQueries[0] and call.budgets[2] == QUERY_TICK_WORK, "C10: queryTick 每 tick 推 QUERY_TICK_WORK")
+    C.queryTick()
+    assert(C.navQueries[0] == nil and C.navRoutes[0] and C.navRoutes[0].state == "ok", "C10: 算完寫進快取")
+    assert(C.navRoutes[0].buildX == 5000 and C.navRoutes[0].buildY == 4000, "C10: 快取記的是開查詢時的起點")
+    local first = C.navRoutes[0].route
+    assert(C.ensureRoute(0, target, 5000, 4001, 12) == first, "C10: 之後照常命中快取")
+
+    -- 偏航重算：背景算的期間回舊線（同 identity），算完換新線
+    C.setNow(100000 + REBUILD_COOLDOWN_MS + 1)
+    C.setNext({ 5040, 4500, 5000, 5000 }, nil, 1)
+    r, state = C.ensureRoute(0, target, 5040, 4500, 12)
+    assert(r == first and state == nil and C.navQueries[0], "C10: 重算中沿用舊線、state 不是暫時狀態")
+    assert(math.abs(r.snapDist - 40) < 1e-9, "C10: 沿用舊線時 snapDist 照常刷新")
+    calls = #C.findCalls
+    assert(C.ensureRoute(0, target, 5045, 4510, 12) == first and #C.findCalls == calls,
+        "C10: 背景重算還沒完，再查不重開查詢、照回舊線")
+    C.queryTick()
+    C.queryTick()
+    local second = C.ensureRoute(0, target, 5040, 4500, 12)
+    assert(second and second ~= first and second.pts[1] == 5040, "C10: 算完換新線")
+
+    -- 開查詢之後快取被換掉（改道覆寫）：背景結果過期、丟掉
+    C.setNow(200000)
+    C.setNext({ 4000, 4000, 5000, 5000 }, nil, 1)
+    C.ensureRoute(0, target, 4000, 4000, 12)
+    assert(C.navQueries[0], "C10: 偏航開了背景查詢")
+    local detour = { pts = { 1, 2, 3, 4 }, sx = 1, sy = 2 }
+    C.navRoutes[0] = { state = "ok", route = detour, tx = target.x, ty = target.y, approachWeight = 12,
+        progressIdx = 1, lastBuildMs = 200000, buildX = 4000, buildY = 4000 }
+    C.queryTick()
+    C.queryTick()
+    assert(C.navQueries[0] == nil and C.navRoutes[0].route == detour, "C10: 過期結果不蓋掉改道")
+
+    -- 換目標：舊目標的背景查詢作廢
+    C.setNext({ 4000, 4000, 6000, 6000 }, nil, 3)
+    C.ensureRoute(1, { x = 6000, y = 6000 }, 4000, 4000, 12)
+    local stale = C.navQueries[1]
+    C.setNext({ 4000, 4000, 7000, 7000 }, nil, 0)
+    r = C.ensureRoute(1, { x = 7000, y = 7000 }, 4000, 4000, 12)
+    assert(r and C.navQueries[1] == nil and stale and C.navRoutes[1].tx == 7000, "C10: 換目標丟掉舊查詢、重算新目標")
+
+    -- 工作量超過上限＝這次查詢無路（noroad 快取），不停用引擎
+    C.navRoutes[2] = nil
+    C.setNext(nil, nil, 0, true)
+    r, state = C.ensureRoute(2, target, 100, 100, 12)
+    assert(r == nil and state == nil and C.navRoutes[2].state == "noroad" and C.engine.state == "ready",
+        "C10: 超量收成 noroad，引擎照常 ready")
+
+    -- 背景算的期間玩家已沿新路線走了 60 格（超過 ±12 段窗）：換上後第一次查詢整條找進度，
+    -- 不從第 1 段找（否則 snapDist 報 47 格，AutoDrive 會以「離路線太遠」停車）；之後回到小窗口
+    local line = {}
+    for i = 0, 100 do line[#line + 1] = 6000 + i; line[#line + 1] = 6000 end
+    C.navRoutes[3] = nil
+    C.setNow(300000)
+    C.setNext(line, nil, 1)
+    C.ensureRoute(3, { x = 6100, y = 6000 }, 6000, 6000, 12)
+    C.queryTick()
+    C.queryTick()
+    assert(C.navRoutes[3] and C.navRoutes[3].relocate, "C10: 背景換上的路線標 relocate")
+    local moved = C.ensureRoute(3, { x = 6100, y = 6000 }, 6060.5, 6000, 12)
+    assert(moved and moved.snapDist < 1e-9 and C.navRoutes[3].progressIdx == 61 and not C.navRoutes[3].relocate,
+        "C10: 換上後整條找進度，snapDist " .. tostring(moved and moved.snapDist))
+    freshQueries()
+end
+
 print("test_nav_api: OK（requestRoute A1-A12＋requestDetour A13-A22＋deferCommit／commitDetour A23-A28"
-    .. "＋requestRouteFrom／requestDetourFrom F1-F9＋ensureRoute 快取/偏航 C0-C9）")
+    .. "＋requestRouteFrom／requestDetourFrom F1-F9＋ensureRoute 快取/偏航 C0-C10）")

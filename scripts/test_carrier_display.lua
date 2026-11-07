@@ -88,7 +88,9 @@ local function world(opts)
     local core = {
         ready = true, getBoolOption = function(_, d) return d end, registeredPacks = {},
         getLoadedMapDirs = function() return { ["Muldraugh, KY"] = 1 } end,
-        carrierStreets = { { mod = "B42Trans_CN", file = CARRIER_FILE, langs = { CH = true, CN = true } } },
+        -- plainEntry：同一個檔列成「地圖自己的街道檔」（沒有 langs，Real USA 那種）＝不是翻譯載體
+        carrierStreets = { opts.plainEntry and { mod = "B42Trans_CN", file = CARRIER_FILE }
+            or { mod = "B42Trans_CN", file = CARRIER_FILE, langs = { CH = true, CN = true } } },
     }
     local env = setmetatable({
         print = function(line) prints[#prints + 1] = line end,
@@ -154,4 +156,5 @@ local shown, streets, log = world({ fallback = true })
 expectUpgraded("fallback loader", shown, streets, log)
 expectUntouched("carrier mod inactive", (world({ order = "last", active = false })))
 expectUntouched("unrelated map directory", (world({ order = "last", dir = "media/maps/Other Map" })))
-print("test_carrier_display: PASS (directory loader both wrap orders, fallback loader, restore, inactive/unrelated untouched)")
+expectUntouched("map street file without langs", (world({ order = "last", plainEntry = true })))
+print("test_carrier_display: PASS (directory loader both wrap orders, fallback loader, restore, inactive/unrelated/map-file untouched)")

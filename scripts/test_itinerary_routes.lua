@@ -66,22 +66,25 @@ assert(GRAPH and GRAPH.nodeCount > 0, "fixture：真路網須建成")
 --------------------------------------------------------------------------------
 local prelude = ([=[
 local NavCore, GRAPH = ...
-local floor, sqrt = math.floor, math.sqrt
+local floor, sqrt, huge = math.floor, math.sqrt, math.huge
 local DEVIATION_DIST, REBUILD_COOLDOWN_MS = %s, %s
 local REBUILD_MOVE_DIST, NOROAD_RETRY_DIST = %s, %s
+local LARGE_GRAPH_NODES, QUERY_SYNC_WORK, QUERY_TICK_WORK = %s, %s, %s
 local function dist2(ax, ay, bx, by)
     local dx, dy = bx - ax, by - ay
     return dx * dx + dy * dy
 end
 local navRoutes = {}
+local navQueries = {}
 local navPreview = {}
 local engine = { state = "ready", graph = GRAPH, patchState = "applied", searchState = "ok" }
 local nowMs = 1000
 local function getTimestampMs() return nowMs end
-local function clearRoute(key) navRoutes[key] = nil end
+local function clearRoute(key) navRoutes[key] = nil; navQueries[key] = nil end
 local function failNavEngine()
     engine.state, engine.graph = "failed", nil
     for k in pairs(navRoutes) do navRoutes[k] = nil end
+    for k in pairs(navQueries) do navQueries[k] = nil end
 end
 local logs = {}
 local function logf(key, msg) logs[#logs + 1] = key end
@@ -136,7 +139,8 @@ local Events = {
     OnTickEvenPaused = { Add = function(fn) pausedTicks[#pausedTicks + 1] = fn end },
 }
 ]=]):format(constOf("DEVIATION_DIST"), constOf("REBUILD_COOLDOWN_MS"),
-    constOf("REBUILD_MOVE_DIST"), constOf("NOROAD_RETRY_DIST"))
+    constOf("REBUILD_MOVE_DIST"), constOf("NOROAD_RETRY_DIST"), constOf("LARGE_GRAPH_NODES"),
+    constOf("QUERY_SYNC_WORK"), constOf("QUERY_TICK_WORK"))
 
 local suffix = [=[
 return {

@@ -291,7 +291,7 @@ local function activeCarrierFile(file)
     if type(list) ~= "table" or type(file) ~= "string" then return false end
     local low = file:lower()
     for _, carrier in ipairs(list) do
-        if type(carrier.file) == "string" and carrier.file:lower() == low then
+        if carrier.langs and type(carrier.file) == "string" and carrier.file:lower() == low then
             local mods = getActivatedMods()
             for i = 0, mods:size() - 1 do
                 if mods:get(i) == carrier.mod then return true end
