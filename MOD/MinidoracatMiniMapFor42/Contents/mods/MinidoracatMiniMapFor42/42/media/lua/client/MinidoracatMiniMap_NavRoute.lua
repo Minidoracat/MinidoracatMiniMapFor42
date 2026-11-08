@@ -2494,9 +2494,11 @@ local navRoutes = {} -- [pn] = { state="ok|noroad", route=, tx=, ty=, progressId
 -- 重置管轄，但兩張表永不互相讀寫（活動段 identity／進度只屬 navRoutes）。
 -- [pn] = { state=, revision=, graph=, weight=, segs=, total=, done=, dist= }
 local navPreview = {}
--- v11 待接受的改道（requestDetour 第 9 參 deferCommit）：[pn] = { entry＝要寫進 navRoutes 的快取條目, base＝算的當下
--- navRoutes[pn] }。宣告在這裡＝讓快取失效的三處（世界重置、clearRoute、failNavEngine）一併撤銷：base 是 nil 時
+-- v11 待接受的改道（requestDetour 第 9 參 deferCommit）：[key] = { entry＝要寫進 navRoutes 的快取條目, base＝算的當下
+-- navRoutes[key] }。宣告在這裡＝讓快取失效的三處（世界重置、clearRoute、failNavEngine）一併撤銷：base 是 nil 時
 -- 「清快取」前後都是 nil，commitDetour 只比 base 分不出來，舊候選會被寫進失效後的快取。
+-- v14 同一格也放大路網分幀中的改道（allowPending）：{ q＝NavCore.routeQuery 的查詢, 起點與權重, 呼叫參數 }，
+-- 沒有 entry；queryTick 推進，消費者同參數再呼叫時交付（detourCore）。換圖與上面三處一起清。
 local navDetours = {}
 -- 大路網分幀算的路線查詢（ensureRoute 開、queryTick 推進）：[key] = { q＝NavCore.routeQuery 的查詢, tx=, ty=,
 -- weight=, px=, py=（起點）, notify=, base＝開查詢當下的 navRoutes[key] }。key 同 navRoutes。算完時快取已被換掉
@@ -2963,6 +2965,7 @@ local function dropGraph(state)
     engine.baseStreets, engine.baseEmpty = nil, nil
     for key in pairs(navRoutes) do navRoutes[key] = nil end
     for key in pairs(navQueries) do navQueries[key] = nil end
+    for key in pairs(navDetours) do navDetours[key] = nil end
 end
 
 -- 非 extracting／building 時每 tick 一次：nodata 的自訂道路圖、官方街道補上後重抽、背景重建。
@@ -3368,9 +3371,23 @@ local function ensureRoute(key, target, px, py, weight, notify, pn)
 end
 -- 背景查詢（大路網）：每 tick 合計推進 QUERY_TICK_WORK，算完照同步路徑寫快取。開查詢之後快取被換掉（改道覆寫
 -- 等）或換了路網＝結果過期、丟掉。OnTickEvenPaused 呼叫。
+-- 分幀中的改道（v14 navDetours 帶 q 的）先推：AutoDrive 這時停在堵點等；算完留在原格，等消費者同參數再呼叫來取。
 -- 寫完快取就結束這個 tick：routeInstall 的結果通知可能讓呼叫端開新查詢，走訪中新增鍵時 next 的行為未定義。
 local function queryTick()
     local budget = QUERY_TICK_WORK
+    for _, pd in pairs(navDetours) do
+        local q = pd.q
+        if q and not q.done then
+            if budget <= 0 then return end
+            local before = q.query and q.query.n or 0
+            local done = NavCore.queryRun(q, budget)
+            budget = budget - ((q.query and q.query.n or before) - before)
+            if done and q.err then
+                failNavEngine(q.err)
+                return
+            end
+        end
+    end
     for key, pq in pairs(navQueries) do
         if budget <= 0 or engine.state ~= "ready" then return end
         local q = pq.q
@@ -4108,8 +4125,12 @@ end
 -- 一律不寫會讓它收下卻永遠換不了線（兩包在 Workshop 各自更新）。每次進到尋路都先清掉該玩家先前待接受的改道。
 -- v13：requestDetour 與 requestDetourFrom 共用。key＝快取格（playerNum 或 "from:"..playerNum）；
 -- fromX＝nil 時起點是玩家、權重照玩家在不在車上，否則起點是 (fromX,fromY)、權重固定 12。
+-- v14：第 13 參 allowPending（requestDetour 第 10 參、requestDetourFrom 第 11 參；可省，給了須是 boolean）＝true 且
+-- 大路網時這一幀先算 QUERY_SYNC_WORK，沒算完記成 navDetours[key] 的待算改道、回 (nil, "building")，queryTick 推進；
+-- 消費者用完全相同的參數（含 moreAvoid 內容、maxSnap、deferCommit；起點權重也要相同）再呼叫：沒算完照回 building，
+-- 算完照下面同步路徑交付（起點是開查詢當下的位置、標 relocate）。參數不同或換了圖＝丟掉重算。
 local function detourCore(playerNum, key, fromX, fromY, targetX, targetY, avoidX, avoidY, avoidR, moreAvoid, maxSnap,
-    deferCommit)
+    deferCommit, allowPending)
     if type(avoidR) ~= "number" or not apiFinite(avoidX, avoidY)
         or avoidR ~= avoidR or avoidR <= 0 or avoidR == math.huge
     then
@@ -4130,15 +4151,55 @@ local function detourCore(playerNum, key, fromX, fromY, targetX, targetY, avoidX
         return nil, "badargs"
     end
     if deferCommit ~= nil and type(deferCommit) ~= "boolean" then return nil, "badargs" end
+    if allowPending ~= nil and type(allowPending) ~= "boolean" then return nil, "badargs" end
     local playerObj, argState = apiPlayer(playerNum, targetX, targetY)
     if not playerObj then return nil, argState end
+    local pd = navDetours[key]
     navDetours[key] = nil
     local px, py, weight = fromX, fromY, 12
     if px == nil then
         px, py, weight = playerObj:getX(), playerObj:getY(), approachWeightFor(playerObj)
     end
-    local route, aerr = NavCore.findRoute(engine.graph, px, py, targetX, targetY,
-        avoidX, avoidY, avoidR, weight, moreAvoid, maxSnap, playerNum)
+    local g = engine.graph
+    local route, aerr, relocate
+    if allowPending and g.nodeCount >= LARGE_GRAPH_NODES then
+        local defer = deferCommit == true
+        local nMore = moreAvoid and #moreAvoid or 0
+        local same = pd and pd.q and pd.q.g == g and pd.weight == weight and pd.fromX == fromX and pd.fromY == fromY
+            and pd.tx == targetX and pd.ty == targetY and pd.ax == avoidX and pd.ay == avoidY and pd.ar == avoidR
+            and pd.maxSnap == maxSnap and pd.defer == defer and #pd.more == nMore
+        if same then
+            for i = 1, nMore do
+                if pd.more[i] ~= moreAvoid[i] then
+                    same = false
+                    break
+                end
+            end
+        end
+        local q
+        if same then
+            q, px, py, relocate = pd.q, pd.px, pd.py, true
+            if not q.done then
+                navDetours[key] = pd
+                return nil, "building"
+            end
+        else
+            q = NavCore.routeQuery(g, px, py, targetX, targetY, avoidX, avoidY, avoidR, weight, moreAvoid, maxSnap,
+                playerNum)
+            if not NavCore.queryRun(q, QUERY_SYNC_WORK) then
+                local more = {} -- 複製：消費者可能就地改同一張表
+                for i = 1, nMore do more[i] = moreAvoid[i] end
+                navDetours[key] = { q = q, px = px, py = py, weight = weight, fromX = fromX, fromY = fromY,
+                    tx = targetX, ty = targetY, ax = avoidX, ay = avoidY, ar = avoidR, more = more,
+                    maxSnap = maxSnap, defer = defer }
+                return nil, "building"
+            end
+        end
+        route, aerr = q.route, q.err
+    else
+        route, aerr = NavCore.findRoute(g, px, py, targetX, targetY,
+            avoidX, avoidY, avoidR, weight, moreAvoid, maxSnap, playerNum)
+    end
     if aerr then
         failNavEngine(aerr)
         return nil, "failed"
@@ -4147,7 +4208,7 @@ local function detourCore(playerNum, key, fromX, fromY, targetX, targetY, avoidX
     if not route then return nil, "noroad" end
     local entry = { state = "ok", route = route, tx = targetX, ty = targetY,
         progressIdx = 1, progX = route.sx, progY = route.sy,
-        lastBuildMs = getTimestampMs(), buildX = px, buildY = py, approachWeight = weight }
+        lastBuildMs = getTimestampMs(), buildX = px, buildY = py, approachWeight = weight, relocate = relocate }
     if deferCommit then
         navDetours[key] = { entry = entry, base = navRoutes[key] }
     else
@@ -4156,33 +4217,36 @@ local function detourCore(playerNum, key, fromX, fromY, targetX, targetY, avoidX
     return route, "ok"
 end
 MinidoracatMiniMapAPI.requestDetour = function(playerNum, targetX, targetY, avoidX, avoidY, avoidR, moreAvoid, maxSnap,
-    deferCommit)
+    deferCommit, allowPending)
     return detourCore(playerNum, playerNum, nil, nil, targetX, targetY, avoidX, avoidY, avoidR, moreAvoid, maxSnap,
-        deferCommit)
+        deferCommit, allowPending)
 end
 -- v13：從指定起點繞開堵點重算，寫 requestRouteFrom 那一格（"from:"..playerNum）。避讓參數與驗參同 requestDetour；
--- 一律 deferCommit：消費者驗收通過才 commitDetour（它也會找這一格）。
+-- 一律 deferCommit：消費者驗收通過才 commitDetour（它也會找這一格）。v14：第 11 參 allowPending 同 requestDetour。
 MinidoracatMiniMapAPI.requestDetourFrom = function(playerNum, fromX, fromY, toX, toY, avoidX, avoidY, avoidR, moreAvoid,
-    maxSnap)
+    maxSnap, allowPending)
     if not apiSlot(playerNum) or not apiFinite(fromX, fromY) then return nil, "badargs" end
     return detourCore(playerNum, "from:" .. playerNum, fromX, fromY, toX, toY, avoidX, avoidY, avoidR, moreAvoid, maxSnap,
-        true)
+        true, allowPending)
 end
 -- v11：把 requestDetour(…, deferCommit=true) 回傳、消費者驗收通過的那條線寫進路線快取（寫法同 v10 的覆寫）。
 -- 回 (true, "ok")｜(false, "badargs")｜(false, "stale")。只收該玩家最近一次待接受的那個 table（identity），且快取
 -- 從算的當下到現在沒換過（偏航重算、換目標或清快取、換世界、引擎失敗都會換掉或清掉 navRoutes[pn]）、引擎仍 ready；
 -- 否則 stale、不寫。快取已經是這條＝(true, "ok")（重複 commit 冪等）。不收 addon 自組的表：繪製與到站終錨都讀快取。
 -- v13：這條不在玩家那一格（快取與待接受都不是它）時，改到 "from:"..playerNum 那一格找（requestDetourFrom 的改道）。
+-- v14：分幀中的改道（沒有 entry）不收：消費者還沒拿到那條線。
 MinidoracatMiniMapAPI.commitDetour = function(playerNum, route)
     if not apiSlot(playerNum) or type(route) ~= "table" then return false, "badargs" end
     local key = playerNum
     local rs, pending = navRoutes[key], navDetours[key]
-    if not (rs and rs.route == route) and not (pending and pending.entry.route == route) then
+    if not (rs and rs.route == route) and not (pending and pending.entry and pending.entry.route == route) then
         key = "from:" .. playerNum
         rs, pending = navRoutes[key], navDetours[key]
     end
     if rs and rs.route == route then return true, "ok" end
-    if not pending or pending.entry.route ~= route or pending.base ~= rs or engine.state ~= "ready" then
+    if not (pending and pending.entry and pending.entry.route == route) or pending.base ~= rs
+        or engine.state ~= "ready"
+    then
         return false, "stale"
     end
     navDetours[key] = nil
