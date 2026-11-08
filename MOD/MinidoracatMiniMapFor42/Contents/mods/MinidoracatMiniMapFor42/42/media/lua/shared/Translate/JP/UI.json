@@ -772,5 +772,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "サーバーで保存に失敗しました。次にログインしたときにもう一度送ります。",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "サーバーの手描きファイルを読めないため、共有を止めています。",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "画面分割の 2～4 人目は本人確認ができないため、手描きを共有できません。",
-    "UI_MinidoracatMiniMap_WhatsNew": "Real USA などの超大型マップに対応：ナビ、カスタム道路、ミニマップの通り名が使え、ノックス郡の地図も重なりません。"
+    "UI_MinidoracatMiniMap_WhatsNew": "新機能：ワールドマップにペンで手描き、資源ポイントに訪問済み・漁り済みを記録（マルチでは仲間と共有）、ゾンビ点の NPC を色分け。"
 }

@@ -772,5 +772,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "Sunucu kaydedemedi; bir sonraki girişinizde yeniden gönderilecek.",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "Sunucunun çizim dosyası okunamıyor; paylaşım duraklatıldı.",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "Bölünmüş ekrandaki 2-4. oyuncuların kimliği doğrulanamaz, bu yüzden paylaşamazlar.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Real USA gibi dev haritalar: navigasyon, özel yollar, sokak adları; Knox County artık üstte değil."
+    "UI_MinidoracatMiniMap_WhatsNew": "Yeni: haritaya kalemle çizim, kaynak noktalarında ziyaret/yağma işareti ve NPC'lere ayrı renk."
 }

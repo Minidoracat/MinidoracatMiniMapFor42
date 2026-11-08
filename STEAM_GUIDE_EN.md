@@ -1,7 +1,7 @@
 <!-- 指南網址：https://steamcommunity.com/sharedfiles/filedetails/?id=3817841972 -->
 <!-- Steam guide source (English): the full reference for this mod; the Workshop description only summarizes. Format and sync: pz-family-docs/release.md「完整說明：Steam 指南」 -->
 <!-- 標題：📖 MiniMap Mod Guide: Features, Navigation & Road Data -->
-<!-- 摘要：Illustrated guide to the Minidoracat MiniMap mod: map imagery, resource points, parking lots, search and multi-target navigation, home and favorites, custom roads, mini-map controls, facing arrows and floors, icons, Map Display Settings and server sandbox options, and road data for mod maps. -->
+<!-- 摘要：Illustrated guide to the Minidoracat MiniMap mod: map imagery, resource points (with visited and cleared marks), parking lots, search and multi-target navigation, home and favorites, custom roads, world map sketches, mini-map controls, facing arrows and floors, icons and NPC dot colors, Map Display Settings and server sandbox options, and road data for mod maps. -->
 === 🚀 Quick start
 [b]繁體中文版：[/b][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817841920]小地圖 MOD 完整說明[/url]
 
@@ -58,6 +58,30 @@ Both go by the room names inside buildings, which are also what decides the loot
 [*] [b]Custom zones[/b]: server custom zones show the zone name.
 [*] [b]Gamepad[/b]: on the world map, aim with the crosshair in the middle of the screen.
 [*] [b]Ghost mode[/b]: no hover names on the mini-map in ghost mode.
+[/list]
+=== 🧰 Visited & cleared resource points
+{{img:15-poi-cleared.jpg}}
+[list]
+[*] [b]Visited[/b]: walk into a resource point building and its icon gets a small white dot at the top left; the hover text says "visited · <days ago>".
+[*] [b]Searched[/b]: a container counts as searched once it shows up in your loot window; the hover text shows "searched N/total".
+[*] [b]Cleared automatically[/b]: once you have searched enough of a building's containers (90% by default), it is marked as cleared: the icon fades and gets a white check. Big malls that aren't fully loaded can't be counted, so they only show how many you searched and are never marked automatically.
+[*] [b]By hand[/b]: right-click the resource point icon on the map, right-click inside the building, or press "Actions..." on a search result, then under "Resource point: <name>" choose "Mark as cleared", "Unmark cleared" or "Forget this place".
+[*] [b]Restocked[/b]: when a cleared place is restocked or reset, it turns into a green triangle, "Restocked", until you next walk in. Three cases are detected: you walk back in and find fewer looted containers or more items; the server regenerates that part of the map; or the server's reset tool leaves a list after a reset (marked as soon as the server starts).
+[*] [b]Search[/b]: cleared places are hidden by default, with "N cleared places hidden" at the end of the list; "Actions..." can show them again or show only places you haven't visited.
+[*] [b]Only show visited resource points[/b] (off by default): both maps draw only the resource points you have walked into; useful on servers where the map is not fully known.
+[*] [b]Legend[/b]: the world map legend lists the states on screen (Visited, Cleared, Cleared by a teammate, Restocked).
+[*] [b]Settings[/b]: the "Resource points" category in Map Display Settings (also on the ESC MOD page): "Mark visited resource points", "Mark as cleared automatically", "Auto-clear threshold" (50–100%) and "Share cleared places with teammates".
+[*] [b]Saved[/b]: kept on your PC per account (same rules as favorites), up to 3000 buildings per account; when full, the oldest visited-only places go first.
+[/list]
+[h3]Sharing with your faction and safehouse (MP)[/h3]
+[list]
+[*] [b]What is shared[/b]: cleared places (marked by hand or automatically) go to your faction and safehouse members; search progress is shared only for buildings you have taken something from.
+[*] [b]Not shared[/b]: places you only visited, or only searched without taking anything and haven't cleared. The loot window lists nearby containers by itself, so walking past counts as searching; a small building with one or two containers can reach the threshold just by walking past and be marked cleared, and that is shared.
+[*] [b]What teammates see[/b]: places a teammate cleared get a cyan check, and the hover text names the teammate.
+[*] [b]Kept on the server[/b]: in multiplayer the server also keeps each player's records. If you play one account on two PCs, the two records are kept apart and never overwrite each other; teammates see the latest state of each building.
+[*] [b]Turn it off yourself[/b]: untick "Share cleared places with teammates".
+[*] [b]Server[/b]: the sandbox option "Allow sharing cleared places" turns it off (on by default); nothing is passed on to others, while your own marks and reset detection keep working.
+[*] [b]Split-screen[/b]: players 2-4 can't be verified by the server, so they neither share nor receive teammates' places; the settings say so.
 [/list]
 === 🧰 Parking lots
 [list]
@@ -170,6 +194,34 @@ Where a mod map has no road data, on roads players built themselves, or on dirt 
 [*] [b]Settings[/b]: the "Custom roads" category in Map Display Settings: which maps, road names, roads shared by others, roads not used for navigation, style, opacity and minimum width when zoomed out.
 [*] [b]Display only[/b]: turning the layer off only hides the roads; navigation still uses them.
 [/list]
+=== 🧰 World map sketches
+{{img:16-sketch.jpg}}
+Draw freehand lines, straight lines and notes on the world map with a pen; the mini-map shows them too.
+[h3]Drawing[/h3]
+[list]
+[*] [b]Start[/b]: press the pen button in the button bar at the bottom right of the world map (its tooltip starts with "Sketch"); the sketch toolbar appears at the top of the map.
+[*] [b]Vanilla symbol rules[/b]: you need a pen or pencil to draw and can only pick the colors of pens you carry (Black pen, Pencil, Red pen, Blue pen, Green pen); you need an eraser for "Eraser" and "Clear all".
+[*] [b]Toolbar[/b]: first row "Pen", "Line", "Eraser", the five pen colors and line width "Thin", "Medium", "Thick"; second row "Undo", "Redo", "Clear all", "Share" (MP) and "Exit"; the controls are listed below. Colors of pens you don't carry are faded.
+[*] [b]Eraser[/b]: erases only the part it touches. To take back the stroke you just drew, press "Undo"; no eraser needed.
+[*] [b]Mouse and keyboard[/b]: left button draws; right-drag pans; right-click or Backspace undoes; Shift+Backspace redoes; hold Shift for a straight line; Esc exits.
+[*] [b]Controller[/b]: A pen down/up, X sketch menu, B exit.
+[*] [b]Width follows zoom[/b]: lines are hidden once you zoom out more than 3 levels from where they were drawn, so writing doesn't turn into a smudge; the number of levels is in the settings.
+[*] [b]Limit[/b]: 5,000 strokes and 50,000 points per player; when reached, you are asked to erase some first.
+[*] [b]Saved[/b]: kept on your PC per account (same rules as favorites), so a new character still has them after death; to move them to another PC, copy the Zomboid/Lua/MinidoracatMiniMap/sketch folder. Sketches are not vanilla map symbols, so the vanilla Sharing panel and paper maps are not affected.
+[/list]
+[h3]Sharing with your faction and safehouse (MP)[/h3]
+[list]
+[*] [b]How[/b]: switch the toolbar's "Share" from "private" to "faction & safehouse"; lines you draw from then on are shared.
+[*] [b]Receivers[/b]: faction and safehouse members get them right away, offline members when they log in; when the author erases a line, it disappears for everyone.
+[*] [b]Limit[/b]: up to 1,000 shared strokes and 10,000 points per player; the rest are visible only to you.
+[*] [b]Don't want to see others'[/b]: untick "Show sketches shared with you"; their lines stay, they just aren't drawn.
+[*] [b]Server[/b]: the sandbox option "Allow sketch sharing" turns it off (on by default); split-screen players 2-4 can't share sketches.
+[/list]
+[h3]Display settings[/h3]
+[list]
+[*] [b]"Sketches" category[/b]: Map Display Settings has "Show on" (mini-map / world map), "Show sketches shared with you" (MP) and "Hide after zooming out (levels)"; the world map's MiniMap panel has the world map toggle too.
+[*] [b]Display only[/b]: turning it off only hides the lines; nothing is deleted.
+[/list]
 === 🧰 Mini-map controls
 [list]
 [*] [b]Hotkey[/b]: / works even if the sandbox disables the mini-map.
@@ -256,6 +308,15 @@ Where a mod map has no road data, on roads players built themselves, or on dirt 
 [*] [b]Many authors[/b]: with more than 20 authors, "Manage authors..." opens a searchable list.
 [*] [b]Share new symbols[/b]: set "Share new symbols with" to "Everyone" or "Faction and safehouse", and symbols and notes you place on the world map afterwards are shared as soon as you place them (default "Private", same as vanilla).
 [/list]
+=== 🧰 NPC colors among zombie dots
+{{img:17-npc-dots.jpg}}
+[list]
+[*] [b]What it does[/b]: with zombie dots on and an NPC mod such as Bandits or Project A-Life, NPCs are drawn in their own color on top of the zombie dots on both maps, one color per NPC mod (sky blue, green, magenta and white by default).
+[*] [b]Needs the compatibility pack[/b]: to recognize NPCs, also enable [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]MOD Compatibility[/url] (the version with NPC support); with this mod alone, NPCs still show as ordinary zombie dots.
+[*] [b]No extra range[/b]: display distance, cap, scan interval and other-floor fading are the same as zombie dots.
+[*] [b]Settings[/b]: the "Zombies" category (also on the ESC MOD page): the master switch "Color NPCs separately" (on by default) and one color drop-down per NPC mod; the category lists which NPC mods are recognized.
+[*] [b]Server[/b]: the sandbox option "Allow NPC dot colors" turns it off (on by default); NPCs then show as plain zombie dots. Admins with tactical view on are not limited. Changes apply live.
+[/list]
 === ⚙️ Map Display Settings (gear)
 {{img:02-settings-addons.jpg}}
 [list]
@@ -267,7 +328,7 @@ Where a mod map has no road data, on roads players built themselves, or on dirt 
 [list]
 [*] [b]Four groups[/b] in the side list:
 [list]
-[*] Map layers: Base map & text, Players & navigation, Remote Symbols (MP only), Custom roads, Resource points, Parking lot, Zombies, Animals, Vehicles, Safehouses
+[*] Map layers: Base map & text, Players & navigation, Remote Symbols (MP only), Custom roads, Sketches, Resource points, Parking lot, Zombies, Animals, Vehicles, Safehouses
 [*] Window & controls: Mini-map window, Performance notes
 [*] Add-ons
 [*] Admin: only when the server allows Tactical view and you have the permission
@@ -311,7 +372,8 @@ Where a mod map has no road data, on roads players built themselves, or on dirt 
 [*] four livestock-visibility levels
 [*] safehouse display scope
 [*] faction sharing toggle
-[*] custom road sharing toggle ("General" page)
+[*] sharing toggles for custom roads, cleared places and sketches ("General" page)
+[*] NPC dot colors toggle ("Zombies, Animals & Vehicles" page)
 [*] who can see other players' facing, and whether floor marks are allowed ("General" page)
 [*] MOD map outlines toggle ("Resource Points & Custom Zones" page; needs the map pack)
 [/list]
@@ -327,6 +389,15 @@ Where a mod map has no road data, on roads players built themselves, or on dirt 
 [*] [b]N[/b]: refresh only every N seconds, scanned around the player, so panning or zooming leaves no gaps.
 [*] [b]Admins[/b]: admins in Tactical view always see real time.
 [*] [b]Server load[/b]: scanning runs on each client, so server load is unchanged.
+[/list]
+[h3]Who can share in multiplayer[/h3]
+Sharing custom roads, faction targets, cleared places and sketches identifies both author and receivers by their login name on the server; the server picks the receivers each time from the current faction and safehouse lists.
+[list]
+[*] [b]Split-screen[/b]: players 2-4 can't share and don't receive shares. Their names are filled in by the client and they share the main player's connection, so the server can't verify them.
+[*] [b]No SteamID binding[/b]: this mod doesn't bind login names to SteamIDs, on Steam and no-Steam servers alike; a modified client that changes its name on respawn can send and receive shares as a player who is offline.
+[*] [b]As trustworthy as vanilla[/b]: vanilla factions and safehouses also go by name only, and an impostor can pose as the faction leader to change the member list; sharing can only be as trustworthy as those lists.
+[*] [b]Co-op servers started with "Host" in game[/b]: the login name is the Steam display name, different players may share a name, and shares go to everyone with that name.
+[*] [b]Turning it off[/b]: servers can set AllowCoop=false to block split-screen joining; turn off any sharing you don't want with the sandbox options "Allow faction target sharing", "Allow custom road sharing", "Allow sharing cleared places" and "Allow sketch sharing".
 [/list]
 === ⚙️ For map authors
 [h3]Imagery[/h3]

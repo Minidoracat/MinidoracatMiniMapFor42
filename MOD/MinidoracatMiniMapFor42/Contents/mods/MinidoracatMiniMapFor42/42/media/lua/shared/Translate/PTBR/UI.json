@@ -772,5 +772,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "O servidor não conseguiu salvar; será enviado de novo na próxima vez que você entrar.",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "O arquivo de desenhos do servidor não pode ser lido; o compartilhamento está pausado.",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "Os jogadores 2-4 da tela dividida não podem ser verificados, então não podem compartilhar.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Mapas enormes como Real USA: navegação, estradas personalizadas e ruas, sem Knox County por cima."
+    "UI_MinidoracatMiniMap_WhatsNew": "Novidades: desenhos à caneta no mapa, pontos de recurso visitados ou saqueados e NPCs em outra cor."
 }

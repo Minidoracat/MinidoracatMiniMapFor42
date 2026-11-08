@@ -772,5 +772,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "伺服器存檔失敗，下次登入會再送一次。",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "伺服器的手繪檔讀不懂，暫時不能分享。",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "分割畫面的第 2～4 位玩家無法確認身分，不能分享手繪。",
-    "UI_MinidoracatMiniMap_WhatsNew": "支援 Real USA 這類超大地圖：導航、自訂道路和小地圖街名都能用，也不會再蓋上諾克斯郡的地圖。"
+    "UI_MinidoracatMiniMap_WhatsNew": "新功能：世界地圖可以用筆手繪；資源點會記住去過與已清空，多人能分享給隊友；搭配相容包，NPC 在殭屍點裡換色。"
 }
