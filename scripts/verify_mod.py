@@ -574,6 +574,7 @@ _lua_tests = [
     ("test_minimap_layout.lua", "小地圖位置記憶：自建登記、拖曳放開就存、收合 y 換算、舊檔相容、重建帶過位置", False),
     ("test_zone_render.lua", "zone／資源點繪製、圖標名稱提示、地圖文字縮放與圖例資料", False),
     ("test_map_bounds.lua", "MOD 地圖框線：顯示在兩格、伺服器沙盒、預設白、名稱在最上方頂點", False),
+    ("test_mapdir_gate.lua", "地圖影像掛載：基底只在載入原版時掛、mapDir 逐圖閘門、疊層跟隨地圖優先序", False),
     ("test_key_migration.lua", "一次性選項遷移：滑條、圖片化、整棟、圖層分地圖、框線分兩張地圖", False),
     ("test_room_resources.lua", "資源點兩種版本、房間資料分批掃描與公開查詢 API", False),
     ("test_map_legend.lua", "世界地圖資源點圖例版面與顯示", False),
