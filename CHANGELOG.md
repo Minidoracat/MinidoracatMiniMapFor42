@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### 新增
+
+- 殭屍點位裡的 NPC 可以換成另一種顏色（玩家建議）：同時開了殭屍點位與 Bandits、Project A-Life 這類 NPC MOD 時，NPC 在小地圖和世界地圖改用自己的顏色，畫在殭屍點上面，每個 NPC MOD 各一色（預設天藍、綠、紫紅、白，可在設定裡換）。顯示距離、上限、掃描間隔、別層變淡都和殭屍點相同，看得到的範圍不會變大。要認得 NPC 需要一併啟用相容包 MOD Compatibility（支援 NPC 的新版），只裝本 MOD 時 NPC 照樣以殭屍點顯示；地圖顯示設定的「殭屍」分類會寫出目前認得哪些 NPC MOD。總開關「NPC 用另一種顏色」預設開，在同一個分類與 ESC 選項的 MOD 頁。
+- 伺服器沙盒新增「允許 NPC 點位換色」（預設開）：關閉後所有玩家的 NPC 照樣以殭屍點顯示，只是不分顏色；開了戰術檢視的管理員不受限。管理員改了立即生效，不用重啟。
+
+> 技術要點：新沙盒選項 `MinidoracatMiniMap.AllowNpcDotColor`（布林，預設開，「殭屍、動物與載具」頁；列入管理員戰術檢視旁路；從舊版升上來的伺服器沒有這把鍵時照預設開）。新 ModOptions 鍵 `NpcDotTint`（勾選，預設開），以及每個 NPC MOD 一個 `NpcDotColor_<tag>`（下拉，沿用動物／載具那 8 色；遊戲啟動時依已登記的 NPC MOD 接在 ESC 頁尾端）。給 NPC MOD 作者與相容包的公開 API：`MinidoracatMiniMapAPI.npcApiVersion = 1`、`registerNpcTag(ownerModId, tag, labelKey, variable)`，只登記動畫變數名稱，小地圖只在已選進來的殭屍點上讀這個變數，不執行其他 MOD 的程式；最多 4 個 NPC MOD。
+
 ## [42.21.0-0.56.0] - 2026-11-08
 
 ### 新增

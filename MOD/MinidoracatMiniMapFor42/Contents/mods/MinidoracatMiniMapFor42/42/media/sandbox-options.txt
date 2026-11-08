@@ -33,6 +33,9 @@ option MinidoracatMiniMap.ZombieScanInterval
 option MinidoracatMiniMap.AllowZombieIntensity
 {type = boolean, default = true, page = MinidoracatMiniMapIcons, translation = MinidoracatMiniMapAllowZombieIntensity,}
 
+option MinidoracatMiniMap.AllowNpcDotColor
+{type = boolean, default = true, page = MinidoracatMiniMapIcons, translation = MinidoracatMiniMapAllowNpcDotColor,}
+
 option MinidoracatMiniMap.AllowAnimalDots
 {type = boolean, default = true, page = MinidoracatMiniMapIcons, translation = MinidoracatMiniMapAllowAnimalDots,}
 

@@ -210,6 +210,9 @@ local SEC_ZOMBIE = { id = "zombie", label = "UI_MinidoracatMiniMap_SecZombie", i
     maps = { { label = MapRows.SHOW_ON, cells = LM.zombie } },
     ticks = {
         { id = "ZombieIntensity", label = "UI_MinidoracatMiniMap_ZombieIntensity", default = false },
+        -- NPC 換色總開關；每個 NPC MOD 的顏色下拉由下方 OnGameBoot 依 registerNpcTag 插在 ZombieDotColor 後面，
+        -- 說明行（已認得哪些 MOD）在 addNotes
+        { id = "NpcDotTint", label = "UI_MinidoracatMiniMap_NpcDotTint", default = true, gate = "AllowNpcDotColor" },
     },
     combos = {
         { id = "ZombieDotColor", label = "UI_MinidoracatMiniMap_ZombieDotColor", default = 1,
@@ -460,9 +463,26 @@ Events.OnGameBoot.Add(function()
     SEC_ZONES.present = true
 end)
 
+-- 殭屍點裡的 NPC：每個已登記的 NPC MOD 一個顏色下拉 NpcDotColor_<tag>（_Dots.lua registerNpcTag；這之後才登記的
+-- 沒有選項、用預設色）。ESC 頁接在最後自成一組（列名＝MOD 名稱）；設定視窗插在殭屍分類 ZombieDotColor 後面，
+-- 列名「<MOD 名稱> 點顏色」在這裡組好（遊戲內不能換語言，OnGameBoot 時翻譯已載入）
+Events.OnGameBoot.Add(function()
+    local tags = Core.npcTags
+    if not tags or #tags == 0 or not modOptions then return end
+    modOptions:addSeparator()
+    modOptions:addTitle("UI_MinidoracatMiniMap_NpcDotColors")
+    for i = 1, #tags do
+        local t = tags[i]
+        local combo = modOptions:addComboBox(t.opt, t.label)
+        for j = 1, #ADOTS_COLOR_ITEMS do combo:addItem(ADOTS_COLOR_ITEMS[j], j == t.color) end
+        table.insert(SEC_ZOMBIE.combos, 1 + i, { id = t.opt, default = t.color, items = ADOTS_COLOR_ITEMS,
+            gate = "AllowNpcDotColor", label = getText("UI_MinidoracatMiniMap_NpcDotColorOf", getText(t.label)) })
+    end
+end)
+
 -- 設定備份與補回（UI 框架 rev 23，ModOptionsBackup）：主選單沒有 MOD 建選項時按套用，原版把整個 ModOptions.ini
--- 清空（MainOptions.lua:409-411 不 load、:3766 照樣 save），進遊戲小地圖設定全回預設。地圖包與區域選項在上面兩個
--- OnGameBoot 才加，所以排在它們之後；仍早於 OnMainMenuEnter 裡 MainOptions:create 的 load，補回的值由那次 load 套上。
+-- 清空（MainOptions.lua:409-411 不 load、:3766 照樣 save），進遊戲小地圖設定全回預設。地圖包、區域與 NPC 顏色選項在上面
+-- 三個 OnGameBoot 才加，所以排在它們之後；仍早於 OnMainMenuEnter 裡 MainOptions:create 的 load，補回的值由那次 load 套上。
 -- 框架沒有這個能力時不做（照原版存讀）。
 Events.OnGameBoot.Add(function()
     if not modOptions then return end
@@ -1024,12 +1044,16 @@ local PV_ZOMBIE_PTS = { 0.10, 0.30, 0.16, 0.62, 0.22, 0.40, 0.44, 0.66, 0.50, 0.
 local PV_ZONE_PLAIN = {} -- 預覽用 zone 表（不帶 basement，不觸發提示）
 local PV_POI_KEYS = { "military", "medical", "grocery", "gas" }
 
+-- 有登記 NPC MOD 且分色生效（Core.npcColor 不是 nil）時，第 3、5、7、9 顆依序畫成各 tag 的顏色（每個 tag 一顆）
 local function previewZombie(self, x, y, w, h)
     local c = Core.zdotsColor()
+    local nc = Core.npcColor and Core.npcColor(self._pn or 0)
     local size = getSliderValue("ZombieDotSize", 3, 1, 16)
     local af = getSliderValue("ZombieDotAlpha", 100, 10, 100) / 100
     for i = 1, #PV_ZOMBIE_PTS, 2 do
-        Core.drawZombieDot(self, x + w * PV_ZOMBIE_PTS[i], y + h * PV_ZOMBIE_PTS[i + 1], size, c, af)
+        -- 第 k 顆（k＝(i+1)/2）是 tag (k-1)/2：i＝5、9、13、17 → tag 1-4
+        local dc = nc and (i - 1) % 4 == 0 and nc[(i - 1) / 4] or c
+        Core.drawZombieDot(self, x + w * PV_ZOMBIE_PTS[i], y + h * PV_ZOMBIE_PTS[i + 1], size, dc, af)
     end
 end
 
@@ -1553,6 +1577,7 @@ end
 
 local function addPreview(ctx, sec, draw, h)
     local pv = ctx.UI.Preview.new{ x = ctx.x, y = ctx.y, width = ctx.w, height = h or ctx.previewH, draw = draw }
+    pv._pn = ctx.pn -- 殭屍預覽的 NPC 分色要問這位玩家的伺服器閘門
     previewSamples(sec, pv)
     return advance(ctx, put(ctx, pv))
 end
@@ -1626,7 +1651,8 @@ local function addCombos(ctx, list)
             -- 停用時顯示 default（伺服器鎖定資源版本＝「依伺服器設定」）；玩家存的值不動，解除後照舊
             local enabled = entryEnabled(entry, ctx.pn)
             local selected = enabled and getComboIndex(entry.id, entry.default) or entry.default
-            local dd = addDropdown(ctx, getText(entry.label), entry.items, selected, onModCombo,
+            -- 列名可以是翻譯鍵，或已組好的文字（NPC 顏色列「<MOD 名稱> 點顏色」）
+            local dd = addDropdown(ctx, getTextOrNull(entry.label) or entry.label, entry.items, selected, onModCombo,
                 entry.tooltip and getText(entry.tooltip) or nil)
             dd._entry, dd._findKey = entry, entry.id
             dd:setEnabled(enabled)
@@ -1748,6 +1774,16 @@ local function addNotes(ctx, sec)
     elseif sec == MapRows.ROADS then
         -- 這個分類只管顯示；翻設定找道路的人要在這裡看到怎麼建立（設計稿 minimap-roads-entry-1025 主張 2.3）
         addNote(ctx, getText("UI_MinidoracatMiniMap_RoadHow"))
+    elseif sec == SEC_ZOMBIE then
+        -- NPC 換色：列出已登記的 NPC MOD（含 OnGameBoot 後才登記、沒有顏色列的）；一個都沒有＝提示要相容包
+        local tags = Core.npcTags
+        if tags and #tags > 0 then
+            local names = getText(tags[1].label)
+            for i = 2, #tags do names = names .. ", " .. getText(tags[i].label) end
+            addNote(ctx, getText("UI_MinidoracatMiniMap_NpcTagsFound", names))
+        else
+            addNote(ctx, getText("UI_MinidoracatMiniMap_NpcTagsNone"))
+        end
     end
 end
 

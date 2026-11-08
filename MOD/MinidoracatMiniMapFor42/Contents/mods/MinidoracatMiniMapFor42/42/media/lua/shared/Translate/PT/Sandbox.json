@@ -14,6 +14,8 @@
     "Sandbox_MinidoracatMiniMapZombieScanInterval_tooltip": "0 = tempo real (padrão; atualiza a cada 0,3 segundo, aprox.).\nN > 0 = os pontos de zumbis só atualizam a cada N segundos e são varridos ao redor do jogador, então mover o mapa não faz nova varredura.\nAfeta só os pontos de zumbis; o mapa de calor de zumbis é desenhado pelo jogo.\nAdmins usando a Visão tática sempre veem em tempo real.\nA varredura roda no cliente de cada jogador, então isso não muda a carga do servidor.",
     "Sandbox_MinidoracatMiniMapAllowZombieIntensity": "Permitir mapa de calor de zumbis",
     "Sandbox_MinidoracatMiniMapAllowZombieIntensity_tooltip": "Permite que os jogadores sobreponham o mapa de calor da população de zumbis no minimapa. Quando desativado, ele fica sempre oculto (mudanças do admin valem na hora).",
+    "Sandbox_MinidoracatMiniMapAllowNpcDotColor": "Permitir cor de NPC",
+    "Sandbox_MinidoracatMiniMapAllowNpcDotColor_tooltip": "Permite que os jogadores desenhem em outra cor os NPCs (de mods como Bandits ou Project A-Life) entre os pontos de zumbis. Quando desativado, os NPCs continuam aparecendo como pontos de zumbis comuns. Admins com visão tática não são afetados.",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay": "Exibição da área das bases",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_tooltip": "Controla os contornos e ícones das áreas de bases no minimapa e no mapa do mundo dos jogadores: desligado / só as próprias / todas (incluindo as de outros jogadores) / próprias e dos membros da facção. Servidores PVP podem preferir \"Só as próprias\" ou \"Próprias e da facção\" para não revelar onde ficam as bases inimigas.",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_option1": "Desligado",

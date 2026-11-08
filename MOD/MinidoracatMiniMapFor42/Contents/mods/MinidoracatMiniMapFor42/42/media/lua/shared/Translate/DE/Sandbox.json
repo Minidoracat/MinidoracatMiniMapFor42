@@ -14,6 +14,8 @@
     "Sandbox_MinidoracatMiniMapZombieScanInterval_tooltip": "0 = Echtzeit (Standard; aktualisiert etwa alle 0,3 Sekunden).\nN > 0 = Zombiepunkte werden nur alle N Sekunden aktualisiert und um den Spieler herum gescannt, daher löst Verschieben der Karte keinen neuen Scan aus.\nBetrifft nur Zombiepunkte; die Zombie-Heatmap zeichnet das Spiel selbst.\nAdmins in der taktischen Ansicht sehen immer Echtzeit.\nDer Scan läuft auf dem Client jedes Spielers und ändert daher nicht die Serverlast.",
     "Sandbox_MinidoracatMiniMapAllowZombieIntensity": "Zombie-Heatmap erlauben",
     "Sandbox_MinidoracatMiniMapAllowZombieIntensity_tooltip": "Erlaubt Spielern, die Heatmap der Zombie-Population über die Minimap zu legen. Deaktiviert wird sie zwangsweise ausgeblendet (Admin-Änderungen gelten sofort).",
+    "Sandbox_MinidoracatMiniMapAllowNpcDotColor": "NPC-Punktfarbe erlauben",
+    "Sandbox_MinidoracatMiniMapAllowNpcDotColor_tooltip": "Erlaubt Spielern, NPCs (aus Mods wie Bandits oder Project A-Life) unter den Zombiepunkten in eigener Farbe zu zeichnen. Deaktiviert erscheinen NPCs weiter als normale Zombiepunkte. Admins mit taktischer Ansicht sind nicht betroffen.",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay": "Anzeige Safehouse-Bereiche",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_tooltip": "Steuert Umrisse und Icons der Safehouse-Bereiche auf Minimap und Weltkarte der Spieler: aus / nur eigene / alle (auch die anderer Spieler) / eigene und die von Fraktionsmitgliedern. PVP-Server bevorzugen evtl. \"Nur eigene\" oder \"Eigene und Fraktion\", damit keine feindlichen Basen verraten werden.",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_option1": "Aus",

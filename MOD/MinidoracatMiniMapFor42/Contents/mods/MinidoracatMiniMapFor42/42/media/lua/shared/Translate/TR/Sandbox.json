@@ -14,6 +14,8 @@
     "Sandbox_MinidoracatMiniMapZombieScanInterval_tooltip": "0 = gerçek zamanlı (varsayılan; yaklaşık 0,3 saniyede bir yenilenir).\nN > 0 = zombi noktaları yalnızca N saniyede bir yenilenir ve oyuncunun çevresinde taranır; böylece haritayı kaydırmak yeniden tarama yaptırmaz.\nYalnızca zombi noktalarını etkiler; zombi ısı haritasını oyun çizer.\nTaktik görünümü kullanan yöneticiler her zaman gerçek zamanlı görür.\nTarama her oyuncunun istemcisinde çalışır, bu yüzden sunucu yükünü değiştirmez.",
     "Sandbox_MinidoracatMiniMapAllowZombieIntensity": "Zombi ısı haritasına izin ver",
     "Sandbox_MinidoracatMiniMapAllowZombieIntensity_tooltip": "Oyuncuların zombi nüfusu ısı haritasını mini haritanın üstüne bindirmesine izin verir. Devre dışıyken zorla gizlenir (yönetici değişiklikleri anında uygulanır).",
+    "Sandbox_MinidoracatMiniMapAllowNpcDotColor": "NPC nokta rengine izin ver",
+    "Sandbox_MinidoracatMiniMapAllowNpcDotColor_tooltip": "Oyuncuların zombi noktaları arasındaki NPC'leri (Bandits veya Project A-Life gibi modlardan) farklı renkte çizmesine izin verir. Devre dışıyken NPC'ler normal zombi noktası olarak görünmeye devam eder. Taktik görünümü açık yöneticiler etkilenmez.",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay": "Güvenli ev alanı gösterimi",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_tooltip": "Oyuncuların mini haritası ve dünya haritasındaki güvenli ev alanı dış hatlarını ve simgelerini denetler: kapalı / yalnızca kendi / tümü (diğer oyuncularınkiler dahil) / kendi ve grup üyelerininki. PVP sunucuları düşman üslerinin konumunu sızdırmamak için \"Yalnızca kendi\" ya da \"Kendi ve grup\" seçeneğini tercih edebilir.",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_option1": "Kapalı",

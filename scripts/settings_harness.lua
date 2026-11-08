@@ -317,6 +317,7 @@ function H.load(opts)
     -- Core.settingsAfterApply；addTickBox 等只記錄 ESC 頁註冊
     local options = {}
     env.registered = {}
+    env.comboDefaults = {} -- ESC 頁下拉 addItem 選取旗標的索引（id → 索引）
     local function option(id)
         local o = options[id]
         if not o then
@@ -338,10 +339,16 @@ function H.load(opts)
         addTickBox = function(_, id) env.registered[#env.registered + 1] = id; return option(id) end,
         addSlider = function(_, id) env.registered[#env.registered + 1] = id; return option(id) end,
         addTextEntry = function(_, id) env.registered[#env.registered + 1] = id; return option(id) end,
+        -- ESC 頁下拉：記下 addItem 的選取旗標（PZAPI 的預設值就是第 2 參為 true 的那一項，ModOptions.lua:121-136）；
+        -- env.comboDefaults[id]＝那一項的索引。不改 getValue（值仍走 env.values）
         addComboBox = function(_, id)
             env.registered[#env.registered + 1] = id
             local o = option(id)
-            o.addItem = function() end
+            local n = 0
+            o.addItem = function(_, item, selected)
+                n = n + 1
+                if selected then env.comboDefaults[id] = n end
+            end
             return o
         end,
     }
@@ -425,7 +432,9 @@ function H.load(opts)
         { key = "heavy", label = "UI_MinidoracatMiniMap_VCat_Heavy" },
     }
     Core.ADOTS_COLOR_ITEMS = { "UI_MinidoracatMiniMap_AColor_White", "UI_MinidoracatMiniMap_AColor_Green",
-        "UI_MinidoracatMiniMap_AColor_Orange", "UI_MinidoracatMiniMap_AColor_SkyBlue" }
+        "UI_MinidoracatMiniMap_AColor_Orange", "UI_MinidoracatMiniMap_AColor_SkyBlue",
+        "UI_MinidoracatMiniMap_AColor_Yellow", "UI_MinidoracatMiniMap_AColor_Magenta",
+        "UI_MinidoracatMiniMap_AColor_Blue", "UI_MinidoracatMiniMap_AColor_Vermillion" }
     Core.registeredZoneActions = {}
     Core.registeredPacks = {}
     Core.registeredZoneProviders = {}
@@ -496,14 +505,28 @@ function H.load(opts)
             "    if styleItem and art then return { item = art.item }, true end",
             "    return { sym = art and art.sym }, false",
             "end",
-            "local PALETTE = { { 1, 1, 1 }, { 0.47, 0.88, 0.37 }, { 0.9, 0.62, 0 }, { 0.45, 0.8, 1 } }",
-            "local function adotsColor(id, default) return PALETTE[getComboIndex(id, default)] or PALETTE[default] end",
+            -- 真的染色盤與 adotsColor（NPC 預設色是它的索引）
+            assert(dots:match("\n(local ADOTS_PALETTE = {.-\n})\n"), "missing ADOTS_PALETTE"),
+            extractFn(dots, "adotsColor"),
             "return drawZombieDot, zdotsColor, adotsDrawGlyph, adotsVehTexture, adotsDrawIcon, adotsDrawName,",
             "    adotsStyleTexture, adotsColor",
         }, "\n")
         Core.drawZombieDot, Core.zdotsColor, Core.adotsDrawGlyph, Core.adotsVehTexture, Core.adotsDrawIcon,
             Core.adotsDrawName, Core.adotsStyleTexture, Core.adotsColor =
             assert(compile(src))(Core, Core.getComboIndex, Core.drawMapText, Core.adotsTexture)
+        -- 真的 NPC 登記（test:npc-tags 段）與 npcColor；_Dots.lua 的 OnGameBoot（之後的登記沒有選項）排在 _Settings 之前
+        src = table.concat({
+            "local log, getBoolOption, sandboxGate, adotsColor = ...",
+            assert(dots:match("%-%- test:npc%-tags:start\n(.-)\n%-%- test:npc%-tags:end"), "missing npc-tags"),
+            extractFn(dots, "npcColor"),
+            "return npc, npcColor",
+        }, "\n")
+        local npc
+        npc, Core.npcColor = assert(compile(src))(function(msg) print("[MinidoracatMiniMap] " .. msg) end,
+            Core.getBoolOption, Core.sandboxGate, Core.adotsColor)
+        Core.npcTags = npc.tags
+        env.npc = npc
+        boots[#boots + 1] = function() npc.booted = true end
         local zones = assert(readFile(REPO_CLIENT .. "MinidoracatMiniMap_Zones.lua"))
         src = table.concat({
             "local drawMapText = ...",

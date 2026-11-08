@@ -14,6 +14,8 @@
     "Sandbox_MinidoracatMiniMapZombieScanInterval_tooltip": "0 = czas rzeczywisty (domyślnie; odświeżanie mniej więcej co 0,3 sekundy).\nN > 0 = kropki zombie odświeżają się tylko co N sekund i są skanowane wokół gracza, więc przesuwanie mapy nie wywołuje ponownego skanu.\nDotyczy tylko kropek zombie; mapę cieplną zombie rysuje gra.\nAdministratorzy w Widoku taktycznym zawsze widzą czas rzeczywisty.\nSkanowanie działa po stronie klienta każdego gracza, więc nie zmienia obciążenia serwera.",
     "Sandbox_MinidoracatMiniMapAllowZombieIntensity": "Zezwól na mapę cieplną zombie",
     "Sandbox_MinidoracatMiniMapAllowZombieIntensity_tooltip": "Pozwala graczom nakładać mapę cieplną populacji zombie na minimapę. Po wyłączeniu jest zawsze ukryta (zmiany administratora działają na bieżąco).",
+    "Sandbox_MinidoracatMiniMapAllowNpcDotColor": "Zezwól na kolor NPC",
+    "Sandbox_MinidoracatMiniMapAllowNpcDotColor_tooltip": "Pozwala graczom rysować NPC (z modów takich jak Bandits lub Project A-Life) w innym kolorze wśród kropek zombie. Po wyłączeniu NPC nadal widać jako zwykłe kropki zombie. Nie dotyczy administratorów z widokiem taktycznym.",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay": "Wyświetlanie obszarów schronień",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_tooltip": "Określa obrysy i ikony obszarów schronień na minimapie i mapie świata graczy: wył. / tylko własne / wszystkie (także innych graczy) / własne i członków frakcji. Na serwerach PVP lepiej wybrać „Tylko własne” lub „Własne i frakcji”, aby nie zdradzać położenia baz wroga.",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_option1": "Wył.",

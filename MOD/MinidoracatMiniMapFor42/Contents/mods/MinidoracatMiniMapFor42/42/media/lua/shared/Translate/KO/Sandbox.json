@@ -14,6 +14,8 @@
     "Sandbox_MinidoracatMiniMapZombieScanInterval_tooltip": "0 = 실시간(기본값, 약 0.3초마다 갱신).\nN > 0 = 좀비 점이 N초마다만 갱신되며 플레이어 주변을 스캔하므로, 지도를 이동해도 다시 스캔하지 않습니다.\n좀비 점에만 적용되며, 좀비 히트맵은 게임이 그립니다.\n전술 보기를 사용하는 관리자는 항상 실시간으로 봅니다.\n스캔은 각 플레이어의 클라이언트에서 실행되므로 서버 부하는 달라지지 않습니다.",
     "Sandbox_MinidoracatMiniMapAllowZombieIntensity": "좀비 히트맵 허용",
     "Sandbox_MinidoracatMiniMapAllowZombieIntensity_tooltip": "플레이어가 미니맵에 좀비 인구 히트맵을 겹쳐 표시할 수 있게 합니다. 비활성화하면 강제로 숨겨집니다(관리자 변경은 즉시 반영).",
+    "Sandbox_MinidoracatMiniMapAllowNpcDotColor": "NPC 점 색 구분 허용",
+    "Sandbox_MinidoracatMiniMapAllowNpcDotColor_tooltip": "플레이어가 좀비 점 중 NPC(Bandits, Project A-Life 같은 모드)를 다른 색으로 그릴 수 있게 합니다. 끄면 NPC는 일반 좀비 점으로 표시되고 색이 구분되지 않습니다. 전술 보기를 켠 관리자는 영향을 받지 않습니다.",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay": "은신처 영역 표시",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_tooltip": "플레이어 미니맵과 세계 지도의 은신처 영역 외곽선과 아이콘을 제어합니다: 끄기 / 내 것만 / 전체(다른 플레이어 포함) / 내 것과 조직원. PVP 서버에서는 적 기지 위치가 드러나지 않도록 \"내 것만\" 또는 \"내 것과 조직\"을 고려하세요.",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_option1": "끄기",
