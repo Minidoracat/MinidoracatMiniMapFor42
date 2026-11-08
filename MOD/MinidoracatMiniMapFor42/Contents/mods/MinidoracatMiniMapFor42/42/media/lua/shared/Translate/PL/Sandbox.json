@@ -36,6 +36,8 @@
     "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "Pozwala graczom udostępniać cele nawigacji członkom frakcji (przekazywane przez serwer). Po wyłączeniu serwer odrzuca prośby o udostępnienie.",
     "Sandbox_MinidoracatMiniMapAllowRoadShare": "Zezwól na udostępnianie własnych dróg",
     "Sandbox_MinidoracatMiniMapAllowRoadShare_tooltip": "Pozwala graczom udostępniać własne drogi frakcji lub schronieniu. Serwer przechowuje udostępnione drogi we własnym pliku, a nawigacja członków od razu z nich korzysta. Domyślnie włączone. Po wyłączeniu serwer odrzuca nowe udostępnienia i przestaje wysyłać udostępnione drogi; zapisane drogi zostają w pliku serwera.",
+    "Sandbox_MinidoracatMiniMapAllowClearedShare": "Zezwól na udostępnianie splądrowanych miejsc",
+    "Sandbox_MinidoracatMiniMapAllowClearedShare_tooltip": "Pozwala graczom udostępniać splądrowane punkty zasobów i postęp przeszukiwania frakcji lub schronieniu. Niezależnie od tego serwer przechowuje oznaczenia każdego gracza we własnych plikach i nadal wykrywa fragmenty mapy, które zostały zresetowane lub wygenerowane ponownie. Domyślnie włączone. Po wyłączeniu oznaczenia nie są już wysyłane innym graczom.",
     "Sandbox_MinidoracatMiniMapAllowSketchShare": "Zezwól na udostępnianie szkiców",
     "Sandbox_MinidoracatMiniMapAllowSketchShare_tooltip": "Pozwala graczom udostępniać szkice z mapy świata swojej frakcji lub schronieniu. Serwer przechowuje udostępnione szkice we własnych plikach, a członkowie offline dostają je po zalogowaniu. Domyślnie włączone. Po wyłączeniu serwer odrzuca nowe udostępnienia i przestaje wysyłać udostępnione szkice; zapisane już szkice zostają w plikach serwera.",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay": "Kierunek innych graczy",

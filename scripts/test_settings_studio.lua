@@ -1414,6 +1414,56 @@ do
     checkEq(e.values["NpcDotColor_bandits"], 4, "NP9 reset restores the tag's default colour")
 end
 
+-- ── CL 資源點分類的去過／已清空（2026-11-08 設計稿 cleared）：三個勾選＋門檻滑桿與說明行；分享只在多人列，
+-- 伺服器沙盒 AllowClearedShare 關時停用並寫明原因；ESC 頁（主檔 ModOptions 註冊）同 id、同預設 ─────────────
+do
+    local main = assert(io.open("MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua", "rb")):read("*a")
+    local sp = H.load{}
+    sp.boot()
+    local sst = sp.open(0)
+    sst.selectSection("poicat")
+    local defaults = { PoiVisitedOnly = "false", PoiVisitMarks = "true", ClearedAuto = "true" }
+    for id, def in pairs(defaults) do
+        local el = sp.byKey(id)
+        check(el ~= nil and tostring(el._entry.default) == def, "CL1 poicat shows " .. id .. " (default " .. def .. ")")
+        check(main:find('addTickBox%("' .. id .. '", "UI_MinidoracatMiniMap_' .. id .. '", ' .. def) ~= nil,
+            "CL1 ESC page registers " .. id .. " with the same default")
+    end
+    local pct = sp.byKey("ClearedAutoPct")
+    check(pct ~= nil and pct._entry.min == 50 and pct._entry.max == 100 and pct._entry.default == 90,
+        "CL2 threshold slider 50-100, default 90")
+    check(main:find('addSlider%("ClearedAutoPct", "UI_MinidoracatMiniMap_ClearedAutoPct", 50, 100, 5, 90') ~= nil,
+        "CL2 ESC page slider matches")
+    check(sp.byKey("ClearedShare") == nil, "CL3 single player hides the share tick")
+    check(textShown(sp, T("UI_MinidoracatMiniMap_ClearedHow")), "CL4 how-to note under resource points")
+    local mp = H.load{ mp = true }
+    mp.boot()
+    local mst = mp.open(0)
+    mst.selectSection("poicat")
+    check(mp.byKey("ClearedShare") ~= nil and mp.byKey("ClearedShare")._enabled == true
+        and not textShown(mp, T("UI_MinidoracatMiniMap_ClearedShareOff")), "CL5 multiplayer share tick usable")
+    mp.gates.AllowClearedShare = false
+    mst.selectSection("base")
+    mst.selectSection("poicat")
+    check(mp.byKey("ClearedShare")._enabled == false, "CL6 server sandbox off disables the share tick")
+    check(textShown(mp, T("UI_MinidoracatMiniMap_ClearedShareOff")), "CL6 and says why")
+    check(mp.byKey("ClearedAuto")._enabled == true, "CL6 other cleared ticks are not gated")
+    mp.gates.AllowClearedShare = nil
+    check(not textShown(mp, T("UI_MinidoracatMiniMap_ClearedWhy_identity")), "CL7 main seat: no identity note")
+    check(not textShown(mp, T("UI_MinidoracatMiniMap_ClearedServerReadOnly")), "CL8 server copy fine: no read-only note")
+    MinidoracatMiniMapCore.clearedShareProblem = function(pn)
+        return pn == 0 and "UI_MinidoracatMiniMap_ClearedServerReadOnly" or nil
+    end
+    mst.selectSection("base")
+    mst.selectSection("poicat")
+    check(textShown(mp, T("UI_MinidoracatMiniMap_ClearedServerReadOnly")), "CL8 server copy read-only: says uploads stopped")
+    MinidoracatMiniMapCore.clearedShareProblem = nil
+    local m1 = mp.open(1)
+    m1.selectSection("poicat")
+    check(textShown(mp, T("UI_MinidoracatMiniMap_ClearedWhy_identity")),
+        "CL7 split-screen seat: says it cannot share and receives nothing")
+end
+
 io.write(string.format("test_settings_studio: %d assertions, %d failures\n", assertions, failures))
 if failures > 0 then os.exit(1) end
 io.write("test_settings_studio: PASS (framework gate, four groups, zones/mappack, admin, gates, distance cap, "

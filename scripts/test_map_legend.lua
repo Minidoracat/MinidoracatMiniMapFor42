@@ -218,8 +218,28 @@ opts.WMLayers, opts.PoiIcons = nil, nil
 frame()
 check(panel.height > 0, "B8 恢復後圖例照畫")
 
+-- B9 去過／已清空：只列這一幀世界地圖上畫出角標的狀態（_Zones.lua 記在 map._minidoracatMarkSeen），每列一個角標＋說明
+frame()
+local h0 = panel.height
+local badges = {}
+Core.clearedBadge = function(_, code) badges[#badges + 1] = code end
+map._minidoracatMarkSeen = { false, true, false, true }
+frame()
+local markNames = {}
+for _, t in ipairs(drawn.text) do
+    if t.s:find("ClearedLegend", 1, true) then markNames[#markNames + 1] = t.s end
+end
+check(panel.height > h0 and #badges == 2 and badges[1] == 2 and badges[2] == 4
+    and markNames[1] == "UI_MinidoracatMiniMap_ClearedLegendCleared"
+    and markNames[2] == "UI_MinidoracatMiniMap_ClearedLegendRefreshed", "B9 只列畫面上出現過的兩種狀態")
+map._minidoracatMarkSeen = { false, false, false, false }
+badges = {}
+frame()
+check(panel.height == h0 and #badges == 0, "B9 畫面上沒有角標：不列")
+map._minidoracatMarkSeen, Core.clearedBadge = nil, nil
+
 if failures > 0 then
     print(("map legend: %d check(s) failed"):format(failures))
     os.exit(1)
 end
-print("map legend: layout A1-A7 + panel mount/visibility/position/content B1-B8 cases passed")
+print("map legend: layout A1-A7 + panel mount/visibility/position/content B1-B9 cases passed")

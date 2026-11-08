@@ -191,6 +191,17 @@ Core.roadMapHit = function(target, wx, wy)
     return roadHit
 end
 Core.roadMenuTitle = function(hit) return "UI_MinidoracatMiniMap_RoadMenuOf|" .. hit.road.name end
+-- 內建資源點圖標命中（真 poiIconAt／clearedMapMenu 在 _ClearedUI.lua，test_cleared 驗選單內容）
+local poiHit = nil
+Core.poiIconAt = function(target)
+    handoff.poiAt = target
+    return poiHit
+end
+Core.clearedMapMenu = function(context, pn, z)
+    handoff.poiPn, handoff.poi = pn, z
+    local sub = Core.mapSubMenu(context, nil, "UI_MinidoracatMiniMap_ClearedMenuOf|" .. z.tip) or context
+    sub:addOption("UI_MinidoracatMiniMap_ClearedSet")
+end
 Core.roadsMapMenu = function(menu, pn, hit)
     handoff.roadMenu, handoff.roadPn, handoff.road = menu, pn, hit
     menu:addOption("UI_MinidoracatMiniMap_RoadEditShape")
@@ -283,6 +294,7 @@ return {
     setInsertAnchors = function(v) insertAnchors = v end,
     setPlaceHit = function(v) placeHit = v end,
     setRoadHit = function(v) roadHit = v end,
+    setPoiHit = function(v) poiHit = v end,
     setGate = function(v) gateMode = v end,
     gateCalls = gateCalls,
     handoff = handoff,
@@ -483,6 +495,24 @@ mod.setPlaceHit({ id = 7, label = "Shop" })
 wm1:onRightMouseUp(5, 6)
 assert(names(mod.menu(1)):find("PlaceMenuOf|Shop", 1, true) and mod.handoff.roadAt == nil,
     "RD2: 收藏圖標優先於自訂道路")
+-- RD3: 資源點圖標和道路疊在一起：資源點優先（「資源點：名稱」），道路不判；收藏圖標又優先於資源點
+mod.setPlaceHit(nil)
+mod.clearCalls(); mod.resetMenus()
+mod.handoff.roadAt = nil
+mod.setPoiHit({ tip = "Pharmacy", bw = 10 })
+wm1:onRightMouseUp(5, 6)
+local mpoi = mod.menu(1)
+assert(names(mpoi) == SET .. ",UI_MinidoracatMiniMap_TripAdd,UI_MinidoracatMiniMap_ClearedMenuOf|Pharmacy"
+    .. ",UI_MinidoracatMiniMap_CopyHere|12, 34, 0," .. TRIP_OPEN .. ",UI_MinidoracatMiniMap_SearchMenu"
+    and mod.handoff.roadAt == nil and mod.handoff.poiPn == 1 and mod.handoff.poiAt == wm1,
+    "RD3: 資源點圖標換掉收藏那格、第一層 6 項、道路不判（實得 " .. names(mpoi) .. "）")
+mod.clearCalls(); mod.resetMenus()
+mod.handoff.poi = nil
+mod.setPlaceHit({ id = 7, label = "Shop" })
+wm1:onRightMouseUp(5, 6)
+assert(names(mod.menu(1)):find("PlaceMenuOf|Shop", 1, true) and mod.handoff.poi == nil,
+    "RD3: 收藏圖標優先於資源點圖標")
+mod.setPoiHit(nil)
 mod.setPlaceHit(nil)
 mod.setRoadHit(nil)
 mod.clearCalls(); mod.resetMenus()
@@ -864,6 +894,6 @@ assert(passiveInstance(otherPanel):onRightMouseUp(1, 2) == nil,
 assert(passiveInstance(otherPanel):onRightMouseDown(1, 2) == nil, "X9: down 同理")
 ExtractionMode = nil
 
-print("test_worldmap_nav: OK（R1-R9＋RD1-RD2＋N1-N5＋L1-L4＋K1＋X1-X9（含 X8b）：工具透傳/前手選單合併/自建/歸屬/"
+print("test_worldmap_nav: OK（R1-R9＋RD1-RD3＋N1-N5＋L1-L4＋K1＋X1-X9（含 X8b）：工具透傳/前手選單合併/自建/歸屬/"
     .. "殘留選單/行程選項閘/回呼分流/道路子選單與收藏優先/開圖重包/冪等/重包上限/加繪順序/log-once/工具鍵/"
     .. "Extraction Mode 被動 overlay 右鍵放行）")

@@ -36,6 +36,8 @@
     "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "Allow players to share navigation targets with faction members (relayed by the server). When disabled the server rejects share requests.",
     "Sandbox_MinidoracatMiniMapAllowRoadShare": "Allow custom road sharing",
     "Sandbox_MinidoracatMiniMapAllowRoadShare_tooltip": "Allow players to share custom roads with their faction or safehouse. The server keeps shared roads in its own file, and members' navigation uses them directly. On by default. When disabled the server rejects new shares and stops sending shared roads; roads already saved stay in the server file.",
+    "Sandbox_MinidoracatMiniMapAllowClearedShare": "Allow sharing cleared places",
+    "Sandbox_MinidoracatMiniMapAllowClearedShare_tooltip": "Let players share cleared resource points and search progress with their faction or safehouse. Either way, the server keeps each player's marks in its own files and still detects chunks that were reset or regenerated. On by default. When disabled, marks are no longer sent to other players.",
     "Sandbox_MinidoracatMiniMapAllowSketchShare": "Allow sketch sharing",
     "Sandbox_MinidoracatMiniMapAllowSketchShare_tooltip": "Allow players to share their world map sketches with their faction or safehouse. The server keeps shared sketches in its own files, and offline members receive them when they log in. On by default. When disabled the server rejects new shares and stops sending shared sketches; sketches already saved stay in the server files.",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay": "Other players' facing",

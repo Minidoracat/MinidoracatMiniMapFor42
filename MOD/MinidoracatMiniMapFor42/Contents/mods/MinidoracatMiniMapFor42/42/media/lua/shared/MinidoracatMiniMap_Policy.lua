@@ -49,7 +49,8 @@
 --   隱私層 PRIVACY_KEYS（會看到別的玩家藏起來的東西，故獨立第二把鑰匙）：
 --     SafehouseDisplay／SafehouseDisplayDistance／SafehouseNameDisplay／
 --     SafehouseNameDistance／LivestockVisibility
---   **永不旁路**：AllowNavShare（會讓伺服器代發座標給別人，是通訊而非檢視；AllowRoadShare、AllowSketchShare 同理）、
+--   **永不旁路**：AllowNavShare（會讓伺服器代發座標給別人，是通訊而非檢視；AllowRoadShare、AllowClearedShare、
+--   AllowSketchShare 同理）、
 --   ExportPlayerPositions／PlayerExportInterval／ExportOfflinePlayers（落地成
 --   檔案，是 I/O 政策而非檢視），以及 AllowAdminTacticalView／
 --   AllowAdminPrivacyView 自身（旁路不能自我授權）。名單以「鍵名 → true」的
@@ -206,6 +207,9 @@ local SCHEMA = {
     { "AllowNavShare", "boolean", true },
     -- 自訂道路分享（server/MinidoracatMiniMapRoadShare.lua）：伺服器代存代送給別人，同 AllowNavShare 永不旁路
     { "AllowRoadShare", "boolean", true },
+    -- 已清空分享（server/MinidoracatMiniMapClearedShare.lua）：關＝伺服器照存每人自己的那份、刷新偵測照常，只是不轉送給
+    -- 隊友；同 AllowRoadShare 永不旁路
+    { "AllowClearedShare", "boolean", true },
     -- 手繪線分享（server/MinidoracatMiniMapSketchShare.lua）：同道路分享，伺服器代存代送，永不旁路
     { "AllowSketchShare", "boolean", true },
     -- 其他玩家的朝向箭頭與扇形（_Nav.lua Core.remoteFacingLevel）：1 關閉、2 只限陣營與安全屋成員、
@@ -233,7 +237,7 @@ local SCHEMA = {
     -- 玩家的兩張地圖都不畫；不在任何旁路白名單（管理員戰術檢視也一樣）
     { "AllowMapBounds", "boolean", true },
 }
-local SCHEMA_N = 31 -- 顯式筆數（家規：不用 # 依賴隱性長度）
+local SCHEMA_N = 32 -- 顯式筆數（家規：不用 # 依賴隱性長度）
 
 local KIND = {}
 for i = 1, SCHEMA_N do

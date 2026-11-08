@@ -21,8 +21,10 @@ The two parking icons (media/ui/poi_icons/poi_parking.png and
 media/ui/poi_icons/color/poi_parking.png), the view cone texture
 (media/ui/minimap_facing_cone.png, made by scripts/make_facing_cone.py) and
 the custom roads settings icon (media/ui/minimap_road.png, made by
-scripts/make_road_icon.py) were drawn programmatically for this project and
-are licensed under MIT.
+scripts/make_road_icon.py) and the visited / cleared / restocked badges
+(media/ui/minimap_badge_visited.png, minimap_badge_cleared.png and
+minimap_badge_refreshed.png, made by scripts/make_cleared_badges.py) were
+drawn programmatically for this project and are licensed under MIT.
 
 2. Project Zomboid and map-derived data - NOT MIT
 

@@ -36,6 +36,8 @@
     "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "플레이어가 조직원과 내비게이션 목적지를 공유할 수 있게 합니다(서버가 중계). 비활성화하면 서버가 공유 요청을 거부합니다.",
     "Sandbox_MinidoracatMiniMapAllowRoadShare": "사용자 도로 공유 허용",
     "Sandbox_MinidoracatMiniMapAllowRoadShare_tooltip": "플레이어가 사용자 도로를 같은 조직이나 은신처 구성원과 공유할 수 있게 합니다. 공유한 도로는 서버가 자체 파일에 저장하고, 구성원의 내비게이션이 바로 사용합니다. 기본값은 켜짐입니다. 비활성화하면 서버가 새 공유를 거부하고 공유 도로도 보내지 않습니다. 이미 저장된 도로는 서버 파일에 남습니다.",
+    "Sandbox_MinidoracatMiniMapAllowClearedShare": "파밍 완료 공유 허용",
+    "Sandbox_MinidoracatMiniMapAllowClearedShare_tooltip": "플레이어가 파밍 완료한 자원 위치와 뒤진 진행도를 같은 조직이나 은신처 구성원과 공유할 수 있게 합니다. 켜든 끄든 서버는 각 플레이어의 표시를 자체 파일에 저장하고, 초기화되거나 다시 생성된 청크도 계속 감지합니다. 기본값은 켜짐입니다. 비활성화하면 표시를 다른 플레이어에게 보내지 않습니다.",
     "Sandbox_MinidoracatMiniMapAllowSketchShare": "손그림 공유 허용",
     "Sandbox_MinidoracatMiniMapAllowSketchShare_tooltip": "플레이어가 세계 지도 손그림을 조직이나 은신처 멤버와 공유하게 합니다. 서버는 공유된 손그림을 자체 파일에 저장하고, 오프라인 멤버는 접속할 때 받습니다. 기본값은 켜짐. 끄면 서버가 새 공유를 받지 않고 공유된 손그림도 보내지 않습니다. 이미 저장된 손그림은 서버 파일에 남습니다.",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay": "다른 플레이어의 방향",

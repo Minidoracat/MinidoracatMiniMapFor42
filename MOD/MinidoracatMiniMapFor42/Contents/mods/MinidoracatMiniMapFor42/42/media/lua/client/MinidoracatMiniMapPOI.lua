@@ -195,6 +195,14 @@ local function appendLegend(legend, cats, catOn, colorMode)
     end
 end
 
+-- 去過／已清空（_Cleared.lua；缺檔＝沒有標記）：回「只顯示去過的資源點」與這次重建要不要查標記。
+-- 只在重建時篩，不加每幀成本（2026-11-08 使用者裁定）
+local function clearedStart()
+    local visitedOnly = getBoolOption("PoiVisitedOnly", false)
+    local start = Core.clearedBuildStart
+    return visitedOnly, start ~= nil and start(getBoolOption("PoiVisitMarks", true)) or false
+end
+
 -- 房間資料版（shared/MinidoracatMiniMapResources.lua 的掃描結果，一筆＝一筆 BuildingDef）：
 -- 每個勾選中的類別一顆圖標，釘在該類最大的房間；區塊一律整棟外框（判定單位就是整棟，
 -- PoiWholeBuilding 不作用），而且一筆只畫一塊——填色、底襯與名稱只放在 ORDER 最前的類別那個
@@ -233,6 +241,7 @@ local function buildRoomConverted()
             end
         end
         local hits = {}
+        local visitedOnly, marksOn = clearedStart()
         for bi = 1, n do
             local b = list[bi]
             local hn = 0
@@ -243,6 +252,9 @@ local function buildRoomConverted()
                     hits[hn] = key
                 end
             end
+            local mk, own
+            if marksOn and hn > 0 then mk, own = Core.clearedZoneMarks(b.x, b.y, b.w, b.h) end
+            if visitedOnly and not own then hn = 0 end
             if hn > 0 then
                 local joined = names[hits[1]]
                 for k = 2, hn do joined = joined .. " / " .. names[hits[k]] end
@@ -280,6 +292,9 @@ local function buildRoomConverted()
                                 b = isColor and 1 or color.b } or nil,
                             category = key,
                             basement = a.basement or nil,
+                            -- 去過／已清空（_Cleared.lua）：建築外框與每位本機玩家的代碼
+                            bx = b.x, by = b.y, bw = b.w, bh = b.h,
+                            mark = mk,
                         }
                         if tex and a.basement then legend.basement = true end
                     end
@@ -315,6 +330,7 @@ local function buildPoiConverted(source)
             -- 逐類別預取 Cat_ 勾選：1669 筆逐筆查 ModOptions 是 ~5k 次三層查找，類別僅 20 個
             local catOn = {}
             for key in pairs(cats) do catOn[key] = getBoolOption("Cat_" .. key, true) end
+            local visitedOnly, marksOn = clearedStart()
             for i = 1, #data do
                 local e = data[i]
                 if type(e) == "table" then
@@ -379,7 +395,17 @@ local function buildPoiConverted(source)
                                 if (lodW > lodH and lodW or lodH) <= POI_LOD_MAX_EDGE then
                                     lodRect = { x1 = ux1, y1 = uy1, x2 = ux2, y2 = uy2 }
                                 end
-                                built[#built + 1] = {
+                                -- 去過／已清空：建築外框＝烘焙的整棟 b（缺了用畫的幾何聯集）
+                                local eb = e.b
+                                local bx, by, bw, bh = ux1, uy1, ux2 - ux1, uy2 - uy1
+                                if type(eb) == "table" and type(eb.x) == "number" and type(eb.y) == "number"
+                                    and type(eb.w) == "number" and type(eb.h) == "number"
+                                    and eb.w > 0 and eb.h > 0 then
+                                    bx, by, bw, bh = eb.x, eb.y, eb.w, eb.h
+                                end
+                                local mk, own
+                                if marksOn then mk, own = Core.clearedZoneMarks(bx, by, bw, bh) end
+                                local zone = {
                                     id = "poi:" .. cat .. ":" .. i,
                                     rects = rects,
                                     lodRect = lodRect,
@@ -408,8 +434,13 @@ local function buildPoiConverted(source)
                                     -- 建築（如民宅），無標注會被當標錯（2026-08-20
                                     -- West Point 地下酒吧玩家回報）
                                     basement = (e.u == 1) or nil,
+                                    bx = bx, by = by, bw = bw, bh = bh,
+                                    mark = mk,
                                 }
-                                if tex and e.u == 1 then legend.basement = true end
+                                if own or not visitedOnly then
+                                    built[#built + 1] = zone
+                                    if tex and e.u == 1 then legend.basement = true end
+                                end
                             end
                         end
                     end
@@ -447,7 +478,11 @@ local function currentSig()
     local parts = { source, ready, Core.layerOn("poi") and "1" or "0",
         getBoolOption("PoiBlocks", false) and "1" or "0",
         getBoolOption("PoiColorIcons", false) and "1" or "0",
-        getBoolOption("PoiWholeBuilding", true) and "1" or "0" }
+        getBoolOption("PoiWholeBuilding", true) and "1" or "0",
+        -- 去過／已清空：兩個顯示選項與標記的 revision（新去過、清空、刷新、隊友資料才變；翻過進度不變）
+        getBoolOption("PoiVisitMarks", true) and "1" or "0",
+        getBoolOption("PoiVisitedOnly", false) and "1" or "0",
+        Core.clearedRevision and tostring(Core.clearedRevision()) or "" }
     local order = MinidoracatMiniMapPOICategories and MinidoracatMiniMapPOICategories.ORDER
     if type(order) == "table" then
         for i = 1, #order do

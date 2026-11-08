@@ -193,7 +193,9 @@ local function finalizeItem(it)
 end
 
 -- 結果收集：回陣列 { { kind="coord|street|poi", label=, x=, y=, d=, tag=, right=, ... } }
-local function doSearch(text, px, py)
+-- filter（搜尋視窗的暫時篩選，nil＝不篩）＝{ showCleared, unvisited, hc = 0, hv = 0 }：資源點結果帶這棟的「去過／已清空」
+-- 狀態字（_ClearedUI.lua）；已清空（自己或隊友）預設不列、只看沒去過的另藏自己有標記的，藏掉的數目累加在 hc／hv
+local function doSearch(text, px, py, pn, filter)
     local results = {}
     text = text and text:match("^%s*(.-)%s*$") or ""
     if text == "" then return results end
@@ -292,7 +294,22 @@ local function doSearch(text, px, py)
         local baseHit = #q >= 2 and baseCore:sub(1, #q) == q
         if anyCat or baseHit then
             local hits = {}
-            local function addHit(nm, ex, ey, basement)
+            local function addHit(nm, ex, ey, basement, bx, by, bw, bh)
+                local state, code, mine
+                if filter and bw and Core.clearedSearchState then
+                    local box = filter.box or {}
+                    filter.box = box
+                    box.x, box.y, box.w, box.h = bx, by, bw, bh
+                    state, code, mine = Core.clearedSearchState(pn, box)
+                    if (code == 2 or code == 3) and not filter.showCleared then
+                        filter.hc = filter.hc + 1
+                        return
+                    end
+                    if mine and filter.unvisited then
+                        filter.hv = filter.hv + 1
+                        return
+                    end
+                end
                 local d = math.sqrt(dist2(px, py, ex, ey))
                 -- 剪枝早退：滿載且比末位遠→不配置 entry table 直接丟
                 if #hits < MAX_POI_RESULTS or d < hits[#hits].d then
@@ -301,7 +318,8 @@ local function doSearch(text, px, py)
                     local label = basement
                         and (nm .. getText("UI_MinidoracatMiniMap_SearchBasement")) or nm
                     boundedInsert(hits, MAX_POI_RESULTS,
-                        { kind = "poi", label = label, x = ex, y = ey, d = d })
+                        { kind = "poi", label = label, x = ex, y = ey, d = d, bx = bx, by = by, bw = bw, bh = bh,
+                            sourceHint = state, dot = (code == 2 or code == 3) and Core.CLEARED_DOT or nil })
                 end
             end
             -- 房間資料版：地圖上畫的同一份建築清單（MinidoracatMiniMapPOI.lua），落點＝該類最大的房間；
@@ -314,7 +332,7 @@ local function doSearch(text, px, py)
                     for cat in pairs(b.cats) do
                         local a = b.anchors[cat]
                         local nm = hitCats[cat] or (baseHit and a.basement and allNames[cat] or nil)
-                        if nm then addHit(nm, a.x + a.w / 2, a.y + a.h / 2, a.basement) end
+                        if nm then addHit(nm, a.x + a.w / 2, a.y + a.h / 2, a.basement, b.x, b.y, b.w, b.h) end
                     end
                 end
             else
@@ -324,7 +342,9 @@ local function doSearch(text, px, py)
                         or (baseHit and e.u == 1 and allNames[e.cat] or nil)
                     if nm and e.rn and e.rn >= 1 then
                         local r1 = e.r[1]
-                        addHit(nm, r1.x + r1.w / 2, r1.y + r1.h / 2, e.u == 1)
+                        -- 建築外框＝烘焙的整棟 b（同 MinidoracatMiniMapPOI.lua；缺了用最大的房間）
+                        local eb = type(e.b) == "table" and type(e.b.w) == "number" and e.b.w > 0 and e.b or r1
+                        addHit(nm, r1.x + r1.w / 2, r1.y + r1.h / 2, e.u == 1, eb.x, eb.y, eb.w, eb.h)
                     end
                 end
             end
@@ -1123,6 +1143,21 @@ local function placeOptions(menu, win)
     if not it.home then add("UI_MinidoracatMiniMap_PlaceMenuSetHome", { op = "home", placeId = it.placeId }) end
     add("UI_MinidoracatMiniMap_PlaceRename", { op = "rename", placeId = it.placeId })
     add("UI_MinidoracatMiniMap_PlaceRemove", { op = "remove", placeId = it.placeId })
+end
+
+-- 搜尋頁「動作…」的去過／已清空（_ClearedUI.lua）：選中資源點時列標為已清空（或取消）／忘記這裡；
+-- 再列兩個暫時篩選，只記在這個視窗、不存成選項（2026-11-08 設計稿 cleared）。收藏頁不列篩選
+local function clearedOptions(menu, win)
+    if not Core.clearedMenuFill then return end
+    local it = winSelectedItem(win)
+    if it and it.kind == "poi" and it.bw then
+        Core.clearedMenuFill(menu, win.playerNum or 0, { x = it.bx, y = it.by, w = it.bw, h = it.bh })
+    end
+    if win.page ~= "search" then return end
+    menu:addOption(getText(win._clrShow and "UI_MinidoracatMiniMap_ClearedSearchHide"
+        or "UI_MinidoracatMiniMap_ClearedSearchShow"), win, function(w) w._clrShow = not w._clrShow end)
+    menu:addOption(getText(win._clrUnvisited and "UI_MinidoracatMiniMap_ClearedSearchAll"
+        or "UI_MinidoracatMiniMap_ClearedSearchUnvisited"), win, function(w) w._clrUnvisited = not w._clrUnvisited end)
 end
 
 --------------------------------------------------------------------------------
@@ -1933,16 +1968,22 @@ local function winRefresh(win, force)
     if text == "" then
         bx, by = math.floor(px / 8), math.floor(py / 8)
     end
+    -- 去過／已清空：資料版本（圖標、自己與隊友的進度都算，_Cleared.lua）與兩個暫時篩選（只記在這個視窗）也進快取鍵
+    local cRev = Core.clearedDataRevision and Core.clearedDataRevision() or nil
+    local cShow, cUnvisited = win._clrShow == true, win._clrUnvisited == true
     if not force and win.page == win._lastPage and text == win._lastText and st == win._lastState
-        and pRev == win._pRev and pErr == win._pErr and bx == win._pBx and by == win._pBy then
+        and pRev == win._pRev and pErr == win._pErr and bx == win._pBx and by == win._pBy
+        and cRev == win._cRev and cShow == win._cShow and cUnvisited == win._cUnvisited then
         return
     end
     win._lastPage = win.page
     win._lastText = text
     win._lastState = st
     win._pRev, win._pErr, win._pBx, win._pBy = pRev, pErr, bx, by
+    win._cRev, win._cShow, win._cUnvisited = cRev, cShow, cUnvisited
     local keep = winSelectedItem(win)
     local keepId = keep and keep.kind == "place" and keep.placeId or nil
+    local keepPoi = keep and keep.kind == "poi" and keep or nil -- 標記之後清單重建，選取留在同一個地點
     win.list:clear()
     win._searchSel = nil -- 清單重建：下個 prerender 依新的選取重算動作可用性
     if onPlaces then
@@ -1952,7 +1993,8 @@ local function winRefresh(win, force)
         return
     end
     local results = matchPlaces(pn, ps, text, px, py)
-    local found = doSearch(text, px, py)
+    local filter = { showCleared = cShow, unvisited = cUnvisited, hc = 0, hv = 0 }
+    local found = doSearch(text, px, py, pn, filter)
     for i = 1, #found do results[#results + 1] = found[i] end
     if #results == 0 then
         if text == "" then
@@ -1992,7 +2034,18 @@ local function winRefresh(win, force)
             prepareRow(win.list, row, result, 24 + result.tagW + 10, result.rightW,
                 result.sourceHint ~= nil)
             if keepId and result.placeId == keepId then win.list.selected = row.itemindex end
+            if keepPoi and result.kind == "poi" and result.x == keepPoi.x and result.y == keepPoi.y
+                and result.label == keepPoi.label then
+                win.list.selected = row.itemindex
+            end
         end
+    end
+    -- 篩掉的資源點：清單最後寫藏了幾個（切換在「動作…」）
+    if filter.hc > 0 then
+        addInfoRow(win.list, getText("UI_MinidoracatMiniMap_ClearedSearchHidden", string.format("%d", filter.hc)))
+    end
+    if filter.hv > 0 then
+        addInfoRow(win.list, getText("UI_MinidoracatMiniMap_ClearedSearchHiddenVisited", string.format("%d", filter.hv)))
     end
     -- 訊息列收不住的完整文字接在結果之後：選取索引 1 仍是第一個可用地點
     if win.msgFull then addInfoRow(win.list, win.msgFull) end
@@ -2946,6 +2999,8 @@ local function createSearchWindow(pn)
             field = "replaceBtn", group = "more" },
         { key = "UI_MinidoracatMiniMap_PlaceMenu", fill = placeOptions,
             field = "placeBtn", group = "more" },
+        { key = "UI_MinidoracatMiniMap_ClearedSecTitle", fill = clearedOptions,
+            field = "clearedBtn", group = "more" },
     }
     makeButtons(win, win.searchBtns)
     -- 行程頁頂部：接續模式兩顆明確選擇鈕（不是 toggle）。切換只改這份行程的設定，
