@@ -16,6 +16,11 @@ local source = file:read("*a"):gsub("\r\n", "\n")
 file:close()
 
 local compile = loadstring or load
+-- 常數取自 production 原始碼（測試不得自帶第二份數值，否則調參時測試照樣綠）
+local function constOf(name)
+    return assert(tonumber(source:match("\nlocal " .. name .. " = (%-?[%d%.]+)")),
+        "找不到常數 " .. name)
+end
 
 local body = assert(source:match(
     "%-%- test:nav%-api:start[^\n]*\n(.-)\n%-%- test:nav%-api:end"),
@@ -29,7 +34,8 @@ local invalidateBody = assert(source:match(
 -- prelude 提供本區段於 _NavRoute.lua「之前」已存在的環境：engine／ensureRoute／
 -- navRoutes／navDetours／getSpecificPlayer／MinidoracatMiniMapAPI；中間接 nav-invalidate 區段（production）。
 -- 注意：長字串 [=[ 後的首個換行會被 Lua 吃掉，body 與 suffix 之間須補顯式 "\n"
-local prelude = [=[
+local prelude = ("local LARGE_GRAPH_NODES, QUERY_SYNC_WORK = %s, %s\n"):format(constOf("LARGE_GRAPH_NODES"),
+    constOf("QUERY_SYNC_WORK")) .. [=[
 local MinidoracatMiniMapAPI = {}
 local engine = {
     state = "ready", graph = nil, patchState = "applied", searchState = "ok",
@@ -49,6 +55,10 @@ local detourCalls = {}
 local nextDetourRoute, nextDetourError = nil, nil
 local kicks = {}
 local nextKickState = nil
+-- v14 分幀改道：routeQuery／queryRun 樁。查詢要被推進 nextRuns 次才算完（每次記下預算），結果取開查詢當下的
+-- nextDetourRoute／nextDetourError（同 findRoute 樁）
+local queryCalls = {}
+local nextRuns = 0
 local NavCore = {
     findRoute = function(graph, sx, sy, tx, ty, ax, ay, ar, approachWeight, more, maxSnap, pn)
         detourCalls[#detourCalls + 1] = {
@@ -56,6 +66,24 @@ local NavCore = {
             ax = ax, ay = ay, ar = ar, w = approachWeight, more = more, maxSnap = maxSnap, pn = pn,
         }
         return nextDetourRoute, nextDetourError
+    end,
+    routeQuery = function(graph, sx, sy, tx, ty, ax, ay, ar, approachWeight, more, maxSnap, pn)
+        local q = { g = graph, done = false, left = nextRuns, route = nextDetourRoute, err = nextDetourError,
+            budgets = {} }
+        queryCalls[#queryCalls + 1] = {
+            graph = graph, sx = sx, sy = sy, tx = tx, ty = ty,
+            ax = ax, ay = ay, ar = ar, w = approachWeight, more = more, maxSnap = maxSnap, pn = pn, q = q,
+        }
+        return q
+    end,
+    queryRun = function(q, budget)
+        q.budgets[#q.budgets + 1] = budget
+        if q.left > 0 then
+            q.left = q.left - 1
+            return false
+        end
+        q.done = true
+        return true
     end,
 }
 local function logf() end
@@ -82,10 +110,17 @@ end
 local suffix = [=[
 return { API = MinidoracatMiniMapAPI, engine = engine, navRoutes = navRoutes, navDetours = navDetours,
     navQueries = navQueries,
-    players = players, calls = calls, detourCalls = detourCalls, kicks = kicks,
+    players = players, calls = calls, detourCalls = detourCalls, kicks = kicks, queryCalls = queryCalls,
     invalidate = Core.navInvalidateRoute, worldReset = worldReset, failNavEngine = failNavEngine,
     setRoute = function(r, state) nextRoute, nextRouteState = r, state end,
     setKick = function(state) nextKickState = state end,
+    setRuns = function(n) nextRuns = n end,
+    -- queryTick 的樁（production 本體在 nav-cache 區段，另由 C11 測）：每個待算改道推一次
+    tick = function()
+        for _, pd in pairs(navDetours) do
+            if pd.q and not pd.q.done then NavCore.queryRun(pd.q, 600) end
+        end
+    end,
     setDetour = function(r, err) nextDetourRoute, nextDetourError = r, err end }
 ]=]
 local T = assert(compile(prelude .. body .. "\n" .. suffix, "nav-api"))()
@@ -107,8 +142,10 @@ local function resetAll()
     T.setRoute(nil)
     T.setKick(nil)
     T.setDetour(nil, nil)
+    T.setRuns(0)
     clear(T.calls)
     clear(T.detourCalls)
+    clear(T.queryCalls)
     clear(T.kicks)
 end
 
@@ -677,6 +714,205 @@ assert(dc.sx == 3 and dc.sy == 4 and dc.w == 3 and dc.pn == 1 and T.navRoutes[1]
     and T.navRoutes["from:1"] == nil, "F9: requestDetour 起點是玩家、pn 是槽位、只寫玩家那一格")
 
 --------------------------------------------------------------------------------
+-- 五c、v14 allowPending（requestDetour 第 10 參、requestDetourFrom 第 11 參）：大路網的改道分幀。
+-- 這一幀先算 QUERY_SYNC_WORK，沒算完回 (nil, "building")、記成該格的待算改道，背景推進；消費者用完全相同的參數
+-- 再呼叫：還沒算完回 building，算完照 v13 語意交付。參數不同、換圖、清快取、換世界、引擎失敗＝丟掉重算。
+--------------------------------------------------------------------------------
+local unpackArgs = unpack or table.unpack
+local LARGE = constOf("LARGE_GRAPH_NODES")
+local SYNC_WORK = constOf("QUERY_SYNC_WORK")
+local function pendingSetup(nodes)
+    resetAll()
+    T.players[0] = player(7, 8, true) -- 在車上：權重 12
+    T.engine.graph = { id = "large", nodeCount = nodes or LARGE }
+    local b = { state = "ok", route = detourRoute("base"), tx = 10, ty = 20 }
+    T.navRoutes[0] = b
+    return b
+end
+-- P1：旗標給了就要是 boolean，否則 badargs、不進 A*（兩個入口都一樣）
+for label, bad in pairs({ ["字串"] = "true", ["數字"] = 1, ["表"] = {} }) do
+    pendingSetup()
+    local r, st = API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, nil, bad)
+    assert(r == nil and st == "badargs" and #T.detourCalls == 0 and #T.queryCalls == 0,
+        "P1: requestDetour allowPending " .. label .. " → badargs 且不進 A*")
+    r, st = API.requestDetourFrom(0, 500, 600, 10, 20, 30, 40, 5, nil, nil, bad)
+    assert(r == nil and st == "badargs" and #T.detourCalls == 0 and #T.queryCalls == 0,
+        "P1: requestDetourFrom allowPending " .. label .. " → badargs 且不進 A*")
+end
+-- P2：小路網帶旗標＝照 v13 同步（findRoute 一次算完、覆寫快取）
+pendingSetup(LARGE - 1)
+local dP2 = detourRoute("P2")
+T.setDetour(dP2, nil)
+T.setRuns(5)
+detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, nil, true)
+assert(detour == dP2 and detourState == "ok" and #T.detourCalls == 1 and #T.queryCalls == 0
+    and T.navRoutes[0].route == dP2 and T.navDetours[0] == nil, "P2: 小路網帶旗標照舊同步")
+-- P3：大路網不帶旗標／false＝照 v13 同步
+for _, flag in ipairs({ "none", false }) do
+    pendingSetup()
+    T.setDetour(dP2, nil)
+    T.setRuns(5)
+    if flag == "none" then
+        detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5)
+    else
+        detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, nil, flag)
+    end
+    assert(detour == dP2 and detourState == "ok" and #T.detourCalls == 1 and #T.queryCalls == 0
+        and T.navRoutes[0].route == dP2, "P3: 大路網旗標 " .. tostring(flag) .. " 照舊同步")
+end
+-- P4：大路網帶旗標、不 deferCommit：building → 同參數再呼叫仍 building、不重開 → 算完照 v13 覆寫快取
+do
+    local b = pendingSetup()
+    local d = detourRoute("P4")
+    T.setDetour(d, nil)
+    T.setRuns(2)
+    local more = { 100, 200, 4 }
+    local r, st = API.requestDetour(0, 10, 20, 30, 40, 5, more, 20, nil, true)
+    local qc = T.queryCalls[1]
+    assert(r == nil and st == "building" and #T.queryCalls == 1 and #T.detourCalls == 0
+        and qc.q.budgets[1] == SYNC_WORK and T.navRoutes[0] == b and T.navDetours[0] and T.navDetours[0].q == qc.q,
+        "P4: 這一幀只算 QUERY_SYNC_WORK、沒算完回 building、記成待算改道、快取不動")
+    assert(qc.sx == 7 and qc.sy == 8 and qc.w == 12 and qc.pn == 0 and qc.tx == 10 and qc.ty == 20 and qc.ax == 30
+        and qc.ay == 40 and qc.ar == 5 and qc.more == more and qc.maxSnap == 20, "P4: 引數照轉給 routeQuery")
+    T.players[0] = player(9, 9, true) -- 玩家位置不是參數：挪了也不重算
+    r, st = API.requestDetour(0, 10, 20, 30, 40, 5, { 100, 200, 4 }, 20, false, true)
+    assert(r == nil and st == "building" and #T.queryCalls == 1,
+        "P4: 同參數（moreAvoid 換表同內容、deferCommit nil／false）再呼叫＝building、不重開")
+    T.tick()
+    r, st = API.requestDetour(0, 10, 20, 30, 40, 5, more, 20, nil, true)
+    assert(r == nil and st == "building" and #T.queryCalls == 1, "P4: 還沒算完照回 building")
+    T.tick()
+    r, st = API.requestDetour(0, 10, 20, 30, 40, 5, more, 20, nil, true)
+    local e = T.navRoutes[0]
+    assert(r == d and st == "ok" and e ~= b and e.route == d and e.state == "ok" and e.tx == 10 and e.ty == 20
+        and e.buildX == 7 and e.buildY == 8 and e.approachWeight == 12 and e.progressIdx == 1 and e.relocate
+        and T.navDetours[0] == nil and #T.queryCalls == 1 and #T.detourCalls == 0,
+        "P4: 算完照 v13 覆寫快取（起點是開查詢時的位置、標 relocate 整條找進度）")
+end
+-- P5：deferCommit＝true：算完記成待接受、快取不動；算的期間 commit 一律 stale；commitDetour 收得下分幀算出的 table
+do
+    local b = pendingSetup()
+    local d = detourRoute("P5")
+    T.setDetour(d, nil)
+    T.setRuns(1)
+    local r, st = API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, true, true)
+    assert(r == nil and st == "building", "P5: deferCommit 的分幀改道同樣先回 building")
+    local cok0, cst0 = API.commitDetour(0, d)
+    assert(cok0 == false and cst0 == "stale" and T.navDetours[0] and T.navDetours[0].q,
+        "P5: 還在算的改道不能 commit（stale），待算照留")
+    T.tick()
+    r, st = API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, true, true)
+    assert(r == d and st == "ok" and T.navRoutes[0] == b and T.navDetours[0].entry.route == d
+        and T.navDetours[0].base == b, "P5: 算完記成待接受、快取不動")
+    local cok, cst = API.commitDetour(0, d)
+    assert(cok == true and cst == "ok" and T.navRoutes[0].route == d and T.navRoutes[0].buildX == 7
+        and T.navDetours[0] == nil, "P5: commitDetour 收下分幀算出的那條")
+end
+-- P6：參數不同＝丟掉舊的待算、重算（含 moreAvoid 原表就地改內容、上下車換權重）
+local function baseArgs(m) return { 0, 10, 20, 30, 40, 5, m, 20, true, true } end
+for label, change in pairs({
+    ["目標"] = function(a) a[2] = 11 return a end,
+    ["避讓圓心"] = function(a) a[4] = 31 return a end,
+    ["避讓半徑"] = function(a) a[6] = 6 return a end,
+    ["moreAvoid 就地改內容"] = function(a) a[7][3] = 4 return a end,
+    ["moreAvoid 拿掉"] = function(a) a[7] = nil return a end,
+    ["moreAvoid 多一圈"] = function(a) a[7] = { 1, 2, 3, 4, 5, 6 } return a end,
+    ["maxSnap"] = function(a) a[8] = nil return a end,
+    ["deferCommit"] = function(a) a[9] = false return a end,
+    ["上下車"] = function(a) T.players[0] = player(7, 8) return a end,
+}) do
+    pendingSetup()
+    T.setDetour(detourRoute("P6"), nil)
+    T.setRuns(3)
+    local m = { 1, 2, 3 }
+    local r, st = API.requestDetour(unpackArgs(baseArgs(m), 1, 10))
+    assert(st == "building" and #T.queryCalls == 1, "P6: 前提 building")
+    r, st = API.requestDetour(unpackArgs(change(baseArgs(m)), 1, 10))
+    assert(r == nil and st == "building" and #T.queryCalls == 2 and T.navDetours[0].q == T.queryCalls[2].q,
+        "P6: " .. label .. " 不同＝丟掉舊的、重開查詢")
+end
+-- P7：這一幀就算完＝當場照 v13 交付（不標 relocate）
+do
+    pendingSetup()
+    local d = detourRoute("P7")
+    T.setDetour(d, nil)
+    local r, st = API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, nil, true)
+    assert(r == d and st == "ok" and #T.queryCalls == 1 and T.queryCalls[1].q.budgets[1] == SYNC_WORK
+        and T.navRoutes[0].route == d and not T.navRoutes[0].relocate and T.navDetours[0] == nil,
+        "P7: 同步預算內算完＝當場交付")
+end
+-- P8：超過工作量上限（無路、沒有例外）＝照 v13 回 noroad，待算清掉、快取不動
+do
+    local b = pendingSetup()
+    T.setRuns(1)
+    local r, st = API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, nil, true)
+    assert(st == "building", "P8: 前提 building")
+    T.tick()
+    r, st = API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, nil, true)
+    assert(r == nil and st == "noroad" and T.navDetours[0] == nil and T.navRoutes[0] == b, "P8: 算完無路＝noroad")
+    T.setDetour(detourRoute("x"), "boom")
+    T.setRuns(0)
+    r, st = API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, nil, true)
+    assert(r == nil and st == "failed" and T.engine.state == "failed", "P8: 引擎例外照 v13 停用、回 failed")
+end
+-- P9：清快取、換世界、引擎失敗清掉待算改道；換圖（舊圖的查詢）不交付；之後同參數再呼叫＝重開
+for label, invalidate in pairs({
+    ["清快取（Core.navInvalidateRoute）"] = function() T.invalidate(0) end,
+    ["換世界"] = function() T.worldReset() end,
+    ["引擎失敗"] = function() T.failNavEngine("boom") end,
+    ["換圖"] = function() end,
+}) do
+    pendingSetup()
+    T.setDetour(detourRoute("P9"), nil)
+    T.setRuns(1)
+    API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, nil, true)
+    invalidate()
+    if label ~= "換圖" then assert(T.navDetours[0] == nil, "P9: " .. label .. " 清掉待算改道") end
+    T.engine.state, T.engine.graph = "ready", { id = "new", nodeCount = LARGE }
+    T.tick()
+    local r, st = API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, nil, true)
+    assert(r == nil and st == "building" and #T.queryCalls == 2 and T.queryCalls[2].graph == T.engine.graph,
+        "P9: " .. label .. " 之後同參數再呼叫＝照新圖重開，實得 " .. tostring(st) .. "/" .. #T.queryCalls)
+end
+-- P10：requestDetourFrom 同一組：寫 "from:"..pn 那一格、起點是參數（改了就重算）、一律 deferCommit
+do
+    resetAll()
+    T.players[0] = player(7, 8)
+    T.engine.graph = { id = "large", nodeCount = LARGE }
+    local pB = { state = "ok", route = detourRoute("player"), tx = 10, ty = 20 }
+    local fB = { state = "ok", route = detourRoute("from-base"), tx = 10, ty = 20 }
+    T.navRoutes[0], T.navRoutes["from:0"] = pB, fB
+    local d = detourRoute("PF")
+    T.setDetour(d, nil)
+    T.setRuns(1)
+    local r, st = API.requestDetourFrom(0, 500, 600, 10, 20, 30, 40, 5, nil, nil, true)
+    local qc = T.queryCalls[1]
+    assert(r == nil and st == "building" and T.navDetours["from:0"].q == qc.q and T.navDetours[0] == nil
+        and qc.sx == 500 and qc.sy == 600 and qc.w == 12 and qc.pn == 0 and qc.q.budgets[1] == SYNC_WORK,
+        "P10: 大路網帶旗標＝building、待算記在 from 格")
+    local okc, cok0, cst0 = pcall(API.commitDetour, 0, d)
+    assert(okc and cok0 == false and cst0 == "stale", "P10: from 格還在算的改道 commit＝stale、不拋錯")
+    r, st = API.requestDetourFrom(0, 501, 600, 10, 20, 30, 40, 5, nil, nil, true)
+    assert(st == "building" and #T.queryCalls == 2 and T.queryCalls[2].sx == 501, "P10: 起點改了＝重算")
+    T.invalidate(0)
+    assert(T.navDetours["from:0"], "P10: 清玩家那一格不清召喚的待算改道")
+    T.tick()
+    r, st = API.requestDetourFrom(0, 501, 600, 10, 20, 30, 40, 5, nil, nil, true)
+    assert(r == d and st == "ok" and T.navRoutes["from:0"] == fB and T.navDetours["from:0"].entry.route == d
+        and T.navDetours["from:0"].entry.buildX == 501, "P10: 算完記成 from 格待接受")
+    local cok, cst = API.commitDetour(0, d)
+    assert(cok == true and cst == "ok" and T.navRoutes["from:0"].route == d and T.navRoutes[0] == nil,
+        "P10: commitDetour 收進 from 格")
+    resetAll()
+    T.players[0] = player(7, 8)
+    T.engine.graph = { id = "large", nodeCount = LARGE }
+    T.setDetour(d, nil)
+    T.setRuns(1)
+    r, st = API.requestDetourFrom(0, 500, 600, 10, 20, 30, 40, 5)
+    assert(r == d and st == "ok" and #T.detourCalls == 1 and #T.queryCalls == 0, "P10: 不帶旗標照舊同步")
+end
+
+--------------------------------------------------------------------------------
 -- 六、ensureRoute 快取／偏航（test:nav-cache 區段；跑 production 本體）
 -- 實測病灶（2026-09-01 AutoDrive telemetry）：車在 (10716,9756) 拿到首點
 -- (10716,9737) 的舊線——偏航 19 格 < 舊 DEVIATION_DIST=28 就一直沿用快取。
@@ -685,11 +921,6 @@ assert(dc.sx == 3 and dc.sy == 4 and dc.w == 3 and dc.pn == 1 and T.navRoutes[1]
 local cacheBody = assert(source:match(
     "%-%- test:nav%-cache:start[^\n]*\n(.-)\n%-%- test:nav%-cache:end"),
     "找不到 nav-cache 測試區段")
--- 常數取自 production 原始碼（測試不得自帶第二份數值，否則調參時測試照樣綠）
-local function constOf(name)
-    return assert(tonumber(source:match("\nlocal " .. name .. " = (%-?[%d%.]+)")),
-        "找不到常數 " .. name)
-end
 local DEVIATION_DIST = constOf("DEVIATION_DIST")
 local REBUILD_COOLDOWN_MS = constOf("REBUILD_COOLDOWN_MS")
 local REBUILD_MOVE_DIST = constOf("REBUILD_MOVE_DIST")
@@ -707,6 +938,7 @@ local REBUILD_MOVE_DIST, NOROAD_RETRY_DIST = %s, %s
 local LARGE_GRAPH_NODES, QUERY_SYNC_WORK, QUERY_TICK_WORK = %s, %s, %s
 local navRoutes = {}
 local navQueries = {}
+local navDetours = {}
 local engine = { state = "ready", graph = { id = "g", nodeCount = 0 }, patchState = "applied" }
 local nowMs = 0
 local findCalls = {}
@@ -739,18 +971,22 @@ local NavCore = {
         q.call.budgets[#q.call.budgets + 1] = budget
         if q.left > 0 then
             q.left = q.left - 1
-            q.query.n = q.query.n + 1
+            q.query.n = q.query.n + (q.step or 1)
             return false
         end
+        q.done = true
         return true
     end,
 }
 local function getTimestampMs() return nowMs end
-local function clearRoute(key) navRoutes[key] = nil; navQueries[key] = nil; cleared[#cleared + 1] = key end
+local function clearRoute(key)
+    navRoutes[key] = nil; navQueries[key] = nil; navDetours[key] = nil; cleared[#cleared + 1] = key
+end
 local function failNavEngine()
     engine.state, engine.graph = "failed", nil
     for k in pairs(navRoutes) do navRoutes[k] = nil end
     for k in pairs(navQueries) do navQueries[k] = nil end
+    for k in pairs(navDetours) do navDetours[k] = nil end
 end
 local function logf() end
 ]=]):format(DEVIATION_DIST, REBUILD_COOLDOWN_MS, REBUILD_MOVE_DIST,
@@ -758,6 +994,7 @@ local function logf() end
     constOf("QUERY_TICK_WORK"))
 local cacheSuffix = [=[
 return { ensureRoute = ensureRoute, queryTick = queryTick, navRoutes = navRoutes, navQueries = navQueries,
+    navDetours = navDetours,
     engine = engine, findCalls = findCalls, cleared = cleared,
     setNow = function(v) nowMs = v end,
     setNext = function(r, e, runs, exhausted) nextRoute, nextErr, nextRuns, nextExhausted = r, e, runs or 0, exhausted end }
@@ -986,5 +1223,41 @@ do
     freshQueries()
 end
 
+-- C11（v14）：queryTick 也推進待算改道（navDetours 裡帶 q 的那種），和背景路線查詢共用 QUERY_TICK_WORK、改道先推
+-- （AutoDrive 這時停在堵點等）；算完的不再推（留在原格等消費者同參數再呼叫來取）；待接受的（沒有 q）不碰；
+-- 推出內部例外＝failNavEngine（同路線查詢）。
+do
+    local QUERY_TICK_WORK = constOf("QUERY_TICK_WORK")
+    C.engine.state = "ready"
+    C.engine.graph = { id = "large", nodeCount = constOf("LARGE_GRAPH_NODES") }
+    for k in pairs(C.navQueries) do C.navQueries[k] = nil end
+    C.navRoutes[0] = nil
+    C.setNext({ 9000, 9000, 9100, 9100 }, nil, 5)
+    C.ensureRoute(0, { x = 9100, y = 9100 }, 9000, 9000, 12)
+    local rq = C.navQueries[0].q
+    local nBudgets = #rq.call.budgets
+    local function stubQ(left, step)
+        return { g = C.engine.graph, query = { n = 0 }, left = left, step = step, call = { budgets = {} } }
+    end
+    local dq, doneQ = stubQ(2, QUERY_TICK_WORK), stubQ(0)
+    doneQ.done = true
+    local waiting = { entry = { route = {} } }
+    C.navDetours[0], C.navDetours[1], C.navDetours[2] = { q = dq }, { q = doneQ }, waiting
+    C.queryTick()
+    assert(dq.call.budgets[1] == QUERY_TICK_WORK and #rq.call.budgets == nBudgets,
+        "C11: 改道先推、用光這個 tick 的預算時路線查詢等下一個 tick")
+    assert(#doneQ.call.budgets == 0 and C.navDetours[2] == waiting, "C11: 算完的不再推、待接受的不碰")
+    C.queryTick()
+    C.queryTick()
+    assert(dq.done and C.navDetours[0] and C.navDetours[0].q == dq, "C11: 算完留在原格等消費者來取")
+    assert(#rq.call.budgets == nBudgets + 1, "C11: 改道沒用完的預算給路線查詢")
+    local eq = stubQ(0)
+    eq.err = "boom"
+    C.navDetours[3] = { q = eq }
+    C.queryTick()
+    assert(C.engine.state == "failed" and next(C.navDetours) == nil, "C11: 推出內部例外＝停用引擎、清掉改道")
+    C.engine.state = "ready"
+end
+
 print("test_nav_api: OK（requestRoute A1-A12＋requestDetour A13-A22＋deferCommit／commitDetour A23-A28"
-    .. "＋requestRouteFrom／requestDetourFrom F1-F9＋ensureRoute 快取/偏航 C0-C10）")
+    .. "＋requestRouteFrom／requestDetourFrom F1-F9＋allowPending P1-P10＋ensureRoute 快取/偏航 C0-C11）")
