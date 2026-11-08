@@ -6,6 +6,7 @@
 [*] Huge maps like Real USA now support navigation and custom roads; the road network builds in the background after you enter the world.
 [*] The minimap now shows Real USA street names.
 [*] Standalone worlds such as Real USA no longer get the Knox County map drawn over them.
+[*] With today's AutoDrive update, detours on huge maps no longer make the game stutter.
 [*] Opening the world map in Real USA no longer turns navigation off, and custom roads past coordinate 32,767 are no longer skipped.
 [/list]
 
@@ -13,6 +14,7 @@
 [list]
 [*] [b]Real USA 這類超大世界可以導航[/b]：Real USA 的全國路網（約 1.1 萬條街、5.5 萬段）現在可以用來導航，自訂道路也一起支援。進入世界後，導航在背景建路網，大約 40 秒後可以用（60 fps）；長程路線要算一兩秒才出現，重算期間地圖照舊畫原本的路線。Real USA 有些地區的路沒有和主路網相連（路網資料本身斷開），到不了的目的地會顯示直線指引；畫自訂道路把它們接起來就能走。
 [*] [b]Real USA 的小地圖也顯示街名[/b]：以前只有世界地圖有街名，小地圖與它的路名提示是空的。
+[*] [b]自動駕駛（AutoDrive）在 Real USA 這類超大世界繞路不再卡一下[/b]：遇到堵路要繞路時，以前在超大路網上要一次把新路線算完，畫面會頓一下；現在改成在背景分次算，算好再接手繞路。要搭配同一天更新的 AutoDrive 才有效，舊版 AutoDrive 照舊運作。
 [/list]
 
 [h3]🔧 修正[/h3]
