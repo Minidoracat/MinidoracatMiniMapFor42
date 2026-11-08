@@ -576,34 +576,42 @@ mod.setSandbox(true)
 r = wm1:onRightMouseUp(5, 6)
 local m6 = mod.menu(1)
 assert(names(m6) == WITH_TRIP, "R6: 有行程＝第一層六項、沒有平的行程規劃（實得 " .. names(m6) .. "）")
-assert(subNames(m6, TRIP) == TRIP_OPEN .. ",UI_MinidoracatMiniMap_TripPause"
-    .. ",UI_MinidoracatMiniMap_ShareTarget,UI_MinidoracatMiniMap_TripClear",
-    "R6: 行程子選單＝行程規劃／停止導航／分享／清空（實得 " .. subNames(m6, TRIP) .. "）")
+local NO_SHARE = TRIP_OPEN .. ",UI_MinidoracatMiniMap_TripPause,UI_MinidoracatMiniMap_TripClear"
+-- 第二位玩家（pn 1＝分割畫面座位）沒有身分，伺服器不轉送分享（MinidoracatMiniMapGroups.principal）：不列分享
+assert(subNames(m6, TRIP) == NO_SHARE,
+    "R6: 分割畫面座位的行程子選單＝行程規劃／停止導航／清空，不列分享（實得 " .. subNames(m6, TRIP) .. "）")
 -- 回呼：行程規劃開行程頁；停止導航暫停；清空走確認對話框入口（都不得直接改權威）
 local tripMenu = m6.options[5].sub
 tripMenu.options[1].fn(tripMenu.options[1].target)
 assert(mod.calls[#mod.calls] == "toggle:1:itinerary", "R6: 行程規劃須開行程頁")
 tripMenu.options[2].fn(tripMenu.options[2].target)
 assert(mod.calls[#mod.calls] == "pause:1:cancelled", "R6: 停止導航須暫停行程")
-tripMenu.options[4].fn(tripMenu.options[4].target)
+tripMenu.options[3].fn(tripMenu.options[3].target)
 assert(mod.calls[#mod.calls] == "promptClear:1", "R6: 清空行程須走確認入口")
 mod.clearCalls(); mod.resetMenus()
 
-local NO_SHARE = TRIP_OPEN .. ",UI_MinidoracatMiniMap_TripPause,UI_MinidoracatMiniMap_TripClear"
+-- 主座位（pn 0）同樣條件＝列分享（停止導航之後、清空之前）；不能分享的三種情況都拿主座位驗，才不是空檢查
+local wmS = mkWM(0)
+local WITH_SHARE = TRIP_OPEN .. ",UI_MinidoracatMiniMap_TripPause,UI_MinidoracatMiniMap_ShareTarget"
+    .. ",UI_MinidoracatMiniMap_TripClear"
+r = wmS:onRightMouseUp(5, 6)
+assert(subNames(mod.menu(0), TRIP) == WITH_SHARE,
+    "R6: 主座位的行程子選單＝行程規劃／停止導航／分享／清空（實得 " .. subNames(mod.menu(0), TRIP) .. "）")
+mod.clearCalls(); mod.resetMenus()
 mod.setSandbox(false) -- 伺服器禁分享：Share 消失、其餘保留
-r = wm1:onRightMouseUp(5, 6)
-assert(subNames(mod.menu(1), TRIP) == NO_SHARE, "R6: 沙盒禁分享＝無 Share")
+r = wmS:onRightMouseUp(5, 6)
+assert(subNames(mod.menu(0), TRIP) == NO_SHARE, "R6: 沙盒禁分享＝無 Share")
 mod.clearCalls(); mod.resetMenus()
 mod.setSandbox(true)
 mod.setFaction(nil) -- 多人但沒加入陣營：伺服器只轉給同陣營，列了也送不出去
-r = wm1:onRightMouseUp(5, 6)
-assert(subNames(mod.menu(1), TRIP) == NO_SHARE, "R6: 沒有陣營＝無 Share")
+r = wmS:onRightMouseUp(5, 6)
+assert(subNames(mod.menu(0), TRIP) == NO_SHARE, "R6: 沒有陣營＝無 Share")
 mod.clearCalls(); mod.resetMenus()
 mod.setFaction({})
 mod.setClient(false) -- 單機：無 Share
 mod.setSandbox(true)
-r = wm1:onRightMouseUp(5, 6)
-assert(subNames(mod.menu(1), TRIP) == NO_SHARE, "R6: 單機＝無 Share")
+r = wmS:onRightMouseUp(5, 6)
+assert(subNames(mod.menu(0), TRIP) == NO_SHARE, "R6: 單機＝無 Share")
 mod.clearCalls(); mod.resetMenus()
 
 -- R6b: 暫停中（無活動站）不得出現停止導航與分享

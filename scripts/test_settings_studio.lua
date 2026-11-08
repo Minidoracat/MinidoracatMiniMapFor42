@@ -102,7 +102,7 @@ local function bodyAlpha(w)
 end
 check(win.opaque == true, "B2b window asks the framework for an opaque body (opts.opaque)")
 checkEq(bodyAlpha(win), 1, "B2b window body is drawn at alpha 1")
-checkEq(table.concat(s.sections, ","), "base,places,roads,poicat,parking,zombie,animals,vehicles,safehouse,window,perf",
+checkEq(table.concat(s.sections, ","), "base,places,roads,sketch,poicat,parking,zombie,animals,vehicles,safehouse,window,perf",
     "B3 built-in categories in fixed order without addons")
 do
     local headers, items = {}, {}
@@ -116,12 +116,12 @@ do
     for _, row in ipairs(items) do
         icons[#icons + 1] = row.id .. "=" .. tostring(type(row.icon) == "table" and row.icon.path or row.icon)
     end
-    checkEq(table.concat(icons, ","), "base=layers,places=markerFlag,roads=media/ui/minimap_road.png,poicat=pin,"
+    checkEq(table.concat(icons, ","), "base=layers,places=markerFlag,roads=media/ui/minimap_road.png,sketch=Item_Pen,poicat=pin,"
         .. "parking=carSedan,zombie=skull,animals=pawprint,vehicles=steeringwheel,safehouse=house,window=sliders,perf=chart",
         "B5 nav icons per category")
     local switches = {}
     for _, row in ipairs(items) do if row.switch then switches[#switches + 1] = row.id end end
-    checkEq(table.concat(switches, ","), "roads,poicat,parking,zombie,animals,vehicles,safehouse", "B6 master switches in nav")
+    checkEq(table.concat(switches, ","), "roads,sketch,poicat,parking,zombie,animals,vehicles,safehouse", "B6 master switches in nav")
 end
 s.selectSection("parking") -- 只有母開關＋判定說明的分類也要建得出來（不拋錯）
 check(win.x >= 0 and win.y >= 0 and win.x + win.width <= 1920 and win.y + win.height <= 1080,
@@ -742,7 +742,7 @@ do
     e.zoneCats = { "farm", "loot" }
     e.boot()
     local st = e.open(0)
-    checkEq(table.concat(st.sections, ","), "base,places,roads,poicat,parking,zombie,animals,vehicles,safehouse,window,perf,zones,mappack",
+    checkEq(table.concat(st.sections, ","), "base,places,roads,sketch,poicat,parking,zombie,animals,vehicles,safehouse,window,perf,zones,mappack",
         "N1 zones (order 1) then map packs (order 2) in the add-on group")
     checkEq(navRow(st.nav, "zones").icon, "zone", "N1 zones icon")
     check(navRow(st.nav, "zones").switch ~= nil and navRow(st.nav, "mappack").switch == nil, "N1 zones nav switch = ZoneLayer")
@@ -1025,7 +1025,7 @@ do
     e.Core.remoteListSig = function() return listSig end
     e.Core.remoteShowAllAuthors = function() showAllCalls = showAllCalls + 1 end
     local st = e.open(0)
-    checkEq(table.concat(st.sections, ","), "base,places,remote,roads,poicat,parking,zombie,animals,vehicles,safehouse,window,perf",
+    checkEq(table.concat(st.sections, ","), "base,places,remote,roads,sketch,poicat,parking,zombie,animals,vehicles,safehouse,window,perf",
         "S1 multiplayer lists the category right after players and navigation")
     check(navRow(st.nav, "remote").switch ~= nil, "S2 nav shows the master switch")
     st.selectSection("places")

@@ -189,6 +189,14 @@ if ISWorldMap and ISWorldMap.prerender then
                 print("[MinidoracatMiniMap] worldmap road tool draw failed: " .. tostring(err))
             end
         end
+        -- 手繪工具（_SketchTool.lua）：正在畫的那一筆與橡皮擦圈，理由同道路工具
+        if Core.sketchToolDraw then
+            ok, err = pcall(Core.sketchToolDraw, self)
+            if not ok and not self._minidoracatWMSketchToolErrLogged then
+                self._minidoracatWMSketchToolErrLogged = true
+                print("[MinidoracatMiniMap] worldmap sketch tool draw failed: " .. tostring(err))
+            end
+        end
         -- 自己的朝向箭頭：世界地圖的自己圖標（原版選項 Players）開著才畫，同小地圖排在導航之後
         ok, err = pcall(Core.drawPlayerFacing, self)
         if not ok and not self._minidoracatWMFacingErrLogged then
@@ -212,6 +220,18 @@ if ISWorldMap and ISWorldMap.isKeyConsumed then
         if originalWMIsKeyConsumed(self, key) then return true end
         local sym = self.symbolsUI
         return sym ~= nil and sym.currentTool ~= nil and sym:isKeyConsumed(key) == true
+    end
+end
+-- 手把 X：手繪工具作用中時改開手繪選單（Core.sketchPadMenu）；其他情況照原版（原版 X 會關掉工具、
+-- 把焦點移到符號面板，ISWorldMap.lua:1365-1375）
+if ISWorldMap and ISWorldMap.onJoypadDown then
+    local originalWMJoypadDown = ISWorldMap.onJoypadDown
+    function ISWorldMap:onJoypadDown(button, joypadData)
+        if button == Joypad.XButton and Core.sketchPadMenu and Core.sketchToolOf and Core.sketchToolOf(self) then
+            Core.sketchPadMenu(self, joypadData)
+            return
+        end
+        return originalWMJoypadDown(self, button, joypadData)
     end
 end
 -- test:wm-prerender:end

@@ -929,6 +929,10 @@ Core.LAYER_MAPS = {
     customRoads = {
         { id = "CustomRoads", label = "UI_MinidoracatMiniMap_RoadLayerMini", default = true, on = true },
         { id = "WMCustomRoads", label = "UI_MinidoracatMiniMap_RoadLayerWorld", default = true, on = true } },
+    -- 手繪線（_Sketch.lua）：同自訂道路，不算地圖圖層
+    sketch = {
+        { id = "Sketch", label = "UI_MinidoracatMiniMap_SketchLayerMini", default = true, on = true },
+        { id = "WMSketch", label = "UI_MinidoracatMiniMap_SketchLayerWorld", default = true, on = true } },
     shared = {
         { id = "SharedTargets", label = "UI_MinidoracatMiniMap_SharedTargets", default = true, on = true,
             mpOnly = true },
@@ -1268,6 +1272,20 @@ if PZAPI and PZAPI.ModOptions then
     modOptions:addSlider("CustomRoadAlpha", "UI_MinidoracatMiniMap_RoadAlpha", 30, 100, 5, 85)
     modOptions:addSlider("CustomRoadMinWidth", "UI_MinidoracatMiniMap_RoadMinWidth", 1, 6, 1, 3,
         "UI_MinidoracatMiniMap_RoadMinWidth_tooltip")
+
+    -- 手繪 ------------------------------------------------------------------------
+    -- 只管畫不畫（_Sketch.lua 每幀讀）。兩格＝Core.LAYER_MAPS.sketch；別人分享的手繪只在多人有作用；
+    -- 拉遠級數＝比畫的時候拉遠超過這麼多級就不畫（線寬跟著縮放，太遠會糊成一團）
+    modOptions:addSeparator()
+    modOptions:addTitle("UI_MinidoracatMiniMap_SketchSecTitle")
+    modOptions:addTickBox("Sketch", "UI_MinidoracatMiniMap_SketchLayerMini", true,
+        "UI_MinidoracatMiniMap_SketchLayer_tooltip")
+    modOptions:addTickBox("WMSketch", "UI_MinidoracatMiniMap_SketchLayerWorld", true,
+        "UI_MinidoracatMiniMap_WMCell_tooltip")
+    modOptions:addTickBox("SketchReceived", "UI_MinidoracatMiniMap_SketchReceived", true,
+        "UI_MinidoracatMiniMap_SketchReceived_tooltip")
+    modOptions:addSlider("SketchHideZoom", "UI_MinidoracatMiniMap_SketchHideZoom", 1, 6, 1, 3,
+        "UI_MinidoracatMiniMap_SketchHideZoom_tooltip")
 
     -- 資源點 ----------------------------------------------------------------------
     -- 內建 POI（原版地圖資源點，20 類）：圖標為主（預設開）、區塊選配（預設關）。
@@ -2845,7 +2863,23 @@ if ISWorldMap and ISWorldMap.createChildren then
             end
             roadBtn.tooltip = getText("UI_MinidoracatMiniMap_WMRoadBtn")
             self.buttonPanel:addChild(roadBtn)
-            local btn = ISButton:new(roadBtn:getRight() + 10, 0, btnSize, btnSize, "", self,
+            -- 筆鈕（2026-11-08 設計稿 minimap-draw-1108）：開或關手繪工具（_SketchTool.lua）。借原版物品「筆」的圖示
+            -- （原版也借物品圖示當按鈕，ISWorldMap.lua:343 的 Item_Flier），不用新美術
+            local penBtn = ISButton:new(roadBtn:getRight() + 10, 0, btnSize, btnSize, "", self,
+                function(target)
+                    if Core.sketchToolStart then Core.sketchToolStart(target.playerNum or 0) end
+                end)
+            penBtn:initialise()
+            local texPen = getTexture("Item_Pen")
+            if texPen then
+                penBtn:setImage(texPen)
+                penBtn:forceImageSize(math.min(32, iconPx), math.min(32, iconPx))
+            else
+                penBtn:setTitle("P")
+            end
+            penBtn.tooltip = getText("UI_MinidoracatMiniMap_WMSketchBtn")
+            self.buttonPanel:addChild(penBtn)
+            local btn = ISButton:new(penBtn:getRight() + 10, 0, btnSize, btnSize, "", self,
                 function(target) Core.toggleSettingsWindow(target) end)
             btn:initialise()
             local paw = getTexture("media/ui/minimap_wm_paw.png") -- 白貓肉球
@@ -2863,15 +2897,17 @@ if ISWorldMap and ISWorldMap.createChildren then
             self._minidoracatWMBtn = btn
             self._minidoracatWMSearchBtn = searchBtn
             self._minidoracatWMRoadBtn = roadBtn
+            self._minidoracatWMPenBtn = penBtn
             self._minidoracatWMPanelBtn = layersBtn
             -- 手把：原版按鈕列只有一列，手把在 joypadButtonsY[1] 裡左右移（ISWorldMap.lua:358
             -- insertNewListOfButtons；方向鍵找鄰居看 allJoypadButtons，ISPanelJoypad.lua:613）。
-            -- 四顆插在關閉鈕前面＝和畫面上的順序一致
+            -- 五顆插在關閉鈕前面＝和畫面上的順序一致
             local row = self.buttonPanel.joypadButtonsY and self.buttonPanel.joypadButtonsY[1]
             if row then
                 for i = 1, #row do
                     if row[i] == self.closeBtn then
                         table.insert(row, i, btn)
+                        table.insert(row, i, penBtn)
                         table.insert(row, i, roadBtn)
                         table.insert(row, i, searchBtn)
                         table.insert(row, i, layersBtn)
@@ -2883,6 +2919,7 @@ if ISWorldMap and ISWorldMap.createChildren then
                     all[#all + 1] = layersBtn
                     all[#all + 1] = searchBtn
                     all[#all + 1] = roadBtn
+                    all[#all + 1] = penBtn
                     all[#all + 1] = btn
                 end
             end

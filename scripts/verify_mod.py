@@ -584,6 +584,11 @@ _lua_tests = [
     ("test_road_tool.lua", "道路工具：畫線、編輯、存檔表單", False),
     ("test_road_record.lua", "錄製道路：取樣、路寬路面、簡化與切分", False),
     ("test_road_share.lua", "道路分享：伺服器保存、收件人、同步", False),
+    ("test_sketch_codec.lua", "手繪線檔案與封包格式、上限、伺服器作者檔", False),
+    ("test_sketch_store.lua", "手繪線資料層：背景載入、局部擦除、防抖寫檔", False),
+    ("test_sketch_draw.lua", "手繪線繪製：拉遠隱藏、線寬、候選快取、預算不丟筆、stencil", False),
+    ("test_sketch_tool.lua", "手繪工具：要筆、取點、直線、平移、復原重做、手把", False),
+    ("test_sketch_share.lua", "手繪線分享：伺服器保存、收件人、對帳、快照跨 tick", False),
 ]
 for _script, _label, _may_skip in _lua_tests:
     _gate = f"Lua 單元測試（{_script}：{_label}）"

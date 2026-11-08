@@ -72,13 +72,14 @@ end
 -- （同 _RoadRecord.lua rdpImportance）。逐層跑時一條 300 點的路在 Kahlua 要 51–64 ms（E2E
 -- share-road-persist-mp 1024c），登入或收到分享快照時整批重算會卡 1.4–1.5 秒。不遞迴（Kahlua 呼叫深度）
 local stack, imp = {}, {}
-function RD.buildLevels(pts, np, segW, segS)
+-- segW／segS 為 nil＝不強制留點（手繪線 _Sketch.lua）；tol0＝第 2 層容差（格），省略＝LOD_TOL0
+function RD.buildLevels(pts, np, segW, segS, tol0)
     local HUGE = math.huge
     for i = 1, np do imp[i] = 0 end
     imp[1], imp[np] = HUGE, HUGE
     local top, a = 0, 1
     for i = 2, np do
-        if i == np or segW[i - 1] ~= segW[i] or segS[i - 1] ~= segS[i] then
+        if i == np or (segW and (segW[i - 1] ~= segW[i] or segS[i - 1] ~= segS[i])) then
             imp[i] = HUGE
             stack[top + 1], stack[top + 2], stack[top + 3] = a, i, HUGE
             top = top + 3
@@ -111,7 +112,7 @@ function RD.buildLevels(pts, np, segW, segS)
     local all = { tol = 0 }
     for i = 1, np do all[i] = i end
     local levels = { all }
-    local tol = RD.LOD_TOL0
+    local tol = tol0 or RD.LOD_TOL0
     while #levels[#levels] > 2 and tol <= RD.LOD_TOL_MAX do
         local t2, lv = tol * tol, { tol = tol }
         for i = 1, np do if imp[i] > t2 then lv[#lv + 1] = i end end
