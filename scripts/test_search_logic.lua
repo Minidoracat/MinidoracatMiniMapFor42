@@ -207,6 +207,32 @@ MinidoracatMiniMapResources = { minimapEntries = function() return MinidoracatMi
     eq(#doSearch("food", 0, 0), 0, "房間資料版還沒掃完：沒有資源點結果")
     SCore.poiSource = function() return "minimap" end
     eq(#doSearch("food", 0, 0), 2, "切回小地圖資源版：照烘焙資料")
+    -- 去過／已清空篩選（_ClearedUI.lua clearedSearchState；烘焙資料沒有 b 時外框用最大房間）：
+    -- 預設藏已清空並計數、切成顯示時帶狀態字與灰點、只看沒去過的另藏自己有標記的；沒有篩選表＝舊行為
+    SCore.CLEARED_DOT = { r = 0.5, g = 0.5, b = 0.5 }
+    SCore.clearedSearchState = function(pn, box)
+        eq(pn, 2, "篩選查的是這個視窗的玩家")
+        if box.x == 10 and box.w == 4 then return "cleared", 2, true end
+        if box.x == 50 then return "visited", 1, true end
+        return nil, nil, false
+    end
+    local filter = { hc = 0, hv = 0 }
+    r = doSearch("food", 0, 0, 2, filter)
+    eq(#r, 1, "已清空預設不列")
+    eq(filter.hc, 1, "藏掉的已清空有計數")
+    eq(r[1].sourceHint, "visited", "去過的帶狀態字")
+    eq(r[1].bw, 4, "結果帶建築外框（動作選單標記用）")
+    filter = { showCleared = true, hc = 0, hv = 0 }
+    r = doSearch("food", 0, 0, 2, filter)
+    eq(#r, 2, "切成顯示已清空")
+    eq(r[1].dot, SCore.CLEARED_DOT, "已清空那一列圓點變灰")
+    filter = { unvisited = true, hc = 0, hv = 0 }
+    eq(#doSearch("food", 0, 0, 2, filter), 0, "只看沒去過的")
+    eq(filter.hc + filter.hv, 2, "兩種藏法各自計數")
+    r = doSearch("food", 0, 0)
+    eq(#r, 2, "沒有篩選表＝舊行為")
+    eq(r[1].sourceHint, nil, "沒有篩選表不帶狀態字")
+    SCore.clearedSearchState = nil
     SCore.poiSource, SCore.poiRoomBuildings = nil, nil
     local byOriginal, byDisplay = doSearch("original avenue", 0, 0), doSearch("oak", 0, 0)
     eq(#byOriginal, 1, "原名命中同一條即時道路")

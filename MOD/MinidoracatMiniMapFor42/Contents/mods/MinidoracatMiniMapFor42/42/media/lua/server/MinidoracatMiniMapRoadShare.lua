@@ -1,11 +1,9 @@
 -- MinidoracatMiniMapRoadShare.lua — 自訂道路分享（MP 伺服器端：指令、存檔、收件人、同步）
 -- 伺服器自己存一個世界一個檔（不用全域 ModData：任何客戶端都能 ModData.request 任何 tag，
 -- GlobalModData.java:153、171-200，陣營專用的路會外流）。存檔成功才換上、才轉送。
--- 作者＝連線帳號 player:getUsername()，不信封包裡的 author／sid。收件人在伺服器判斷：
--- Faction.getPlayerFaction(String)＋比名稱（Faction.java:123）、SafeHouse.isInSameSafehouse(String,String)
--- （SafeHouse.java:795，只看 owner／players 名單，管理員不會因為能進所有安全屋而收到）。
--- 名單列舉：faction:getOwner()／getPlayers()（Faction.java:241、281）、SafeHouse.getSafehouseList()／
--- getOwner()／getPlayers()（SafeHouse.java:640-658）。安全屋 MOD 代管的屋，屋主與成員也在原生名單裡。
+-- 作者＝MinidoracatMiniMapGroups.principal(player)，不信封包裡的 author／sid；分割畫面第 2～4 位玩家沒有身分，
+-- put／drop 回 reason=identity、sync 不回，也不當收件人。收件人在伺服器判斷，規則與出處在 MinidoracatMiniMapGroups.lua
+-- （已清空、手繪線共用同一份）。
 -- OnClientCommand 簽名、sendServerCommand 用法同 MinidoracatMiniMapServer.lua；getOnlinePlayers 單機回空
 -- （GameServer.java:3530-3549）。server 資料夾在 MP 客戶端也會載入（GameLoadingState.java:149），故閘 isClient。
 -- 封包都帶 to（收件角色名）：分割畫面共用一條連線，客戶端照 to 分桶。
@@ -71,42 +69,12 @@ function RS.indexByLid(author, lid)
     return nil
 end
 
-function RS.sameFaction(a, b)
-    local fa, fb = Faction.getPlayerFaction(a), Faction.getPlayerFaction(b)
-    return fa ~= nil and fb ~= nil and fa:getName() == fb:getName() -- 比名稱，不比物件
-end
-
 function RS.canSee(road, name)
-    if road.author == name then return false end
-    return (road.share.faction and RS.sameFaction(road.author, name))
-        or (road.share.safehouse and SafeHouse.isInSameSafehouse(road.author, name)) or false
+    return MinidoracatMiniMapGroups.canSee(road.author, road.share, name)
 end
 
--- 可以使用的人數（含離線）：陣營 owner＋成員、作者所在每間安全屋的 owner＋成員，去重、不含作者
 function RS.memberCount(road)
-    local seen, n, author = {}, 0, road.author
-    local function add(name)
-        if name and name ~= author and not seen[name] then
-            seen[name] = true
-            n = n + 1
-        end
-    end
-    local function addList(owner, list)
-        add(owner)
-        for i = 0, list:size() - 1 do add(list:get(i)) end
-    end
-    if road.share.faction then
-        local f = Faction.getPlayerFaction(author)
-        if f then addList(f:getOwner(), f:getPlayers()) end
-    end
-    if road.share.safehouse then
-        local houses = SafeHouse.getSafehouseList()
-        for i = 0, houses:size() - 1 do
-            local h = houses:get(i)
-            if h:getOwner() == author or h:getPlayers():contains(author) then addList(h:getOwner(), h:getPlayers()) end
-        end
-    end
-    return n
+    return MinidoracatMiniMapGroups.memberCount(road.author, road.share)
 end
 
 -- 送給每位線上玩家（不含作者）：看得到新版＝roadUpsert；只看得到舊版＝roadRemove（換了分享對象）
@@ -115,7 +83,7 @@ function RS.broadcast(Codec, road, old)
     local online, list = 0, getOnlinePlayers()
     for i = 0, list:size() - 1 do
         local p = list:get(i)
-        local name = p and p:getUsername()
+        local name = MinidoracatMiniMapGroups.principal(p)
         if name and name ~= road.author then
             if RS.canSee(road, name) then
                 online = online + 1
@@ -132,7 +100,7 @@ function RS.onlineCount(road)
     local n, list = 0, getOnlinePlayers()
     for i = 0, list:size() - 1 do
         local p = list:get(i)
-        local name = p and p:getUsername()
+        local name = MinidoracatMiniMapGroups.principal(p)
         if name and RS.canSee(road, name) then n = n + 1 end
     end
     return n
@@ -232,7 +200,7 @@ function Commands.roadDrop(player, args, author)
     local list = getOnlinePlayers()
     for i = 0, list:size() - 1 do
         local p = list:get(i)
-        local name = p and p:getUsername()
+        local name = MinidoracatMiniMapGroups.principal(p)
         if name and name ~= author then sendServerCommand(p, RS.MODULE, "roadRemove", { to = name, sid = sid }) end
     end
     reply("roadDropped")
@@ -273,8 +241,16 @@ RS.Commands = Commands
 Events.OnClientCommand.Add(function(module, command, player, args)
     if module ~= RS.MODULE then return end
     local fn = Commands[command]
-    local name = fn and player and player:getUsername()
     -- 空表的 args 不上線：客戶端對空表只寫 false（GameClient.java:1837），伺服器收到 nil（GameServer.java:2267-2278）。
     -- roadSync 送的就是 {}：nil 當空表，各指令自己驗欄位；其他非表照舊不理
-    if name and (args == nil or type(args) == "table") then fn(player, args or {}, name) end
+    if not (fn and player) or not (args == nil or type(args) == "table") then return end
+    local name = MinidoracatMiniMapGroups.principal(player)
+    if name then return fn(player, args or {}, name) end
+    -- 沒有身分（分割畫面第 2～4 位）：put／drop 回原因，to 用它自己的角色名讓客戶端分桶；sync 不回
+    local to = player:getUsername()
+    if command == "roadPut" and args then
+        sendServerCommand(player, RS.MODULE, "roadPutFail", { to = to, lid = args.lid, reason = "identity" })
+    elseif command == "roadDrop" and args then
+        sendServerCommand(player, RS.MODULE, "roadDropFail", { to = to, sid = args.sid, reason = "identity" })
+    end
 end)

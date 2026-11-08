@@ -1321,6 +1321,19 @@ if PZAPI and PZAPI.ModOptions then
     -- 存值被 ISSliderPanel 先進位再夾限，UI/存值/實效三方漂移（codex review 抓出）。
     -- ESC 頁維持全值域，超出部分由合成層夾住。以下各分類的距離滑條同此
     modOptions:addSlider("ClientPoiDisplayDistance", "UI_MinidoracatMiniMap_DistPoi", 0, CLIENT_DIST_MAX, 1, 0)
+    -- 去過／已清空（_Cleared.lua、_ClearedUI.lua；2026-11-08 設計稿 cleared）：只顯示去過的（重建圖標時篩）、
+    -- 標示去過、自動標已清空與門檻、分享給隊友（伺服器沙盒 AllowClearedShare 關時伺服器不轉送）
+    modOptions:addTickBox("PoiVisitedOnly", "UI_MinidoracatMiniMap_PoiVisitedOnly", false,
+        "UI_MinidoracatMiniMap_PoiVisitedOnly_tooltip")
+    modOptions:addTickBox("PoiVisitMarks", "UI_MinidoracatMiniMap_PoiVisitMarks", true,
+        "UI_MinidoracatMiniMap_PoiVisitMarks_tooltip")
+    modOptions:addTickBox("ClearedAuto", "UI_MinidoracatMiniMap_ClearedAuto", true,
+        "UI_MinidoracatMiniMap_ClearedAuto_tooltip")
+    modOptions:addSlider("ClearedAutoPct", "UI_MinidoracatMiniMap_ClearedAutoPct", 50, 100, 5, 90,
+        "UI_MinidoracatMiniMap_ClearedAutoPct_tooltip")
+    modOptions:addTickBox("ClearedShare", "UI_MinidoracatMiniMap_ClearedShare", true,
+        "UI_MinidoracatMiniMap_ClearedShare_tooltip")
+    modOptions:addDescription("UI_MinidoracatMiniMap_ClearedHow")
 
     -- 殭屍 ------------------------------------------------------------------------
     modOptions:addSeparator()

@@ -209,6 +209,7 @@ Core.mapSubMenu = function(context, key, title)
 end
 -- test:nav-menu-lock:end
 Core.navShareTarget = function(pn)
+    if pn ~= 0 then return end -- 分割畫面第 2～4 位沒有身分，伺服器不轉送（MinidoracatMiniMapGroups.principal）
     local playerObj = getSpecificPlayer(pn)
     local t = Core.navGetTarget(pn)
     if not (playerObj and t and isClient()) then return end
@@ -932,12 +933,13 @@ end
 
 -- test:map-menu:start
 -- 「分享目標給陣營」列不列（雙地圖右鍵「行程」子選單與行程頁「動作…」共用，兩處不得各寫一份）：
--- 有活動站＋MP＋陣營（Faction.getPlayerFaction 用例 ISFactionUI.lua:408）＋沙盒＋功能閘門 share
--- （_FeatureGate.lua；缺檔＝放行）。⚠ navShareAllowed 不傳 pn＝AllowNavShare 永不列入管理員旁路白名單
--- （會影響其他玩家、需伺服器轉送的功能閘；主檔 navShareGateTick 註解同義）。點下去的 navShareTarget 照樣再檢查
+-- 主座位（pn 0：分割畫面第 2～4 位沒有身分，伺服器不轉送）＋有活動站＋MP＋陣營（Faction.getPlayerFaction 用例
+-- ISFactionUI.lua:408）＋沙盒＋功能閘門 share（_FeatureGate.lua；缺檔＝放行）。⚠ navShareAllowed 不傳 pn＝AllowNavShare
+-- 永不列入管理員旁路白名單（會影響其他玩家、需伺服器轉送的功能閘；主檔 navShareGateTick 註解同義）。點下去的
+-- navShareTarget 照樣再檢查
 Core.navShareOk = function(pn, playerObj)
     local fa = Core.featureAllowed
-    return playerObj ~= nil and Core.navGetTarget(pn) ~= nil and isClient() and Faction ~= nil
+    return pn == 0 and playerObj ~= nil and Core.navGetTarget(pn) ~= nil and isClient() and Faction ~= nil
         and Faction.getPlayerFaction(playerObj) ~= nil and Core.navShareAllowed()
         and (not fa or fa(pn, "share"))
 end
@@ -945,7 +947,8 @@ end
 -- minimap-places-entry-1021 作答調整）。第一層依序：
 -- 導航（有待前往站時叫「取代並導航」，點了照舊先確認）→加入行程（有待前往站才是子選單：先去這裡／
 -- 插在第 N 站之前／加到行程最後，_Search.lua navInsertSubMenu）→收藏（回家／設為家／加入收藏／管理收藏；
--- 游標在收藏圖標上時父項是「收藏：名稱」、子選單換成那一筆，_Places.lua placeAt／placesAddMenu）→
+-- 游標在收藏圖標上時父項是「收藏：名稱」、子選單換成那一筆，_Places.lua placeAt／placesAddMenu；游標在內建
+-- 資源點圖標上時換成「資源點：名稱」，_ClearedUI.lua clearedMapMenu）→
 -- 複製此處座標→行程（有行程或壞資料才是子選單：行程規劃／停止導航／分享目標／清空行程，會刪資料的
 -- 清空排最後；沒有行程時第一層直接放「行程規劃...」，子選單不只放一項）→搜尋、收藏、行程與道路。第一層
 -- 兩種情況都是 6 項。set 閘門擋住時會設導航的項變紅＋原因（建選單只問一次）。
@@ -960,11 +963,15 @@ Core.mapMenuFill = function(context, target, pn, wx, wy, playerObj)
             target.onMinidoracatAddStop, wx, wy), blocked)
     end
     -- 游標下是收藏：父項帶名稱，子選單換成這一筆（_Places.lua placeAt；圖層關或沒點中＝nil）。
-    -- 沒有收藏、游標下是自訂道路：同一格換成「道路：名稱」（_RoadDraw.lua roadMapHit、_RoadTool.lua
-    -- roadsMapMenu；收藏圖標優先），第一層項數不變
+    -- 沒有收藏、游標下是內建資源點圖標：「資源點：名稱」（標為已清空／取消、忘記這裡、加入收藏，_ClearedUI.lua；
+    -- 命中＝_Zones.lua 上一幀畫在指標下的那顆）。再沒有、游標下是自訂道路：「道路：名稱」（_RoadDraw.lua
+    -- roadMapHit、_RoadTool.lua roadsMapMenu）。優先序收藏圖標＞資源點圖標＞自訂道路，第一層項數不變
     local place = Core.placeAt and Core.placeAt(target, wx, wy)
-    local road = not place and Core.roadMapHit and Core.roadsMapMenu and Core.roadMapHit(target, wx, wy)
-    if road then
+    local poi = not place and Core.poiIconAt and Core.clearedMapMenu and Core.poiIconAt(target)
+    local road = not place and not poi and Core.roadMapHit and Core.roadsMapMenu and Core.roadMapHit(target, wx, wy)
+    if poi then
+        Core.clearedMapMenu(context, pn, poi)
+    elseif road then
         Core.roadsMapMenu(Core.mapSubMenu(context, "UI_MinidoracatMiniMap_RoadMenuOf", Core.roadMenuTitle(road))
             or context, pn, road)
     elseif Core.placesAddMenu then

@@ -184,12 +184,24 @@ local SEC_POI = { id = "poicat", label = "UI_MinidoracatMiniMap_SecPOI", icon = 
         { id = "PoiWholeBuilding", label = "UI_MinidoracatMiniMap_PoiWholeBuilding", default = true, minimapOnly = true },
         -- 彩色資源點圖標：類別 chip 的小圖跟著換（重建）
         { id = "PoiColorIcons", label = "UI_MinidoracatMiniMap_PoiColorIcons", default = false, rebuild = true },
+        -- 去過／已清空（_Cleared.lua，2026-11-08 設計稿 cleared）：只顯示去過的、標示去過、自動標已清空；
+        -- 分享給隊友只在多人列，伺服器沙盒 AllowClearedShare 關時停用（說明在 addNotes）
+        { id = "PoiVisitedOnly", label = "UI_MinidoracatMiniMap_PoiVisitedOnly", default = false,
+            tooltip = "UI_MinidoracatMiniMap_PoiVisitedOnly_tooltip" },
+        { id = "PoiVisitMarks", label = "UI_MinidoracatMiniMap_PoiVisitMarks", default = true,
+            tooltip = "UI_MinidoracatMiniMap_PoiVisitMarks_tooltip" },
+        { id = "ClearedAuto", label = "UI_MinidoracatMiniMap_ClearedAuto", default = true,
+            tooltip = "UI_MinidoracatMiniMap_ClearedAuto_tooltip" },
+        { id = "ClearedShare", label = "UI_MinidoracatMiniMap_ClearedShare", default = true, mpOnly = true,
+            gate = "AllowClearedShare", tooltip = "UI_MinidoracatMiniMap_ClearedShare_tooltip" },
     },
     sliders = {
         { id = "PoiIconSize", label = "UI_MinidoracatMiniMap_PoiIconSize",
             default = 18, min = 8, max = 48, step = 1, fmt = "%dpx" },
         { id = "PoiIconAlpha", label = "UI_MinidoracatMiniMap_IconAlpha",
             default = 100, min = 10, max = 100, step = 5, fmt = "%d%%" },
+        { id = "ClearedAutoPct", label = "UI_MinidoracatMiniMap_ClearedAutoPct",
+            default = 90, min = 50, max = 100, step = 5, fmt = "%d%%", tooltip = "UI_MinidoracatMiniMap_ClearedAutoPct_tooltip" },
     },
     distance = {
         { id = "ClientPoiDisplayDistance", label = "UI_MinidoracatMiniMap_DistPoi",
@@ -1735,6 +1747,18 @@ local function addNotes(ctx, sec)
                 addNote(ctx, getText(methods[i][2]), nil, 12)
             end
             addNote(ctx, getText("UI_MinidoracatMiniMap_PoiSourceBasis"))
+        end
+        -- 去過／已清空怎麼記、在哪裡手動標；多人時伺服器關了分享要寫出來（勾選本身已停用）；分割畫面第 2～4 位
+        -- 在伺服器沒有身分（MinidoracatMiniMapGroups.principal），_ClearedShare.lua 不替他們同步（不能分享、也收不到）；
+        -- 伺服器那份只讀時（_ClearedShare.lua srvRO）這次登入不上傳
+        addNote(ctx, getText("UI_MinidoracatMiniMap_ClearedHow"))
+        local problem = isClient() and Core.clearedShareProblem and Core.clearedShareProblem(ctx.pn)
+        if isClient() and sandboxGate("AllowClearedShare", true, ctx.pn) == false then
+            addNote(ctx, getText("UI_MinidoracatMiniMap_ClearedShareOff"), ORANGE)
+        elseif isClient() and ctx.pn ~= 0 then
+            addNote(ctx, getText("UI_MinidoracatMiniMap_ClearedWhy_identity"), ORANGE)
+        elseif problem then
+            addNote(ctx, getText(problem), ORANGE)
         end
         addDivider(ctx)
     elseif sec == SEC_REMOTE then

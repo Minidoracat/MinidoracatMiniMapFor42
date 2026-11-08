@@ -191,6 +191,17 @@ Core.roadMapHit = function(target, wx, wy)
     return roadHit
 end
 Core.roadMenuTitle = function(hit) return "UI_MinidoracatMiniMap_RoadMenuOf|" .. hit.road.name end
+-- 內建資源點圖標命中（真 poiIconAt／clearedMapMenu 在 _ClearedUI.lua，test_cleared 驗選單內容）
+local poiHit = nil
+Core.poiIconAt = function(target)
+    handoff.poiAt = target
+    return poiHit
+end
+Core.clearedMapMenu = function(context, pn, z)
+    handoff.poiPn, handoff.poi = pn, z
+    local sub = Core.mapSubMenu(context, nil, "UI_MinidoracatMiniMap_ClearedMenuOf|" .. z.tip) or context
+    sub:addOption("UI_MinidoracatMiniMap_ClearedSet")
+end
 Core.roadsMapMenu = function(menu, pn, hit)
     handoff.roadMenu, handoff.roadPn, handoff.road = menu, pn, hit
     menu:addOption("UI_MinidoracatMiniMap_RoadEditShape")
@@ -283,6 +294,7 @@ return {
     setInsertAnchors = function(v) insertAnchors = v end,
     setPlaceHit = function(v) placeHit = v end,
     setRoadHit = function(v) roadHit = v end,
+    setPoiHit = function(v) poiHit = v end,
     setGate = function(v) gateMode = v end,
     gateCalls = gateCalls,
     handoff = handoff,
@@ -483,6 +495,24 @@ mod.setPlaceHit({ id = 7, label = "Shop" })
 wm1:onRightMouseUp(5, 6)
 assert(names(mod.menu(1)):find("PlaceMenuOf|Shop", 1, true) and mod.handoff.roadAt == nil,
     "RD2: 收藏圖標優先於自訂道路")
+-- RD3: 資源點圖標和道路疊在一起：資源點優先（「資源點：名稱」），道路不判；收藏圖標又優先於資源點
+mod.setPlaceHit(nil)
+mod.clearCalls(); mod.resetMenus()
+mod.handoff.roadAt = nil
+mod.setPoiHit({ tip = "Pharmacy", bw = 10 })
+wm1:onRightMouseUp(5, 6)
+local mpoi = mod.menu(1)
+assert(names(mpoi) == SET .. ",UI_MinidoracatMiniMap_TripAdd,UI_MinidoracatMiniMap_ClearedMenuOf|Pharmacy"
+    .. ",UI_MinidoracatMiniMap_CopyHere|12, 34, 0," .. TRIP_OPEN .. ",UI_MinidoracatMiniMap_SearchMenu"
+    and mod.handoff.roadAt == nil and mod.handoff.poiPn == 1 and mod.handoff.poiAt == wm1,
+    "RD3: 資源點圖標換掉收藏那格、第一層 6 項、道路不判（實得 " .. names(mpoi) .. "）")
+mod.clearCalls(); mod.resetMenus()
+mod.handoff.poi = nil
+mod.setPlaceHit({ id = 7, label = "Shop" })
+wm1:onRightMouseUp(5, 6)
+assert(names(mod.menu(1)):find("PlaceMenuOf|Shop", 1, true) and mod.handoff.poi == nil,
+    "RD3: 收藏圖標優先於資源點圖標")
+mod.setPoiHit(nil)
 mod.setPlaceHit(nil)
 mod.setRoadHit(nil)
 mod.clearCalls(); mod.resetMenus()
@@ -576,34 +606,42 @@ mod.setSandbox(true)
 r = wm1:onRightMouseUp(5, 6)
 local m6 = mod.menu(1)
 assert(names(m6) == WITH_TRIP, "R6: 有行程＝第一層六項、沒有平的行程規劃（實得 " .. names(m6) .. "）")
-assert(subNames(m6, TRIP) == TRIP_OPEN .. ",UI_MinidoracatMiniMap_TripPause"
-    .. ",UI_MinidoracatMiniMap_ShareTarget,UI_MinidoracatMiniMap_TripClear",
-    "R6: 行程子選單＝行程規劃／停止導航／分享／清空（實得 " .. subNames(m6, TRIP) .. "）")
+local NO_SHARE = TRIP_OPEN .. ",UI_MinidoracatMiniMap_TripPause,UI_MinidoracatMiniMap_TripClear"
+-- 第二位玩家（pn 1＝分割畫面座位）沒有身分，伺服器不轉送分享（MinidoracatMiniMapGroups.principal）：不列分享
+assert(subNames(m6, TRIP) == NO_SHARE,
+    "R6: 分割畫面座位的行程子選單＝行程規劃／停止導航／清空，不列分享（實得 " .. subNames(m6, TRIP) .. "）")
 -- 回呼：行程規劃開行程頁；停止導航暫停；清空走確認對話框入口（都不得直接改權威）
 local tripMenu = m6.options[5].sub
 tripMenu.options[1].fn(tripMenu.options[1].target)
 assert(mod.calls[#mod.calls] == "toggle:1:itinerary", "R6: 行程規劃須開行程頁")
 tripMenu.options[2].fn(tripMenu.options[2].target)
 assert(mod.calls[#mod.calls] == "pause:1:cancelled", "R6: 停止導航須暫停行程")
-tripMenu.options[4].fn(tripMenu.options[4].target)
+tripMenu.options[3].fn(tripMenu.options[3].target)
 assert(mod.calls[#mod.calls] == "promptClear:1", "R6: 清空行程須走確認入口")
 mod.clearCalls(); mod.resetMenus()
 
-local NO_SHARE = TRIP_OPEN .. ",UI_MinidoracatMiniMap_TripPause,UI_MinidoracatMiniMap_TripClear"
+-- 主座位（pn 0）同樣條件＝列分享（停止導航之後、清空之前）；不能分享的三種情況都拿主座位驗，才不是空檢查
+local wmS = mkWM(0)
+local WITH_SHARE = TRIP_OPEN .. ",UI_MinidoracatMiniMap_TripPause,UI_MinidoracatMiniMap_ShareTarget"
+    .. ",UI_MinidoracatMiniMap_TripClear"
+r = wmS:onRightMouseUp(5, 6)
+assert(subNames(mod.menu(0), TRIP) == WITH_SHARE,
+    "R6: 主座位的行程子選單＝行程規劃／停止導航／分享／清空（實得 " .. subNames(mod.menu(0), TRIP) .. "）")
+mod.clearCalls(); mod.resetMenus()
 mod.setSandbox(false) -- 伺服器禁分享：Share 消失、其餘保留
-r = wm1:onRightMouseUp(5, 6)
-assert(subNames(mod.menu(1), TRIP) == NO_SHARE, "R6: 沙盒禁分享＝無 Share")
+r = wmS:onRightMouseUp(5, 6)
+assert(subNames(mod.menu(0), TRIP) == NO_SHARE, "R6: 沙盒禁分享＝無 Share")
 mod.clearCalls(); mod.resetMenus()
 mod.setSandbox(true)
 mod.setFaction(nil) -- 多人但沒加入陣營：伺服器只轉給同陣營，列了也送不出去
-r = wm1:onRightMouseUp(5, 6)
-assert(subNames(mod.menu(1), TRIP) == NO_SHARE, "R6: 沒有陣營＝無 Share")
+r = wmS:onRightMouseUp(5, 6)
+assert(subNames(mod.menu(0), TRIP) == NO_SHARE, "R6: 沒有陣營＝無 Share")
 mod.clearCalls(); mod.resetMenus()
 mod.setFaction({})
 mod.setClient(false) -- 單機：無 Share
 mod.setSandbox(true)
-r = wm1:onRightMouseUp(5, 6)
-assert(subNames(mod.menu(1), TRIP) == NO_SHARE, "R6: 單機＝無 Share")
+r = wmS:onRightMouseUp(5, 6)
+assert(subNames(mod.menu(0), TRIP) == NO_SHARE, "R6: 單機＝無 Share")
 mod.clearCalls(); mod.resetMenus()
 
 -- R6b: 暫停中（無活動站）不得出現停止導航與分享
@@ -856,6 +894,6 @@ assert(passiveInstance(otherPanel):onRightMouseUp(1, 2) == nil,
 assert(passiveInstance(otherPanel):onRightMouseDown(1, 2) == nil, "X9: down 同理")
 ExtractionMode = nil
 
-print("test_worldmap_nav: OK（R1-R9＋RD1-RD2＋N1-N5＋L1-L4＋K1＋X1-X9（含 X8b）：工具透傳/前手選單合併/自建/歸屬/"
+print("test_worldmap_nav: OK（R1-R9＋RD1-RD3＋N1-N5＋L1-L4＋K1＋X1-X9（含 X8b）：工具透傳/前手選單合併/自建/歸屬/"
     .. "殘留選單/行程選項閘/回呼分流/道路子選單與收藏優先/開圖重包/冪等/重包上限/加繪順序/log-once/工具鍵/"
     .. "Extraction Mode 被動 overlay 右鍵放行）")

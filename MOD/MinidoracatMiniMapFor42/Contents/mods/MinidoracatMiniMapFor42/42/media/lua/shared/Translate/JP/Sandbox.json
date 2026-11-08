@@ -34,6 +34,8 @@
     "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "プレイヤーがナビ目標を陣営メンバーと共有すること（サーバー経由転送）を許可します。無効にするとサーバーが共有リクエストを拒否します。",
     "Sandbox_MinidoracatMiniMapAllowRoadShare": "カスタム道路の共有を許可",
     "Sandbox_MinidoracatMiniMapAllowRoadShare_tooltip": "プレイヤーがカスタム道路を同じ派閥やセーフハウスの仲間と共有できるようにします。共有した道路はサーバーが専用ファイルに保存し、仲間のナビがそのまま使います。初期値はオンです。無効にするとサーバーは新しい共有を拒否し、共有道路の送信も止めます。保存済みの道路はサーバーのファイルに残ります。",
+    "Sandbox_MinidoracatMiniMapAllowClearedShare": "漁り済みの場所の共有を許可",
+    "Sandbox_MinidoracatMiniMapAllowClearedShare_tooltip": "漁り済みの資源ポイントと調べた進み具合を、プレイヤーが同じ派閥やセーフハウスの仲間と共有できるようにします。オンでもオフでも、サーバーは各プレイヤーの印を自分のファイルに保存し、リセットや再生成されたチャンクも検出します。既定はオン。オフにすると、印は他のプレイヤーに送られなくなります。",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay": "ほかのプレイヤーの向き",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_tooltip": "ミニマップとワールドマップで、ほかのプレイヤーに向きの矢印と視野の扇形を加えます：オフ／派閥とセーフハウスのみ／マップに見える全員。近くのプレイヤーだけを描き、バニラのマップで見えない人は表示しません（バニラのサーバー設定 MapRemotePlayerVisibility）。",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option1": "オフ",

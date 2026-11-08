@@ -204,6 +204,9 @@ local SCHEMA = {
     { "AllowNavShare", "boolean", true },
     -- 自訂道路分享（server/MinidoracatMiniMapRoadShare.lua）：伺服器代存代送給別人，同 AllowNavShare 永不旁路
     { "AllowRoadShare", "boolean", true },
+    -- 已清空分享（server/MinidoracatMiniMapClearedShare.lua）：關＝伺服器照存每人自己的那份、刷新偵測照常，只是不轉送給
+    -- 隊友；同 AllowRoadShare 永不旁路
+    { "AllowClearedShare", "boolean", true },
     -- 其他玩家的朝向箭頭與扇形（_Nav.lua Core.remoteFacingLevel）：1 關閉、2 只限陣營與安全屋成員、
     -- 3 地圖上看得到的所有玩家；不在任何旁路白名單（原版 CanSeeAll 規則已讓管理員看到全部）
     { "RemoteFacingDisplay", "number", 2 },
@@ -229,7 +232,7 @@ local SCHEMA = {
     -- 玩家的兩張地圖都不畫；不在任何旁路白名單（管理員戰術檢視也一樣）
     { "AllowMapBounds", "boolean", true },
 }
-local SCHEMA_N = 29 -- 顯式筆數（家規：不用 # 依賴隱性長度）
+local SCHEMA_N = 30 -- 顯式筆數（家規：不用 # 依賴隱性長度）
 
 local KIND = {}
 for i = 1, SCHEMA_N do

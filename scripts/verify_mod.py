@@ -282,6 +282,7 @@ fail("BOM / CRLF（42/media 下）", bad) if bad else ok("BOM / CRLF（42/media 
 # 刻意不含 printf 旗標字元（-+空白#0）：含空白旗標會讓「50% done」的「% d」被解析成
 # 合法指令而漏抓——翻譯實務上只會出現簡單的 %s/%d/%.1f，罕見旗標用法交給豁免清單
 PRINTF_RE = re.compile(r"%\d*(?:\.\d+)?[sdifuxXcqgGeE]")
+# 先拿掉 %% 再找：土耳其文把百分號寫在數字前（%%50），%%5 不是佔位 %5
 PCT_N_RE = re.compile(r"%[1-9]")
 
 
@@ -342,7 +343,7 @@ for m in MEDIA_DIRS:
                 for k, v in d.items():
                     ev = en.get(k)
                     if l != "EN" and isinstance(ev, str) and isinstance(v, str) and (
-                            sorted(PCT_N_RE.findall(v)) != sorted(PCT_N_RE.findall(ev))
+                            sorted(PCT_N_RE.findall(v.replace("%%", ""))) != sorted(PCT_N_RE.findall(ev.replace("%%", "")))
                             or v.count("%%") != ev.count("%%")):
                         pctdiff.append(f"{l}/{n} 的 {k}")
     if broken:
@@ -564,6 +565,7 @@ _lua_tests = [
     ("test_nav_gate.lua", "addon 導航閘門／繪製唯讀／目標查詢", False),
     ("test_itinerary.lua", "多站行程權威與 token 擁有權", False),
     ("test_places.lua", "家／收藏點與一鍵回家", False),
+    ("test_cleared.lua", "資源點去過／已清空：帳號檔、去過、容器掃描預算、翻過、自動門檻、再走進去比對、單機重新生成", False),
     ("test_itinerary_ui.lua", "行程 UI 確認、錯誤提示與頁面切換", False),
     ("test_itinerary_routes.lua", "剩餘行程預覽與活動路線分層", False),
     ("test_fog_of_war.lua", "深霧／薄霧與多人已知區域修復", False),
@@ -584,6 +586,7 @@ _lua_tests = [
     ("test_road_tool.lua", "道路工具：畫線、編輯、存檔表單", False),
     ("test_road_record.lua", "錄製道路：取樣、路寬路面、簡化與切分", False),
     ("test_road_share.lua", "道路分享：伺服器保存、收件人、同步", False),
+    ("test_cleared_share.lua", "已清空分享：收件人、作者檔與索引、重新生成與重置清單、刷新推送", False),
 ]
 for _script, _label, _may_skip in _lua_tests:
     _gate = f"Lua 單元測試（{_script}：{_label}）"

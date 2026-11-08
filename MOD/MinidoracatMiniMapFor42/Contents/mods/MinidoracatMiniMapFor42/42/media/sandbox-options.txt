@@ -9,6 +9,9 @@ option MinidoracatMiniMap.AllowNavShare
 option MinidoracatMiniMap.AllowRoadShare
 {type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowRoadShare,}
 
+option MinidoracatMiniMap.AllowClearedShare
+{type = boolean, default = true, page = MinidoracatMiniMap, translation = MinidoracatMiniMapAllowClearedShare,}
+
 option MinidoracatMiniMap.RemoteFacingDisplay
 {type = enum, numValues = 3, default = 2, page = MinidoracatMiniMap, translation = MinidoracatMiniMapRemoteFacingDisplay,}
 

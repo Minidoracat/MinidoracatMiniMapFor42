@@ -703,6 +703,8 @@ local function onFillWorld(pn, context, worldobjects, test)
     if test then return ISWorldObjectContextMenu.setTest() end -- 手把只問有沒有選項（原版規則 :122-128）
     context:addOption(getText("UI_MinidoracatMiniMap_PlaceAddHere"), pn, Core.placesPromptAdd,
         x, y, withFloor(name, z, x, y))
+    -- 點到的那格在資源點建築裡：「資源點：名稱」（標為已清空／取消、忘記這裡；_ClearedUI.lua）
+    if Core.clearedWorldMenu then Core.clearedWorldMenu(pn, context, x, y, z) end
     local place = nearestPlace(pn, x, y)
     if not place then return end
     local sub = Core.mapSubMenu(context, nil, Core.placeMenuTitle(pn, place, "UI_MinidoracatMiniMap_PlaceMenuOfHere"))

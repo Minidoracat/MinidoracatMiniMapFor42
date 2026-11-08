@@ -862,9 +862,16 @@ local function drawIconTip(inner, text, ix, iy, s)
     drawMapText(inner, text, tx, ty, 1, 1, 1, 1, UIFont.Small, tz)
 end
 
--- 畫一顆 zone 圖標（兩條迭代路徑共用）；指標壓在這顆上時回提示文字
-local function drawZoneIcon(inner, z, icon, ix, iy, s, ia, hx, hy, internal)
-    inner:drawTextureScaled(icon.tex, ix, iy, s, s, ia, icon.r, icon.g, icon.b)
+-- 最後畫的那顆內建資源點圖標若壓在指標下，記在這裡（drawZoneIcons 存到 inner._minidoracatPoiHit，地圖右鍵用）
+local iconHitZone = nil
+-- 畫一顆 zone 圖標（兩條迭代路徑共用）；指標壓在這顆上時回提示文字。
+-- 內建資源點帶 mark（_Cleared.lua 代碼 1 去過、2 已清空、3 隊友已清空、4 已刷新，依本機玩家）：已清空變淡
+-- （alpha×0.4）；noBadge 為假才在左上畫角標（拉遠去重疊或圖標小於 12 px 只變淡，_ClearedUI.lua clearedBadge）
+local function drawZoneIcon(inner, z, icon, ix, iy, s, ia, hx, hy, internal, noBadge)
+    local mk = internal and z.mark
+    local code = mk and mk[inner.playerNum or 0]
+    local a = (code == 2 or code == 3) and ia * 0.4 or ia
+    inner:drawTextureScaled(icon.tex, ix, iy, s, s, a, icon.r, icon.g, icon.b)
     if z.basement then
         -- 地下條目（POI v3 basement 欄）＝「設施在地下層」，地上可能是
         -- 別的建築。尺寸夾限（review：s=8 時固定 7px 塊蓋掉 77%
@@ -875,8 +882,18 @@ local function drawZoneIcon(inner, z, icon, ix, iy, s, ia, hx, hy, internal)
         if bs > 9 then bs = 9 end
         drawBasementBadge(inner, ix + s - bs, iy + s - bs, bs, ia)
     end
+    if code and not noBadge and Core.clearedBadge then
+        Core.clearedBadge(inner, code, ix, iy, s, ia)
+        local seen = inner._minidoracatMarkSeen -- 世界地圖圖例只列畫面上出現過的狀態
+        if seen then seen[code] = true end
+    end
     if hx and hx >= ix and hx < ix + s and hy >= iy and hy < iy + s then
-        return iconTipText(z, internal)
+        local text = iconTipText(z, internal)
+        if internal then
+            iconHitZone = z
+            if text and Core.clearedTip then text = Core.clearedTip(inner.playerNum or 0, z, text) end
+        end
+        return text
     end
     return nil
 end
@@ -916,10 +933,18 @@ local function drawZoneIcons(inner)
     -- 名稱提示：指標（滑鼠／手把準星）下最上層、也就是最後畫的那顆圖標
     local hx, hy = iconPointer(inner)
     local hitText, hitX, hitY
+    iconHitZone = nil
+    local seen = inner._minidoracatMarkSeen
+    if inner == ISWorldMap_instance then
+        seen = seen or {}
+        seen[1], seen[2], seen[3], seen[4] = false, false, false, false
+        inner._minidoracatMarkSeen = seen
+    end
     for pi = 1, #registeredZoneProviders do
         local provider = registeredZoneProviders[pi]
         s = provider.internal and sPoi or sZone
         half = s / 2
+        local noBadge = declutter or s < 12
         -- 閘門（同 drawZoneFill）：「顯示在」這張地圖的格＋per-provider 母開關（providerShown）＋
         -- 距離閘：外部走自訂區域距離、internal 走 POI 顯示距離（皆含全域上限＋玩家
         -- 滑條；該類距離啟用但缺玩家＝fail closed）
@@ -959,7 +984,7 @@ local function drawZoneIcons(inner)
                             local z = rawget(zones, icZ[k]) or ZC_EMPTY
                             local icon = z.icon
                             if icon then
-                                local text = drawZoneIcon(inner, z, icon, ix, iy, s, ia, hx, hy, true)
+                                local text = drawZoneIcon(inner, z, icon, ix, iy, s, ia, hx, hy, true, noBadge)
                                 if text then hitText, hitX, hitY, hitS = text, ix, iy, s end
                             end
                         end
@@ -1012,7 +1037,8 @@ local function drawZoneIcons(inner)
                                     end
                                 end
                                 if ok then
-                                    local text = drawZoneIcon(inner, z, icon, ix, iy, s, ia, hx, hy, provider.internal)
+                                    local text = drawZoneIcon(inner, z, icon, ix, iy, s, ia, hx, hy, provider.internal,
+                                        noBadge)
                                     if text then hitText, hitX, hitY, hitS = text, ix, iy, s end
                                 end
                             end
@@ -1022,6 +1048,7 @@ local function drawZoneIcons(inner)
             end
         end
     end
+    inner._minidoracatPoiHit, inner._minidoracatPoiHitFrame = iconHitZone, inner._minidoracatFrame
     if hitText then drawIconTip(inner, hitText, hitX, hitY, hitS) end
 end
 -- test:zone-render:end

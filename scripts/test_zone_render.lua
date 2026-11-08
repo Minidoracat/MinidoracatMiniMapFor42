@@ -192,6 +192,7 @@ return {
     setPoiDist = function(d) poiDist = d end,
     setZoneDist = function(d) zoneDist = d end,
     setFeatureGate = function(fn) Core.featureAllowed = fn end,
+    setCoreField = function(k, v) Core[k] = v end,
     setPlayerPos = function(x, y) playerPos = x and { x, y } or nil end,
     lastPn = function() return lastPlayerNum end,
     logCount = function()
@@ -2185,6 +2186,34 @@ do
         "rect 103 103 8 8 0.40000000000000002 0 0 0", "line 107 105 107 109 1 0.5 1 1 1",
         "line 105 106 107 109 1 0.5 1 1 1", "line 107 109 109 106 1 0.5 1 1 1" }
     same(blog, want, "地下設施圖標與角標")
+    -- 去過／已清空（_ClearedUI.lua clearedBadge）：內建 provider 的 mark 依 inner.playerNum 取代碼；已清空（2、3）
+    -- 圖標 alpha×0.4，細節檔畫左上角標；中遠距（去重疊）或圖標小於 12 px 只變淡、不畫角標；外部 provider 不讀 mark
+    zone.setCoreField("clearedBadge", function(el, code, x, y, _, a)
+        el:drawTextureScaled("B" .. code, x - 1, y - 1, 9, 9, a, 1, 1, 1)
+    end)
+    local function marked(internal, scale, mark, pn)
+        zone.clearProviders()
+        zone.addProvider("a15mark", function()
+            return { hasIcon = true, { iconOnce = true, mark = mark, lodRect = { x1 = 100, y1 = 100, x2 = 104, y2 = 104 },
+                icon = { tex = "T", r = 1, g = 1, b = 1 }, rects = { { x1 = 100, y1 = 100, x2 = 104, y2 = 104 } } } }
+        end, internal)
+        local mi, mlog = recorder(scale)
+        mi.playerNum = pn
+        zone.icons(mi)
+        return mlog
+    end
+    same(marked(true, 10, { [0] = 2 }), { "tex T 93 93 18 18 0.40000000000000002 1 1 1", "tex B2 92 92 9 9 1 1 1 1" },
+        "已清空：變淡＋角標")
+    same(marked(true, 10, { [0] = 1 }), { "tex T 93 93 18 18 1 1 1 1", "tex B1 92 92 9 9 1 1 1 1" }, "去過：不變淡＋角標")
+    same(marked(true, 10, { [1] = 3 }, 1), { "tex T 93 93 18 18 0.40000000000000002 1 1 1", "tex B3 92 92 9 9 1 1 1 1" },
+        "分割畫面第二位玩家讀自己的代碼")
+    same(marked(true, 10, { [1] = 3 }, 0), { "tex T 93 93 18 18 1 1 1 1" }, "別位玩家的代碼不畫")
+    same(marked(true, 1, { [0] = 2 }), { "tex T 93 93 18 18 0.40000000000000002 1 1 1" }, "拉遠：只變淡")
+    zone.setIconSize(8)
+    same(marked(true, 10, { [0] = 2 }), { "tex T 98 98 8 8 0.40000000000000002 1 1 1" }, "圖標小於 12px：只變淡")
+    zone.setIconSize(18)
+    same(marked(false, 10, { [0] = 2 }), { "tex T 93 93 18 18 1 1 1 1" }, "外部 provider 不讀 mark")
+    zone.setCoreField("clearedBadge", nil)
     zone.setIconSize(18)
     zone.setBoolOverride("ZoneNamesFar", nil)
     zone.setAABB(0, 100, 0, 100)

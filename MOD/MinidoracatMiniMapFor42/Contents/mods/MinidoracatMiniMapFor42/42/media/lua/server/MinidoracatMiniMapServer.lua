@@ -3,26 +3,32 @@
 -- 逐一轉送 sendServerCommand(player, module, command, args)＝ClientCommands.lua:453 用法；
 -- getOnlinePlayers 用例 ClientCommands.lua:634；Faction.getPlayerFaction 用例 ISFactionUI.lua:408。
 -- 伺服器端就過濾陣營＝非同陣營玩家根本收不到座標；陣營比對用名稱字串
--- （同一 Java 物件經 Kahlua 兩次包裝的 == 不可靠）。
+-- （同一 Java 物件經 Kahlua 兩次包裝的 == 不可靠）。作者與收件人一律經 MinidoracatMiniMapGroups.principal：
+-- 分割畫面第 2～4 位玩家的名字是自己填的，不能分享、不收座標（家族 conventions.md「玩家身分」）。
 -- B42 SP 走 spnetwork loopback，OnClientCommand 在單機也會觸發（非舊認知的 no-op）；
 -- 本檔在 SP 下亦運作，只是單機無其他線上玩家＝陣營轉送對象為空。
 
+-- 回 { { p = 收件玩家, name = 收件名 }... }, 作者名；作者沒有身分或不在陣營回 nil
 local function sameFactionMembers(player)
-    local faction = Faction.getPlayerFaction(player)
+    local G = MinidoracatMiniMapGroups
+    local me = G and G.principal(player)
+    if not me then return nil end
+    local faction = Faction.getPlayerFaction(me)
     if not faction then return nil end
     local myName = faction:getName()
     local members = {}
     local online = getOnlinePlayers()
     for i = 0, online:size() - 1 do
         local other = online:get(i)
-        if other and other:getUsername() ~= player:getUsername() then
-            local f = Faction.getPlayerFaction(other)
+        local name = other and G.principal(other)
+        if name and name ~= me then
+            local f = Faction.getPlayerFaction(name)
             if f and f:getName() == myName then
-                table.insert(members, other)
+                members[#members + 1] = { p = other, name = name }
             end
         end
     end
-    return members
+    return members, me
 end
 
 -- 全服政策一律走 shared facade（MinidoracatMiniMap_Policy.lua）：Java
@@ -95,13 +101,13 @@ function Commands.shareTarget(player, args)
     -- 沙盒閘門（伺服器端權威判定；客戶端 UI 亦有同步隱藏，這裡防繞過）
     if not navShareAllowed() then return end
     if not (args and type(args.x) == "number" and type(args.y) == "number") then return end
-    local members = sameFactionMembers(player)
+    local members, author = sameFactionMembers(player)
     if not members then return end
-    local author = player:getUsername()
     for i = 1, #members do
-        if shareFilterAllows(player, members[i], args.x, args.y) then
-            sendServerCommand(members[i], "MinidoracatMiniMap", "sharedTarget",
-                { author = author, x = args.x, y = args.y, to = members[i]:getUsername() })
+        local m = members[i]
+        if shareFilterAllows(player, m.p, args.x, args.y) then
+            sendServerCommand(m.p, "MinidoracatMiniMap", "sharedTarget",
+                { author = author, x = args.x, y = args.y, to = m.name })
         end
     end
 end
@@ -109,12 +115,11 @@ end
 function Commands.clearShared(player, args)
     -- 清除同樣是跨玩家封包；政策缺席／關閉時不可讓手工 ClientCommand 繞過。
     if not navShareAllowed() then return end
-    local members = sameFactionMembers(player)
+    local members, author = sameFactionMembers(player)
     if not members then return end
-    local author = player:getUsername()
     for i = 1, #members do
-        sendServerCommand(members[i], "MinidoracatMiniMap", "clearShared",
-            { author = author, to = members[i]:getUsername() })
+        sendServerCommand(members[i].p, "MinidoracatMiniMap", "clearShared",
+            { author = author, to = members[i].name })
     end
 end
 

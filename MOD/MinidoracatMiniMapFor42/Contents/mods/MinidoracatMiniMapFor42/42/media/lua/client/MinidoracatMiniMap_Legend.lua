@@ -104,6 +104,10 @@ function LegendPanel:measureTexts()
     for _, text in pairs(self._roadTexts) do
         self._roadW = math.max(self._roadW, tm:MeasureStringX(UIFont.Small, text))
     end
+    -- 去過／已清空的角標（_ClearedUI.lua clearedBadge；代碼 1 去過、2 已清空、3 隊友已清空、4 已刷新）
+    self._markTexts = { getText("UI_MinidoracatMiniMap_ClearedLegendVisited"), getText("UI_MinidoracatMiniMap_ClearedLegendCleared"),
+        getText("UI_MinidoracatMiniMap_ClearedLegendTeam"), getText("UI_MinidoracatMiniMap_ClearedLegendRefreshed") }
+    for i = 1, 4 do self._roadW = math.max(self._roadW, tm:MeasureStringX(UIFont.Small, self._markTexts[i])) end
 end
 
 function LegendPanel:setBounds(x, y, w, h)
@@ -128,6 +132,15 @@ function LegendPanel:prerender()
     -- 自訂道路（世界地圖有畫才列；Core.roadsLegend 在 _RoadDraw.lua）：列種類 road／received／off
     local roads = map and Core.roadsLegend and Core.roadsLegend(map.playerNum or 0)
     local roadRows = roads and roads.n or 0
+    -- 去過／已清空：只列這一幀世界地圖上畫出角標的狀態（_Zones.lua drawZoneIcon 記在 map._minidoracatMarkSeen）
+    local seen, marks, markRows = lg and map and map._minidoracatMarkSeen, self._marks or {}, 0
+    self._marks = marks
+    for code = 1, 4 do
+        if seen and seen[code] then
+            markRows = markRows + 1
+            marks[markRows] = code
+        end
+    end
     if (not lg and roadRows == 0) or (key and not key:isVisible()) then
         self:setBounds(self.x, self.y, 0, 0)
         return
@@ -144,9 +157,9 @@ function LegendPanel:prerender()
     local tz = Core.mapTextZoom()
     local L = legendLayout(lg and lg.count or 0, lg and self._nameW or 0, lg and self._titleW or self._roadsTitleW,
         lg and lg.basement and self._basementW or nil, tm:getFontHeight(UIFont.Small),
-        tm:getFontHeight(UIFont.Medium), tz, minW, map.height - y - PAD * 4, roadRows, self._roadW)
+        tm:getFontHeight(UIFont.Medium), tz, minW, map.height - y - PAD * 4, roadRows + markRows, self._roadW)
     L.tz, L.fontH = tz, tm:getFontHeight(UIFont.Small) * tz
-    L.lg, L.roads, L.roadRows = lg, roads, roadRows
+    L.lg, L.roads, L.roadRows, L.markRows = lg, roads, roadRows, markRows
     self._layout = L
     self:setBounds(x, y, L.width, L.height)
     ISPanel.prerender(self)
@@ -186,6 +199,15 @@ function LegendPanel:render()
             1, 1, 1, 1, UIFont.Small, tz)
     end
     local y = L.headH + L.rows * L.rowH + 2 + (lg and lg.basement and L.rowH or 0)
+    -- 角標最大 12 px（iconS 至少 16，傳 iconS*2 就是 12）：置中在圖示格裡，和同列文字對齊（2026-11-08 E2E 截圖偏上偏左）
+    local off = math.floor((iconS - 12) / 2) + 1
+    for k = 1, L.markRows do
+        local code = self._marks[k]
+        if Core.clearedBadge then Core.clearedBadge(self, code, PAD + off, y + off, iconS * 2, 1) end
+        local ty = y + textDy
+        Core.drawMapText(self, self._markTexts[code], PAD + iconS + GAP, ty - ty % 1, 1, 1, 1, 1, UIFont.Small, tz)
+        y = y + L.rowH
+    end
     for k = 1, L.roadRows do
         local kind = L.roads[k]
         if Core.RoadDraw then Core.RoadDraw.drawLegendSample(self, PAD, y, iconS * 3, iconS, kind) end

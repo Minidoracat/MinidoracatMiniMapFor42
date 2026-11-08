@@ -879,6 +879,16 @@ do
     eq(#rightClick(t, { object(sq) }, { clickedSquare = sq }).options, 2, "正好 2 格還算旁邊")
     sq = square(16, 10, 0) -- 中心 16.5,10.5：離 Far 3 格
     eq(#rightClick(t, { object(sq) }, { clickedSquare = sq }).options, 1, "超過 2 格不列")
+    -- 資源點建築裡（_ClearedUI.lua clearedWorldMenu 決定列不列）：「資源點：名稱」排在加入地圖收藏之後、旁邊收藏之前
+    t.core.clearedWorldMenu = function(pn, context, x, y, z)
+        context:addOption("Cleared|" .. pn .. "|" .. x .. "," .. y .. "," .. z)
+    end
+    sq = square(11, 11, 0)
+    local mm = rightClick(t, { object(sq) }, { clickedSquare = sq })
+    eq(#mm.options, 3, "加入地圖收藏＋資源點＋旁邊那一筆")
+    eq(mm.options[2].name, "Cleared|0|11.5,11.5,0", "資源點選單收到這位玩家與點到的格子")
+    assert(mm.options[3].name:find("PlaceMenuOfHere", 1, true), "旁邊收藏排在資源點之後")
+    t.core.clearedWorldMenu = nil
 end
 
 -- 物品欄右鍵：只列不在自己身上的物品；地上的取物品那一格、容器裡的交給引擎 ItemContainer.getSquare
