@@ -677,5 +677,5 @@
     "UI_MinidoracatMiniMap_RoadError_notfound": "그 도로는 더 이상 없습니다.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "도로를 저장할 캐릭터가 없습니다.",
     "UI_MinidoracatMiniMap_RoadNavBuildFailed": "사용자 도로를 내비게이션에 추가하지 못했습니다(도로망 용량 한도). 경로는 이번 변경 전의 도로를 계속 사용합니다.",
-    "UI_MinidoracatMiniMap_WhatsNew": "미니맵을 옮긴 위치를 기억합니다. 멀티플레이에 '새 기호 공유 대상' 추가: 놓은 기호를 자동으로 공유합니다('공유 기호' 분류)."
+    "UI_MinidoracatMiniMap_WhatsNew": "Real USA 같은 초대형 맵 지원: 내비게이션, 사용자 도로, 거리 이름이 작동하고 녹스 카운티 지도가 더는 덮이지 않습니다."
 }

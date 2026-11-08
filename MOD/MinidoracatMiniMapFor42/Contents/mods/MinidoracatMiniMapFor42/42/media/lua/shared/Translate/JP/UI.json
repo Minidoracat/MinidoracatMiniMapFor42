@@ -677,5 +677,5 @@
     "UI_MinidoracatMiniMap_RoadError_notfound": "その道路はもう存在しません。",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "道路を保存するキャラクターがいません。",
     "UI_MinidoracatMiniMap_RoadNavBuildFailed": "カスタム道路をナビに追加できませんでした（道路網の容量上限）。ルートはこの変更前の道路を引き続き使います。",
-    "UI_MinidoracatMiniMap_WhatsNew": "ミニマップをドラッグした位置を覚えるようになりました。マルチプレイに「新しい記号の共有先」を追加：置いた記号を自動で共有できます。"
+    "UI_MinidoracatMiniMap_WhatsNew": "Real USA などの超大型マップに対応：ナビ、カスタム道路、ミニマップの通り名が使え、ノックス郡の地図も重なりません。"
 }

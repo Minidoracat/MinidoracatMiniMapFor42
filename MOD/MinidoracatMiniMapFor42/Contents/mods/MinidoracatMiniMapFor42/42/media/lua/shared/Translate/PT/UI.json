@@ -677,5 +677,5 @@
     "UI_MinidoracatMiniMap_RoadError_notfound": "Essa estrada não existe mais.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "Não há personagem para salvar estradas.",
     "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Não foi possível adicionar as estradas personalizadas à navegação (limite da rede de estradas). As rotas continuam usando as estradas de antes desta mudança.",
-    "UI_MinidoracatMiniMap_WhatsNew": "O minimapa lembra a posição. Multijogador: compartilhe novos símbolos ao colocá-los."
+    "UI_MinidoracatMiniMap_WhatsNew": "Mapas enormes como Real USA: navegação, estradas personalizadas e ruas, sem Knox County por cima."
 }
