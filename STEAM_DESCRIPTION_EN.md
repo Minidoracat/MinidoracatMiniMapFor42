@@ -30,7 +30,7 @@ Keep every Minidoracat MiniMap series mod up to date and restart the game after 
 [*] [b]Custom roads[/b]: where the map has no road data, use the road button at the bottom right of the world map to draw a road or record one while driving, and navigation uses it
 [*] [b]World map sketches[/b]: carry a pen to draw lines and write notes on the world map; the mini-map shows them too
 [*] [b]Visited & cleared[/b]: resource points remember where you've been and what you've looted, and can be shared with teammates
-[*] [b]Icons & facing[/b]: zombies, animals, vehicles, street names and safehouses, plus which way your teammates face and who is on another floor
+[*] [b]Icons & facing[/b]: zombies, NPCs, animals, vehicles, street names and safehouses, plus which way your teammates face and who is on another floor
 [*] [b]Server sandbox controls[/b]: disable icons and cap display distances; only data the client already receives is drawn
 [/list]
 📖 [b]Full details, settings and FAQ for every feature:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817841972]MiniMap Mod Guide: Features, Navigation & Road Data[/url]
@@ -41,7 +41,7 @@ Keep every Minidoracat MiniMap series mod up to date and restart the game after 
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps[/url] — map images and street-name translations for map mods
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3792675881]AutoDrive[/url] — GPS navigation and autonomous driving
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones[/url] — custom server zones
-[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]MOD Compatibility[/url] — icons for third-party animals such as dogs and horses
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]MOD Compatibility[/url] — animals, NPCs, outposts and airdrops from third-party mods
 [/list]
 More mods: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3809297109]Minidoracat Mods for B42 collection[/url]
 

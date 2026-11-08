@@ -30,7 +30,7 @@
 [*] [b]自定义道路[/b]：没路的地方用世界地图的道路按钮画路或录路，导航就会走
 [*] [b]世界地图手绘[/b]：身上有笔就能画线、写字，小地图也看得到
 [*] [b]去过与已清空[/b]：资源点记住去过、搜刮过的地方，可分享给队友
-[*] [b]图标与朝向[/b]：丧尸、动物、载具、街名与安全屋，以及队友的朝向和楼层
+[*] [b]图标与朝向[/b]：丧尸、NPC、动物、载具、街名与安全屋，以及队友朝向和楼层
 [*] [b]服务器沙盒管理[/b]：可禁用图标、限制显示距离，只画客户端本来就收到的数据
 [/list]
 📖 [b]每项功能的详细说明、设置与常见问题：[/b][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817841920]小地圖 MiniMap MOD 完整說明：功能、導航與道路資料[/url]（繁体中文）
@@ -41,7 +41,7 @@
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps[/url]——地图 MOD 的地图图片与路名翻译
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3792675881]AutoDrive[/url]——GPS 导航与自动驾驶
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones[/url]——服务器自定义区域
-[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]MOD Compatibility[/url]——狗、马等第三方动物图标
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]MOD Compatibility[/url]——第三方 MOD 的动物、NPC、前哨站与空投
 [/list]
 其他作品：[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3809297109]Minidoracat 全系列收藏[/url]
 

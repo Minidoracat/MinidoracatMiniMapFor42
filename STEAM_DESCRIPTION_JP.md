@@ -30,7 +30,7 @@
 [*] [b]カスタム道路[/b]：道路データのない場所は、ワールドマップ右下の道路ボタンから道路を描くか運転して記録すると、ナビで使えます
 [*] [b]ワールドマップの手描き[/b]：ペンを持っていれば線や文字を描け、ミニマップにも表示されます
 [*] [b]訪問済みと漁り済み[/b]：行った場所・漁った資源ポイントを記録し、仲間と共有できます
-[*] [b]アイコンと向き[/b]：ゾンビ・動物・車両・通り名・セーフハウスに加え、仲間の向きや別の階にいることも分かります
+[*] [b]アイコンと向き[/b]：ゾンビ・NPC・動物・車両・通り名・セーフハウスに加え、仲間の向きや別の階にいることも分かります
 [*] [b]サーバーのサンドボックス管理[/b]：アイコンの無効化や表示距離の上限を設定でき、クライアントが元々受信しているデータだけを表示します
 [/list]
 📖 [b]各機能の詳しい説明・設定・よくある質問：[/b][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817841972]MiniMap Mod Guide: Features, Navigation & Road Data[/url]（英語）
@@ -41,7 +41,7 @@
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps[/url]——マップ MOD の地図画像と道路名の翻訳
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3792675881]AutoDrive[/url]——GPS ナビと自動運転
 [*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones[/url]——サーバー独自のエリア表示
-[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]MOD Compatibility[/url]——犬・馬など他 MOD の動物アイコン
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]MOD Compatibility[/url]——他 MOD の動物、NPC、前哨基地、エアドロップ
 [/list]
 その他の MOD：[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3809297109]Minidoracat 全シリーズ コレクション[/url]
 
