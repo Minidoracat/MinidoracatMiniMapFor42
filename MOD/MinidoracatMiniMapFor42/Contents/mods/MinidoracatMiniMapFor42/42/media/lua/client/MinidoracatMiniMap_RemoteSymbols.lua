@@ -193,10 +193,14 @@ end
 
 -- 上次套用「只看陣營與安全屋」時的狀態：模式、標記數、我的陣營與安全屋和它們的人數
 local applied = { on = false, n = -1 }
+-- 本 MOD 藏起來的標記：包裝物件 -> 作者。標記增刪會讓索引位移，所以記物件；包裝物件是池化的，
+-- 那則被移除後可能接給另一則新標記（WorldMapSymbolsV2.java:245-263），動它之前先核對作者
+local scopeHidden = {}
 
--- 把「只看陣營與安全屋」套到目前所有別人分享的標記：圈外的不畫，圈內的照常。新收到的標記預設可見
+-- 把「只看陣營與安全屋」套到目前所有別人分享的標記：圈外的不畫，圈內的不碰。新收到的標記預設可見
 -- （WorldMapBaseSymbol.java:42），所以標記數或圈內人數一變就重套；作者改內容沿用同一個物件
 -- （WorldMapClient.java:107-121），旗標不會被洗掉。一直沒開＝直接返回，不掃標記。
+-- 只放回自己藏過的：圈內與沒藏過的標記交給原版或別的 MOD（TwisTonFire 的縮放門檻）決定畫不畫
 -- ponytail: 同一個檢查間隔內標記一增一減、或圈內一進一出，會等到下一次變動才重套；要更準得自己記標記 ID
 function Core.remoteScopeApply()
     if not isClient() then return end
@@ -214,10 +218,23 @@ function Core.remoteScopeApply()
     end
     applied.on, applied.n, applied.faction, applied.fn, applied.house, applied.hn = on, n, faction, fn, house, hn
     local inCircle = circle(faction, house)
-    for i = 0, n - 1 do
+    local was = scopeHidden
+    scopeHidden = {}
+    for i = 0, (on and n or 0) - 1 do
         local s = api:getSymbolByIndex(i)
-        if s:isShared() and not s:isAuthorLocalPlayer() then s:setVisible(not on or inCircle(s:getAuthor()) ~= nil) end
+        if s:isShared() and not s:isAuthorLocalPlayer() and not inCircle(s:getAuthor()) then
+            scopeHidden[s] = s:getAuthor()
+            s:setVisible(false)
+        end
     end
+    local shown = false
+    for s, author in pairs(was) do
+        if not scopeHidden[s] and s:getAuthor() == author then s:setVisible(true); shown = true end
+    end
+    -- 放回的若是 TwisTonFire 手繪點，請它下一幀重套縮放門檻（它的 tracker.dirty，TTF_MapInk_Tools.lua:697）
+    local ui = shown and ISWorldMap_instance and ISWorldMap_instance.symbolsUI
+    local tracker = ui and ui.ttf_mapInkSketchTracker
+    if tracker then tracker.dirty = true end
 end
 
 -- 每 30 tick 比一次狀態（約半秒；原版用例 client/Chat/ISChat.lua:943）
@@ -227,6 +244,33 @@ Events.OnTick.Add(function()
     if scopeTicks < 30 then return end
     scopeTicks = 0
     Core.remoteScopeApply()
+end)
+
+-- 把本 MOD 藏的再藏一次（下面的 TwisTonFire 包裝用；經 Core 呼叫，本檔重載後包裝讀到的是新的 scopeHidden）
+function Core.remoteScopeRehide()
+    for s, author in pairs(scopeHidden) do
+        if s:getAuthor() == author then s:setVisible(false) end
+    end
+end
+
+-- TwisTonFire 手繪（mod twistmapimprovements）：世界地圖每次 prerenderMap 先呼叫 TTF_MapInk.ApplySketchZoomVisibility
+-- （TTF_MapInk_Boot.lua:462-468）；縮放、標記數或它的設定一變，就對所有手繪點（symbolID TTF_mapInkDot 與長得像的）
+-- setVisible(縮放門檻)（TTF_MapInk_Tools.lua:683-727），會把上面藏的圈外手繪點放出來。包它：它真的重設過
+-- （重設前 tracker 是髒的，或縮放、門檻、標記數記錄變了），就在畫之前把本 MOD 藏的再藏回去，不必等下次檢查。
+-- 它的 tracker 欄位改名時退成每次都重藏。沒裝或單機＝不包；兩邊載入順序不定，遊戲開始才包，包過的不再包
+Events.OnGameStart.Add(function()
+    local ttf = TTF_MapInk
+    local base = isClient() and ttf and ttf.ApplySketchZoomVisibility
+    if not base or base == ttf.minidoracatScopeWrap then return end
+    ttf.minidoracatScopeWrap = function(ui, ...)
+        local t = ui and ui.ttf_mapInkSketchTracker
+        local quiet = t and not t.dirty and not t.rebuild
+        local zoom, minZoom, count = quiet and t.lastZoomF, quiet and t.lastBaseMinZoom, quiet and t.symbolCount
+        base(ui, ...)
+        if quiet and t.lastZoomF == zoom and t.lastBaseMinZoom == minZoom and t.symbolCount == count then return end
+        Core.remoteScopeRehide()
+    end
+    ttf.ApplySketchZoomVisibility = ttf.minidoracatScopeWrap
 end)
 
 -- 世界地圖右鍵：游標下是別人分享的標記，就加「隱藏 X 的標記」。hitTest 只命中畫得出來、
