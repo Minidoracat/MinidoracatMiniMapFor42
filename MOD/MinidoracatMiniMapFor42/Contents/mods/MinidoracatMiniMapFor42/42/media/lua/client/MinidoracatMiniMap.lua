@@ -1341,6 +1341,10 @@ if PZAPI and PZAPI.ModOptions then
     combo:addItem("UI_MinidoracatMiniMap_ZDotColor_Purple", false)
     combo:addItem("UI_MinidoracatMiniMap_ZDotColor_White", false)
     combo:addItem("UI_MinidoracatMiniMap_ZDotColor_Red", false)
+    -- 殭屍點裡的 NPC 換色總開關（_Dots.lua npcColor；NPC 由 registerNpcTag 登記）。每個 NPC MOD 的
+    -- 顏色下拉（NpcDotColor_<tag>）依登記在 _Settings.lua 的 OnGameBoot 接在頁尾（PZAPI 不能中插）
+    modOptions:addTickBox("NpcDotTint", "UI_MinidoracatMiniMap_NpcDotTint", true,
+        "UI_MinidoracatMiniMap_NpcDotTint_tooltip")
     -- 殭屍點上限（可視範圍內同時顯示的最大數量；取樣端每輪讀值即時生效）
     combo = modOptions:addComboBox("ZombieDotMax", "UI_MinidoracatMiniMap_ZombieDotMax")
     combo:addItem("UI_MinidoracatMiniMap_ZDotMax_100", false)

@@ -14,6 +14,8 @@
     "Sandbox_MinidoracatMiniMapZombieScanInterval_tooltip": "0 = real time (default; refreshes about every 0.3 seconds).\nN > 0 = zombie dots refresh only every N seconds and are scanned around the player, so panning the map does not rescan.\nAffects zombie dots only; the zombie heatmap is drawn by the game.\nAdmins using Tactical view always see real time.\nScanning runs on each player's client, so this does not change server load.",
     "Sandbox_MinidoracatMiniMapAllowZombieIntensity": "Allow zombie heatmap",
     "Sandbox_MinidoracatMiniMapAllowZombieIntensity_tooltip": "Allow players to overlay the zombie population heatmap on the mini-map. When disabled it is force-hidden (admin changes apply live).",
+    "Sandbox_MinidoracatMiniMapAllowNpcDotColor": "Allow NPC dot colors",
+    "Sandbox_MinidoracatMiniMapAllowNpcDotColor_tooltip": "Allow players to draw NPCs (from mods such as Bandits or Project A-Life) in their own color among the zombie dots. When disabled, NPCs still appear as ordinary zombie dots. Admins with tactical view are not affected.",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay": "Safehouse area display",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_tooltip": "Controls safehouse area outlines and icons on players' mini-map and world map: off / own only / all (including other players') / own and faction members'. PVP servers may prefer \"Own only\" or \"Own and faction\" to avoid leaking enemy base locations.",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_option1": "Off",

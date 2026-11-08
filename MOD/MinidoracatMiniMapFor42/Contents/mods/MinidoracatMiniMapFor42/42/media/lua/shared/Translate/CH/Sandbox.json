@@ -14,6 +14,8 @@
     "Sandbox_MinidoracatMiniMapZombieScanInterval_tooltip": "0＝即時（預設，約每 0.3 秒更新）。\nN＞0＝殭屍點位每 N 秒才更新一次，並以玩家為中心掃描，拖動地圖不會重新掃描。\n只影響殭屍點位；殭屍熱度圖由遊戲本身繪製。\n開啟戰術檢視的管理員一律即時。\n掃描在各玩家的客戶端進行，不會改變伺服器負擔。",
     "Sandbox_MinidoracatMiniMapAllowZombieIntensity": "允許殭屍熱度圖",
     "Sandbox_MinidoracatMiniMapAllowZombieIntensity_tooltip": "允許玩家在小地圖上疊加殭屍族群熱度圖。關閉後強制隱藏（管理員改動即時生效）。",
+    "Sandbox_MinidoracatMiniMapAllowNpcDotColor": "允許 NPC 點位換色",
+    "Sandbox_MinidoracatMiniMapAllowNpcDotColor_tooltip": "允許玩家把殭屍點裡的 NPC（例如 Bandits、Project A-Life）畫成另一種顏色。關閉後 NPC 照樣以殭屍點顯示，只是不分顏色。開啟戰術檢視的管理員不受限。",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay": "安全屋範圍顯示",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_tooltip": "控制玩家小地圖與世界地圖上的安全屋範圍框與圖標：關閉／僅自己所屬的／全部（含其他玩家）／自己與同陣營成員的。PVP 伺服器可用「僅自己的」或「自己與陣營」避免洩漏敵方基地範圍。",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_option1": "關閉",

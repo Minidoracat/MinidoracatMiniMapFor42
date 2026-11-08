@@ -225,6 +225,18 @@ do
 end
 env.gates.AllowZombieDots = nil
 env.frame()
+-- E6 NPC 換色有自己的伺服器閘：關了只停用那一列，殭屍分類其他照常
+env.gates.AllowNpcDotColor = false
+s.selectSection("zombie")
+check(env.byKey("NpcDotTint")._enabled == false and env.byKey("ZombieIntensity")._enabled == true,
+    "E6 AllowNpcDotColor off disables only the NPC tick")
+env.gates.AllowNpcDotColor = nil
+s.selectSection("zombie")
+check(env.byKey("NpcDotTint")._enabled == true, "E6 NPC tick enabled again when the server allows it")
+-- E7 沒有任何 NPC MOD 登記：說明行提示要相容包、沒有顏色列
+check(textShown(env, T("UI_MinidoracatMiniMap_NpcTagsNone")), "E7 no registered NPC mod: the note asks for the compat pack")
+check(findControl(env, function(el) return type(el._findKey) == "string" and el._findKey:find("^NpcDotColor_") end) == nil,
+    "E7 no registered NPC mod: no NPC colour rows")
 
 -- ── F 顯示距離：0＝不限、伺服器上限顯示且不寫回存值 ─────────────────────────────
 env.values.ClientZombieDotDistance = 1500
@@ -256,6 +268,8 @@ do
         places = { "Players", "Places", "NavRoute", "KeepFinishedTrip", "MarkerIconSize" },
         poicat = { "PoiBlocks", "PoiWholeBuilding", "PoiColorIcons", "Cat:military", "PoiIconSize", "PoiIconAlpha",
             "ClientPoiDisplayDistance" },
+        zombie = { "ZombieDots", "WMZombieDots", "ZombieIntensity", "NpcDotTint", "ZombieDotColor", "ZombieDotMax",
+            "ZombieDotSize", "ClientZombieDotDistance" },
         animals = { "AnimalWild", "AnimalLivestock", "WMAnimalWild", "WMAnimalLivestock", "AnimalSpeciesFilter:deer",
             "AnimalIconStyle", "AnimalIconSize", "AnimalNames", "AnimalNameDistance", "ClientAnimalIconDistance" },
         vehicles = { "WMVehicleDots", "VehicleCategoryFilter:heavy", "VehicleIconColor", "VehicleIconSize",
@@ -1321,6 +1335,83 @@ do
         "RD7 single player search skips it too")
     -- RD8 自訂道路分類只管顯示：翻設定找道路的人要在這裡看到怎麼建立（設計稿 minimap-roads-entry-1025 主張 2）
     check(textShown(sp, T("UI_MinidoracatMiniMap_RoadHow")), "RD8 roads category says how to add a road")
+end
+
+-- ── NP 殭屍點裡的 NPC：每個登記的 NPC MOD 一個顏色列（OnGameBoot 依登記追加）、說明行、預覽、閘門、重設 ──────
+do
+    local e = H.load{}
+    local api = e.API
+    checkEq(api.npcApiVersion, 1, "NP1 npcApiVersion is 1")
+    check(api.registerNpcTag("Compat", "bandits", "Bandits", "Bandit") == true
+        and api.registerNpcTag("Compat", "alife", "A-Life", "ALifeActor") == true, "NP1 two tags register before boot")
+    e.boot()
+    local reg = table.concat(e.registered, ",")
+    check(reg:find("NpcDotTint", 1, true) == nil, "NP2 the NPC tick is a static main-file option, not boot-appended")
+    check(reg:find("NpcDotColor_bandits,NpcDotColor_alife", 1, true) ~= nil,
+        "NP2 OnGameBoot appends one ESC colour option per tag in registration order (" .. reg .. ")")
+    -- ESC 頁的預設色是 addItem 的選取旗標（遊戲裡沒有存值時就是它），不是設定視窗的 entry.default
+    checkEq(e.comboDefaults.NpcDotColor_bandits, 4, "NP2 ESC option of the first tag preselects sky blue (4)")
+    checkEq(e.comboDefaults.NpcDotColor_alife, 2, "NP2 ESC option of the second tag preselects green (2)")
+    -- NP3 開機後才登記：沒有選項、log 一次，預設色照樣排第 3 個（紫紅）
+    local printed = #e.printed
+    check(api.registerNpcTag("Late", "late", "Late", "LateVar") == true, "NP3 a tag registered after boot still registers")
+    checkEq(#e.printed, printed + 1, "NP3 late registration logs once")
+    check(e.printed[#e.printed]:find("after OnGameBoot", 1, true) ~= nil, "NP3 the log says it has no option")
+    check(table.concat(e.registered, ","):find("NpcDotColor_late", 1, true) == nil, "NP3 no ESC option for the late tag")
+    local st = e.open(0)
+    st.selectSection("zombie")
+    local dd = e.byKey("NpcDotColor_bandits")
+    checkEq(e.type(dd), "MinidoracatUIDropdown", "NP4 the bandits colour row is a dropdown")
+    check(textShown(e, getText("UI_MinidoracatMiniMap_NpcDotColorOf", "Bandits")), "NP4 row label is '<mod> dot colour'")
+    checkEq(dd and dd:getSelected(), 4, "NP4 first tag defaults to sky blue (palette 4)")
+    checkEq(e.byKey("NpcDotColor_alife") and e.byKey("NpcDotColor_alife"):getSelected(), 2,
+        "NP4 second tag defaults to green (palette 2)")
+    check(e.byKey("NpcDotColor_late") == nil, "NP4 the late tag has no row")
+    local order = {}
+    for _, el in ipairs(e.studio().controls) do
+        if e.type(el) == "MinidoracatUIDropdown" and el._findKey then order[#order + 1] = el._findKey end
+    end
+    checkEq(table.concat(order, ","), "ZombieDotColor,NpcDotColor_bandits,NpcDotColor_alife,ZombieDotMax",
+        "NP5 NPC colour rows sit right after the zombie colour")
+    check(textShown(e, getText("UI_MinidoracatMiniMap_NpcTagsFound", "Bandits, A-Life, Late")),
+        "NP6 the note lists every registered NPC mod (late one included)")
+    check(not textShown(e, T("UI_MinidoracatMiniMap_NpcTagsNone")), "NP6 no compat-pack hint once something is registered")
+    -- NP7 預覽：每個 tag 一顆（天藍、綠、紫紅），其餘殭屍色
+    local function zombiePreview()
+        st.selectSection("zombie")
+        local pv = typed(e, "MinidoracatUIPreview")[1]
+        pv.draws = {}
+        pv:prerender()
+        local byColor = {}
+        for _, d in ipairs(pv.draws) do
+            if d.kind == "rect" and not (d[6] == 0 and d[7] == 0 and d[8] == 0) then
+                local k = string.format("%.2f,%.2f,%.2f", d[6], d[7], d[8])
+                byColor[k] = (byColor[k] or 0) + 1
+            end
+        end
+        return byColor
+    end
+    local c = zombiePreview()
+    check(c["0.45,0.80,1.00"] == 1 and c["0.47,0.88,0.37"] == 1 and c["0.86,0.52,0.70"] == 1
+        and c["1.00,0.62,0.05"] == 6, "NP7 preview: one dot per tag in its colour, six zombie dots")
+    e.values["NpcDotColor_bandits"] = 8
+    c = zombiePreview()
+    check(c["0.90,0.42,0.10"] == 1 and c["0.45,0.80,1.00"] == nil, "NP7 preview follows the per-tag colour option")
+    e.values.NpcDotTint = false
+    c = zombiePreview()
+    checkEq(c["1.00,0.62,0.05"], 9, "NP8 tick off: all nine preview dots in zombie colour")
+    e.values.NpcDotTint = nil
+    e.gates.AllowNpcDotColor = false
+    c = zombiePreview()
+    checkEq(c["1.00,0.62,0.05"], 9, "NP8 server off: all nine preview dots in zombie colour")
+    check(e.byKey("NpcDotColor_bandits"):isEnabled() == false and e.byKey("NpcDotTint")._enabled == false,
+        "NP8 server off disables the NPC tick and colour rows")
+    e.gates.AllowNpcDotColor = nil
+    -- NP9 重設此分類：顏色列回各自的預設
+    st.selectSection("zombie")
+    local reset = findControl(e, function(el) return el._sec and el.title == T("UI_MinidoracatMiniMap_StudioResetCategory") end)
+    reset.onclick(reset.target, reset)
+    checkEq(e.values["NpcDotColor_bandits"], 4, "NP9 reset restores the tag's default colour")
 end
 
 io.write(string.format("test_settings_studio: %d assertions, %d failures\n", assertions, failures))

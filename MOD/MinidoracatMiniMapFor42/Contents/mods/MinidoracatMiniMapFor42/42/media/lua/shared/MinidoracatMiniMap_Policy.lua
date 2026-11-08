@@ -43,7 +43,7 @@
 --
 -- ══ 旁路白名單（不在名單上的鍵永遠不旁路）══
 --   戰術層 TACTICAL_KEYS（「我要看敵情」，不涉及他人隱私）：
---     AllowZombieDots／AllowZombieIntensity／AllowAnimalDots／AllowVehicleDots
+--     AllowZombieDots／AllowZombieIntensity／AllowNpcDotColor／AllowAnimalDots／AllowVehicleDots
 --     ＋ ZombieDotDistance／AnimalIconDistance／VehicleIconDistance／
 --        PoiDisplayDistance／ZoneDisplayDistance／AllInfoDistance
 --   隱私層 PRIVACY_KEYS（會看到別的玩家藏起來的東西，故獨立第二把鑰匙）：
@@ -190,6 +190,8 @@ local SCHEMA = {
     { "AllowZombieDots", "boolean", true },
     { "ZombieDotDistance", "number", 0 },
     { "AllowZombieIntensity", "boolean", true },
+    -- 殭屍點裡的 NPC 換色（_Dots.lua npcColor／取樣器 npcOn）：關＝NPC 照殭屍色畫；戰術層旁路
+    { "AllowNpcDotColor", "boolean", true },
     { "AllowAnimalDots", "boolean", true },
     { "AnimalIconDistance", "number", 0 },
     { "LivestockVisibility", "number", 2 },
@@ -229,7 +231,7 @@ local SCHEMA = {
     -- 玩家的兩張地圖都不畫；不在任何旁路白名單（管理員戰術檢視也一樣）
     { "AllowMapBounds", "boolean", true },
 }
-local SCHEMA_N = 29 -- 顯式筆數（家規：不用 # 依賴隱性長度）
+local SCHEMA_N = 30 -- 顯式筆數（家規：不用 # 依賴隱性長度）
 
 local KIND = {}
 for i = 1, SCHEMA_N do
@@ -240,6 +242,7 @@ end
 local TACTICAL_KEYS = {
     AllowZombieDots = true,
     AllowZombieIntensity = true,
+    AllowNpcDotColor = true,
     AllowAnimalDots = true,
     AllowVehicleDots = true,
     ZombieDotDistance = true,

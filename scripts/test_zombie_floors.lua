@@ -59,6 +59,7 @@ local function zdotsStateFor(inner)
     end
     return inner._state
 end
+local npc = { n = 0 } -- NPC 登記零筆：取樣與繪製在 npc.n 判斷就短路（行為在 test_npc_dots）
 ]=]
 local suffix = [=[
 return {

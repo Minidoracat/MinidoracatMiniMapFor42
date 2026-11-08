@@ -228,6 +228,7 @@ local ZDOTS_INTERVAL_MS, ZDOTS_MAX, ZDOTS_SCAN_MAX, SCAN_ALL = 300, 10, 100, 1e9
 local scanSettings, scanReads = {}, 0
 local function scanIntervalMs(name) scanReads = scanReads + 1; return scanSettings[name] end
 local scanListeners = {} -- 掃描通知（零註冊；通知行為在 test_scan_listener）
+local npc = { n = 0 } -- NPC 登記零筆：取樣器在 npc.n 判斷就短路（行為在 test_npc_dots）
 local ZDOTS_NEAR, ZDOTS_MID, ZDOTS_MAXES = 20, 50, { 10 }
 local function getTimestampMs() return now end
 local function displayDist() return distance end

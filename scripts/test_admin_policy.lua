@@ -497,7 +497,7 @@ check(M.policy.getRevision() > allResetRev, "全清已開旗標會推進 revisio
 --------------------------------------------------------------------------------
 local N = newPolicy{
     java = { AllowAdminTacticalView = true, AllowAdminPrivacyView = true,
-             AllowZombieDots = false, AllowZombieIntensity = false,
+             AllowZombieDots = false, AllowZombieIntensity = false, AllowNpcDotColor = false,
              AllowAnimalDots = false, AllowVehicleDots = false,
              AllowNavShare = false, ExportPlayerPositions = false,
              ExportOfflinePlayers = false, ZombieDotDistance = 50 },
@@ -507,6 +507,7 @@ checkEq(N.policy.gate("AllowZombieDots", true, 0), false, "旁路未開＝gate �
 checkEq(N.policy.setLocalTactical(0, true), true, "開啟戰術層")
 checkEq(N.policy.gate("AllowZombieDots", true, 0), true, "戰術層生效＝白名單布林鍵強制放行")
 checkEq(N.policy.gate("AllowZombieIntensity", true, 0), true, "殭屍密度同屬戰術白名單")
+checkEq(N.policy.gate("AllowNpcDotColor", true, 0), true, "殭屍點裡的 NPC 換色同屬戰術白名單")
 checkEq(N.policy.gate("AllowAnimalDots", true, 0), true, "動物點同屬戰術白名單")
 checkEq(N.policy.gate("AllowVehicleDots", true, 0), true, "載具點同屬戰術白名單")
 checkEq(N.policy.gate("AllowNavShare", true, 0), false, "AllowNavShare 永不旁路（通訊非檢視）")
@@ -542,7 +543,7 @@ for key in pairs(N.privacyKeys) do
     privacyCount = privacyCount + 1
     if kinds[key] == nil then unknownWhitelisted = unknownWhitelisted + 1 end
 end
-checkEq(tacticalCount, 10, "戰術白名單成員數（4 布林＋6 距離）")
+checkEq(tacticalCount, 11, "戰術白名單成員數（5 布林＋6 距離）")
 checkEq(privacyCount, 2,
     "隱私白名單只含兩把距離鍵（模式鍵的旁路在 safehouseMode／safehouseNameMode／livestockMode 內判）")
 checkEq(overlap, 0, "兩張白名單不重疊")
@@ -748,7 +749,7 @@ check(source:find("Events%.OnCreatePlayer%.Add%(clearLocalSlot%)") ~= nil
 --------------------------------------------------------------------------------
 -- 斷言條數守門：新增／刪除斷言必須同步改這個數字，否則整批被靜默略過也不會
 -- 有人發現；schema 與 never-bypass 迴圈產生的動態斷言亦計入總數。
-local EXPECTED_ASSERTIONS = 308
+local EXPECTED_ASSERTIONS = 311
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
         .. ", actual " .. assertions)

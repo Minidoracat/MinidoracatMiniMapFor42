@@ -14,6 +14,8 @@
     "Sandbox_MinidoracatMiniMapZombieScanInterval_tooltip": "0＝リアルタイム（既定。約 0.3 秒ごとに更新）。\nN＞0＝ゾンビ表示を N 秒ごとにだけ更新し、プレイヤーを中心にスキャンします。マップを動かしても再スキャンしません。\nゾンビ表示のみに影響し、ゾンビヒートマップはゲーム本体が描画します。\n戦術ビューを使う管理者は常にリアルタイムです。\nスキャンは各プレイヤーのクライアントで行うため、サーバー負荷は変わりません。",
     "Sandbox_MinidoracatMiniMapAllowZombieIntensity": "ゾンビヒートマップを許可",
     "Sandbox_MinidoracatMiniMapAllowZombieIntensity_tooltip": "プレイヤーがミニマップにゾンビ密度ヒートマップを重ねることを許可します。無効にすると強制的に非表示になります（管理者の変更は即時反映）。",
+    "Sandbox_MinidoracatMiniMapAllowNpcDotColor": "NPC点の色分けを許可",
+    "Sandbox_MinidoracatMiniMapAllowNpcDotColor_tooltip": "ゾンビ点のうちNPC（Bandits、Project A-Life などのMOD）を別の色で描くことをプレイヤーに許可します。無効にするとNPCは通常のゾンビ点として表示され、色分けされません。戦術ビュー中の管理者は対象外です。",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay": "セーフハウス範囲表示",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_tooltip": "プレイヤーのミニマップとワールドマップに表示するセーフハウス範囲枠とアイコンを制御：オフ／自分のもののみ／すべて（他プレイヤー含む）／自分と同じ陣営のもの。PVPサーバーでは「自分のもののみ」または「自分と陣営」で敵拠点の位置漏洩を防げます。",
     "Sandbox_MinidoracatMiniMapSafehouseDisplay_option1": "オフ",

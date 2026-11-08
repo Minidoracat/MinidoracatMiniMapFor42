@@ -37,6 +37,22 @@ local function log(msg)
     print("[MinidoracatMiniMap] " .. msg)
 end
 
+-- 圖標染色盤（動物／載具圖標與殭屍點裡的 NPC 共用）：索引對應 ADOTS_COLOR_ITEMS（主檔選項註冊區）順序，兩表必須同步。
+-- Okabe-Ito 色盲友善色系；綠/天藍沿用實測亮度（乘法染色在深色地圖需偏亮 tint）
+local ADOTS_PALETTE = {
+    { 1.0, 1.0, 1.0 },    -- 白
+    { 0.47, 0.88, 0.37 }, -- 綠（現行野生色）
+    { 0.90, 0.62, 0.0 },  -- 橘（#E69F00）
+    { 0.45, 0.8, 1.0 },   -- 天藍（現行載具色）
+    { 0.94, 0.89, 0.26 }, -- 黃（#F0E442）
+    { 0.86, 0.52, 0.70 }, -- 紫紅（#CC79A7 提亮）
+    { 0.20, 0.55, 0.85 }, -- 藍（#0072B2 提亮）
+    { 0.90, 0.42, 0.10 }, -- 硃紅（#D55E00 提亮）
+}
+local function adotsColor(optId, default)
+    return ADOTS_PALETTE[getComboIndex(optId, default)] or ADOTS_PALETTE[default]
+end
+
 --------------------------------------------------------------------------------
 -- 精準殭屍圖標（ZombieDots，預設關）
 -- 資料源：getCell():getZombieList()——getCell＝LuaManager.java:5666、
@@ -163,6 +179,55 @@ local function notifyScan(pn, kind, now, scanMs)
 end
 -- test:scan-listener:end
 
+-- test:npc-tags:start
+-- 殭屍點裡的 NPC（npcApiVersion 1，docs/addon-api.md §3.20）：Bandits、Project A-Life 這類 MOD 的 NPC 是掛了動畫變數的
+-- 殭屍。相容包（或 NPC MOD 自己）只登記資料：ownerModId、tag、labelKey（MOD 名稱的翻譯鍵）、variable（動畫變數名）。
+-- 取樣器只在已選進來的點上讀 z:getVariableBoolean(variable)，第一個命中的 tag 決定顏色；不執行第三方程式。
+-- 最多 4 個 tag，每個 tag 一個顏色下拉 NpcDotColor_<tag>：_Settings.lua 在 OnGameBoot 依當時的登記追加，之後才登記的
+-- 沒有選項、用預設色（log 一次）。預設色＝ADOTS_PALETTE 索引，依登記順序：天藍、綠、紫紅、白（都和殭屍預設橘、玩家紅分得開）。
+-- 規則：tag 符合 ^[a-z][a-z0-9_]*$、長 1-24；其餘三個是非空的可列印 ASCII；同一 tag 欄位全同＝冪等 true；
+-- 欄位不同（tag 被佔用）或已滿＝log 一次後 false。登記不能撤銷（取樣的 d.npc 存的是登記序號）
+local NPC_DEFAULT_COLORS = { 4, 2, 6, 1 }
+-- tags[i]＝{ owner, tag, label, var, opt, color }；n＝登記數（熱路徑用計數器）；colors＝繪製端每幀重用的顏色表
+local npc = { tags = {}, n = 0, colors = {}, booted = false, logged = {} }
+local function npcReject(msg)
+    if not npc.logged[msg] then
+        npc.logged[msg] = true
+        log(msg)
+    end
+    return false
+end
+local function npcAscii(s)
+    return type(s) == "string" and s:find("%S") ~= nil and s:find("^[ -~]+$") ~= nil
+end
+MinidoracatMiniMapAPI.npcApiVersion = 1
+function MinidoracatMiniMapAPI.registerNpcTag(ownerModId, tag, labelKey, variable)
+    if not (npcAscii(ownerModId) and npcAscii(labelKey) and npcAscii(variable) and type(tag) == "string"
+        and #tag <= 24 and tag:find("^[a-z][a-z0-9_]*$")) then
+        return npcReject("registerNpcTag bad arguments (ownerModId, labelKey, variable: ASCII strings;"
+            .. " tag: ^[a-z][a-z0-9_]*$ up to 24 chars): " .. tostring(ownerModId) .. " / " .. tostring(tag))
+    end
+    for i = 1, npc.n do
+        local t = npc.tags[i]
+        if t.tag == tag then
+            if t.owner == ownerModId and t.label == labelKey and t.var == variable then return true end
+            return npcReject("registerNpcTag tag " .. tag .. " is taken by " .. t.owner .. ", refused " .. ownerModId)
+        end
+    end
+    if npc.n >= 4 then
+        return npcReject("registerNpcTag limit of 4 tags reached, refused " .. ownerModId .. " / " .. tag)
+    end
+    local n = npc.n + 1
+    npc.tags[n] = { owner = ownerModId, tag = tag, label = labelKey, var = variable,
+        opt = "NpcDotColor_" .. tag, color = NPC_DEFAULT_COLORS[n] }
+    npc.n = n
+    if npc.booted then
+        log("registerNpcTag " .. tag .. " after OnGameBoot: no color option, the default color is used")
+    end
+    return true
+end
+-- test:npc-tags:end
+
 -- 定時模式以玩家為中心取樣：不套視窗框（平移／縮放不會在兩次掃描之間出現空白），
 -- 以玩家為仿射錨點。上下界取遠大於任何地圖的常數（Kahlua 不保證 math.huge）
 local SCAN_ALL = 1e9
@@ -226,12 +291,17 @@ local function sampleZombieDots(inner, gateMax, scanKey)
     local dist2 = dist and dist * dist
     local near2 = ZDOTS_NEAR * ZDOTS_NEAR
     local mid2 = ZDOTS_MID * ZDOTS_MID
+    -- NPC 換色（npc-tags 段）：有登記、勾選 NpcDotTint 開、伺服器允許（戰術檢視旁路）才在選進來的點上讀變數；
+    -- 否則不讀、桶裡不存殭屍物件（零登記在 npc.n 判斷就短路）。勾選切換不觸發重新取樣，下一輪才生效
+    local npcOn = npc.n > 0 and getBoolOption("NpcDotTint", true)
+        and sandboxGate("AllowNpcDotColor", true, pn) ~= false
+    -- 三桶計數放在 pcall 外：取樣後（含中途失敗）要靠它清掉暫存的殭屍物件
+    local nearC, midC, farC = 0, 0, 0
     -- pcall 防競態：getZombieList 是模擬端會增刪的活 ArrayList，size 與 get
     -- 之間殭屍被移除會丟 IndexOutOfBounds——失敗就放棄本輪取樣（300ms 後重試）
     local ok, err = pcall(function()
         local n = list:size()
         if n > ZDOTS_SCAN_MAX then n = ZDOTS_SCAN_MAX end
-        local nearC, midC, farC = 0, 0, 0
         for i = 1, n do
             local z = list:get(i - 1)
             local zx, zy = z:getX(), z:getY()
@@ -253,6 +323,7 @@ local function sampleZombieDots(inner, gateMax, scanKey)
                         d.x = zx
                         d.y = zy
                         d.z = math.floor(z:getZ()) -- 樓層（地下室是負數）：畫的時候和地圖的玩家比
+                        if npcOn then d.o = z end -- 只活到這輪取樣結束（下方清掉）
                     end
                 end
                 if nearC >= maxDots then break end -- 近圈吃滿額度＝後面必不入選
@@ -260,22 +331,53 @@ local function sampleZombieDots(inner, gateMax, scanKey)
         end
         -- 合併：近→中→遠 依序填滿 maxDots（近的永遠優先於遠的）
         local count = 0
+        local tags, tagN = npc.tags, npc.n
         local function take(pool, c)
             for j = 1, c do
                 if count >= maxDots then return end
                 count = count + 1
                 local s = st.dots[count]
                 if not s then s = {}; st.dots[count] = s end
-                s.x = pool[j].x
-                s.y = pool[j].y
-                s.z = pool[j].z
+                local p = pool[j]
+                s.x = p.x
+                s.y = p.y
+                s.z = p.z
+                -- 只對真的選進來的點讀變數，第一個命中的 tag（登記序號）決定顏色。
+                -- ponytail: 每輪最多 maxDots×tag 數次 getVariableBoolean(String)（每次一次不分大小寫查表）；
+                -- 實測有尖峰再改成預先取 AnimationVariableHandle、呼叫 getVariableBoolean(handle)
+                local hit
+                if npcOn then
+                    local z = p.o
+                    for t = 1, tagN do
+                        if z:getVariableBoolean(tags[t].var) then hit = t; break end
+                    end
+                end
+                s.npc = hit
             end
         end
         take(st.near, nearC)
         take(st.mid, midC)
         take(st.far, farC)
+        -- NPC 換到尾端（繪製照順序＝NPC 蓋在殭屍點上面）；就地交換池裡的表，不配新表
+        if npcOn then
+            local dots, i, j = st.dots, 1, count
+            while true do
+                while i <= j and not dots[i].npc do i = i + 1 end
+                while j >= i and dots[j].npc do j = j - 1 end
+                if i >= j then break end
+                dots[i], dots[j] = dots[j], dots[i]
+            end
+        end
         st.count = count
     end)
+    if npcOn then -- 不持有殭屍物件引用：桶裡這輪寫過的項目一律清掉（含沒選進來的、中途失敗的）
+        local pool = st.near
+        for k = 1, nearC do pool[k].o = nil end
+        pool = st.mid
+        for k = 1, midC do pool[k].o = nil end
+        pool = st.far
+        for k = 1, farC do pool[k].o = nil end
+    end
     if not ok then
         st.count = 0
         -- pcall 防的是活清單競態（暫時性，下輪取樣自癒）；持久性錯誤（API 漂移）
@@ -300,6 +402,16 @@ end
 local function zdotsColor()
     return ZDOTS_COLORS[getComboIndex("ZombieDotColor", 1)] or ZDOTS_COLORS[1]
 end
+-- NPC 顏色表（索引＝登記序號＝取樣存的 d.npc；每個 tag 讀自己的下拉 NpcDotColor_<tag>，沒有選項＝預設色）。
+-- 沒有登記、勾選 NpcDotTint 關、伺服器不允許（戰術檢視旁路）＝nil：NPC 照殭屍色。重用 npc.colors，每幀不配新表
+local function npcColor(pn)
+    local n = npc.n
+    if n == 0 or not getBoolOption("NpcDotTint", true)
+        or sandboxGate("AllowNpcDotColor", true, pn) == false then return nil end
+    local tags, out = npc.tags, npc.colors
+    for i = 1, n do out[i] = adotsColor(tags[i].opt, tags[i].color) end
+    return out
+end
 
 -- 殭屍點繪製（小地圖與世界地圖共用；el 需有 mapAPI/width/height/playerNum）。
 -- optId＝該表面的開關（小地圖 ZombieDots／世界地圖 WMZombieDots）；surface＝"mini"／"world"
@@ -321,6 +433,7 @@ local function drawZombieDotsOn(el, optId, surface)
     end
     local st = sampleZombieDots(el, gateMax, "ZombieScanInterval")
     local c = zdotsColor()
+    local nc = npcColor(pn) -- nil＝不分色（零登記在 npc.n 判斷就回）
     local size = getSliderValue("ZombieDotSize", 3, 1, 16)
     local af = getSliderValue("ZombieDotAlpha", 100, 10, 100) / 100 -- 透明度係數（描邊/本體等比）
     local myFloor
@@ -347,7 +460,9 @@ local function drawZombieDotsOn(el, optId, surface)
             -- 手動裁到視窗內（Lua drawRect 不吃元件裁切）；含描邊起繪於 ux-2。
             -- drawRect＝ISUIElement.lua:1191（引數 x,y,w,h,a,r,g,b）
             if ux >= 2 and uy >= 2 and ux <= el.width - size and uy <= el.height - size then
-                drawZombieDot(el, ux, uy, size, c, (myFloor and d.z ~= myFloor) and af * ZDOTS_FLOOR_A or af)
+                local dc = c
+                if nc and d.npc then dc = nc[d.npc] or c end
+                drawZombieDot(el, ux, uy, size, dc, (myFloor and d.z ~= myFloor) and af * ZDOTS_FLOOR_A or af)
             end
         end
     end
@@ -374,21 +489,6 @@ local ADOTS_MAX = 100         -- 視窗內同時顯示上限（動物+載具合�
 local ADOTS_SCAN_MAX = 500    -- 清單掃描硬上限（LinkedList get(i) 為 O(n)，防病態存檔）
 -- （舊三檔大小 combobox 的像素換算表已隨遷移程式碼移至 MinidoracatMiniMap_Migrate.lua；
 -- 0.9.0 起大小由玩家滑條直接指定像素，物品風格不再整表放大）
--- 圖標染色盤：索引對應 ADOTS_COLOR_ITEMS（主檔選項註冊區）順序，兩表必須同步。
--- Okabe-Ito 色盲友善色系；綠/天藍沿用實測亮度（乘法染色在深色地圖需偏亮 tint）
-local ADOTS_PALETTE = {
-    { 1.0, 1.0, 1.0 },    -- 白
-    { 0.47, 0.88, 0.37 }, -- 綠（現行野生色）
-    { 0.90, 0.62, 0.0 },  -- 橘（#E69F00）
-    { 0.45, 0.8, 1.0 },   -- 天藍（現行載具色）
-    { 0.94, 0.89, 0.26 }, -- 黃（#F0E442）
-    { 0.86, 0.52, 0.70 }, -- 紫紅（#CC79A7 提亮）
-    { 0.20, 0.55, 0.85 }, -- 藍（#0072B2 提亮）
-    { 0.90, 0.42, 0.10 }, -- 硃紅（#D55E00 提亮）
-}
-local function adotsColor(optId, default)
-    return ADOTS_PALETTE[getComboIndex(optId, default)] or ADOTS_PALETTE[default]
-end
 -- 載具：內建無車形地圖圖示（LootableMaps 92 張與 MapSymbolDefinitions 皆無 car），
 -- 取最接近的原版符號「方向盤」（顏色由 VehicleIconColor 下拉決定，預設天藍）
 local ADOTS_VEH_SYM = "media/ui/LootableMaps/map_steeringwheel.png"
@@ -875,3 +975,8 @@ Core.adotsColor = adotsColor
 Core.adotsVehTexture = adotsVehTexture
 Core.adotsDrawIcon = adotsDrawIcon
 Core.adotsDrawName = adotsDrawName
+-- 殭屍點裡的 NPC：登記清單（_Settings.lua 在 OnGameBoot 依它建顏色下拉、說明行列名稱）與顏色表（預覽）
+Core.npcTags = npc.tags
+Core.npcColor = npcColor
+-- OnGameBoot 之後的登記沒有顏色選項（_Settings.lua 的追加只跑一次）：registerNpcTag 據此 log
+Events.OnGameBoot.Add(function() npc.booted = true end)
