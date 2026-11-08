@@ -1,12 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### 新增
+
+- **AutoDrive 在 Real USA 這類超大世界改道不再卡一下**：自動駕駛遇到堵路要繞路時，以前在超大路網上要一次把新路線算完，畫面會頓一下；現在改成分幾個 tick 在背景算，算好再接手繞路。要搭配新版 AutoDrive 才有效，舊版 AutoDrive 照舊運作。
+
+> 技術要點（改道分幀）：`navApiVersion` 13→14：`requestDetour` 第 10 參、`requestDetourFrom` 第 11 參 `allowPending`（可省，給了須是 boolean，否則 `"badargs"`）。不傳、`false` 或路網節點數低於 `LARGE_GRAPH_NODES` 時與 v13 相同（同步）。`true` 且大路網時：這一幀先算 `QUERY_SYNC_WORK`，算完照 v13 回傳；沒算完記成該格（玩家那格、`"from:<playerNum>"` 那格各一個）的待算改道、回 `(nil, "building")`，之後每 tick 和背景路線查詢共用 `QUERY_TICK_WORK`（改道先推）。消費者用完全相同的參數（含 `moreAvoid` 內容、`maxSnap`、`deferCommit`；起點的 approach 權重也要相同）再呼叫：沒算完照回 `"building"`，算完照 v13 交付（`deferCommit` 記成待接受，否則覆寫快取；起點是開查詢當下的位置）；參數不同就丟掉重算，超過工作量上限回 `"noroad"`。換圖（含自訂道路重建、重新抽取）、清快取、換世界、引擎失敗都清掉待算改道；還在算的改道 `commitDetour` 回 `"stale"`。`requestRoute`／`requestRouteFrom` 的分幀與快取不變。回歸 `test_nav_api` P1–P10、C11。
+
 ## [42.21.0-0.56.0] - 2026-11-08
 
 ### 新增
 
 - **Real USA 這類超大世界可以導航**：Real USA 的全國路網（約 1.1 萬條街、5.5 萬段）現在可以用來導航，自訂道路也一起支援。進入世界後，導航在背景建路網，大約 40 秒後可以用（60 fps）；長程路線要算一兩秒才出現，重算期間地圖照舊畫原本的路線。Real USA 有些地區的路沒有和主路網相連（路網資料本身斷開），到不了的目的地會顯示直線指引；畫自訂道路把它們接起來就能走。
 - **Real USA 的小地圖也顯示街名**：以前只有世界地圖有街名，小地圖與它的路名提示是空的。
-- **AutoDrive 在 Real USA 這類超大世界改道不再卡一下**：自動駕駛遇到堵路要繞路時，以前在超大路網上要一次把新路線算完，畫面會頓一下；現在改成分幾個 tick 在背景算，算好再接手繞路。要搭配新版 AutoDrive 才有效，舊版 AutoDrive 照舊運作。
 
 ### 修正
 
@@ -17,8 +24,6 @@
 > 技術要點：判斷「這個世界載入了哪些地圖」改用引擎解析後的地圖清單。伺服器 `Map=` 只寫一個地圖 MOD、原版靠它 `map.info` 的 `lots=` 帶入時，原版影像、地圖包的逐圖顯示與疊層順序都照引擎實際載入的地圖走；以前這種寫法只認得第一個地圖。
 
 > 技術要點（超大世界導航）：座標上限從 32,767.5 放寬到 262,143.5、原始段 16,384→131,072、節點 99,999→262,143，節點與邊的數字 key 跟著改寬（諾克斯郡的路線逐點不變）。建圖最後標連通分量，起訖不在同一塊直接回無路；單次查詢超過工作量上限也只算無路，不再停用整局導航。2 萬節點以上的路網：啟用後在背景算 8 個 ALT 地標（Real USA 約 32 MB），`requestRoute`／`requestRouteFrom` 的查詢分幀，算完前同目標回舊路線、沒有舊路線回 `"building"`；自訂道路重建換圖時也先沿用舊路線、背景照新圖算完再換；`requestDetour` 照舊同步。離路很遠的起訖點改用 512 格粗格索引找最近的路（Real USA 離路 21 公里：逐段全掃 0.3 秒以上，粗格 9 ms）。小地圖在正規補載後仍 0 條街時載入 Real USA 的 `media/maps/Real USA Country/rusa_streets.xml`。Kahlua 離線量測（Real USA）：建圖約 2,300 tick、每 tick 中位 1–12 ms，大表擴容時偶有一次 40–130 ms；長程查詢背景每 tick 約 4 ms、平均 48 tick 算完。nav API 版本不變。
-
-> 技術要點（改道分幀）：`navApiVersion` 13→14：`requestDetour` 第 10 參、`requestDetourFrom` 第 11 參 `allowPending`（可省，給了須是 boolean，否則 `"badargs"`）。不傳、`false` 或路網節點數低於 `LARGE_GRAPH_NODES` 時與 v13 相同（同步）。`true` 且大路網時：這一幀先算 `QUERY_SYNC_WORK`，算完照 v13 回傳；沒算完記成該格（玩家那格、`"from:<playerNum>"` 那格各一個）的待算改道、回 `(nil, "building")`，之後每 tick 和背景路線查詢共用 `QUERY_TICK_WORK`（改道先推）。消費者用完全相同的參數（含 `moreAvoid` 內容、`maxSnap`、`deferCommit`；起點的 approach 權重也要相同）再呼叫：沒算完照回 `"building"`，算完照 v13 交付（`deferCommit` 記成待接受，否則覆寫快取；起點是開查詢當下的位置）；參數不同就丟掉重算，超過工作量上限回 `"noroad"`。換圖（含自訂道路重建、重新抽取）、清快取、換世界、引擎失敗都清掉待算改道；還在算的改道 `commitDetour` 回 `"stale"`。`requestRoute`／`requestRouteFrom` 的分幀與快取不變。回歸 `test_nav_api` P1–P10、C11。
 
 ## [42.21.0-0.55.0] - 2026-11-02
 
