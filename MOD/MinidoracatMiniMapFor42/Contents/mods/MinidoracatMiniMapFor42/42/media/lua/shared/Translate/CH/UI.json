@@ -677,5 +677,5 @@
     "UI_MinidoracatMiniMap_RoadError_notfound": "這條路已經不存在。",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "目前沒有角色，無法儲存道路。",
     "UI_MinidoracatMiniMap_RoadNavBuildFailed": "自訂道路無法加入導航（超過路網容量上限），路線會沿用這次變更前的道路。",
-    "UI_MinidoracatMiniMap_WhatsNew": "小地圖會記住你拖到的位置。多人遊戲新增「新標記預設分享給」，放好標記就自動分享（在「其他玩家標記」分類）。"
+    "UI_MinidoracatMiniMap_WhatsNew": "支援 Real USA 這類超大地圖：導航、自訂道路和小地圖街名都能用，也不會再蓋上諾克斯郡的地圖。"
 }

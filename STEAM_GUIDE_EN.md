@@ -348,6 +348,7 @@ MiniMap doesn't detect the real road surface to correct coordinates; it only has
 [*] [b]Source[/b]: street names on the map, street search, navigation and the AutoDrive road network all come from the native streets.xml the map author ships in the mod.
 [*] [b]Without it[/b]: the image still shows, but that area has no street names, search or navigation — it's not a missing translation in the map pack.
 [*] [b]Fill the gaps yourself[/b]: where there is no road data, draw or record a custom road and navigation will use it (see "Custom roads").
+[*] [b]Huge maps[/b]: standalone large worlds like Real USA also support navigation (the road network builds in the background after you enter, so give it a moment). Some of their areas aren't connected to the main road network; routes there show a straight-line guide until you draw a custom road to connect them.
 [*] [b]Accuracy[/b]: road coordinates, widths, bends and junctions must match the real surface; gaps, breaks or offsets can mean no route, detours or going off-road.
 [*] [b]Overlapping maps[/b]: roads follow map priority (in MP, the server Map= order); streets in lower-priority areas can drop out, so neither original nor translated names are found.
 [*] [b]Which maps have road data[/b]: which maps have author road data and which had roads added by the map pack: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817840392]MOD Maps supported map list[/url].

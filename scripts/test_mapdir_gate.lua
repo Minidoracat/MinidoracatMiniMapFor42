@@ -38,7 +38,7 @@ local registerBody = assert(source:match(
 
 local compile = loadstring or load
 local prelude = [=[
-local mapStr          -- getWorld():getMap() 回傳值（nil＝world 為 nil）
+local mapStr          -- getWorld():getMap() 回傳值＝Core.gameMap（nil＝world 為 nil）
 local worldError = false
 local activeMods = {} -- getActivatedMods 的內容（陣列）
 local mapOverlays = {}
@@ -87,6 +87,32 @@ local function getWorld()
     if mapStr == nil then return nil end
     return { getMap = function(_) return mapStr end }
 end
+-- 鏡像引擎 IsoMetaGrid.getLotDirectories（42.21 :2018-2030）：有分號就照順序拆（trim、去空、
+-- 去重），沒有分號就從該名稱循 map.info 的 lots= 遞迴展開（mapLots；不認識的地圖不收）
+local mapLots = {}
+local function getLotDirectories()
+    local out, seen = {}, {}
+    local function add(name)
+        if not seen[name] then
+            seen[name] = true
+            out[#out + 1] = name
+        end
+    end
+    if string.find(mapStr, ";", 1, true) then
+        for part in string.gmatch(mapStr, "[^;]+") do
+            local dir = part:match("^%s*(.-)%s*$")
+            if dir ~= "" then add(dir) end
+        end
+    else
+        local function walk(name)
+            if seen[name] or mapLots[name] == nil then return end
+            add(name)
+            for _, dep in ipairs(mapLots[name]) do walk(dep) end
+        end
+        walk(mapStr)
+    end
+    return { size = function(_) return #out end, get = function(_, i) return out[i + 1] end }
+end
 local function getActivatedMods()
     return {
         size = function(_) return #activeMods end,
@@ -116,6 +142,7 @@ return {
         knownMods = opts.knownMods or {}
         zipFiles = opts.zipFiles or {}
         boolOptions = opts.boolOptions or {}
+        mapLots = opts.mapLots or { ["Muldraugh, KY"] = {} }
         for i = #logs, 1, -1 do logs[i] = nil end -- 每次 setup 歸零：log 斷言只看本案例
     end,
 }
@@ -142,6 +169,13 @@ assert(mod.passesMapDir({ mapDir = "" }, dirs), "空字串 mapDir 應視同未�
 mod.setup({ mapStr = "Muldraugh, KY" })
 dirs = mod.getLoadedMapDirs()
 assert(dirs and dirs["Muldraugh, KY"], "單目錄解析失敗")
+
+-- 沒有分號＝引擎循 map.info 的 lots= 展開（伺服器只寫 Map=某地圖MOD 時，原版是這樣載入的）：
+-- 只拆 getMap() 會漏掉原版，基底影像跟著被 mapDir 閘門擋掉
+local BEDFORD_LOTS = { ["Bedford Falls"] = { "Muldraugh, KY" }, ["Muldraugh, KY"] = {} }
+mod.setup({ mapStr = "Bedford Falls", mapLots = BEDFORD_LOTS })
+dirs = mod.getLoadedMapDirs()
+assert(dirs and dirs["Bedford Falls"] == 1 and dirs["Muldraugh, KY"] == 2, "應循 lots= 展開並保留優先序")
 
 -- fail-open：拿不到清單（DEFAULT／空字串／拆完空集／world nil／getWorld 拋錯）
 -- ＝回退 mod ID 閘門
@@ -324,7 +358,7 @@ local function collectSetup(extra)
     local opts = {
         mapStr = ATL_MOD .. ";" .. EDS_DIR .. ";Muldraugh, KY",
         activeMods = { ATL_MOD, EDS_MOD },
-        maps = { { zip = BASE_ZIP, sortable = false } }, -- 同正式 MAPS
+        maps = { { zip = BASE_ZIP, mapDir = "Muldraugh, KY", sortable = false } }, -- 同正式 MAPS
         knownMods = { OwnMod = true, test = true, [ATL_MOD] = true, [EDS_MOD] = true },
         zipFiles = {
             ["OwnMod|" .. BASE_ZIP] = true,
@@ -373,6 +407,24 @@ for i = 1, #prodMaps do
             .. tostring(e.zip))
     end
 end
+
+-- 獨立世界（地圖清單沒有原版目錄，例：Real USA）不得掛基底影像：基底沒有 mapMod 可問，
+-- 只能靠 mapDir 閘門擋；沒擋時諾克斯郡影像會蓋住該世界同座標的地圖（2026-11-08 Workshop 回報）。
+-- 用正式 MAPS，證明產品資料真的帶著閘門
+local function hasZip(list, zip)
+    for i = 1, #list do
+        if list[i].zip == zip then return true end
+    end
+    return false
+end
+collectSetup({ mapStr = "RUSA Spawn 01;Real USA Country", maps = prodMaps })
+assert(not hasZip(mod.collectPyramids(), BASE_ZIP), "獨立世界不該掛基底影像")
+collectSetup({ maps = prodMaps })
+assert(hasZip(mod.collectPyramids(), BASE_ZIP), "清單有 Muldraugh, KY 時要掛基底影像")
+collectSetup({ maps = prodMaps, worldError = true })
+assert(hasZip(mod.collectPyramids(), BASE_ZIP), "拿不到地圖清單時照舊掛基底（fail-open）")
+collectSetup({ mapStr = "Bedford Falls", maps = prodMaps, mapLots = BEDFORD_LOTS })
+assert(hasZip(mod.collectPyramids(), BASE_ZIP), "Map= 只寫地圖 MOD、原版由 lots= 帶入時要掛基底影像")
 
 -- 反轉引擎優先序：影像跟著換邊（Eds 變最上）
 collectSetup({ mapStr = EDS_DIR .. ";" .. ATL_MOD .. ";Muldraugh, KY" })

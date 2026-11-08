@@ -677,5 +677,5 @@
     "UI_MinidoracatMiniMap_RoadError_notfound": "O yol artık yok.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "Yolları kaydedecek karakter yok.",
     "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Özel yollar navigasyona eklenemedi (yol ağı sınırı). Rotalar bu değişiklikten önceki yolları kullanmaya devam ediyor.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Mini harita sürüklediğiniz yeri hatırlar. Çok oyunculu: yeni semboller otomatik paylaşılabilir."
+    "UI_MinidoracatMiniMap_WhatsNew": "Real USA gibi dev haritalar: navigasyon, özel yollar, sokak adları; Knox County artık üstte değil."
 }

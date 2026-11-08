@@ -677,5 +677,5 @@
     "UI_MinidoracatMiniMap_RoadError_notfound": "Ta droga już nie istnieje.",
     "UI_MinidoracatMiniMap_RoadError_noplayer": "Brak postaci, dla której można zapisać drogi.",
     "UI_MinidoracatMiniMap_RoadNavBuildFailed": "Nie udało się dodać własnych dróg do nawigacji (limit sieci dróg). Trasy nadal korzystają z dróg sprzed tej zmiany.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Minimapa zapamiętuje, gdzie ją przeciągniesz. Gra wieloosobowa: nowe symbole można udostępniać automatycznie."
+    "UI_MinidoracatMiniMap_WhatsNew": "Ogromne mapy jak Real USA: nawigacja, własne drogi i nazwy ulic działają, a Knox County już ich nie zasłania."
 }

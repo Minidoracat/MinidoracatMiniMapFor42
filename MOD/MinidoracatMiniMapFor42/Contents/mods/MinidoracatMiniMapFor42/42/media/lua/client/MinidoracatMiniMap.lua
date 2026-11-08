@@ -4,7 +4,7 @@
 -- 架構（manifest 驅動集合包 + 第三方 addon 相容，詳見專案 README.md）：
 --   (1) 本 MOD 的 media/minimap/ 集中放各地圖的 pyramid zip（檔名＝地圖原名，
 --       即 pzmap Studio 預設輸出名），MAPS manifest 宣告「哪顆 zip 對應哪個地圖 MOD」；
---       基底圖永遠掛載，地圖 MOD 的圖僅該 MOD 啟用時掛載（沒裝該地圖，畫它的圖＝錯）。
+--       基底圖只在世界載入原版地圖時掛載，地圖 MOD 的圖僅該 MOD 啟用時掛載（沒裝該地圖，畫它的圖＝錯）。
 --   (2) 相容路徑：第三方 MOD 在自己的 media/minimap/ 放約定同名 zip（LEGACY_CANONICAL）
 --       即被自動掃描掛載，零 Lua——原「基底 + addon 同檔名匹配」設計原封保留。
 --   引擎面：一個 Pyramid 樣式層只綁一個檔名、以「尾綴匹配」全部已掛載 zip
@@ -28,8 +28,10 @@ local OWN_MOD_ID = "MinidoracatMiniMapFor42" -- 同 mod.info 的 id
 local Core = {}
 MinidoracatMiniMapCore = Core
 
--- 本 MOD 自帶圖檔 manifest：zip＝media/minimap/ 下檔名；mapMod 省略＝基底、永遠掛載，
--- 指定時＝該地圖 MOD 的 mod ID，啟用才掛載。支援新地圖：pzmap Studio 渲染出
+-- 本 MOD 自帶圖檔 manifest：zip＝media/minimap/ 下檔名；mapMod 省略＝基底（不屬於任何 MOD），
+-- 指定時＝該地圖 MOD 的 mod ID，啟用才掛載。mapDir＝這張圖畫的地圖資料夾，世界的地圖清單
+-- 沒有它就不掛：獨立世界（例：Real USA）不載入原版，基底照掛會蓋住它同座標的地圖
+-- （2026-11-08）；拿不到清單時照舊掛。支援新地圖：pzmap Studio 渲染出
 -- <地圖名>.pyramid.zip（預設輸出名，免改名）丟進 media/minimap/，在此加一行即可。
 -- sortable=false＝該條目完全不吃疊層優先序重排（見 orderByMapPriority）：基底是
 -- 全世界底圖、語意上恆在最底，不能因為「剛好有地圖 MOD 把資料夾命名成 Muldraugh_KY」
@@ -39,7 +41,7 @@ MinidoracatMiniMapCore = Core
 local LEGACY_CANONICAL = "minidoracat_minimap.pyramid.zip"
 -- test:maps:start
 local MAPS = {
-    { zip = "Muldraugh_KY.pyramid.zip", sortable = false }, -- 基底全圖（B42 主世界）
+    { zip = "Muldraugh_KY.pyramid.zip", mapDir = "Muldraugh, KY", sortable = false }, -- 基底全圖（B42 主世界）
 }
 -- test:maps:end
 
@@ -316,48 +318,48 @@ end
 
 -- 一 mod 多地圖（SecretZ 類）的逐圖閘門：MP 伺服器可在 Map= 只挑部分地圖目錄
 -- 載入，mod ID 閘門看不出這層差異（回報實例：未載入的 SecretZ 據點仍被畫出）。
--- getWorld():getMap()（Java Core.gameMap）＝實際載入地圖目錄的分號串列——單機為
--- MapGroups 串起的全部啟用 MOD 目錄、MP 客戶端為伺服器 Map= 清單（世界 init 時
--- IsoMetaGrid.getLotDirectories 回填；42.19 反編譯查證），兩種模式皆可信。
--- 約束：僅供世界 init 之後呼叫（連線早期 Core.gameMap 短暫只有首項）——現有
--- 呼叫點（applyMiniMapPyramids 各觸發源；_NavRoute.lua makeWinnerOf——設目標
--- 後首個繪製幀啟動，必在世界 init 後）皆滿足；新增更早呼叫點前先想這條。
+-- 來源是 getLotDirectories()（IsoMetaGrid.java:1999-2033，42.21；資源點模組也讀它）＝引擎實際
+-- 載入的地圖目錄：MP 客戶端每次呼叫都先把 Core.gameMap 換回伺服器的完整 Map= 清單（連線初期
+-- 只存第一項，ConnectToServerState.java:195-200）；有分號就照順序拆，沒有分號就循 map.info 的
+-- lots= 展開（伺服器只寫 Map=某地圖MOD 時，原版就是這樣帶進來的）。2026-11-08 前直接拆
+-- getWorld():getMap()，這兩種情形都會漏目錄；基底影像也吃 mapDir 閘門之後，漏掉原版＝整張不畫。
+-- getMap() 是 DEFAULT／空字串＝世界還沒 init：不呼叫（DEFAULT 會讓引擎跑 MapGroups、改寫
+-- 世界設定，IsoMetaGrid.java:2008-2016），直接 fail-open。
 -- 回傳 dir → 優先序 index（1＝最高，同名 cell 覆蓋其後所有目錄——見 orderByMapPriority）；
 -- nil＝拿不到（fail-open）。值刻意用 index 而非 true：疊層順序要靠它（0.14.3 前只存集合）
 -- test:mapdir-gate:start
 local function getLoadedMapDirs()
-    local okCall, mapStr = pcall(function()
+    local okCall, dirs, count = pcall(function()
         local world = getWorld()
-        return world and world:getMap() or nil
+        local mapStr = world and world:getMap() or nil
+        if type(mapStr) ~= "string" or mapStr == "" or mapStr == "DEFAULT" then return nil, 0 end
+        local list = getLotDirectories()
+        local out, n = {}, 0
+        for i = 0, list:size() - 1 do
+            local dir = list:get(i)
+            -- 首見才記：重複目錄不該改寫已定的優先序（引擎同樣去重，IsoMetaGrid.java:2024）
+            if type(dir) == "string" and dir ~= "" and out[dir] == nil then
+                n = n + 1
+                out[dir] = n
+            end
+        end
+        return out, n
     end)
     if not okCall then
-        -- 只有「真的拋例外」才留痕：getWorld/getMap 綁定失效是靜默症狀最貴的一種
-        -- ——fail-open 會讓 mapDir 閘門放寬＋疊層不重排（＝疊層錯序 bug 復活），
-        -- 沒有這行就查不出來。DEFAULT／空串維持靜默：那是世界未 init 的正常路徑，
-        -- 本函式在每次開圖／樣式重建都跑，無條件 log 會刷屏。一次 apply 會呼叫兩次
-        -- （rebuildMapOverlays 與 collectPyramids 各一），例外時就是兩行——例外屬綁定
-        -- 失效等罕見狀況，重複兩行比為了去重而把 loadedDirs 穿過兩層簽名划算
-        log("getLoadedMapDirs: getWorld():getMap() raised, falling back to mod ID gate only "
-            .. "(no priority reorder): " .. tostring(mapStr))
+        -- 只有「真的拋例外」才留痕：引擎綁定失效是靜默症狀最貴的一種——fail-open 會讓
+        -- mapDir 閘門放寬＋疊層不重排（＝疊層錯序 bug 復活），沒有這行就查不出來。
+        -- DEFAULT／空串維持靜默：那是世界未 init 的正常路徑，本函式在每次開圖／樣式重建
+        -- 都跑，無條件 log 會刷屏。一次 apply 會呼叫兩次（rebuildMapOverlays 與
+        -- collectPyramids 各一），例外時就是兩行——例外屬綁定失效等罕見狀況，重複兩行比
+        -- 為了去重而把 loadedDirs 穿過兩層簽名划算
+        log("getLoadedMapDirs: reading the loaded map directories raised, falling back to mod ID gate only "
+            .. "(no priority reorder): " .. tostring(dirs))
         return nil
-    end
-    if type(mapStr) ~= "string" or mapStr == "" or mapStr == "DEFAULT" then
-        return nil -- 拿不到＝fail-open：mapDir 閘門放寬，且 orderByMapPriority 不重排
-    end
-    local dirs, count = {}, 0
-    for dir in string.gmatch(mapStr, "[^;]+") do
-        dir = dir:match("^%s*(.-)%s*$")
-        -- 首見才記：重複目錄不該改寫已定的優先序（引擎同樣去重，
-        -- IsoMetaGrid.java:2017 的 result.contains 守衛）
-        if dir ~= "" and dirs[dir] == nil then
-            count = count + 1
-            dirs[dir] = count
-        end
     end
     -- 空表偵測用計數器：PZ Kahlua 無 next（BaseLib.java 僅註冊 18 個全域、TableLib
     -- 只有 pairs/ipairs），0.10.0 曾用 next 導致實機掛載鏈全炸（離線測試跑標準 Lua 沒抓到）
     if count > 0 then return dirs end
-    return nil -- 拆完是空集＝同「拿不到」，fail-open
+    return nil -- 拿不到或拆完是空集＝fail-open：mapDir 閘門放寬，且 orderByMapPriority 不重排
 end
 
 -- 條目沒指定 mapDir、或載入清單拿不到＝通過；指定了就要求該目錄真的載入。
