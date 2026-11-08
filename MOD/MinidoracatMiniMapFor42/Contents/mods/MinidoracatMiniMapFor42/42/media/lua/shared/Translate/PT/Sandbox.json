@@ -36,6 +36,8 @@
     "Sandbox_MinidoracatMiniMapAllowNavShare_tooltip": "Permite que os jogadores compartilhem destinos de navegação com membros da facção (repassados pelo servidor). Quando desativado, o servidor recusa os pedidos de compartilhamento.",
     "Sandbox_MinidoracatMiniMapAllowRoadShare": "Permitir compartilhar estradas personalizadas",
     "Sandbox_MinidoracatMiniMapAllowRoadShare_tooltip": "Permite que os jogadores compartilhem estradas personalizadas com a facção ou a base. O servidor guarda as estradas compartilhadas no próprio arquivo, e a navegação dos membros as usa diretamente. Ligado por padrão. Quando desativado, o servidor recusa novos compartilhamentos e para de enviar as estradas compartilhadas; as já salvas continuam no arquivo do servidor.",
+    "Sandbox_MinidoracatMiniMapAllowSketchShare": "Permitir compartilhar desenhos",
+    "Sandbox_MinidoracatMiniMapAllowSketchShare_tooltip": "Permite que jogadores compartilhem seus desenhos do mapa do mundo com sua facção ou base. O servidor guarda os desenhos compartilhados em arquivos próprios e membros offline os recebem ao entrar. Ligado por padrão. Desligado, o servidor recusa novos compartilhamentos e para de enviar desenhos compartilhados; os já salvos continuam nos arquivos do servidor.",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay": "Direção de outros jogadores",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_tooltip": "Adiciona setas de direção e cones de visão aos outros jogadores no minimapa e no mapa do mundo: Desligado / Só facção e base / Todos no mapa. Só jogadores próximos são desenhados, e nunca alguém que o mapa original esconde (opção do servidor MapRemotePlayerVisibility).",
     "Sandbox_MinidoracatMiniMapRemoteFacingDisplay_option1": "Desligado",

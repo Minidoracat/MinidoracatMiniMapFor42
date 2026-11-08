@@ -526,8 +526,8 @@ for i = 1, N.schemaN do
     kinds[N.schema[i][1]] = N.schema[i][2]
 end
 local NEVER_BYPASS = { "AllowNavShare", "ExportPlayerPositions", "PlayerExportInterval",
-    "ExportOfflinePlayers", "AllowAdminTacticalView", "AllowAdminPrivacyView", "AllowRoadShare" }
-for i = 1, 7 do
+    "ExportOfflinePlayers", "AllowAdminTacticalView", "AllowAdminPrivacyView", "AllowRoadShare", "AllowSketchShare" }
+for i = 1, 8 do
     checkEq(N.tacticalKeys[NEVER_BYPASS[i]], nil,
         "永不旁路鍵不在戰術白名單：" .. NEVER_BYPASS[i])
     checkEq(N.privacyKeys[NEVER_BYPASS[i]], nil,
@@ -749,7 +749,7 @@ check(source:find("Events%.OnCreatePlayer%.Add%(clearLocalSlot%)") ~= nil
 --------------------------------------------------------------------------------
 -- 斷言條數守門：新增／刪除斷言必須同步改這個數字，否則整批被靜默略過也不會
 -- 有人發現；schema 與 never-bypass 迴圈產生的動態斷言亦計入總數。
-local EXPECTED_ASSERTIONS = 311
+local EXPECTED_ASSERTIONS = 315
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
         .. ", actual " .. assertions)

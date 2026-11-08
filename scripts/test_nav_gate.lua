@@ -379,6 +379,18 @@ do
     local sent = #t.packets
     assert(edit(t, "append", 400, 400), "H3 加後續站")
     eq(#t.packets, sent, "H3 後續站編輯不得動分享通道")
+    -- H4: 分割畫面第 2～4 位沒有身分（伺服器 MinidoracatMiniMapGroups.principal 不轉送）：同樣有目標、有陣營，
+    --     主座位列分享，座位 1 不列、也不送封包
+    local p1 = t.player(1, "Bob")
+    p1.online = 8
+    assert(t.core.navSetTarget(1, 300, 310), "H4 前置寫入")
+    Faction = { getPlayerFaction = function() return {} end }
+    eq(t.core.navShareOk(0, p), true, "H4 對照：主座位有目標、有陣營＝列分享")
+    eq(t.core.navShareOk(1, p1), false, "H4 分割畫面座位＝不列分享")
+    local before = #t.packets
+    t.core.navShareTarget(1)
+    eq(#t.packets, before, "H4 分割畫面座位＝不送分享封包")
+    Faction = nil
 end
 
 --------------------------------------------------------------------------------
@@ -787,6 +799,6 @@ do
     getDebug, Capability, getWorld = nil, nil, nil
 end
 
-print("test_nav_gate: OK（註冊/判定 G1-G9＋set 閘門 S1-S6＋分享撤回 H1-H3"
+print("test_nav_gate: OK（註冊/判定 G1-G9＋set 閘門 S1-S6＋分享撤回與座位 H1-H4"
     .. "＋繪製閘門與繪製唯讀 D1-D7＋getNavTarget Q1-Q4＋功能閘門與行程撤銷 F1-F7"
     .. "＋小地圖右鍵選單與導航項鎖定 M1-M5＋管理員傳送至此 M6）")

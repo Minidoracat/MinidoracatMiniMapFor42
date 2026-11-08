@@ -148,6 +148,19 @@ MapRows.ROADS = { id = "roads", label = "UI_MinidoracatMiniMap_RoadSecTitle", ic
             default = 3, min = 1, max = 6, step = 1, fmt = "%dpx", tooltip = "UI_MinidoracatMiniMap_RoadMinWidth_tooltip" },
     },
 }
+-- 手繪（_Sketch.lua 每幀讀這些鍵）：分類開關＝「顯示在」兩格；別人分享的只有多人才列；不做預覽，只放說明列
+-- （addNotes 的 SketchHow）。圖示借原版物品「筆」（同世界地圖按鈕列的筆鈕）。掛 MapRows：主 chunk local 已近上限
+MapRows.SKETCH = { id = "sketch", label = "UI_MinidoracatMiniMap_SketchSecTitle", iconTex = "Item_Pen",
+    master = { label = "UI_MinidoracatMiniMap_SketchSecTitle", members = LM.sketch, tooltip = MapRows.TIP },
+    maps = { { label = MapRows.SHOW_ON, cells = LM.sketch } },
+    ticks = {
+        { id = "SketchReceived", label = "UI_MinidoracatMiniMap_SketchReceived", default = true, mpOnly = true },
+    },
+    sliders = {
+        { id = "SketchHideZoom", label = "UI_MinidoracatMiniMap_SketchHideZoom",
+            default = 3, min = 1, max = 6, fmt = "%d", step = 1, tooltip = "UI_MinidoracatMiniMap_SketchHideZoom_tooltip" },
+    },
+}
 -- 其他玩家標記（多人）：主開關＝ModOptions RemoteSymbols（主檔 applyToggleOptions／
 -- Core.syncRemoteSymbols 同步兩張地圖與原版兩個面板）；作者清單見下方 SEC_REMOTE.chips。
 -- 「只看陣營與安全屋成員」由 _RemoteSymbols.lua 用本機可見旗標篩；rebuild＝作者 chip 跟著重畫。
@@ -369,8 +382,8 @@ local SEC_MAPPACK = { id = "mappack", label = "UI_MinidoracatMiniMap_SecMapPack"
 -- 每次重建與每幀 live 檢查都現判。
 local SEC_ADMIN = { id = "admin", label = "UI_MinidoracatMiniMap_SecAdmin", icon = "shieldCheck" }
 -- 自訂道路排在其他玩家標記之後：單機緊接「玩家與導航」，多人時其他玩家標記仍緊接玩家
-local LAYER_SECTIONS = { SEC_BASE, SEC_PLACES, SEC_REMOTE, MapRows.ROADS, SEC_POI, SEC_PARKING, SEC_ZOMBIE,
-    SEC_ANIMALS, SEC_VEHICLES, SEC_SAFEHOUSE }
+local LAYER_SECTIONS = { SEC_BASE, SEC_PLACES, SEC_REMOTE, MapRows.ROADS, MapRows.SKETCH, SEC_POI, SEC_PARKING,
+    SEC_ZOMBIE, SEC_ANIMALS, SEC_VEHICLES, SEC_SAFEHOUSE }
 local WINDOW_SECTIONS = { SEC_WINDOW, SEC_PERF }
 
 local function adminSectionEligible(pn)
@@ -1784,6 +1797,9 @@ local function addNotes(ctx, sec)
         else
             addNote(ctx, getText("UI_MinidoracatMiniMap_NpcTagsNone"))
         end
+    elseif sec == MapRows.SKETCH then
+        -- 同道路：只管顯示的分類也要寫出怎麼畫
+        addNote(ctx, getText("UI_MinidoracatMiniMap_SketchHow"))
     end
 end
 

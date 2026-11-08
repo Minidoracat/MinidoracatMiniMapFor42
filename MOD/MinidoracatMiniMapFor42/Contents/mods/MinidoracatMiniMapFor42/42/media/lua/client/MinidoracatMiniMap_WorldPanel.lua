@@ -2,7 +2,7 @@
 -- 本檔範圍：世界地圖（M）按鈕列「MiniMap」鈕開的面板。本 MOD 在世界地圖上的開關集中在這裡
 -- （2026-10-18 使用者裁定：原版齒輪選項面板在 debug 與多人管理員會列出全部原版選項，已經太長，
 -- 本 MOD 不再往裡面加勾選）。內容依序：圖片化地圖；地圖圖層（WMLayers）與縮排在它底下的各圖層
--- 世界地圖那格；家與收藏、導航路線、自訂道路、陣營分享目標、MOD 地圖框線（有地圖包才列）的世界地圖那格；
+-- 世界地圖那格；家與收藏、導航路線、自訂道路、手繪、陣營分享目標、MOD 地圖框線（有地圖包才列）的世界地圖那格；
 -- 多人另有「只看陣營與安全屋成員的標記」。
 -- 格、預設值與停用條件都來自 Core.LAYER_MAPS（設定視窗「顯示在」列同一張），停用判定共用設定視窗的
 -- Core.settingsEntryEnabled。
@@ -24,7 +24,8 @@ local LAYERS = {
 }
 local OTHERS = {
     { "places", "UI_MinidoracatMiniMap_RowPlaces" }, { "navRoute", "UI_MinidoracatMiniMap_RowNavRoute" },
-    { "customRoads", "UI_MinidoracatMiniMap_RoadSecTitle" }, { "shared", "UI_MinidoracatMiniMap_RowShared" },
+    { "customRoads", "UI_MinidoracatMiniMap_RoadSecTitle" }, { "sketch", "UI_MinidoracatMiniMap_SketchSecTitle" },
+    { "shared", "UI_MinidoracatMiniMap_RowShared" },
     { "mapBounds", "UI_MinidoracatMiniMap_MapBoundsRow" },
 }
 

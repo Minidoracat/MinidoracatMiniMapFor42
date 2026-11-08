@@ -91,17 +91,19 @@ function isClient() return isClientFlag end
 
 local function player(name, pn)
     return { getUsername = function() return name end, getOnlineID = function() return 1 end,
-        getPlayerNum = function() return pn end }
+        getPlayerNum = function() return pn or 0 end }
 end
 local P = { alice = player("alice"), bob = player("bob"), carol = player("carol"), dave = player("dave"),
     admin = player("admin") }
-function getOnlinePlayers() return jlist({ P.alice, P.bob, P.carol, P.dave, P.admin }) end
+local ONLINE = { P.alice, P.bob, P.carol, P.dave, P.admin }
+function getOnlinePlayers() return jlist(ONLINE) end
 local sent = {}
 function sendServerCommand(target, module, command, args)
     sent[#sent + 1] = { to = target:getUsername(), module = module, command = command, args = args }
 end
 
 dofile(LUA .. "shared/MinidoracatMiniMap_RoadCodec.lua")
+dofile(LUA .. "server/MinidoracatMiniMapGroups.lua")
 local Codec = MinidoracatMiniMapRoadCodec
 local function loadWithTail(path, tail)
     local fh = assert(io.open(path, "rb"))
@@ -162,6 +164,37 @@ check(#ups == 1 and ups[1].to == "bob" and ups[1].args.to == "bob" and ups[1].ar
     "upsert only to the faction member (not author, outsider, admin)")
 local saved = Codec.readStore(RS.loadedPath, Codec.SERVER_TAG)
 check(saved and saved.count == 1 and saved.roads[1].sid == "s1", "server file written and readable")
+
+--------------------------------------------------------------------------------
+-- 1b. 分割畫面第 2～4 位玩家（getPlayerNum ~= 0）沒有身分：put／drop 回 identity、sync 不回、不當收件人
+--     （家族 conventions.md「玩家身分」；名字是自己填的，這裡填不在線的陣營成員 erin）
+--------------------------------------------------------------------------------
+factions[1].players[#factions[1].players + 1] = "erin"
+P.erin = player("erin", 1)
+ONLINE[#ONLINE + 1] = P.erin
+mark = #sent
+put("erin", road("r9", 1))
+check(last().command == "roadPutFail" and last().to == "erin" and last().args.to == "erin"
+    and last().args.reason == "identity" and RS.store.count == 1, "split-screen seat cannot put (identity)")
+send("erin", "roadDrop", { sid = "s1" })
+check(last().command == "roadDropFail" and last().args.reason == "identity" and RS.store.count == 1,
+    "split-screen seat cannot drop (identity)")
+mark = #sent
+send("erin", "roadSync", {})
+check(#sentSince(mark) == 0, "split-screen seat gets no snap")
+now = now + 1000
+mark = #sent
+put("alice", road("r8", 1))
+ups = sentSince(mark, "roadUpsert")
+check(#ups == 1 and ups[1].to == "bob", "a split-screen seat in the faction is never a recipient")
+mark = #sent
+send("alice", "roadDrop", { sid = RS.store.roads[2].sid })
+local gotRemove = false
+for _, m in ipairs(sentSince(mark, "roadRemove")) do if m.to == "erin" then gotRemove = true end end
+check(RS.store.count == 1 and not gotRemove, "a split-screen seat gets no roadRemove either")
+table.remove(factions[1].players)
+table.remove(ONLINE)
+P.erin = nil
 
 --------------------------------------------------------------------------------
 -- 2. rev：相等＝重送（不算頻率、不重送 upsert）；較舊被拒；每秒 1 次
@@ -473,12 +506,15 @@ check(Core.roadSharePut(0, r1) == false and #clientSent == 0 and calls.msg[#call
 policyOn = true
 check(Core.roadSharePut(0, r1) == true and clientSent[1].command == "roadPut" and clientSent[1].args.lid == "aaaaaaaa:r1"
     and clientSent[1].args.rev == 7 and Codec.fromWire(clientSent[1].args.road) ~= nil, "client sends a valid roadPut")
-check(select(2, Core.roadShareAvailable(1)) == nil and select(2, (function()
-    local_[2] = player("admin", 2); return Core.roadShareAvailable(2) end)()) == "UI_MinidoracatMiniMap_RoadShareNoGroup",
-    "availability: grouped player ok, ungrouped player gets the reason")
-local_[2] = nil
+check(select(2, Core.roadShareAvailable(0)) == nil
+    and select(2, Core.roadShareAvailable(1)) == "UI_MinidoracatMiniMap_RoadShareWhy_identity",
+    "availability: main seat ok; split-screen seat (pn 1, grouped) gets the identity reason")
+local_[0] = player("admin", 0)
+check(select(2, Core.roadShareAvailable(0)) == "UI_MinidoracatMiniMap_RoadShareNoGroup",
+    "availability: ungrouped main seat gets the no-group reason")
+local_[0] = player("alice", 0)
 
--- 同步防抖：連發事件只送一次，每位本機玩家各一次
+-- 同步防抖：連發事件只送一次；只有主座位送（分割畫面第 2～4 位伺服器不回快照）
 fire("OnTick")
 clientSent = {}
 fire("SyncFaction"); fire("OnSafehousesChanged")
@@ -486,8 +522,8 @@ fire("OnTick")
 check(#clientSent == 0, "sync waits for the debounce delay")
 now = now + 1000
 fire("OnTick"); fire("OnTick")
-check(#clientSent == 2 and clientSent[1].command == "roadSync" and clientSent[2].command == "roadSync"
-    and clientSent[1].from ~= clientSent[2].from, "one roadSync per local player after the delay")
+check(#clientSent == 1 and clientSent[1].command == "roadSync" and clientSent[1].from == "alice",
+    "one roadSync from the main seat after the delay; split-screen seat sends none")
 
 -- 功能閘門 share：擋送出、不擋收到
 Core.featureAllowed = function(_, feature)
@@ -507,13 +543,15 @@ Core.featureAllowed = nil
 
 -- 待撤回：同步後重送 roadDrop；失敗不清；伺服器回 roadDropped（已不存在也回）才清
 pending[0] = { "s50" }
+pending[1] = { "s61" }
 clientSent = {}
 fire("SyncFaction")
 now = now + 1000
 fire("OnTick")
 local drops = {}
 for i = 1, #clientSent do if clientSent[i].command == "roadDrop" then drops[#drops + 1] = clientSent[i] end end
-check(#drops == 1 and drops[1].from == "alice" and drops[1].args.sid == "s50", "pending drop resent after sync")
+check(#drops == 1 and drops[1].from == "alice" and drops[1].args.sid == "s50",
+    "pending drop resent after sync, main seat only")
 deliver({ { module = "MinidoracatMiniMapRoads", command = "roadDropFail", args = { to = "alice", sid = "s50", reason = "savefailed" } } })
 check(pending[0][1] == "s50", "failed drop stays pending")
 mark = #sent
@@ -527,8 +565,19 @@ fire("OnTick")
 drops = 0
 for i = 1, #clientSent do if clientSent[i].command == "roadDrop" then drops = drops + 1 end end
 check(drops == 0, "nothing resent once cleared")
+-- identity＝分割畫面座位永遠撤不掉（伺服器 principal 拒）：清掉待撤回，不在每次同步重送
+pending[1] = { "s60" }
+deliver({ { module = "MinidoracatMiniMapRoads", command = "roadDropFail", args = { to = "bob", sid = "s60", reason = "identity" } } })
+check(#pending[1] == 0 and calls.msg[#calls.msg].good == false, "identity drop failure clears the pending drop and says why")
+-- 分割畫面座位刪掉升級前分享的路：不送 roadDrop（伺服器一定拒），清掉待撤回並說原因
+pending[1] = { "s62" }
+clientSent = {}
+check(Core.roadShareDrop(1, "s62") == false and #clientSent == 0 and #pending[1] == 0
+    and calls.msg[#calls.msg].good == false
+    and calls.msg[#calls.msg].text:find("UI_MinidoracatMiniMap_RoadShareWhy_identity", 1, true) ~= nil,
+    "split-screen seat drop is not sent; pending cleared with the identity reason")
 
-local EXPECTED_ASSERTIONS = 63
+local EXPECTED_ASSERTIONS = 71
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS .. ", actual " .. assertions)
     os.exit(1)

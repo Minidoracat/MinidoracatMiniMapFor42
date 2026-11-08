@@ -5,6 +5,9 @@ local fh = assert(io.open(sourcePath, "rb"))
 local source = fh:read("*a"):gsub("\r\n", "\n")
 fh:close()
 local compile = loadstring or load
+-- 身分走真的共用模組（server/MinidoracatMiniMapGroups.lua；檔頭 isClient 閘）
+function isClient() return false end
+dofile("MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/server/MinidoracatMiniMapGroups.lua")
 
 local clientPath = arg[2] -- nav-share-policy 切片自 2026-09-03 起在 _Nav.lua
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap_Nav.lua"
@@ -25,13 +28,13 @@ local MinidoracatMiniMapPolicy = nil
 local SandboxVars = { MinidoracatMiniMap = { AllowNavShare = mirrorValue } }
 local Events = { OnClientCommand = { Add = function(fn) handler = fn end } }
 local function print(message) logs[#logs + 1] = message end
-local function player(name)
-    return { getUsername = function() return name end }
+local function player(name, pn)
+    return { getUsername = function() return name end, getPlayerNum = function() return pn or 0 end }
 end
 local actor, ally, outsider = player("actor"), player("ally"), player("outsider")
 local factionNames = { actor = "blue", ally = "blue", outsider = "red" }
-local Faction = { getPlayerFaction = function(p)
-    local name = factionNames[p:getUsername()]
+local Faction = { getPlayerFaction = function(p) -- 原版兩個多載都用名字比（Faction.java:106、123）
+    local name = factionNames[type(p) == "string" and p or p:getUsername()]
     if not name then return nil end
     return { getName = function() return name end }
 end }
@@ -69,10 +72,16 @@ return {
     sent = sent,
     logs = logs,
     api = MinidoracatMiniMapServerAPI,
-    addMember = function(name)
+    addMember = function(name, pn)
         factionNames[name] = "blue"
-        online[#online + 1] = player(name)
+        online[#online + 1] = player(name, pn)
     end,
+    -- 分割畫面第 2 位玩家：名字自己填（例如不在線的陣營成員）
+    coop = function(name)
+        factionNames[name] = factionNames[name] or "blue"
+        return player(name, 1)
+    end,
+    fireAs = function(p, command, args) handler("MinidoracatMiniMap", command, p, args) end,
 }
 ]==]
 
@@ -181,7 +190,19 @@ before = #h.sent
 h.fire()
 check(#h.sent == before + 2, "same owner re-registration replaces the filter")
 
-local EXPECTED_ASSERTIONS = 20
+-- 身分：分割畫面第 2～4 位玩家（getPlayerNum ~= 0）不能分享、不當收件人（家族 conventions.md「玩家身分」）
+h.addMember("ally2", 1)
+before = #h.sent
+h.fire()
+local toAlly2 = false
+for i = before + 1, #h.sent do if h.sent[i].target == "ally2" then toAlly2 = true end end
+check(not toAlly2 and #h.sent == before + 2, "a split-screen seat in the faction is never a recipient")
+before = #h.sent
+h.fireAs(h.coop("bob"), "shareTarget", { x = 1, y = 2 })
+h.fireAs(h.coop("bob"), "clearShared", {})
+check(#h.sent == before, "a split-screen seat using an offline member's name cannot share or clear")
+
+local EXPECTED_ASSERTIONS = 22
 if assertions ~= EXPECTED_ASSERTIONS then
     print("assertion count mismatch: expected " .. EXPECTED_ASSERTIONS
         .. ", actual " .. assertions)

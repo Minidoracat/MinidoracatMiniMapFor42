@@ -83,6 +83,8 @@ Core.roadShareAvailable = function(pn)
             return false, type(key) == "string" and key or "UI_MinidoracatMiniMap_FeatureUnavailable"
         end
     end
+    -- 分割畫面第 2～4 位沒有身分（伺服器 MinidoracatMiniMapGroups.principal），送了也會被拒：表單灰掉並寫原因
+    if pn ~= 0 then return false, "UI_MinidoracatMiniMap_RoadShareWhy_identity" end
     local p = getSpecificPlayer(pn)
     local me = p and p:getUsername()
     if not me then return false, "UI_MinidoracatMiniMap_RoadShareNoSP" end
@@ -111,10 +113,17 @@ Core.roadSharePut = function(pn, road)
     return true
 end
 
--- 收回不看沙盒與閘門（伺服器關掉分享時作者照樣能撤回）；回覆 roadDropped 才清本機 sid 與待撤回
+-- 收回不看沙盒與閘門（伺服器關掉分享時作者照樣能撤回）；回覆 roadDropped 才清本機 sid 與待撤回。
+-- 分割畫面第 2～4 位沒有身分，伺服器一定拒：不送，清掉待撤回（道路檔依座位分開，別的座位不會重送）並說原因
 Core.roadShareDrop = function(pn, sid)
     local p = isClient() and getSpecificPlayer(pn)
     if not (p and type(sid) == "string" and p:getOnlineID() >= 0) then return false end
+    if pn ~= 0 then
+        if Core.roadsClearPendingDrop then Core.roadsClearPendingDrop(pn, sid) end
+        S.say(pn, getText("UI_MinidoracatMiniMap_RoadShareDropFail",
+            getText("UI_MinidoracatMiniMap_RoadShareWhy_identity")), false)
+        return false
+    end
     sendClientCommand(p, S.MODULE, "roadDrop", { sid = sid })
     return true
 end
@@ -193,8 +202,11 @@ S.handlers = {
         S.say(pn, getText("UI_MinidoracatMiniMap_RoadShareDropped", road.name), true)
     end,
     roadDropFail = function(pn, args)
-        -- notowner＝伺服器上這個 sid 已經不是我們的路，沒有東西可撤，待撤回清掉
-        if args.reason == "notowner" and Core.roadsClearPendingDrop then Core.roadsClearPendingDrop(pn, args.sid) end
+        -- notowner＝伺服器上這個 sid 已經不是我們的路，沒有東西可撤；identity＝這個座位（分割畫面第 2～4 位）
+        -- 永遠撤不掉，再送也一樣被拒。兩種都清掉待撤回，不在每次同步重送
+        if (args.reason == "notowner" or args.reason == "identity") and Core.roadsClearPendingDrop then
+            Core.roadsClearPendingDrop(pn, args.sid)
+        end
         local key = "UI_MinidoracatMiniMap_RoadShareWhy_" .. tostring(args.reason)
         S.say(pn, getText("UI_MinidoracatMiniMap_RoadShareDropFail",
             getText(getTextOrNull(key) and key or "UI_MinidoracatMiniMap_RoadShareWhy_savefailed")), false)
@@ -236,7 +248,8 @@ function S.tick()
         local due = S.syncAt[pn]
         if due and now >= due then
             local p = getSpecificPlayer(pn)
-            if not p then
+            -- 分割畫面第 2～4 位不同步：伺服器不回快照，待撤回也一定被拒（見 roadShareDrop）
+            if not p or pn ~= 0 then
                 S.syncAt[pn] = nil
             elseif p:getOnlineID() >= 0 then -- 登入初期還沒有 onlineID（同 _Itinerary.lua syncDirty）
                 S.syncAt[pn] = nil

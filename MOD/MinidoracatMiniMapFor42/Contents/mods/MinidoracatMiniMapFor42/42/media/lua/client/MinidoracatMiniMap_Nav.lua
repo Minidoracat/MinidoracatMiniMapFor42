@@ -209,6 +209,7 @@ Core.mapSubMenu = function(context, key, title)
 end
 -- test:nav-menu-lock:end
 Core.navShareTarget = function(pn)
+    if pn ~= 0 then return end -- 分割畫面第 2～4 位沒有身分，伺服器不轉送（MinidoracatMiniMapGroups.principal）
     local playerObj = getSpecificPlayer(pn)
     local t = Core.navGetTarget(pn)
     if not (playerObj and t and isClient()) then return end
@@ -405,6 +406,14 @@ local function drawNavTargets(inner)
         if not roadsOk and not inner._minidoracatRoadsErrLogged then
             inner._minidoracatRoadsErrLogged = true
             log("custom roads draw failed: " .. tostring(roadsErr))
+        end
+    end
+    -- 手繪線（_Sketch.lua）：道路之上、導航路線之下；「顯示在」兩格由它自己判斷，不受導航閘門與功能閘門限制
+    if Core.drawSketch then
+        local skOk, skErr = pcall(Core.drawSketch, inner)
+        if not skOk and not inner._minidoracatSketchErrLogged then
+            inner._minidoracatSketchErrLogged = true
+            log("sketch draw failed: " .. tostring(skErr))
         end
     end
     -- 路線層（_NavRoute.lua 掛 Core.drawNavRoute）：先畫＝墊在旗標/箭頭/分享旗
@@ -932,12 +941,13 @@ end
 
 -- test:map-menu:start
 -- 「分享目標給陣營」列不列（雙地圖右鍵「行程」子選單與行程頁「動作…」共用，兩處不得各寫一份）：
--- 有活動站＋MP＋陣營（Faction.getPlayerFaction 用例 ISFactionUI.lua:408）＋沙盒＋功能閘門 share
--- （_FeatureGate.lua；缺檔＝放行）。⚠ navShareAllowed 不傳 pn＝AllowNavShare 永不列入管理員旁路白名單
--- （會影響其他玩家、需伺服器轉送的功能閘；主檔 navShareGateTick 註解同義）。點下去的 navShareTarget 照樣再檢查
+-- 主座位（pn 0：分割畫面第 2～4 位沒有身分，伺服器不轉送）＋有活動站＋MP＋陣營（Faction.getPlayerFaction 用例
+-- ISFactionUI.lua:408）＋沙盒＋功能閘門 share（_FeatureGate.lua；缺檔＝放行）。⚠ navShareAllowed 不傳 pn＝AllowNavShare
+-- 永不列入管理員旁路白名單（會影響其他玩家、需伺服器轉送的功能閘；主檔 navShareGateTick 註解同義）。點下去的
+-- navShareTarget 照樣再檢查
 Core.navShareOk = function(pn, playerObj)
     local fa = Core.featureAllowed
-    return playerObj ~= nil and Core.navGetTarget(pn) ~= nil and isClient() and Faction ~= nil
+    return pn == 0 and playerObj ~= nil and Core.navGetTarget(pn) ~= nil and isClient() and Faction ~= nil
         and Faction.getPlayerFaction(playerObj) ~= nil and Core.navShareAllowed()
         and (not fa or fa(pn, "share"))
 end
