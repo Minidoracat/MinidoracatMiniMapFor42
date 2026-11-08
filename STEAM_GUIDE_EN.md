@@ -429,6 +429,11 @@ MiniMap doesn't detect the real road surface to correct coordinates; it only has
 [list]
 [*] Subscribe to and enable [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library[/url], then restart the game.
 [/list]
+[h3]No mini-map in the bottom right?[/h3]
+[list]
+[*] B42's sandbox option "Allow Mini-Map" is off by default, so vanilla shows no mini-map. Press [b]/[/b] or click the Minimap button in the family toolbar (right edge of the screen) to open it; drag it where you want and it stays there next time.
+[*] Nothing happens: the mod is probably not enabled in this save. The main menu's mod list doesn't change saves you already made: on LOAD, select the save → MORE... → Choose Mods..., then enable Minidoracat UI Library and this mod.
+[/list]
 [h3]The gear only says "The settings window needs a newer Minidoracat UI Framework"?[/h3]
 [list]
 [*] Your Minidoracat UI Library is outdated. Update it and restart.
@@ -445,6 +450,12 @@ MiniMap doesn't detect the real road surface to correct coordinates; it only has
 [*] With the vanilla server option MapRemotePlayerVisibility at 1 (the vanilla default, other players hidden on the map) nothing is drawn; set it to 2–4.
 [*] The sandbox option "Other players' facing" must not be Off; by default only teammates in your faction or safehouse are drawn.
 [*] They must be nearby: for far-away players the game sends only a position, so they keep the vanilla red dot.
+[/list]
+[h3]The mini-map turns into black-and-white blocks when zoomed in?[/h3]
+[list]
+[*] "Show zombie heatmap" is on: it's the vanilla engine's zombie population heatmap. Whiter blocks mean more zombies there; areas without zombies get a translucent black layer.
+[*] When the mini-map is zoomed far out or shows areas outside the map, the heatmap is skipped to avoid a game crash, so it looks like it only appears when you zoom in.
+[*] If you don't need it, untick "Show zombie heatmap" in the "Zombies" category of Map Display Settings.
 [/list]
 [h3]Will it lower my FPS?[/h3]
 [list]
