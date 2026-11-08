@@ -35,15 +35,8 @@
 [/list]
 📖 [b]每項功能的詳細說明、設定與常見問題：[/b][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3817841920]小地圖 MiniMap MOD 完整說明：功能、導航與道路資料[/url]
 
-[h2]🔗 Minidoracat 小地圖系列[/h2]
-[list]
-[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763913359]MiniMap[/url]（主 MOD，必裝）——圖片化世界地圖與小地圖、搜尋、導航
-[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3763914102]MOD Maps[/url]——地圖 MOD 的地圖圖片與路名翻譯
-[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3792675881]AutoDrive[/url]——GPS 導航與自動駕駛
-[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3768276209]Zones[/url]——伺服器自訂區域
-[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3765182411]MOD Compatibility[/url]——第三方 MOD 的動物、NPC、前哨站與空投
-[/list]
-其他作品：[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3809297109]Minidoracat 全系列收藏[/url]
+[h2]🔗 Minidoracat 全系列[/h2]
+其他作品都在[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3809297109]Minidoracat 全系列收藏[/url]，依需求自選訂閱。
 
 [h2]💬 回報與交流[/h2]
 [list]
