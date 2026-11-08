@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### 修正
+
+- **同時裝了 TwisTonFire - Map Improvements 時，「只看陣營與安全屋」藏不住別人分享的 TwisTonFire 手繪點**：一打開世界地圖，這些點就全部出現。現在開圖、縮放、畫線之後都維持隱藏；隊友分享的點照常顯示，也照 TwisTonFire 自己的縮放設定出現或消失。沒裝 TwisTonFire 時不受影響。
+
+> 技術要點：TwisTonFire 在世界地圖每一幀檢查一次，縮放、標記數或它的設定變了，就把所有手繪點的可見度重設成它的縮放門檻。現在 `_RemoteSymbols.lua` 在遊戲開始時包住它的 `TTF_MapInk.ApplySketchZoomVisibility`（有它、多人才包，包過不再包），它真的重設過才把本 MOD 藏的那幾則再藏回去，不重掃全部標記。篩選改成只放回自己藏過的標記，圈內與沒藏過的標記不再被設成可見，TwisTonFire 的縮放門檻不會被蓋掉。
+
 ## [42.21.0-0.56.0] - 2026-11-08
 
 ### 新增

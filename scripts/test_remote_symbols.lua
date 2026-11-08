@@ -1,5 +1,6 @@
 -- 其他玩家標記：主開關存 ModOptions、三個入口同步兩張地圖（主檔切片），
--- 作者清單的可見規則、「只看陣營與安全屋成員」篩選、世界地圖右鍵「隱藏 X 的標記」與新標記預設分享（_RemoteSymbols.lua）。
+-- 作者清單的可見規則、「只看陣營與安全屋成員」篩選（含 TwisTonFire 手繪重設可見度後再藏回）、世界地圖右鍵「隱藏 X 的標記」
+-- 與新標記預設分享（_RemoteSymbols.lua）。
 -- 標準 Lua，不是 Kahlua；原版符號 API 是假物件，介面照 WorldMapSymbolsV2.java:72-149、401-406、446-513。
 local CLIENT = arg and arg[1]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/"
@@ -63,7 +64,7 @@ end
 ISWorldMap_instance = nil
 Faction = { getPlayerFaction = function(name) return env.factions[name] end }
 SafeHouse = { hasSafehouse = function(name) return env.houses[name] end }
-Events = { OnTick = { Add = function(fn) env.tick = fn end } }
+Events = { OnTick = { Add = function(fn) env.tick = fn end }, OnGameStart = { Add = function(fn) env.gameStart = fn end } }
 env.applies, env.saves = 0, 0
 MinidoracatMiniMapCore = { ready = true, getBoolOption = function(id, default)
     if env.opts[id] == nil then return default end
@@ -186,7 +187,7 @@ env.opts.RemoteTrustedOnly = true
 Core.remoteScopeApply()
 check(vis(1) == false and vis(2) == false and vis(10) == false, "T2 outsiders' shares are hidden (bob, alice, gina)")
 check(vis(6) == false and vis(9) == false, "T2 shares from another faction or safehouse are hidden")
-check(vis(7) == true and vis(8) == true, "T2 faction and safehouse members stay shown (dave, erin)")
+check(vis(7) == nil and vis(8) == nil, "T2 faction and safehouse members are left alone, so they stay shown (dave, erin)")
 check(vis(4) == nil and vis(5) == nil, "T2 own and private symbols are left alone")
 local sets = env.sets
 for _ = 1, 30 do env.tick() end
@@ -329,6 +330,86 @@ check(release(tool(false), ownSymbol(), true).sharing == nil, "D7 copy on a pape
 env.opts.SymbolShareDefault = 1
 check(release(wm, ownSymbol(), true).sharing == nil, "D7 default (private): the copy stays private")
 env.opts.SymbolShareDefault = nil
+
+-- TwisTonFire 手繪相容：它的世界地圖 prerenderMap 對手繪點 setVisible(縮放門檻)（TTF_MapInk_Boot.lua:462-468、
+-- TTF_MapInk_Tools.lua:683-727），本檔包它，重設過就把藏的再藏回去。假的 TwisTonFire 照抄它的提早返回規則：
+-- tracker 不髒、標記數與縮放跟上次一樣就不動；否則每個手繪點照縮放門檻（> 4）重設
+local wmUi = { zoom = 10 }
+ISWorldMap_instance = { symbolsUI = wmUi }
+local ttfLoops = 0
+local function ttfApply(ui)
+    local t = ui.ttf_mapInkSketchTracker
+    if not t then t = { dirty = true }; ui.ttf_mapInkSketchTracker = t end
+    if t.symbolCount ~= #api.list then t.dirty = true end
+    if not t.dirty and t.lastZoomF == ui.zoom and t.lastBaseMinZoom == 4 then return end
+    ttfLoops = ttfLoops + 1
+    for _, s in ipairs(api.list) do if s.t.ttf then s.t.visible = ui.zoom > 4 end end
+    t.dirty, t.lastZoomF, t.lastBaseMinZoom, t.symbolCount = false, ui.zoom, 4, #api.list
+end
+TTF_MapInk = nil
+env.gameStart()
+checkEq(TTF_MapInk, nil, "W1 TwisTonFire not installed: nothing is created or wrapped")
+TTF_MapInk = { ApplySketchZoomVisibility = ttfApply }
+env.mp = false
+env.gameStart()
+check(TTF_MapInk.ApplySketchZoomVisibility == ttfApply, "W1 single player: not wrapped")
+env.mp = true
+env.gameStart()
+local wrapped = TTF_MapInk.ApplySketchZoomVisibility
+check(wrapped ~= ttfApply, "W2 installed and loaded after this file: wrapped at game start")
+env.gameStart()
+check(TTF_MapInk.ApplySketchZoomVisibility == wrapped, "W2 a second game start does not wrap again")
+
+local bobDot = symbol{ author = "bob", everyone = true, ttf = true }    -- 圈外分享的手繪點
+local daveDot = symbol{ author = "dave", faction = true, ttf = true }   -- 同陣營分享的手繪點
+local myDot = symbol{ author = "me", private = true, ttf = true }       -- 自己的私人手繪點
+for _, s in ipairs({ bobDot, daveDot, myDot }) do api.list[#api.list + 1] = s end
+env.opts.RemoteTrustedOnly = true
+Core.remoteScopeApply()
+checkEq(bobDot.t.visible, false, "W3 the filter hides an outsider's shared sketch dot")
+TTF_MapInk.ApplySketchZoomVisibility(wmUi)
+checkEq(ttfLoops, 1, "W3 opening the world map: TwisTonFire resets every sketch dot")
+checkEq(bobDot.t.visible, false, "W3 after TwisTonFire's reset the outsider's dot is still hidden")
+check(daveDot.t.visible == true and myDot.t.visible == true, "W4 dots the filter did not hide keep TwisTonFire's zoom rule")
+sets = env.sets
+TTF_MapInk.ApplySketchZoomVisibility(wmUi)
+check(ttfLoops == 1 and env.sets == sets, "W5 TwisTonFire did not reset (same zoom and count): no extra work")
+wmUi.zoom = 3
+TTF_MapInk.ApplySketchZoomVisibility(wmUi)
+check(daveDot.t.visible == false and myDot.t.visible == false, "W4 zoomed out: TwisTonFire hides its dots")
+api.list[#api.list + 1] = symbol{ author = "ivan", everyone = true }
+for _ = 1, 30 do env.tick() end
+checkEq(api.list[#api.list].t.visible, false, "W4 a new outsider share is hidden on the next check")
+check(daveDot.t.visible == false and myDot.t.visible == false, "W4 the rescan does not show dots TwisTonFire hid by zoom")
+wmUi.zoom = 10
+TTF_MapInk.ApplySketchZoomVisibility(wmUi)
+check(bobDot.t.visible == false and daveDot.t.visible == true, "W3 zooming back in: outsider stays hidden, member shows")
+-- 池化的包裝物件：藏過的那則被移除後，包裝接給自己新畫的點（WorldMapSymbolsV2.java:245-263）；不能把它藏起來
+bobDot.t.author, bobDot.t.everyone, bobDot.t.private = "me", nil, true
+wmUi.zoom = 12
+TTF_MapInk.ApplySketchZoomVisibility(wmUi)
+checkEq(bobDot.t.visible, true, "W6 a pooled wrapper reused for another symbol is not re-hidden")
+bobDot.t.author, bobDot.t.everyone, bobDot.t.private = "bob", true, nil
+-- 關掉篩選：放回藏過的，並請 TwisTonFire 重套縮放門檻
+wmUi.zoom = 3
+TTF_MapInk.ApplySketchZoomVisibility(wmUi)
+env.opts.RemoteTrustedOnly = false
+Core.remoteScopeApply()
+checkEq(wmUi.ttf_mapInkSketchTracker.dirty, true, "W7 un-hiding asks TwisTonFire to reapply its zoom rule")
+TTF_MapInk.ApplySketchZoomVisibility(wmUi)
+checkEq(bobDot.t.visible, false, "W7 the outsider's dot follows TwisTonFire's zoom rule again")
+-- 本檔重載（TwisTonFire 先載入）：不再包一層，包裝讀到新的藏起名單
+assert(compile(readFile(CLIENT .. "MinidoracatMiniMap_RemoteSymbols.lua"), "@_RemoteSymbols.lua"))()
+env.gameStart()
+check(TTF_MapInk.ApplySketchZoomVisibility == wrapped, "W2 reloading this file does not wrap again")
+env.opts.RemoteTrustedOnly = true
+Core.remoteScopeApply()
+wmUi.zoom = 10
+TTF_MapInk.ApplySketchZoomVisibility(wmUi)
+check(bobDot.t.visible == false and daveDot.t.visible == true, "W2 after reload the wrapper still re-hides")
+env.opts.RemoteTrustedOnly = nil
+for _ = 1, 4 do table.remove(api.list) end
+TTF_MapInk, ISWorldMap_instance = nil, nil
 
 -- ── 二、主開關：存 ModOptions、三個入口同步兩張地圖（主檔切片）────────────────────────
 local mainSource = readFile(CLIENT .. "MinidoracatMiniMap.lua")
