@@ -1,20 +1,18 @@
-[h1]Minidoracat MiniMap for B42 42.21.0-0.57.1[/h1]
-[i]2026-11-09[/i]
+[h1]Minidoracat MiniMap for B42 42.22.2-0.57.2[/h1]
+[i]2026-11-10[/i]
 
 [b]English summary[/b]
 [list]
-[*] When the sandbox option "Allow Mini-Map" is off, the mini-map now comes back by itself when you load the game, the way you left it: open if it was open, closed if you closed it. On servers that also turn off "Allow World Map" it won't open by itself; press [b]/[/b] when you want it.
-[*] Fixed navigation saying "no road" for the rest of the session after a rare internal error until you reloaded the save. Now only that one search fails; move a bit or pick another destination and it recalculates.
+[*] Updated for Project Zomboid 42.22.2: the mini-map and world map images, POIs and parking lots were rebuilt from the new vanilla map, so places changed in 42.22 (Rosewood, the Muldraugh train station area, Ekron, West Point and more) match the game again.
+[*] POIs: 1,669 → 1,695. The two Rosewood prison buildings are now one, some farm sheds are new, and 3 military checkpoints are no longer marked as military (the game turned those rooms into empty rooms). Parking: one more area; the number of lots is unchanged.
+[*] Roads and navigation are unchanged.
+[*] Checked on 42.22.2: in multiplayer, symbols you put on a paper map sync to the server the new 42.22 way, and the "Share new symbols with" option never shares paper map symbols.
 [/list]
 
 [h3]🔄 變更[/h3]
 [list]
-[*] [b]沙盒沒開「允許小地圖」時，每次進遊戲都要再按一次 / 才有小地圖[/b]（玩家回報）：現在照上次離開時的開關狀態自動出現，開著離開就開著、關著離開就維持關著，位置照之前拖到的地方。
-[*] 開關狀態每個存檔各記一份：新存檔、以及更新前從沒按過 / 的存檔，第一次進遊戲就會看到小地圖，不想要就按 / 關掉，下次就不會出現。分割畫面每位玩家各有一份，手把輪盤也有小地圖的開關。
-[*] 沙盒連「允許世界地圖」都關的伺服器不會自動出現，照樣可以按 / 開。
-[/list]
-
-[h3]🔧 修正[/h3]
-[list]
-[*] [b]導航找路時遇到少見的內部錯誤，這一局之後全部「找不到道路」[/b]，要重新進入存檔才恢復（玩家回報「換個存檔再回來又好了」）：現在只當作那一次找不到路，走遠一點或換個目的地就會重算。
+[*] [b]配合 42.22.2 的地圖更新，重做小地圖底圖、資源點與停車場[/b]：42.22 改了 Rosewood、Muldraugh 火車站一帶、Ekron、West Point 等地的建築與地面，兩張地圖的圖片、資源點圖標和停車場現在跟新地圖一致。
+[*] 資源點從 1,669 筆變成 1,695 筆：Rosewood 監獄兩棟併成一棟（警察圖標跟著移位置）、多了一些農場小屋，3 個軍事崗哨不再標成軍事（官方把房間改成空房）。
+[*] 停車場多一區，停車場座數不變。道路與導航不變。
+[*] 支援 42.22.2：多人遊戲裡，紙本地圖上放的標記照官方 42.22 的新做法同步到伺服器，「新標記預設分享給」不會把紙本地圖的標記分享出去。
 [/list]

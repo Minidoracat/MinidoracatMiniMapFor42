@@ -1,5 +1,14 @@
 # Changelog
 
+## [42.22.2-0.57.2] - 2026-11-10
+
+### 變更
+
+- **配合 Project Zomboid 42.22.2 的地圖更新，重做小地圖底圖、資源點與停車場**：42.22 改了 Rosewood、Muldraugh 火車站一帶、Ekron、West Point 等地的建築與地面，小地圖與世界地圖的圖片、資源點圖標和停車場現在跟新地圖一致。資源點從 1,669 筆變成 1,695 筆：Rosewood 監獄兩棟併成一棟（警察圖標跟著移位置）、多了一些農場小屋，3 個軍事崗哨不再標成軍事（官方把房間改成空房）。停車場多一區（891 區），停車場座數不變。道路與導航不變。
+- 支援 Project Zomboid 42.22.2：在 42.22.2 上重新驗過導航、停車場與地圖標記分享。多人遊戲裡，紙本地圖上放的標記照官方 42.22 的新做法同步到伺服器，「新標記預設分享給」不會把紙本地圖的標記分享出去。
+
+> 技術要點：底圖 `pzmap render-minimap` 重渲；`poi_raw.json` 由 `pzmap poi` 重新匯出（9,254 → 9,248 筆建築）後 `gen_poi_data.py` 重烘；`gen_parking_data.py` 重烘（ParkingStall 8,518 → 8,511）。舊資料用同一支產生器重烘逐位元相同，差異只來自官方地圖。官方 `streets.xml` 與 42.21 逐位元相同，RoadPatch 不動。42.22 原版 `ISLayoutManager` 改問 `getCore():isTutorial()`，離線測試的假 Core 補上。9950X3D E2E：nav-sp、parking-sp、share-default-mp、新情境 papermap-sync-mp 全 PASS。
+
 ## [42.21.0-0.57.1] - 2026-11-09
 
 ### 變更

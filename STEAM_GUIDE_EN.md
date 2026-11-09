@@ -33,7 +33,7 @@ https://steamcommunity.com/sharedfiles/filedetails/?id=3763913359
 === 🧰 Built-in POIs
 {{img:01-settings-poi.jpg}}
 [list]
-[*] [b]Count[/b]: 1669 vanilla POIs in 20 color-coded categories.
+[*] [b]Count[/b]: 1695 vanilla POIs in 20 color-coded categories.
 [*] [b]Styles[/b]: tinted silhouettes, full-color icons or translucent blocks.
 [*] [b]Toggles[/b]: per category.
 [*] [b]Basements[/b]: basement facilities show "↓" on the icon and "(basement)" in search and hover names; their use may differ from the building above.
