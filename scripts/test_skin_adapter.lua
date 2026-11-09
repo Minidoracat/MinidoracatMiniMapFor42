@@ -281,6 +281,8 @@ do
             getScreenHeight = function() return screenH end,
             getKey = function() return 53 end,
             getGameMode = function() return gameMode end,
+            -- 42.22 原版 ISLayoutManager 改問 isTutorial()（舊版比 getGameMode() == "Tutorial"）
+            isTutorial = function() return gameMode == "Tutorial" end,
         }
     end
     _G.getMouseX = function() return mouseX end
