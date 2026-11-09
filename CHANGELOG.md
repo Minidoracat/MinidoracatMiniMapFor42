@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### 變更
+
+- **沙盒沒開「允許小地圖」時，每次進遊戲都要再按一次 / 才有小地圖**（玩家回報）：現在照上次離開時的開關狀態自動出現，開著離開就開著、關著離開就維持關著，位置照之前拖到的地方。開關狀態每個存檔各記一份：新存檔、以及更新前從沒按過 / 的存檔，第一次進遊戲就會看到小地圖，不想要就按 / 關掉，下次就不會出現。分割畫面每位玩家各有一份，手把輪盤也有小地圖的開關。沙盒連「允許世界地圖」都關的伺服器不會自動出現，照樣可以按 / 開。
+
+### 修正
+
+- **導航找路時遇到少見的內部錯誤，這一局之後全部「找不到道路」**，要重新進入存檔才恢復（玩家回報「換個存檔再回來又好了」）：現在只當作那一次找不到路，走遠一點或換個目的地就會重算。
+
+> 技術要點：自動建小地圖包在原版 `ISPlayerDataObject:createInventoryInterface` 之後（原版每次重建玩家 UI 都經 `createPlayerData` 走到這裡，含不發 `OnCreatePlayer` 的手把進存檔 `JoypadState.onGameStart` 與手把接管），照原版 `ISMiniMap.InitPlayer` 建，顯示與否看 `WorldMapSettings` 的 `MiniMap.StartVisible`（存在存檔的 `InGameMap.ini`，預設開），player 0 登記 `layout.ini` 的 `miniMap0`；功能閘門 `minimap` 擋住時照建、畫「無訊號」（同沙盒開小地圖時）。`requestRoute`／`requestDetour`／`requestRouteFrom`／`requestDetourFrom` 遇到尋路內部例外改回 `"noroad"`（console 記一次 `route search error; treated as no route`），引擎不再進 `"failed"`；`"failed"` 只剩抽街道、建路網失敗。超大路網的背景查詢算完無路時不再當場通知行程，改由下一次一般更新通知，暫停看地圖時行程不會先被改成暫停。
+
 ## [42.21.0-0.57.0] - 2026-11-08
 
 ### 新增

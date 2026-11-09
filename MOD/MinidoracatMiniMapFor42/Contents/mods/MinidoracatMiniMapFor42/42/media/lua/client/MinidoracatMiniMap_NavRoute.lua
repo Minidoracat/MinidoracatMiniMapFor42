@@ -2283,7 +2283,7 @@ function NavCore.queryAdvance(q, budget)
     NavCore.queryClose(q)
 end
 
--- 拋錯收尾：工作量超過上限＝這次查詢無路（q.exhausted），其他例外記在 q.err（呼叫端 failNavEngine）。
+-- 拋錯收尾：工作量超過上限＝這次查詢無路（q.exhausted），其他例外記在 q.err（呼叫端 log 後同樣當無路）。
 function NavCore.queryFail(q, err)
     if tostring(err):find("route query work limit exceeded", 1, true) then
         q.exhausted = true
@@ -2309,7 +2309,7 @@ function NavCore.routeQuery(g, sx, sy, tx, ty, avoidX, avoidY, avoidR, approachW
 end
 
 -- 推進查詢至多約 budget 次工作量（huge＝一次算完）。回 true＝結束：q.route（nil＝無路）、q.err＝內部例外
--- （呼叫端 log 並停用引擎）、q.exhausted＝工作量超過上限（當無路）。
+-- （呼叫端 log 後當無路）、q.exhausted＝工作量超過上限（當無路）。
 function NavCore.queryRun(q, budget)
     if q.done then return true end
     local ok, err = pcall(NavCore.queryAdvance, q, budget)
@@ -2495,14 +2495,14 @@ local navRoutes = {} -- [pn] = { state="ok|noroad", route=, tx=, ty=, progressId
 -- [pn] = { state=, revision=, graph=, weight=, segs=, total=, done=, dist= }
 local navPreview = {}
 -- v11 待接受的改道（requestDetour 第 9 參 deferCommit）：[key] = { entry＝要寫進 navRoutes 的快取條目, base＝算的當下
--- navRoutes[key] }。宣告在這裡＝讓快取失效的三處（世界重置、clearRoute、failNavEngine）一併撤銷：base 是 nil 時
+-- navRoutes[key] }。宣告在這裡＝讓快取失效的兩處（世界重置、clearRoute）一併撤銷：base 是 nil 時
 -- 「清快取」前後都是 nil，commitDetour 只比 base 分不出來，舊候選會被寫進失效後的快取。
 -- v14 同一格也放大路網分幀中的改道（allowPending）：{ q＝NavCore.routeQuery 的查詢, 起點與權重, 呼叫參數 }，
--- 沒有 entry；queryTick 推進，消費者同參數再呼叫時交付（detourCore）。換圖與上面三處一起清。
+-- 沒有 entry；queryTick 推進，消費者同參數再呼叫時交付（detourCore）。換圖與上面兩處一起清。
 local navDetours = {}
 -- 大路網分幀算的路線查詢（ensureRoute 開、queryTick 推進）：[key] = { q＝NavCore.routeQuery 的查詢, tx=, ty=,
--- weight=, px=, py=（起點）, notify=, base＝開查詢當下的 navRoutes[key] }。key 同 navRoutes。算完時快取已被換掉
--- （改道覆寫、清快取）就丟掉結果。與 navRoutes 同受世界重置、clearRoute、failNavEngine、換圖管轄。
+-- weight=, px=, py=（起點）, base＝開查詢當下的 navRoutes[key] }。key 同 navRoutes。算完時快取已被換掉
+-- （改道覆寫、清快取）就丟掉結果。與 navRoutes 同受世界重置、clearRoute、換圖管轄。
 local navQueries = {}
 
 -- 街道覆蓋查詢：dir 優先序取自主檔 getLoadedMapDirs（index 1＝最高）。
@@ -3185,7 +3185,7 @@ local function kickEngine(inner)
 end
 -- test:nav-kick:end
 
--- test:nav-invalidate:start（scripts/test_nav_api.lua 抽本區段：快取失效三處要一併撤銷 v11 待接受的改道）
+-- test:nav-invalidate:start（scripts/test_nav_api.lua 抽本區段：快取失效兩處要一併撤銷 v11 待接受的改道）
 -- 世界生命週期重置：PZ 同一程序回主選單再進另一存檔時 client Lua 不重載，
 -- 引擎單例會把上一世界的 graph／failed 終態帶進新世界（幽靈路網或永久直線）
 Events.OnGameStart.Add(function()
@@ -3214,15 +3214,6 @@ local function clearRoute(pn)
     navQueries[pn] = nil
 end
 Core.navInvalidateRoute = clearRoute
-
-local function failNavEngine(err)
-    logf("astar", "route search error; routing disabled this world: " .. tostring(err))
-    engine.state, engine.graph, engine.builder, engine.pending = "failed", nil, nil, nil
-    engine.altJob = nil
-    for key in pairs(navRoutes) do navRoutes[key] = nil end
-    for key in pairs(navDetours) do navDetours[key] = nil end
-    for key in pairs(navQueries) do navQueries[key] = nil end
-end
 -- test:nav-invalidate:end
 
 -- 路線狀態收斂（繪製幀＋OnTick 維護各一條路徑，便宜路徑優先）：target 消失→清；
@@ -3258,12 +3249,9 @@ end
 -- 查詢結果寫進路線快取（同步算完與背景查詢收尾共用）。回 (route, state) 同 ensureRoute。
 local function routeInstall(key, q, tx, ty, px, py, weight, notify, now)
     if q.err then
-        -- failed 不在這裡通知：engine 是全域終態，extract／建圖／winner 失敗
-        -- 同樣會讓活動段永遠算不出路，卻不經過本函式。統一由 OnTick 的活動段
-        -- 維護（見 nav-preview 區段 legStep）對「engine.state == failed 且仍有
-        -- 活動目標」的 slot 通知一次，一條路徑、不重送。
-        failNavEngine(q.err)
-        return nil, "failed"
+        -- 內部例外（路網或候選資料壞了、A* 出錯）同工作量超過上限：這次當無路，走遠或換目標再算。
+        -- 不停用整局導航：以前會停到重進存檔（玩家回報「找不到道路，換個檔再回來又好了」）
+        logf("queryerr", "route search error; treated as no route: " .. tostring(q.err))
     end
     local route = q.route
     if route then
@@ -3277,7 +3265,8 @@ local function routeInstall(key, q, tx, ty, px, py, weight, notify, now)
     -- 繪製剔除」——不 log 就是診斷黑洞
     logf("noroad" .. tostring(key), string.format(
         "no route: player(%d,%d) target(%d,%d)%s - straight-line flag fallback",
-        floor(px), floor(py), floor(tx), floor(ty), q.exhausted and " (search work limit reached)" or ""))
+        floor(px), floor(py), floor(tx), floor(ty),
+        q.exhausted and " (search work limit reached)" or q.err and " (search error)" or ""))
     navRoutes[key] = { state = "noroad", tx = tx, ty = ty,
         failX = px, failY = py, approachWeight = weight, notified = notify == true }
     if notify then navLegResult(key, tx, ty, "noroad") end
@@ -3299,10 +3288,16 @@ local function ensureRoute(key, target, px, py, weight, notify, pn)
     if pq and (pq.tx ~= target.x or pq.ty ~= target.y or pq.weight ~= weight) then
         navQueries[key], pq = nil, nil -- 換了目標或權重：背景查詢作廢
     end
-    if pq and notify then pq.notify = true end
     local same = rs and rs.tx == target.x and rs.ty == target.y and rs.approachWeight == weight
     if same then
         if rs.state == "noroad" then
+            -- 背景收尾的無路（queryTick 不通知，標 deferredNotify）：下一次非繪製查詢先通知一次，不看走了多遠、
+            -- 也不看是否已在重算——開查詢之後走超過 NOROAD_RETRY_DIST 會直接重算、又進背景，而繪製幀（不帶 notify）
+            -- 常比 legStep 先到、先開了重算，排在下一行之後就一路開車都通知不到
+            if notify and rs.deferredNotify and not rs.notified then
+                rs.notified = true
+                navLegResult(key, target.x, target.y, "noroad")
+            end
             if pq then return nil, "building" end -- 無路重試正在背景算
             local fdx, fdy = px - rs.failX, py - rs.failY
             if fdx * fdx + fdy * fdy < NOROAD_RETRY_DIST * NOROAD_RETRY_DIST then
@@ -3362,8 +3357,7 @@ local function ensureRoute(key, target, px, py, weight, notify, pn)
     local g = engine.graph
     local q = NavCore.routeQuery(g, px, py, target.x, target.y, nil, nil, nil, weight, nil, nil, pn)
     if not NavCore.queryRun(q, g.nodeCount >= LARGE_GRAPH_NODES and QUERY_SYNC_WORK or huge) then
-        navQueries[key] = { q = q, tx = target.x, ty = target.y, weight = weight, px = px, py = py,
-            notify = notify == true, base = rs }
+        navQueries[key] = { q = q, tx = target.x, ty = target.y, weight = weight, px = px, py = py, base = rs }
         if same and rs.route then return rs.route end
         return nil, "building"
     end
@@ -3372,7 +3366,9 @@ end
 -- 背景查詢（大路網）：每 tick 合計推進 QUERY_TICK_WORK，算完照同步路徑寫快取。開查詢之後快取被換掉（改道覆寫
 -- 等）或換了路網＝結果過期、丟掉。OnTickEvenPaused 呼叫。
 -- 分幀中的改道（v14 navDetours 帶 q 的）先推：AutoDrive 這時停在堵點等；算完留在原格，等消費者同參數再呼叫來取。
--- 寫完快取就結束這個 tick：routeInstall 的結果通知可能讓呼叫端開新查詢，走訪中新增鍵時 next 的行為未定義。
+-- 寫完一筆快取就結束這個 tick。這裡不通知行程（routeInstall 不帶 notify，noroad 快取 notified＝false、標 deferredNotify）：
+-- OnTickEvenPaused 比一般 OnTick 早、暫停時也跑，在這裡通知會搶在到站判定前把行程改成暫停
+-- （docs/addon-api.md 6.6）；下一次非繪製查詢（legStep 的 ensureRoute）通知，不論玩家這期間走了多遠。
 local function queryTick()
     local budget = QUERY_TICK_WORK
     for _, pd in pairs(navDetours) do
@@ -3380,12 +3376,8 @@ local function queryTick()
         if q and not q.done then
             if budget <= 0 then return end
             local before = q.query and q.query.n or 0
-            local done = NavCore.queryRun(q, budget)
+            NavCore.queryRun(q, budget)
             budget = budget - ((q.query and q.query.n or before) - before)
-            if done and q.err then
-                failNavEngine(q.err)
-                return
-            end
         end
     end
     for key, pq in pairs(navQueries) do
@@ -3397,9 +3389,9 @@ local function queryTick()
         if done then
             navQueries[key] = nil
             if navRoutes[key] == pq.base and q.g == engine.graph then
-                routeInstall(key, q, pq.tx, pq.ty, pq.px, pq.py, pq.weight, pq.notify, getTimestampMs())
+                routeInstall(key, q, pq.tx, pq.ty, pq.px, pq.py, pq.weight, nil, getTimestampMs())
                 local rs = navRoutes[key]
-                if rs and rs.route then rs.relocate = true end
+                if rs and rs.route then rs.relocate = true elseif rs then rs.deferredNotify = true end
                 return
             end
         end
@@ -3636,9 +3628,8 @@ end
 -- approach 權重。玩家移動不失效：預覽是「之後要走的形狀」，實際出發時
 -- ensureRoute 會從當下位置另取活動路線（契約：新段不沿用預覽的假定起點），
 -- 而第一段每幀都被活動青線覆蓋在上面。
--- 失敗語意：預覽自己的 noroad／A* 例外只標預覽狀態＋log-once 診斷，絕不
--- failNavEngine（會清掉正在行駛那段的快取）、也不走 navLegResult（行駛中的
--- 行程不因未來段算不出來而暫停）。
+-- 失敗語意：預覽自己的 noroad／A* 例外只標預覽狀態＋log-once 診斷，不清掉正在
+-- 行駛那段的快取、也不走 navLegResult（行駛中的行程不因未來段算不出來而暫停）。
 -- test:nav-preview:start
 local PREVIEW_MAX_SEGS = 16 -- 契約 6.2 首版行程上限 16 站
 -- 淡青未來線（比活動段 ROUTE_OVER 細一階、半透明）＋深底：與活動青線同色系
@@ -3654,7 +3645,7 @@ local previewOff = {}
 -- 隱藏／未開啟的地圖也要能泵冷引擎：kickEngine 只要 inner.mapAPI 的 streets
 -- 容器，不需要可見表面（同 _Search.lua winRefresh 的既有做法）。小地圖每次取
 -- 當下實例（Recreate 會換 inner，存快照＝抱死容器）；世界地圖用單例。
--- 兩張地圖都還不存在（沙盒 AllowMiniMap 關、這次進遊戲還沒按過 M）時改用主檔的隱藏街道容器
+-- 兩張地圖都還不存在（沙盒 AllowMiniMap 關而小地圖沒建成、這次進遊戲還沒按過 M）時改用主檔的隱藏街道容器
 -- （Core.navStreetsHolder，載入鏈同世界地圖）：沒有它引擎會停在 idle，requestRoute 一直回 idle，
 -- AutoDrive 按自駕等到逾時（2026-10-30 玩家回報）。
 -- 本檔不 add/clearStreetData、不開關任何視窗、不碰玩家地圖狀態。
@@ -3796,7 +3787,7 @@ local function legStep(pn)
     local trip = Core.navItineraryState and Core.navItineraryState(pn)
     if trip and trip.phase == "approach" then return end
     if engine.state == "failed" then
-        -- 確定失敗（extract／建圖／winner／A* 任一種都收斂到這個終態）
+        -- 確定失敗（extract／建圖／winner 任一種都收斂到這個終態；單次算路的例外只當無路）
         navLegResult(pn, t.x, t.y, "failed")
         return
     end
@@ -4089,7 +4080,7 @@ end
 -- v13：從指定起點算路（消費者＝AutoDrive 的召喚：車從 (fromX,fromY) 開到 (toX,toY)）。
 -- 快取在獨立的 navRoutes["from:"..playerNum]：navRoutes[playerNum] 會畫藍線、判行程到站，召喚不能寫進去。
 -- 這一格不畫、不通知行程（navLegResult 只認數字 key）、分享清理不掃（只掃 pn..":" 開頭）、clearRoute(pn) 不清
--- （玩家換自己的導航目標不打斷召喚）；換路網、引擎失敗、換世界時和其他快取一起清。
+-- （玩家換自己的導航目標不打斷召喚）；換路網、換世界時和其他快取一起清。
 -- 偏航重算、snapDist、冷卻規則同 requestRoute，只是以起點座標量；approach 權重固定 12（車）；自訂道路照 playerNum 的遮罩。
 -- 引擎 idle 時先泵一次 navKickAvailable：召喚時玩家多半沒有導航目標，沒有別人會啟動它。
 -- 回 (route, state)：形狀（含 snapDist）與 state 字彙同 requestRoute；fromX/fromY 不是有限數＝badargs。
@@ -4200,10 +4191,7 @@ local function detourCore(playerNum, key, fromX, fromY, targetX, targetY, avoidX
         route, aerr = NavCore.findRoute(g, px, py, targetX, targetY,
             avoidX, avoidY, avoidR, weight, moreAvoid, maxSnap, playerNum)
     end
-    if aerr then
-        failNavEngine(aerr)
-        return nil, "failed"
-    end
+    if aerr then logf("queryerr", "route search error; treated as no route: " .. tostring(aerr)) end
     if route then route.patchState = engine.patchState end
     if not route then return nil, "noroad" end
     local entry = { state = "ok", route = route, tx = targetX, ty = targetY,
@@ -4231,7 +4219,7 @@ MinidoracatMiniMapAPI.requestDetourFrom = function(playerNum, fromX, fromY, toX,
 end
 -- v11：把 requestDetour(…, deferCommit=true) 回傳、消費者驗收通過的那條線寫進路線快取（寫法同 v10 的覆寫）。
 -- 回 (true, "ok")｜(false, "badargs")｜(false, "stale")。只收該玩家最近一次待接受的那個 table（identity），且快取
--- 從算的當下到現在沒換過（偏航重算、換目標或清快取、換世界、引擎失敗都會換掉或清掉 navRoutes[pn]）、引擎仍 ready；
+-- 從算的當下到現在沒換過（偏航重算、換目標或清快取、換世界都會換掉或清掉 navRoutes[pn]）、引擎仍 ready；
 -- 否則 stale、不寫。快取已經是這條＝(true, "ok")（重複 commit 冪等）。不收 addon 自組的表：繪製與到站終錨都讀快取。
 -- v13：這條不在玩家那一格（快取與待接受都不是它）時，改到 "from:"..playerNum 那一格找（requestDetourFrom 的改道）。
 -- v14：分幀中的改道（沒有 entry）不收：消費者還沒拿到那條線。

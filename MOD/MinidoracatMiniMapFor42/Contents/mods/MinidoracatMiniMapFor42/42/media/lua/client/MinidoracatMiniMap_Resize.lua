@@ -2,7 +2,7 @@
 -- 本檔範圍：小地圖邊緣拖曳縮放（熱區判定／等比與單軸夾限／CustomSize 回寫／實例與
 -- class hook 安裝）、HUD 視覺微調（外框調色 chromeTintBorder、角落括號與把手、
 -- ISMiniMapOuter prerender/render wrap、標題列鎖定、-debug 警告的繪製呼叫）、
--- 小地圖位置記憶（layout.ini：自建小地圖登記、重建帶過位置、拖曳放開就存）、
+-- 小地圖位置記憶（layout.ini：自建小地圖登記、重建帶過位置、拖曳放開就存）、沙盒沒開小地圖時進遊戲自動建、
 -- 自訂鍵位（OnGameBoot 註冊、開關小地圖與穿透熱鍵）。
 -- 載入順序假設：PZ 依字母序載入同目錄 lua，'.'(0x2E) < '_'(0x5F) → 主檔必先載入並
 -- 建好 MinidoracatMiniMapCore；本檔載入期只讀取其「一次性賦值」的穩定引用。
@@ -291,7 +291,7 @@ end
 -- 位置記憶（layout.ini，原版 ISLayoutManager）：原版只在沙盒開小地圖時登記版面（ISPlayerDataObject.lua:139-156）、
 -- 只在離開遊戲時寫檔（Events.OnPostSave；MP 被伺服器斷線時不觸發，IngameState.java:1391-1412），小地圖只存
 -- x、y、userPosition、visible（ISMiniMap.lua:660-670）。本段補三件事：
---   1. 自己建的小地圖（沙盒沒開小地圖時按 / 或浮動圖標）照原版登記，位置才存讀得到；
+--   1. 自己建的小地圖（沙盒沒開小地圖時進遊戲自動建、按 / 或浮動圖標建）照原版登記，位置才存讀得到；
 --   2. 重建（ISMiniMap.Recreate：改尺寸、圖片化、地圖包圖層、邊緣縮放）帶過位置，登記改指新視窗；
 --   3. 標題列拖曳放開就寫檔（同 _FloatIcon onMoved）。
 -- 版面另存 baseY＝收合時的 y：展開時外框上移標題列高（ISMiniMap.lua:479-497），拖曳放開那一刻是展開的，
@@ -316,12 +316,52 @@ function Core.saveMiniMapLayout(playerNum)
     if ISLayoutManager and ISLayoutManager.windows["miniMap" .. playerNum] then ISLayoutManager.OnPostSave() end
 end
 
--- togglePlayerMiniMap 自建小地圖後呼叫。登記時原版依舊版面還原位置與 visible（DefaultRestoreWindow）：
--- 要開的就是它，舊版面的 visible=false 不能把它藏起來
+-- 本 MOD 自建的 player 0 小地圖登記版面（togglePlayerMiniMap、Core.autoCreateMiniMap）。登記時原版依舊版面還原位置與 visible
+-- （DefaultRestoreWindow）：要開的就是它，舊版面的 visible=false 不能把它藏起來
 function Core.registerMiniMapLayout(mm)
     if not (ISLayoutManager and ISLayoutManager.RegisterWindow) then return end
     ISLayoutManager.RegisterWindow("miniMap0", ISMiniMapOuter, mm)
     mm:setVisible(true)
+end
+
+-- 照 ISMiniMap.Recreate 的做法建一份（經過主檔 hook 的 InitPlayer 會套 pyramid）。失敗回 nil
+function Core.createMiniMap(pn)
+    local ok, err = pcall(function()
+        getPlayerData(pn).miniMap = ISMiniMap.InitPlayer(pn)
+    end)
+    if not ok then
+        log("minimap creation failed: " .. tostring(err))
+        return nil
+    end
+    return getPlayerMiniMap(pn)
+end
+
+-- 沙盒沒開「允許小地圖」時原版不建小地圖（ISPlayerDataObject.lua:139-156 只在 ISMiniMap.IsAllowed() 時建），
+-- 每次進遊戲都要按 /。這裡照原版補建：每個座位一份，顯示與否照 MiniMap.StartVisible（存在每個存檔的
+-- InGameMap.ini，預設開，原版 ToggleMiniMap 寫，WorldMapSettings.java:138），只有 player 0 登記版面。
+-- 功能閘門不擋（同原版的自動顯示，擋住時畫「無訊號」）；沙盒連世界地圖都關＝沒有地圖的伺服器，不自動建（/ 照樣能開）。
+-- 掛在 createInventoryInterface 之後（下方）：原版重建玩家 UI 一律經 createPlayerData → 每個座位 createInventoryInterface，
+-- 而且先拆掉所有座位的 UI（removeInventoryUI 清 data.miniMap）。不掛 OnCreatePlayer：手把進存檔
+-- （JoypadState.onGameStart，JoyPadSetup.lua:1201-1216）與手把接管（ISJoyPadListBox.lua:77-93）直接呼叫 createPlayerData。
+function Core.autoCreateMiniMap(data)
+    if data.miniMap or not (ISWorldMap and ISWorldMap.IsAllowed and ISWorldMap.IsAllowed()) then return end -- 含 Tutorial
+    local pn = data.id
+    if not getSpecificPlayer(pn) then return end
+    local mm = Core.createMiniMap(pn)
+    if not mm then return end
+    if pn == 0 then Core.registerMiniMapLayout(mm) end -- 讀回位置；版面的 visible 不算，下一行照 StartVisible
+    if WorldMapSettings.getInstance():getBoolean("MiniMap.StartVisible") then
+        mm:setVisible(true)
+    else
+        mm:removeFromUIManager()
+    end
+end
+if ISPlayerDataObject and ISPlayerDataObject.createInventoryInterface then
+    local originalCreateInventoryInterface = ISPlayerDataObject.createInventoryInterface
+    function ISPlayerDataObject:createInventoryInterface()
+        originalCreateInventoryInterface(self)
+        Core.autoCreateMiniMap(self)
+    end
 end
 
 if ISMiniMapOuter and ISMiniMapOuter.SaveLayout and ISMiniMapOuter.RestoreLayout then
@@ -479,7 +519,7 @@ end
 -- 0＝顯示字元在 UI 字型下似字母 o（實測回饋）；F7/F8/F9＝debug 裸鍵編輯器
 -- （載具/世界地圖/接縫，IngameState.java:1398/1424/1431）；F12 撞 Steam 截圖；
 -- N 撞 StartVehicleEngine；9 被 Bandits Week One 事件鍵使用。
--- ToggleMiniMap 自帶防呆：沙盒未開 AllowMiniMap 時 getPlayerMiniMap 為 nil、直接略過。
+-- ToggleMiniMap 自帶防呆：沒有小地圖時 getPlayerMiniMap 為 nil、直接略過。
 local function initBinds()
     table.insert(keyBinding, { value = "[MinidoracatMiniMap]" })
     table.insert(keyBinding, { value = "MinidoracatMiniMap_Toggle", key = Keyboard.KEY_SLASH })
@@ -495,23 +535,16 @@ Events.OnGameBoot.Add(initBinds)
 local function togglePlayerMiniMap()
     if not (ISMiniMap and ISMiniMap.ToggleMiniMap) then return end
     if not getSpecificPlayer(0) then return end -- 主選單等無玩家情境
-    -- 不受沙盒 AllowMiniMap 限制：原版沒建小地圖時（getPlayerMiniMap 為 nil）
-    -- 照 ISMiniMap.Recreate 的做法自己建（經過我們 hook 的 InitPlayer 會套 pyramid）。
+    -- 不受沙盒 AllowMiniMap 限制：原版沒建、進遊戲也沒自動建（Core.autoCreateMiniMap 沒建成）時自己建
     if not getPlayerMiniMap(0) then
         -- 主動開啟被功能閘門擋下：不建（建了會依 StartVisible 自動顯示）
         if Core.minimapOpenBlocked and Core.minimapOpenBlocked(0) then return end
-        local ok, err = pcall(function()
-            getPlayerData(0).miniMap = ISMiniMap.InitPlayer(0)
-        end)
-        if not ok then
-            log("minimap creation failed: " .. tostring(err))
-            return
-        end
-        local mm = getPlayerMiniMap(0)
+        local mm = Core.createMiniMap(0)
+        if not mm then return end
         -- 原版沒建小地圖就沒登記版面：自己登記，位置才存讀得到（上方 layout-memory 段）
-        if mm then Core.registerMiniMapLayout(mm) end
+        Core.registerMiniMapLayout(mm)
         -- InitPlayer 在 MiniMap.StartVisible=true 時已直接顯示，此時再 toggle 會關掉
-        if mm and mm:isReallyVisible() then return end
+        if mm:isReallyVisible() then return end
     end
     ISMiniMap.ToggleMiniMap(0)
 end

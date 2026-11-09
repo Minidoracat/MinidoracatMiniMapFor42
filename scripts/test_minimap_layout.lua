@@ -1,5 +1,5 @@
 -- 小地圖位置記憶（_Resize.lua test:layout-memory 區段）離線回歸：自建小地圖登記版面、拖曳放開就寫檔、
--- 下次登記讀回（收合 y 換算）、舊檔相容、重建帶過位置並改登記、沒登記或沒拖不寫。
+-- 下次登記讀回（收合 y 換算）、舊檔相容、重建帶過位置並改登記、沒登記或沒拖不寫；沙盒沒開小地圖時進遊戲自動建。
 -- 假 ISLayoutManager 照原版 ISLayoutManager.lua 的流程寫（RegisterWindow:6-13、DefaultRestoreWindow:15-51、
 -- DefaultSaveWindow:53-60、TryRestore:77-97、ReadIni:125-167、WriteIni:169-186、OnPostSave:191-230），
 -- layout.ini 換成字串，值照原版經字串存讀；小地圖版面存讀照 ISMiniMap.lua:660-670。
@@ -156,6 +156,12 @@ function ISMiniMap.Recreate(pn) -- 原版 ISMiniMap.lua:778-781
     players[pn] = newMiniMap(pn, nextAdorned)
 end
 function getPlayerMiniMap(pn) return players[pn] end
+-- 原版 createInventoryInterface 的小地圖段（ISPlayerDataObject.lua:139-156）：沙盒開小地圖才建。要在載入區段前定義（區段載入時包它）
+local vanillaMiniMap = false
+ISPlayerDataObject = {}
+function ISPlayerDataObject:createInventoryInterface()
+    if vanillaMiniMap then self.miniMap = ISMiniMap.InitPlayer(self.id) end
+end
 
 Core = {}
 compile(body, "=layout-memory")()
@@ -310,8 +316,93 @@ ISMiniMap.Recreate(0)
 check(getPlayerMiniMap(0).x == 900, "L8 手把斷線改鍵鼠後重建：帶的是現在的 x")
 JoypadState = nil
 
+--------------------------------------------------------------------------------
+-- L9-L13 沙盒沒開小地圖時進遊戲自動建（Core.autoCreateMiniMap，包在原版 createInventoryInterface 之後）：
+-- 每個座位一份、顯示照 StartVisible、只有 player 0 登記並讀回位置；原版已建的不碰；沙盒連世界地圖都關不建；
+-- 建失敗或沒有角色的座位不影響其他座位；不經 OnCreatePlayer 的重建（手把進存檔、手把接管）也補建
+--------------------------------------------------------------------------------
+local startVisible, worldAllowed, failPn = true, true, nil
+local datas, specific, inits, logs = {}, {}, {}, {}
+WorldMapSettings = { getInstance = function()
+    return { getBoolean = function(_, name) return name == "MiniMap.StartVisible" and startVisible end }
+end }
+ISWorldMap = { IsAllowed = function() return worldAllowed end }
+function getSpecificPlayer(pn) return specific[pn] end
+function getPlayerData(pn) return datas[pn] end
+function log(msg) logs[#logs + 1] = msg end
+function ISMiniMap.InitPlayer(pn) -- 原版 ISMiniMap.lua:696-746：StartVisible 開著就直接加進畫面
+    inits[#inits + 1] = pn
+    if pn == failPn then error("boom") end
+    local m = newMiniMap(pn, true)
+    m.inUI = startVisible
+    players[pn] = m
+    return m
+end
+-- 原版 createPlayerData（ISPlayerData.lua:158-175）：先拆掉所有座位的 UI（removeInventoryUI 清 data.miniMap），
+-- 再逐座位 createInventoryInterface。OnCreatePlayer、手把進存檔（JoypadState.onGameStart）、手把接管都走這裡
+local function createPlayerData(n)
+    for pn = 0, 3 do
+        players[pn], datas[pn], specific[pn] = nil, nil, nil
+        if pn < n then
+            datas[pn] = setmetatable({ id = pn }, { __index = ISPlayerDataObject })
+            specific[pn] = {}
+        end
+    end
+    for i = #inits, 1, -1 do inits[i] = nil end
+    for pn = 0, n - 1 do datas[pn]:createInventoryInterface() end
+end
+
+newSession()
+file = "[1920x1080]\r\nminiMap0 x=300 y=200 visible=true userPosition=true baseY=218\r\n"
+createPlayerData(2)
+local a0, a1 = getPlayerMiniMap(0), getPlayerMiniMap(1)
+check(a0 and a1 and datas[0].miniMap == a0 and datas[1].miniMap == a1, "L9 每個座位各建一份，掛在 playerData")
+check(a0 and ISLayoutManager.windows.miniMap0 and ISLayoutManager.windows.miniMap0.target == a0
+    and a0.x == 300 and a0.userPosition == true, "L9 player 0 登記版面並讀回位置")
+check(a1 and ISLayoutManager.windows.miniMap1 == nil and a1.x == DEFAULT_X, "L9 其他座位照原版不登記")
+check(a0 and a1 and a0.inUI and a0.visible and a1.inUI and a1.visible, "L9 StartVisible 開著：都顯示")
+
+newSession()
+startVisible = false
+createPlayerData(2)
+local h0, h1 = getPlayerMiniMap(0), getPlayerMiniMap(1)
+check(h0 and h1, "L10 StartVisible 關著照樣建（按 / 或手把輪盤才開得了）")
+check(h0 and h1 and not h0.inUI and not h1.inUI, "L10 StartVisible 關著：版面寫 visible=true 也不顯示")
+check(h0 and h0.x == 300, "L10 不顯示的照樣讀回位置")
+startVisible = true
+
+newSession()
+vanillaMiniMap = true
+createPlayerData(1)
+check(#inits == 1 and getPlayerMiniMap(0) == datas[0].miniMap, "L11 原版已建（沙盒開小地圖）不碰")
+vanillaMiniMap = false
+worldAllowed = false
+createPlayerData(1)
+check(getPlayerMiniMap(0) == nil and #inits == 0, "L11 沙盒連世界地圖都關（含 Tutorial）不自動建")
+worldAllowed = true
+
+newSession()
+failPn = 0
+createPlayerData(2)
+check(getPlayerMiniMap(0) == nil and getPlayerMiniMap(1) ~= nil and #logs == 1, "L12 一個座位建失敗只記 log，其他座位照建")
+failPn = nil
+createPlayerData(2)
+specific[1], players[1], datas[1].miniMap = nil, nil, nil
+for i = #inits, 1, -1 do inits[i] = nil end
+datas[1]:createInventoryInterface()
+check(#inits == 0 and getPlayerMiniMap(1) == nil, "L12 沒有角色的座位不建")
+
+newSession()
+createPlayerData(1)
+local first = getPlayerMiniMap(0)
+createPlayerData(1) -- 手把進存檔：OnCreatePlayer 之後 OnGameStart 的 JoypadState.onGameStart 再跑一次（不發 OnCreatePlayer）
+local again = getPlayerMiniMap(0)
+check(again and again ~= first and datas[0].miniMap == again and ISLayoutManager.windows.miniMap0.target == again
+    and again.x == 300, "L13 再跑一次 createPlayerData（拆掉重建）照樣補建、登記換新視窗、位置讀回")
+
 if failures > 0 then
     print(("minimap layout memory: %d check(s) failed"):format(failures))
     os.exit(1)
 end
-print("minimap layout memory: register/restore, base y, legacy file, recreate carry, save-on-release, joypad hidden x cases passed")
+print("minimap layout memory: register/restore, base y, legacy file, recreate carry, save-on-release, joypad hidden x,"
+    .. " auto-create on enter cases passed")

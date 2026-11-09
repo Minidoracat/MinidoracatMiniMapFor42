@@ -431,7 +431,7 @@ MiniMap doesn't detect the real road surface to correct coordinates; it only has
 [/list]
 [h3]No mini-map in the bottom right?[/h3]
 [list]
-[*] B42's sandbox option "Allow Mini-Map" is off by default, so vanilla shows no mini-map. Press [b]/[/b] or click the Minimap button in the family toolbar (right edge of the screen) to open it; drag it where you want and it stays there next time.
+[*] B42's sandbox option "Allow Mini-Map" is off by default, so vanilla shows no mini-map. Press [b]/[/b] or click the Minimap button in the family toolbar (right edge of the screen) to open it; drag it where you want, and next time you load the game it opens there by itself (if you closed it before leaving, it stays closed). On servers that also turn off "Allow World Map" it won't open by itself; press [b]/[/b] when you want it.
 [*] Nothing happens: the mod is probably not enabled in this save. The main menu's mod list doesn't change saves you already made: on LOAD, select the save → MORE... → Choose Mods..., then enable Minidoracat UI Library and this mod.
 [/list]
 [h3]The gear only says "The settings window needs a newer Minidoracat UI Framework"?[/h3]

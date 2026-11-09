@@ -1527,7 +1527,7 @@ if PZAPI and PZAPI.ModOptions then
 
     -- 按「接受/套用」時由 MainOptions:apply 呼叫（3789）。該函式先跑 gameOptions:apply()
     -- （3787）把 UI 值寫回 option，所以此處 getValue() 已是新值。
-    -- 無小地圖（主選單、沙盒未開 AllowMiniMap、尚未開圖）時只存值不動作。
+    -- 無小地圖（主選單、沙盒連世界地圖都關、小地圖沒建成）時只存值不動作。
     function modOptions:apply()
         -- 浮動圖標不依附小地圖視窗，先於下方小地圖防呆處理（內含無玩家檢查）；
         -- 實作在 MinidoracatMiniMap_FloatIcon.lua，nil 防呆＝模組缺失/版本檢查未過時略過
@@ -1696,7 +1696,7 @@ end
 
 -- 導航引擎的隱藏街道容器（_NavRoute.lua navKickAvailable 在小地圖與世界地圖都還不存在時用）：
 -- 沙盒 AllowMiniMap 關（B42 Apocalypse／Six Months Later／Extinction 與伺服器預設）時原版不建小地圖，
--- 本 MOD 也只在按快捷鍵時建；世界地圖第一次按 M 才建（ISWorldMap.lua:1500-1506）。兩者都不存在時
+-- 本 MOD 進遊戲照 StartVisible 補建（_Resize.lua Core.autoCreateMiniMap；沒建成就沒有）；世界地圖第一次按 M 才建（ISWorldMap.lua:1500-1506）。兩者都不存在時
 -- 引擎沒有街道可抽、停在 idle，存檔帶回的導航目標按自駕就一直等（2026-10-30 AutoDrive「準備路線」逾時回報）。
 -- 載入鏈同世界地圖（ensureStreetData：原版 initDefaultStreetData＋_StreetData 目錄顯示窗口＋已知載體兜底）；
 -- 不加進 UIManager、不顯示。原始街道資料引擎依檔名共用（WorldMapStreets.getOrCreateData），這份只多一組合併副本。
@@ -1812,7 +1812,7 @@ end
 
 -- 角落小地圖：ISMiniMap.InitPlayer 於玩家生成時建立（initDefaultStyleV1 後預設
 -- ImagePyramid=false，applyMiniMapPyramids 會蓋回 true）。注意小地圖本身受沙盒
--- 選項 SandboxVars.Map.AllowMiniMap 控制（ISMiniMap.IsAllowed），沒開就不存在。
+-- 選項 SandboxVars.Map.AllowMiniMap 控制（ISMiniMap.IsAllowed），沒開時原版不建，由 _Resize.lua Core.autoCreateMiniMap 補建。
 if ISMiniMap and ISMiniMap.InitPlayer then
     local originalInitPlayer = ISMiniMap.InitPlayer
     function ISMiniMap.InitPlayer(playerNum)

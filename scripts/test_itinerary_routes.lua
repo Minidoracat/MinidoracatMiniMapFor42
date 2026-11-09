@@ -81,11 +81,6 @@ local engine = { state = "ready", graph = GRAPH, patchState = "applied", searchS
 local nowMs = 1000
 local function getTimestampMs() return nowMs end
 local function clearRoute(key) navRoutes[key] = nil; navQueries[key] = nil end
-local function failNavEngine()
-    engine.state, engine.graph = "failed", nil
-    for k in pairs(navRoutes) do navRoutes[k] = nil end
-    for k in pairs(navQueries) do navQueries[k] = nil end
-end
 local logs = {}
 local function logf(key, msg) logs[#logs + 1] = key end
 local players = {}

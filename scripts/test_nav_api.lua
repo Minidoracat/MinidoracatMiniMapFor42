@@ -25,7 +25,7 @@ end
 local body = assert(source:match(
     "%-%- test:nav%-api:start[^\n]*\n(.-)\n%-%- test:nav%-api:end"),
     "找不到 nav-api 測試區段")
--- 快取失效三處（世界重置、clearRoute／Core.navInvalidateRoute、failNavEngine）跑 production 本體：v11 待接受的改道
+-- 快取失效兩處（世界重置、clearRoute／Core.navInvalidateRoute）跑 production 本體：v11 待接受的改道
 -- 要跟著撤銷（base＝nil 時只比 base 分不出「清過了」）
 local invalidateBody = assert(source:match(
     "%-%- test:nav%-invalidate:start[^\n]*\n(.-)\n%-%- test:nav%-invalidate:end"),
@@ -111,7 +111,7 @@ local suffix = [=[
 return { API = MinidoracatMiniMapAPI, engine = engine, navRoutes = navRoutes, navDetours = navDetours,
     navQueries = navQueries,
     players = players, calls = calls, detourCalls = detourCalls, kicks = kicks, queryCalls = queryCalls,
-    invalidate = Core.navInvalidateRoute, worldReset = worldReset, failNavEngine = failNavEngine,
+    invalidate = Core.navInvalidateRoute, worldReset = worldReset,
     setRoute = function(r, state) nextRoute, nextRouteState = r, state end,
     setKick = function(state) nextKickState = state end,
     setRuns = function(n) nextRuns = n end,
@@ -271,22 +271,6 @@ route, state = API.requestRoute(0, 10, 10)
 assert(route == nil and state == "noroad", "A10: 無路須回 (nil, noroad)")
 
 --------------------------------------------------------------------------------
--- A10b/c: ensureRoute terminal failure 不得沿用空 cache 或舊 ok cache
-resetAll()
-T.players[0] = player(0, 0)
-T.setRoute(nil, "failed")
-route, state = API.requestRoute(0, 99, 100)
-assert(route == nil and state == "failed" and T.navRoutes[0] == nil,
-    "A10b: 無 cache search error 須回 failed")
-
-resetAll()
-T.players[0] = player(0, 0)
-T.navRoutes[0] = { state = "ok", route = { pts = {} }, tx = 1, ty = 2 }
-T.setRoute(nil, "failed")
-route, state = API.requestRoute(0, 99, 100)
-assert(route == nil and state == "failed",
-    "A10c: target-change search error 不得回舊 cache ok")
-
 -- 四、getNavGraph：引擎本體＋狀態（唯讀契約，不得複製 ~4k 節點 SoA）
 --------------------------------------------------------------------------------
 -- A11: 回的 graph 就是 engine.graph 同一張表；state 同步
@@ -365,17 +349,19 @@ detour, detourState = API.requestDetour(2, 50, 60, 70, 80, 9)
 assert(T.detourCalls[2].w == 12 and T.navRoutes[2].approachWeight == 12,
     "A17: 車上 detour 帶 approach 權重 12（cache 記權重，下車後 ensureRoute 會換檔重算）")
 
+-- A18：尋路內部例外＝這次無路（同工作量超過上限），不停用整局導航、不寫快取；再呼叫照常重算
 resetAll()
 T.players[0] = player(1, 2)
 T.engine.graph = { id = "graph" }
-T.setDetour(detourV4, "boom")
+T.setDetour(nil, "boom")
 detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5)
-assert(detour == nil and detourState == "failed" and T.navRoutes[0] == nil
-    and T.engine.state == "failed" and #T.detourCalls == 1,
-    "A18: detour err terminal、latch engine failed、不寫 cache")
+assert(detour == nil and detourState == "noroad" and T.navRoutes[0] == nil
+    and T.engine.state == "ready" and #T.detourCalls == 1,
+    "A18: detour 例外＝noroad、引擎照常 ready、不寫 cache，實得 " .. tostring(detourState) .. "/" .. T.engine.state)
+T.setDetour(detourV4, nil)
 detour, detourState = API.requestDetour(0, 10, 20, 30, 40, 5)
-assert(detour == nil and detourState == "failed" and #T.detourCalls == 1,
-    "A18: failed latch 後重呼不得再進 findRoute")
+assert(detour == detourV4 and detourState == "ok" and #T.detourCalls == 2,
+    "A18: 例外之後再呼叫照常尋路")
 
 -- A19（v9）：第 7 參 moreAvoid 原表轉給 findRoute；不傳＝nil（v8 呼叫逐位元不變）
 resetAll()
@@ -510,8 +496,8 @@ for label, args in pairs({ ["槽位 4"] = { 4, dA }, ["槽位 0.5"] = { 0.5, dA 
 end
 
 -- A28（v11）：快取原本是 nil（base＝nil）時，快取失效也要讓待接受的改道失效——清成 nil 前後都是 nil，只比 base 分不出來。
--- 三處失效（production nav-invalidate 區段）：Core.navInvalidateRoute（_Itinerary 換目標／取消活動站走這條）、世界重置、
--- 引擎失敗。後兩者把 engine 打成 idle／failed，這裡手動拉回 ready（＝之後重建好），只驗 navDetours 有沒有被撤銷。
+-- 兩處失效（production nav-invalidate 區段）：Core.navInvalidateRoute（_Itinerary 換目標／取消活動站走這條）、世界重置。
+-- 後者把 engine 打成 idle，這裡手動拉回 ready（＝之後重建好），只驗 navDetours 有沒有被撤銷。
 local function nilBaseSetup()
     resetAll()
     T.players[0], T.players[1] = player(7, 8), player(1, 1)
@@ -533,7 +519,6 @@ assert(cok == true and cstate == "ok", "A28: 別的槽位清快取不影響這�
 for label, invalidate in pairs({
     ["換目標／取消（Core.navInvalidateRoute）"] = function() T.invalidate(0) end,
     ["世界重置（OnGameStart）"] = function() T.worldReset(); T.engine.state = "ready" end,
-    ["引擎失敗（failNavEngine）"] = function() T.failNavEngine("boom"); T.engine.state = "ready" end,
 }) do
     dn = nilBaseSetup()
     invalidate()
@@ -609,9 +594,6 @@ T.navRoutes["from:3"] = { state = "noroad" }
 T.setRoute(nil, nil)
 route, state = API.requestRouteFrom(3, 500.5, 600.5, 700, 800)
 assert(route == nil and state == "noroad", "F4: from 格 noroad 直通")
-T.setRoute(nil, "failed")
-route, state = API.requestRouteFrom(3, 500.5, 600.5, 700, 800)
-assert(route == nil and state == "failed", "F4: ensureRoute terminal 狀態直通")
 
 -- F5：requestDetourFrom 驗參同 requestDetour（另驗起點），壞值不進 A*；槽位不是數字也不得拋錯
 for label, args in pairs({
@@ -672,7 +654,7 @@ cok = API.commitDetour(0, dF)
 assert(cok and T.navRoutes["from:0"].route == dF and T.navRoutes[0] == pBase, "F7: 召喚改道進 from 格")
 cok = API.commitDetour(0, dP)
 assert(cok and T.navRoutes[0].route == dP and T.navRoutes["from:0"].route == dF, "F7: 玩家改道進玩家那一格")
--- F8：from 格的 stale：快取換過、引擎失敗、別的槽位；玩家換目標（clearRoute(pn)）不打斷召喚
+-- F8：from 格的 stale：快取換過、換世界、別的槽位；玩家換目標（clearRoute(pn)）不打斷召喚
 local function fromStale(label, prep, pn)
     local _, fb = fromSetup()
     local d = detourRoute("S")
@@ -691,7 +673,6 @@ fromStale("新的 requestDetourFrom 取代", function()
     T.setDetour(detourRoute("newer"), nil)
     API.requestDetourFrom(0, 500, 600, 10, 20, 30, 40, 5)
 end)
-fromStale("引擎失敗（failNavEngine）", function() T.failNavEngine("boom"); T.engine.state = "ready" end)
 fromStale("世界重置", function() T.worldReset(); T.engine.state = "ready" end)
 fromStale("別的槽位", function() end, 1)
 fromSetup()
@@ -716,7 +697,7 @@ assert(dc.sx == 3 and dc.sy == 4 and dc.w == 3 and dc.pn == 1 and T.navRoutes[1]
 --------------------------------------------------------------------------------
 -- 五c、v14 allowPending（requestDetour 第 10 參、requestDetourFrom 第 11 參）：大路網的改道分幀。
 -- 這一幀先算 QUERY_SYNC_WORK，沒算完回 (nil, "building")、記成該格的待算改道，背景推進；消費者用完全相同的參數
--- 再呼叫：還沒算完回 building，算完照 v13 語意交付。參數不同、換圖、清快取、換世界、引擎失敗＝丟掉重算。
+-- 再呼叫：還沒算完回 building，算完照 v13 語意交付。參數不同、換圖、清快取、換世界＝丟掉重算。
 --------------------------------------------------------------------------------
 local unpackArgs = unpack or table.unpack
 local LARGE = constOf("LARGE_GRAPH_NODES")
@@ -850,16 +831,15 @@ do
     T.tick()
     r, st = API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, nil, true)
     assert(r == nil and st == "noroad" and T.navDetours[0] == nil and T.navRoutes[0] == b, "P8: 算完無路＝noroad")
-    T.setDetour(detourRoute("x"), "boom")
+    T.setDetour(nil, "boom")
     T.setRuns(0)
     r, st = API.requestDetour(0, 10, 20, 30, 40, 5, nil, nil, nil, true)
-    assert(r == nil and st == "failed" and T.engine.state == "failed", "P8: 引擎例外照 v13 停用、回 failed")
+    assert(r == nil and st == "noroad" and T.engine.state == "ready", "P8: 尋路例外同樣回 noroad、引擎照常 ready")
 end
--- P9：清快取、換世界、引擎失敗清掉待算改道；換圖（舊圖的查詢）不交付；之後同參數再呼叫＝重開
+-- P9：清快取、換世界清掉待算改道；換圖（舊圖的查詢）不交付；之後同參數再呼叫＝重開
 for label, invalidate in pairs({
     ["清快取（Core.navInvalidateRoute）"] = function() T.invalidate(0) end,
     ["換世界"] = function() T.worldReset() end,
-    ["引擎失敗"] = function() T.failNavEngine("boom") end,
     ["換圖"] = function() end,
 }) do
     pendingSetup()
@@ -982,20 +962,20 @@ local function getTimestampMs() return nowMs end
 local function clearRoute(key)
     navRoutes[key] = nil; navQueries[key] = nil; navDetours[key] = nil; cleared[#cleared + 1] = key
 end
-local function failNavEngine()
-    engine.state, engine.graph = "failed", nil
-    for k in pairs(navRoutes) do navRoutes[k] = nil end
-    for k in pairs(navQueries) do navQueries[k] = nil end
-    for k in pairs(navDetours) do navDetours[k] = nil end
-end
 local function logf() end
+-- 行程通知樁（navLegResult 只在這個槽位的活動目標座標相符時呼叫 Core.navRouteResult）
+local legResults, legTargets = {}, {}
+local Core = {
+    navRouteResult = function(key, state) legResults[#legResults + 1] = { key = key, state = state } end,
+    navGetTarget = function(key) return legTargets[key] end,
+}
 ]=]):format(DEVIATION_DIST, REBUILD_COOLDOWN_MS, REBUILD_MOVE_DIST,
     constOf("NOROAD_RETRY_DIST"), constOf("LARGE_GRAPH_NODES"), constOf("QUERY_SYNC_WORK"),
     constOf("QUERY_TICK_WORK"))
 local cacheSuffix = [=[
 return { ensureRoute = ensureRoute, queryTick = queryTick, navRoutes = navRoutes, navQueries = navQueries,
     navDetours = navDetours,
-    engine = engine, findCalls = findCalls, cleared = cleared,
+    engine = engine, findCalls = findCalls, cleared = cleared, legResults = legResults, legTargets = legTargets,
     setNow = function(v) nowMs = v end,
     setNext = function(r, e, runs, exhausted) nextRoute, nextErr, nextRuns, nextExhausted = r, e, runs or 0, exhausted end }
 ]=]
@@ -1205,6 +1185,12 @@ do
     r, state = C.ensureRoute(2, target, 100, 100, 12)
     assert(r == nil and state == nil and C.navRoutes[2].state == "noroad" and C.engine.state == "ready",
         "C10: 超量收成 noroad，引擎照常 ready")
+    -- 內部例外同上：這次無路，不停用引擎（以前停到重進存檔）
+    C.navRoutes[2] = nil
+    C.setNext(nil, "boom", 0)
+    r, state = C.ensureRoute(2, target, 100, 100, 12)
+    assert(r == nil and state == nil and C.navRoutes[2].state == "noroad" and C.engine.state == "ready",
+        "C10: 例外收成 noroad，引擎照常 ready")
 
     -- 背景算的期間玩家已沿新路線走了 60 格（超過 ±12 段窗）：換上後第一次查詢整條找進度，
     -- 不從第 1 段找（否則 snapDist 報 47 格，AutoDrive 會以「離路線太遠」停車）；之後回到小窗口
@@ -1225,7 +1211,7 @@ end
 
 -- C11（v14）：queryTick 也推進待算改道（navDetours 裡帶 q 的那種），和背景路線查詢共用 QUERY_TICK_WORK、改道先推
 -- （AutoDrive 這時停在堵點等）；算完的不再推（留在原格等消費者同參數再呼叫來取）；待接受的（沒有 q）不碰；
--- 推出內部例外＝failNavEngine（同路線查詢）。
+-- 推出內部例外也留在原格（消費者再呼叫時拿到 noroad），引擎照常 ready。
 do
     local QUERY_TICK_WORK = constOf("QUERY_TICK_WORK")
     C.engine.state = "ready"
@@ -1255,9 +1241,62 @@ do
     eq.err = "boom"
     C.navDetours[3] = { q = eq }
     C.queryTick()
-    assert(C.engine.state == "failed" and next(C.navDetours) == nil, "C11: 推出內部例外＝停用引擎、清掉改道")
+    assert(C.engine.state == "ready" and C.navDetours[3] and C.navDetours[3].q == eq and C.navDetours[0],
+        "C11: 推出內部例外不停用引擎、改道照留")
+end
+
+-- C12：背景查詢（queryTick 在 OnTickEvenPaused 跑，暫停時也跑）算完無路或例外時只寫 noroad 快取、不通知行程；
+-- 通知留給一般 OnTick 的下一次非繪製查詢（legStep），不搶在到站判定前把行程改成暫停（docs/addon-api.md 6.6）。
+-- 開查詢之後玩家走超過 NOROAD_RETRY_DIST 也要通知：那次查詢會重算、又進背景，不先通知就一路開車都通知不到
+do
     C.engine.state = "ready"
+    C.engine.graph = { id = "large", nodeCount = constOf("LARGE_GRAPH_NODES") }
+    for k in pairs(C.navQueries) do C.navQueries[k] = nil end
+    for k in pairs(C.navDetours) do C.navDetours[k] = nil end
+    local target = { x = 7100, y = 7100 }
+    C.legTargets[0] = target
+    for _, case in ipairs({ { "plain no route", nil, nil }, { "work limit", nil, true }, { "internal error", "boom", nil } }) do
+        C.navRoutes[0] = nil
+        for i = #C.legResults, 1, -1 do C.legResults[i] = nil end
+        C.setNext(nil, case[2], 1, case[3])
+        local r, st = C.ensureRoute(0, target, 7000, 7000, 12, true)
+        assert(r == nil and st == "building", "C12 " .. case[1] .. ": 前提：大路網分幀")
+        C.queryTick()
+        C.queryTick()
+        assert(C.navRoutes[0] and C.navRoutes[0].state == "noroad" and #C.legResults == 0,
+            "C12 " .. case[1] .. ": 背景收尾只寫 noroad 快取、不在 OnTickEvenPaused 通知行程，實得 " .. #C.legResults)
+        C.ensureRoute(0, target, 7000, 7000, 12, true)
+        assert(#C.legResults == 1 and C.legResults[1].state == "noroad",
+            "C12 " .. case[1] .. ": 下一次非繪製查詢才通知一次")
+        C.ensureRoute(0, target, 7000, 7000, 12, true)
+        assert(#C.legResults == 1, "C12 " .. case[1] .. ": 不重複通知")
+    end
+    -- 走遠 100 格後：drawFirst＝繪製幀（不帶 notify）先到、先開了背景重算，下一次非繪製查詢照樣要通知
+    for _, drawFirst in ipairs({ false, true }) do
+        for _, case in ipairs({ { "plain no route", nil, nil }, { "work limit", nil, true }, { "internal error", "boom", nil } }) do
+            local label = "C12 " .. case[1] .. (drawFirst and " (draw first)" or "")
+            C.navRoutes[0] = nil
+            for i = #C.legResults, 1, -1 do C.legResults[i] = nil end
+            C.setNext(nil, case[2], 1, case[3])
+            C.ensureRoute(0, target, 7000, 7000, 12, true)
+            C.queryTick()
+            C.queryTick()
+            C.setNext(nil, nil, 1)
+            if drawFirst then
+                local r, st = C.ensureRoute(0, target, 7100, 7000, 12)
+                assert(r == nil and st == "building" and C.navQueries[0] and #C.legResults == 0,
+                    label .. ": 繪製幀不通知、開背景重算")
+            end
+            local r, st = C.ensureRoute(0, target, 7100, 7000, 12, true) -- 離開查詢的位置 100 格
+            assert(#C.legResults == 1 and C.legResults[1].state == "noroad" and r == nil and st == "building" and C.navQueries[0],
+                label .. ": 走遠了照樣先通知一次、背景重算照跑，實得 " .. #C.legResults)
+            C.ensureRoute(0, target, 7100, 7000, 12, true)
+            assert(#C.legResults == 1, label .. ": 重算中不再通知")
+            C.navQueries[0] = nil
+        end
+    end
+    C.legTargets[0] = nil
 end
 
 print("test_nav_api: OK（requestRoute A1-A12＋requestDetour A13-A22＋deferCommit／commitDetour A23-A28"
-    .. "＋requestRouteFrom／requestDetourFrom F1-F9＋allowPending P1-P10＋ensureRoute 快取/偏航 C0-C11）")
+    .. "＋requestRouteFrom／requestDetourFrom F1-F9＋allowPending P1-P10＋ensureRoute 快取/偏航 C0-C12）")
