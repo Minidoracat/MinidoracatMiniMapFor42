@@ -772,5 +772,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "El servidor no pudo guardar; se enviará de nuevo la próxima vez que entres.",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "No se puede leer el archivo de dibujos del servidor; compartir está en pausa.",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "Los jugadores 2-4 de pantalla dividida no se pueden verificar, así que no pueden compartir.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Novedades: dibujo a mano en el mapa, puntos de recursos visitados o saqueados y NPC de otro color."
+    "UI_MinidoracatMiniMap_WhatsNew": "El minimapa se reabre al cargar aunque el sandbox lo desactive. Navegación sin ruta corregida."
 }

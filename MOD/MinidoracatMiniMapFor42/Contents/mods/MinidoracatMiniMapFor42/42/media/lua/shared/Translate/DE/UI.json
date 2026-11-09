@@ -772,5 +772,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "Der Server konnte nicht speichern; beim nächsten Einloggen wird erneut gesendet.",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "Die Skizzendatei des Servers ist nicht lesbar; Teilen ist pausiert.",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "Splitscreen-Spieler 2–4 lassen sich nicht verifizieren und können daher nicht teilen.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Neu: Skizzen mit Stift auf der Karte, besuchte und geplünderte Ressourcenpunkte, NPC-Farben."
+    "UI_MinidoracatMiniMap_WhatsNew": "Die Minimap öffnet sich beim Laden wieder, auch bei Sandbox aus. Navigation ohne Route behoben."
 }

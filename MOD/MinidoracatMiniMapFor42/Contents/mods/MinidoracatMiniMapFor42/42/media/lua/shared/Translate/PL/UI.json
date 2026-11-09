@@ -772,5 +772,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "Serwer nie zdołał zapisać; dane zostaną wysłane ponownie przy następnym logowaniu.",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "Nie można odczytać pliku szkiców na serwerze; udostępnianie wstrzymane.",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "Graczy 2–4 na podzielonym ekranie nie da się zweryfikować, więc nie mogą udostępniać.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Nowość: szkice piórem na mapie, odwiedzone i splądrowane punkty zasobów oraz NPC w innym kolorze."
+    "UI_MinidoracatMiniMap_WhatsNew": "Minimapa otwiera się po wczytaniu tak, jak ją zostawiono, nawet gdy piaskownica ją wyłącza. Rzadki błąd trasy nie psuje już nawigacji."
 }

@@ -772,5 +772,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "伺服器存檔失敗，下次登入會再送一次。",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "伺服器的手繪檔讀不懂，暫時不能分享。",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "分割畫面的第 2～4 位玩家無法確認身分，不能分享手繪。",
-    "UI_MinidoracatMiniMap_WhatsNew": "新功能：世界地圖可以用筆手繪；資源點會記住去過與已清空，多人能分享給隊友；搭配相容包，NPC 在殭屍點裡換色。"
+    "UI_MinidoracatMiniMap_WhatsNew": "沙盒沒開小地圖時，進遊戲也會照上次離開的狀態自動顯示；導航偶發錯誤後，不再整局都找不到道路。"
 }
