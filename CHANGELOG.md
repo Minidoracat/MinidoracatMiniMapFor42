@@ -9,6 +9,12 @@
 
 > 技術要點：底圖 `pzmap render-minimap` 重渲；`poi_raw.json` 由 `pzmap poi` 重新匯出（9,254 → 9,248 筆建築）後 `gen_poi_data.py` 重烘；`gen_parking_data.py` 重烘（ParkingStall 8,518 → 8,511）。舊資料用同一支產生器重烘逐位元相同，差異只來自官方地圖。官方 `streets.xml` 與 42.21 逐位元相同，RoadPatch 不動。42.22 原版 `ISLayoutManager` 改問 `getCore():isTutorial()`，離線測試的假 Core 補上。9950X3D E2E：nav-sp、parking-sp、share-default-mp、新情境 papermap-sync-mp 全 PASS。
 
+### 修正
+
+- **走進、離開資源點建築時偶爾跳出錯誤 `IndexOutOfBoundsException`（`MinidoracatMiniMap_Cleared.lua:439`）**（玩家回報）：進出資源點建築時，本 MOD 會分幾個 tick 掃整棟的容器；掃到一半時建築有一部分離開載入範圍，就會出這個錯。現在遇到這種情況就停下，這次不算整棟掃完，之後照常補掃，「去過／已清空」的紀錄不受影響。
+
+> 技術要點：`IsoRoom:getSquares()` 是活的 ArrayList，chunk 卸載（`IsoChunk.removeFromWorld` → `IsoRoom.removeSquare`）或載入會改它，接著用舊索引就超出範圍。`CL.stepJob` 每次接著掃先比清單長度，變了就當作沒整棟載入（`job.full = false`），交給 `rescanAt` 補掃。原本的 `pcall` 接得住例外，但 Java 例外照樣進遊戲的錯誤紀錄（回報的堆疊經過 `BaseLib.pcall`）。離線 `test_cleared` S12（舊程式 1 項 FAIL）。
+
 ## [42.21.0-0.57.1] - 2026-11-09
 
 ### 變更

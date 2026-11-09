@@ -532,6 +532,37 @@ do
     check(m.n == 1 and m.ch > 0, "S11 補掃到整棟後算出總數並自動清空")
 end
 
+-- S12 掃到一半，房間的格子清單變少（兩個 tick 之間 chunk 卸載，IsoRoom.removeSquare）：不丟錯、這次不算整棟、排定補掃 ----
+do
+    local hall = building(2000, 2000, 100, 10)
+    poiDefs[hall.id] = true
+    local hs = {}
+    for x = 2000, 2099 do
+        for y = 2000, 2009 do hs[#hs + 1] = square(x, y, 0, hall) end
+    end
+    -- 真的 ArrayList.get 超出範圍會丟例外（jlist 只回 nil）
+    local live = { size = function() return #hs end, get = function(_, i)
+        if i >= #hs then error("IndexOutOfBoundsException: Index " .. i .. " out of bounds for length " .. #hs) end
+        return hs[i + 1]
+    end }
+    hall.rooms[1] = { getIsoRoom = function() return { getSquares = function() return live end } end }
+    loadChunks(2000, 2000, 100, 10, true)
+    local warns, warn = 0, CL.warn
+    CL.warn = function(...) warns = warns + 1; return warn(...) end
+    msPerSquare = 0.01
+    p0.def = hall
+    local before, n = scanned, 0
+    while scanned == before and n < 100 do ticks(1); n = n + 1 end
+    check(scanned > before and hooked("OnTickEvenPaused"), "S12-0 前提：掃描已開始、還沒掃完")
+    for i = #hs, 401, -1 do hs[i] = nil end
+    n = 0
+    while hooked("OnTickEvenPaused") and n < 1000 do ticks(1); n = n + 1 end
+    eq(warns, 0, "S12 清單變少不丟錯（沒有 Cleared scan 警告）")
+    local s = CL.slots[0]
+    check(s.cur and s.cur.n == 0 and s.rescanAt ~= nil, "S12 這次不算整棟：不記容器總數、排定補掃")
+    CL.warn, msPerSquare = warn, 0
+end
+
 -- B2 單機：重新生成的 chunk 碰到已清空的建築＝已刷新 ---------------------------------------------
 local function chunkAt(x, y, new)
     return { isNewChunk = function() return new end,

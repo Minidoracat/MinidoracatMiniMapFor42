@@ -420,6 +420,13 @@ end
 
 -- 回 true＝做完；false＝預算用完，下個 tick 接著做
 function CL.stepJob(job, t0)
+    -- IsoRoom:getSquares() 是活的 ArrayList：兩個 tick 之間 chunk 卸載或載入（IsoChunk.removeFromWorld →
+    -- IsoRoom.removeSquare）會改它，接著用舊索引會丟 IndexOutOfBounds（2026-11-09 玩家回報：Index 519 out of
+    -- bounds for length 451）。清單變了＝這次沒掃到整棟，收工交給 finish 排補掃
+    if job.sqs and job.sqs:size() ~= job.sn then
+        job.full = false
+        return true
+    end
     local k = 0
     while true do
         if not job.sqs then
