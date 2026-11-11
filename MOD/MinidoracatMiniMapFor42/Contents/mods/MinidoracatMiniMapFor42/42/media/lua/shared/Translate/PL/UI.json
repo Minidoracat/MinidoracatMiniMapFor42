@@ -402,7 +402,7 @@
     "UI_MinidoracatMiniMap_ZoneNames": "Pokaż nazwy własnych stref",
     "UI_MinidoracatMiniMap_ZoneNames_tooltip": "Wyłącz, aby ukryć etykiety tekstowe własnych stref. Wypełnienia, ramki i ikony pozostają widoczne. Nie wpływa na punkty zasobów.",
     "UI_MinidoracatMiniMap_ZoneNamesFar": "Nazwy stref przy każdym zbliżeniu",
-    "UI_MinidoracatMiniMap_ZoneNamesFar_tooltip": "Zaznaczone (domyślnie): nazwy własnych stref są widoczne przy każdym poziomie zbliżenia, więc strefy łatwo znaleźć z daleka. Odznaczone: małe strefy pokazują nazwy tylko po przybliżeniu (jak POI). Dotyczy tylko własnych stref, nie punktów zasobów.",
+    "UI_MinidoracatMiniMap_ZoneNamesFar_tooltip": "Zaznaczone (domyślnie): nazwy własnych stref są widoczne przy każdym poziomie zbliżenia. Tam, gdzie nazwy nachodziłyby na siebie, widoczna jest tylko jedna; pozostałe pojawiają się po przybliżeniu. Odznaczone: małe strefy pokazują nazwy tylko po przybliżeniu, a nazwy mogą na siebie nachodzić. Dotyczy tylko własnych stref, nie punktów zasobów.",
     "UI_MinidoracatMiniMap_ZoneCategoryFilter": "Filtr kategorii stref (lista wyłączonych)",
     "UI_MinidoracatMiniMap_ZoneCategoryFilter_tooltip": "Kategorie stref do ukrycia, oddzielone przecinkami (zapisywane automatycznie przez pola wyboru kategorii we wspólnym oknie ustawień; puste = pokaż wszystkie). Kategorie pochodzą z pola \"category\" w pliku zones.json serwera.",
     "UI_MinidoracatMiniMap_ZoneNoCats": "Brak skategoryzowanych stref (serwer może dodać strefom pole \"category\" w zones.json)",

@@ -402,7 +402,7 @@
     "UI_MinidoracatMiniMap_ZoneNames": "显示自定义区域名称",
     "UI_MinidoracatMiniMap_ZoneNames_tooltip": "关闭后隐藏自定义区域的文字名称；色块、边框和图标仍正常显示。只影响自定义区域，不影响资源点。",
     "UI_MinidoracatMiniMap_ZoneNamesFar": "区域名称不受缩放限制",
-    "UI_MinidoracatMiniMap_ZoneNamesFar_tooltip": "勾选(默认)：自定义区域的名称在任何缩放下都显示，方便从远处找到区域位置。不勾：小型区域的名称只在拉近时显示(与资源点一致)。只影响自定义区域，不影响资源点。",
+    "UI_MinidoracatMiniMap_ZoneNamesFar_tooltip": "勾选(默认)：自定义区域的名称在任何缩放下都显示；名称会叠在一起的地方只显示其中一个，拉近后其他名称会出现。不勾：小型区域的名称只在拉近时显示，名称不避开重叠。只影响自定义区域，不影响资源点。",
     "UI_MinidoracatMiniMap_ZoneCategoryFilter": "区域类别筛选(停用清单)",
     "UI_MinidoracatMiniMap_ZoneCategoryFilter_tooltip": "不显示的区域类别，逗号分隔(统一设置窗口的类别勾选会自动写入；留空=全部显示)。类别由服务器 zones.json 的 category 字段定义。",
     "UI_MinidoracatMiniMap_ZoneNoCats": "目前没有带类别的区域(服务器可在 zones.json 各区域加 \"category\" 字段)",

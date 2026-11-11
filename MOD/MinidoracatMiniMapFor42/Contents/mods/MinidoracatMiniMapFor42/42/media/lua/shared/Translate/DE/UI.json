@@ -402,7 +402,7 @@
     "UI_MinidoracatMiniMap_ZoneNames": "Zonennamen zeigen",
     "UI_MinidoracatMiniMap_ZoneNames_tooltip": "Ausschalten blendet die Textbeschriftungen der Zonen aus. Füllungen, Ränder und Icons bleiben sichtbar. Betrifft keine Ressourcenpunkte.",
     "UI_MinidoracatMiniMap_ZoneNamesFar": "Zonennamen bei jedem Zoom",
-    "UI_MinidoracatMiniMap_ZoneNamesFar_tooltip": "Aktiviert (Standard): Zonennamen erscheinen bei jeder Zoomstufe, sodass Zonen auch von weitem leicht zu finden sind. Deaktiviert: Kleine Zonen zeigen ihre Namen nur beim Hineinzoomen (wie bei POIs). Betrifft nur Zonen, keine Ressourcenpunkte.",
+    "UI_MinidoracatMiniMap_ZoneNamesFar_tooltip": "Aktiviert (Standard): Zonennamen erscheinen bei jeder Zoomstufe. Wo sich Namen überlappen würden, wird nur einer angezeigt; die anderen erscheinen beim Hineinzoomen. Deaktiviert: Kleine Zonen zeigen ihre Namen nur beim Hineinzoomen, und Namen dürfen sich überlappen. Betrifft nur Zonen, keine Ressourcenpunkte.",
     "UI_MinidoracatMiniMap_ZoneCategoryFilter": "Zonen-Kategoriefilter (Ausblendliste)",
     "UI_MinidoracatMiniMap_ZoneCategoryFilter_tooltip": "Kommagetrennte Zonenkategorien, die ausgeblendet werden (die Kategorie-Kästchen im Einstellungsfenster schreiben das automatisch; leer = alle zeigen). Kategorien stammen aus dem Feld \"category\" in der zones.json des Servers.",
     "UI_MinidoracatMiniMap_ZoneNoCats": "Noch keine Zonen mit Kategorie (Server können Zonen in zones.json ein Feld \"category\" geben)",

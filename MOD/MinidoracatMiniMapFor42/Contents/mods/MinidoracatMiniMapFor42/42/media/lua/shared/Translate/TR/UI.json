@@ -402,7 +402,7 @@
     "UI_MinidoracatMiniMap_ZoneNames": "Özel bölge adlarını göster",
     "UI_MinidoracatMiniMap_ZoneNames_tooltip": "Özel bölge yazı etiketlerini gizlemek için kapatın. Dolgular, kenarlıklar ve simgeler görünür kalır. Kaynak noktalarını etkilemez.",
     "UI_MinidoracatMiniMap_ZoneNamesFar": "Her yakınlıkta bölge adları",
-    "UI_MinidoracatMiniMap_ZoneNamesFar_tooltip": "İşaretli (varsayılan): özel bölge adları her yakınlaştırma düzeyinde görünür, böylece bölgeler uzaktan kolayca bulunur. İşaretsiz: küçük bölgeler adlarını yalnızca yakınlaştırıldığında gösterir (POI davranışıyla aynı). Yalnızca özel bölgeleri etkiler, kaynak noktalarını değil.",
+    "UI_MinidoracatMiniMap_ZoneNamesFar_tooltip": "İşaretli (varsayılan): özel bölge adları her yakınlaştırma düzeyinde görünür. Adların üst üste bineceği yerlerde yalnızca biri gösterilir; diğerleri yakınlaştırınca belirir. İşaretsiz: küçük bölgeler adlarını yalnızca yakınlaştırıldığında gösterir ve adlar üst üste binebilir. Yalnızca özel bölgeleri etkiler, kaynak noktalarını değil.",
     "UI_MinidoracatMiniMap_ZoneCategoryFilter": "Bölge kategorisi filtresi (kapalı liste)",
     "UI_MinidoracatMiniMap_ZoneCategoryFilter_tooltip": "Gizlenecek bölge kategorileri, virgülle ayrılmış (birleşik ayarlar penceresindeki kategori onay kutuları bunu otomatik yazar; boş = tümünü göster). Kategoriler sunucunun zones.json dosyasındaki \"category\" alanından gelir.",
     "UI_MinidoracatMiniMap_ZoneNoCats": "Henüz kategorili bölge yok (sunucular zones.json içindeki bölgelere \"category\" alanı ekleyebilir)",

@@ -472,8 +472,9 @@ do
             { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, name = "Pvp",
                 category = "pvp",
                 rects = { { x1 = 30, y1 = 10, x2 = 40, y2 = 20 } } },
+            -- 名稱底墊互不重疊（ZoneNamesFar 預設開，外部名稱不重疊：Pvp 與 Plain 擠在一起會擋掉一個）
             { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, name = "Plain",
-                rects = { { x1 = 50, y1 = 10, x2 = 60, y2 = 20 } } } }
+                rects = { { x1 = 70, y1 = 10, x2 = 80, y2 = 20 } } } }
     end
     zone.setCatFilter("shop")
     zone.addProvider("catExt", catZones)
@@ -2449,7 +2450,7 @@ do
     print("icon hover tip H1-H5 cases passed")
 end
 
--- T. 地圖文字大小：區塊名稱依倍率放大（字寬、字高、置中與出界判定都用放大後尺寸）
+-- T. 地圖文字大小：區塊名稱依倍率放大（字寬、字高與置中都用放大後尺寸）
 do
     zone.clearProviders()
     local named = { { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, name = "ABCD",
@@ -2464,17 +2465,234 @@ do
     -- 中心 50；字寬 4*4*2=32、字高 10*2=20 → 左上 (34, 40)
     assert(#calls == 1 and calls[1].zoom == 2 and calls[1].x == 34 and calls[1].y == 40,
         "T 區塊名稱應以兩倍字置中")
+    -- 外部名稱（ZoneNamesFar 預設開）露出半截也畫、由 stencil 裁掉：三倍字寬 48、字高 30，
+    -- 中心 50 → 左上 (26, 35)，右緣 74 超出 60px 視窗
     zone.setTextScale(300)
     calls = {}
     local tiny = makeInner(10)
     tiny.width, tiny.height = 60, 60
     tiny.drawText = inner.drawText
-    tiny.drawTextZoomed = function(_, s, x, y, z) calls[#calls + 1] = { s = s, zoom = z } end
+    tiny.drawTextZoomed = inner.drawTextZoomed
     zone.lines(tiny)
-    assert(#calls == 0, "T 放大後的名稱出界時不應畫（字寬 48 超出 60px 視窗的可用寬）")
+    assert(#calls == 1 and calls[1].zoom == 3 and calls[1].x == 26 and calls[1].y == 35,
+        "T 放大後超出視窗的名稱照畫，位置用三倍字的寬高置中")
+    assert(tiny.setCount == 1 and tiny.clearCount == 1, "T 超出視窗的名稱要包在成對的 stencil 裡")
+    -- ZoneNamesFar 關：舊規則，標籤沒有完整落在視窗內就不畫
+    zone.setBoolOverride("ZoneNamesFar", false)
+    calls = {}
+    zone.lines(tiny)
+    assert(#calls == 0, "T ZoneNamesFar 關時，出界的名稱不畫（字寬 48 超出 60px 視窗的可用寬）")
+    zone.setBoolOverride("ZoneNamesFar", nil)
     zone.setTextScale(100)
     zone.clearProviders()
     print("map text zoom T cases passed")
+end
+
+-- N. 外部自訂區域名稱不重疊（ZoneNamesFar 開，2026-11-11）：照 zones 順序先到先得；名單不看視窗
+-- （平移不換、視窗外的名稱也佔位）；露出半截照畫並包 stencil；快取只在資料、縮放、文字倍率、
+-- 距離閘結果變了才重挑。測試替身：字寬 4 px／字、字高 10；底墊左右各 3、上下各 1
+do
+    zone.clearProviders()
+    -- 視野左上角在世界 (ox, oy)、k px／格的 100×100 視窗；drawText 記下畫了哪些名稱。
+    -- q＝投影值量化到 1/q px（模擬引擎回傳的 float32）
+    local function view(ox, oy, k)
+        local v = makeInner(k or 1)
+        v.k, v.ox, v.oy = k or 1, ox, oy
+        local function quant(r) return v.q and math.floor(r * v.q + 0.5) / v.q or r end
+        v.mapAPI.worldToUIX = function(_, x) return quant((x - v.ox) * v.k * (v.px or 1)) end
+        v.mapAPI.worldToUIY = function(_, _, y) return quant((y - v.oy) * v.k) end
+        v.mapAPI.getWorldScale = function() return v.k end
+        v.texts = {}
+        v.drawText = function(self, s) self.texts[#self.texts + 1] = s end
+        v.drawTextZoomed = v.drawText
+        return v
+    end
+    local function paint(v)
+        v.texts = {}
+        zone.setAABB(v.ox - 2, v.ox + 100 / v.k + 2, v.oy - 2, v.oy + 100 / v.k + 2)
+        zone.lines(v)
+        table.sort(v.texts) -- 選中的名稱互不相疊，繪製順序（照佔位格）沒有意義
+        return table.concat(v.texts, ",")
+    end
+    local function named(name, cx, cy)
+        return { fill = { r = 1, g = 1, b = 1 }, fillAlpha = 0.2, name = name,
+            rects = { { x1 = cx - 2, y1 = cy - 2, x2 = cx + 2, y2 = cy + 2 } } }
+    end
+    local zs
+    local function ext() return zs end
+
+    -- N1 重疊只畫先到的；ZoneNamesFar 關或內部 provider 走舊規則，兩個都畫
+    zs = { named("First", 50, 50), named("Second", 52, 52) }
+    zone.addProvider("n1", ext)
+    assert(paint(view(0, 0)) == "First", "N1 重疊的名稱只畫 zones 順序在前的（得 " .. paint(view(0, 0)) .. "）")
+    zone.setBoolOverride("ZoneNamesFar", false)
+    assert(paint(view(0, 0)) == "First,Second", "N1 ZoneNamesFar 關：不做不重疊，兩個都畫")
+    zone.setBoolOverride("ZoneNamesFar", nil)
+    zone.clearProviders()
+    zone.addProvider("n1int", ext, true)
+    assert(paint(view(0, 0)) == "First,Second", "N1 內部 provider 不做不重疊")
+    zone.clearProviders()
+
+    -- N2 同一個 128×32 格裡、矩形不相交的兩個短名稱都畫；底墊相疊 1 px 就擋
+    -- AB 中心 20：底墊 x 13–27；CD 中心 35：底墊 x 28–42（不相疊）；CD 中心 33：底墊 x 26–40（疊 1 px）
+    zs = { named("AB", 20, 20), named("CD", 35, 20) }
+    zone.addProvider("n2", ext)
+    assert(paint(view(0, 0)) == "AB,CD", "N2 同格但不相交都要畫（得 " .. paint(view(0, 0)) .. "）")
+    zs = { named("AB", 20, 20), named("CD", 33, 20) }
+    assert(paint(view(0, 0)) == "AB", "N2 底墊相疊就不畫（得 " .. paint(view(0, 0)) .. "）")
+    zone.clearProviders()
+
+    -- N3 名單不看視窗：Far 的區域在視窗外 80 格（超過候選框的 64 格外擴），70 字的標籤
+    -- （x −223–63）伸進視窗，佔住 Near（底墊 x 49–71）的位置 → Far 露出的半截要畫、Near 不畫。
+    -- 平移到 Far 進視窗，名單不變；沒有 Far 時 Near 才畫
+    local far = string.rep("F", 70)
+    zs = { named(far, -80, 50), named("Near", 60, 50) }
+    zone.addProvider("n3", ext)
+    local n3 = view(0, 0)
+    assert(paint(n3) == far, "N3 視窗外的名稱也佔位，露出的半截要畫（得 " .. #n3.texts .. " 個）")
+    assert(n3.setCount == 1 and n3.clearCount == 1, "N3 露出半截的名稱要包在成對的 stencil 裡")
+    n3.ox = -150
+    assert(paint(n3) == far, "N3 平移後名單不變（沿用快取）")
+    assert(paint(view(-150, 0)) == far, "N3 平移後名單不變（新視窗現挑）")
+    zs = { named("Near", 60, 50) }
+    assert(paint(view(0, 0)) == "Near", "N3 沒有被擋時 Near 要畫")
+    zone.clearProviders()
+
+    -- N4 邊界：完整在框內不開 stencil；整個在框外不畫
+    zs = { named("ABCD", 50, 50), named("OUT", 120, 50) } -- OUT 底墊 x 111–129
+    zone.addProvider("n4", ext)
+    local n4 = view(0, 0)
+    assert(paint(n4) == "ABCD" and n4.setCount == 0 and n4.clearCount == 0,
+        "N4 框內的名稱不開 stencil、框外的不畫（得 " .. table.concat(n4.texts, ",") .. " set=" .. n4.setCount .. "）")
+    zone.clearProviders()
+
+    -- N5 畫字出錯：stencil 仍清除、錯誤經 safeDrawZone 記一次
+    zs = { named("ABCDEFGH", 95, 50) } -- 字 x 79–111，超出右緣
+    zone.addProvider("n5", ext)
+    local n5 = view(0, 0)
+    n5.drawText = function() error("text boom") end
+    zone.setAABB(-2, 102, -2, 102)
+    zone.resetLogs()
+    zone.safe(n5, zone.lines, "_zoneLineErr")
+    assert(n5.setCount == 1 and n5.clearCount == 1, "N5 畫字出錯後 set/clear 未成對（stencil 洩漏）")
+    assert(zone.logCount() == 1 and n5._zoneLineErr, "N5 畫字錯誤未經 safeDrawZone log-once")
+    zone.clearProviders()
+    zone.resetLogs()
+
+    -- N6 縮放、文字倍率、投影是失效鍵：相距 40 格的兩個 8 字名稱（底墊寬 38）在 1 px／格不相疊，
+    -- 0.5 px／格（中心相距 20 px）或兩倍字（底墊寬 70）就相疊；getWorldScale 不變但投影變了
+    -- （切換等軸測：這裡把 x 方向壓成一半）也要當幀重挑
+    zs = { named("AAAAAAAA", 100, 100), named("BBBBBBBB", 140, 100) }
+    zone.addProvider("n6", ext)
+    local n6 = view(70, 50)
+    assert(paint(n6) == "AAAAAAAA,BBBBBBBB", "N6 1 px／格兩個都畫（得 " .. paint(n6) .. "）")
+    n6.k = 0.5
+    assert(paint(n6) == "AAAAAAAA", "N6 拉遠後要重挑（得 " .. paint(n6) .. "）")
+    n6.k = 1
+    assert(paint(n6) == "AAAAAAAA,BBBBBBBB", "N6 拉近後名稱要回來")
+    zone.setTextScale(200)
+    assert(paint(n6) == "AAAAAAAA", "N6 文字放大後要重挑（得 " .. paint(n6) .. "）")
+    zone.setTextScale(100)
+    assert(paint(n6) == "AAAAAAAA,BBBBBBBB", "N6 文字倍率還原")
+    n6.px = 0.5
+    assert(paint(n6) == "AAAAAAAA", "N6 投影變了（縮放值不變）要重挑（得 " .. paint(n6) .. "）")
+    zone.clearProviders()
+    -- 縮放只變 3%（不到投影鍵的 5%）也要重挑：中心相距 39 格的兩個名稱在 1 px／格時底墊
+    -- 相隔 1 px，0.97 px／格時相疊
+    zs = { named("AAAAAAAA", 100, 100), named("BBBBBBBB", 139, 100) }
+    zone.addProvider("n6fine", ext)
+    local n6f = view(70, 50)
+    assert(paint(n6f) == "AAAAAAAA,BBBBBBBB", "N6 fixture（得 " .. paint(n6f) .. "）")
+    n6f.k = 0.97
+    assert(paint(n6f) == "AAAAAAAA", "N6 縮放微調也要重挑（得 " .. paint(n6f) .. "）")
+    zone.clearProviders()
+
+    -- N7 外部 addon 原地改表：1 秒內沿用上次挑的（快取活性），過期後跟上
+    zs = { named("Old", 50, 50) }
+    zone.addProvider("n7", ext)
+    local n7 = view(0, 0)
+    assert(paint(n7) == "Old", "N7 fixture")
+    zs[1].name = "New"
+    assert(paint(n7) == "Old", "N7 TTL 內沿用快取")
+    zone.advanceClock(1000)
+    assert(paint(n7) == "New", "N7 TTL 過期後要跟上原地改動")
+    zone.clearProviders()
+    -- TTL 到期只重掃：內容沒變名單照舊；原地搬位置（快照比 rects[1] 中心，不只比名稱）或刪掉一筆要重挑
+    zs = { named("AAAA", 50, 50), named("BBBB", 52, 52) }
+    zone.addProvider("n7b", ext)
+    local n7b = view(0, 0)
+    assert(paint(n7b) == "AAAA", "N7 fixture（得 " .. paint(n7b) .. "）")
+    zone.advanceClock(1000)
+    assert(paint(n7b) == "AAAA", "N7 內容沒變，TTL 到期後名單照舊")
+    zs[2].rects[1] = { x1 = 48, y1 = 78, x2 = 52, y2 = 82 }
+    assert(paint(n7b) == "AAAA", "N7 原地搬位置，TTL 內沿用快取")
+    zone.advanceClock(1000)
+    assert(paint(n7b) == "AAAA,BBBB", "N7 原地搬位置，TTL 過期後要重挑（得 " .. paint(n7b) .. "）")
+    table.remove(zs) -- 刪最後一筆：前面的快照逐筆相同，只有筆數變少
+    zone.advanceClock(1000)
+    assert(paint(n7b) == "AAAA", "N7 原地刪掉最後一筆，TTL 過期後要重挑（得 " .. paint(n7b) .. "）")
+    zone.clearProviders()
+
+    -- N8 距離閘（顯示距離 45）：超距的名稱不畫也不佔位；玩家座標是失效鍵，走動當幀就重挑。
+    -- pool 留「建表時玩家位置 45＋16 格內」的區域，16 格內走近不必重建就挑得到。
+    -- A 區域 x 13–17、B 區域 x 33–37，標籤相疊
+    zs = { named("AAAAAAAA", 15, 50), named("BBBBBBBB", 35, 50) }
+    zone.addProvider("n8", ext)
+    zone.setZoneDist(45)
+    zone.setPlayerPos(72, 50) -- 距 A 55（超距，在鬆判 61 內）、B 35
+    local n8 = view(0, 0)
+    assert(paint(n8) == "BBBBBBBB", "N8 超距的 A 不畫也不佔位（得 " .. paint(n8) .. "）")
+    zone.setPlayerPos(60, 50) -- 離建表位置 12 格（pool 不重建）、距 A 43
+    assert(paint(n8) == "AAAAAAAA", "N8 走近後 A 進距離、先到先得（得 " .. paint(n8) .. "）")
+    zone.setPlayerPos(72, 50)
+    assert(paint(n8) == "BBBBBBBB", "N8 A 又超距，B 要回來（得 " .. paint(n8) .. "）")
+    zone.setPlayerPos(100, 50) -- 離建表位置 28 格 → pool 重建；距 A 83、B 63
+    assert(paint(n8) == "", "N8 兩個都超距就都不畫（得 " .. paint(n8) .. "）")
+    zone.setPlayerPos(61, 50) -- pool 再重建；距 A 44
+    assert(paint(n8) == "AAAAAAAA", "N8 pool 重建後 A 要回來（得 " .. paint(n8) .. "）")
+    -- 距離閘開著時 TTL 到期一律重挑：判距讀的 distRects 不在 pool 快照裡。
+    -- distRects x 1–5 距玩家 56：超過 45、仍在鬆判 61 內，pool 快照不變
+    zs[1].distRects = { { x1 = 1, y1 = 48, x2 = 5, y2 = 52 } }
+    zone.advanceClock(1000)
+    assert(paint(n8) == "BBBBBBBB", "N8 原地改 distRects 讓 A 超距，TTL 過期後要重挑（得 " .. paint(n8) .. "）")
+    zs[1].distRects = nil
+    zone.advanceClock(1000)
+    assert(paint(n8) == "AAAAAAAA", "N8 distRects 拿掉後 A 要回來（得 " .. paint(n8) .. "）")
+    -- 關掉距離閘：pool 快照沒變（兩筆都在鬆判範圍內），但名單原本只收精確距離內的，要重挑
+    zone.setPlayerPos(72, 50)
+    assert(paint(n8) == "BBBBBBBB", "N8 fixture：A 超距（得 " .. paint(n8) .. "）")
+    zone.setZoneDist(nil)
+    assert(paint(n8) == "AAAAAAAA", "N8 關掉距離閘後 A 要回來（得 " .. paint(n8) .. "）")
+    zone.setPlayerPos(50, 50)
+    zone.clearProviders()
+
+    -- N9 佔位係數不吃投影的取樣誤差：0.03 px／格、投影值量化到 1/256 px 時，1 格基線求出的
+    -- 係數是 7/256 或 8/256（隨錨點跳，差 14%）。相距 1267 格的兩個 8 字名稱（中心相距
+    -- 38.01 px、底墊寬 38）在每個平移位置都要兩個都畫；用 1 格基線的係數時，有些位置會
+    -- 把它們算成相疊（平移時名稱互換）
+    zs = { named("AAAAAAAA", 2000, 1000), named("BBBBBBBB", 3267, 1000) }
+    zone.addProvider("n9", ext)
+    for off = 0, 15 do
+        local n9 = view(1500 + off * 0.37, 0, 0.03) -- 小數位移：錨點到視窗原點的距離每次不同，量化誤差跟著變
+        n9.q = 256
+        assert(paint(n9) == "AAAAAAAA,BBBBBBBB", "N9 平移位置 " .. off .. " 的名單變了（得 " .. paint(n9) .. "）")
+    end
+    zone.clearProviders()
+
+    -- N10 地圖 API 未就緒（worldToUI 全回 0）：不畫名稱。名單不看視窗，照畫的話全部名稱疊在左上角、
+    -- 第一個會閃一下；就緒後當幀重挑（投影鍵）
+    zs = { named("AAAA", 50, 50), named("BBBB", 80, 80) }
+    zone.addProvider("n10", ext)
+    local n10 = view(0, 0)
+    local realX, realY = n10.mapAPI.worldToUIX, n10.mapAPI.worldToUIY
+    n10.mapAPI.worldToUIX = function() return 0 end
+    n10.mapAPI.worldToUIY = function() return 0 end
+    assert(paint(n10) == "", "N10 投影未就緒時不畫名稱（得 " .. paint(n10) .. "）")
+    n10.mapAPI.worldToUIX, n10.mapAPI.worldToUIY = realX, realY
+    assert(paint(n10) == "AAAA,BBBB", "N10 就緒後當幀畫出來（得 " .. paint(n10) .. "）")
+    zone.clearProviders()
+    zone.setAABB(0, 100, 0, 100)
+    print("external zone name declutter N cases passed")
 end
 
 -- Z：圖標大小分工——內建 POI 跟 PoiIconSize、外部自訂區域跟 ZoneIconSize（同一 pass 各讀一次）

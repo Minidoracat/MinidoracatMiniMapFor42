@@ -650,6 +650,208 @@ local function drawZoneName(inner, name, x, y, tw, th, tz)
     drawMapText(inner, name, x, y, 1, 1, 1, 0.95, UIFont.Small, tz)
 end
 
+-- 外部自訂區域名稱不重疊（ZoneNamesFar 開時；2026-11-11 使用者選定）：照 zones 順序先到先得，
+-- 標籤（含底墊）和已選中的重疊就不畫。拉遠時名稱是區域繪製最大的成本（2000 筆佔 66–80%），
+-- 每幀逐一量測、判斷要畫哪些又太貴，所以選中名單（nm，掛在候選表 ce 上）只在資料變了才重挑：
+--   · 名單從 provider 的全部 zone 挑、不看視窗，佔位用「以世界原點投影」的座標（仿射的線性
+--     部分）：平移不換名單，沿用快取與每幀現挑逐筆相同（A16-1）。從視窗候選挑的話，候選框
+--     上次在哪裡重建會改變結果，平移時名稱會換。視窗外的名稱同樣佔位，所以露出半截也畫、
+--     由 stencil 裁掉（drawZoneNameWinners）；
+--   · 兩段失效鍵。pool（有名稱、類別沒停用的 zone 的快照：序號、名稱、rects[1] 中心；距離閘
+--     開著時只留離建表時玩家位置「顯示距離＋16 格」內的）：zones 表、類別集、距離閘參數、
+--     1 秒 TTL（外部 addon 可原地改表，同 zcCandidates）、玩家移動超過 16 格。名單：縮放、
+--     文字倍率、投影（當幀仿射係數差超過縮放的 5%：切換等軸測、地圖 API 剛就緒；5% 遠大於
+--     float32 取樣誤差），距離閘開著時加玩家座標（精確判距）——pool 是精確通過者的超集，
+--     玩家走動時只重排 pool；
+--   · TTL 到期只重掃 pool：快照逐筆沒變就沿用名單，不重挑。重挑比重掃貴好幾倍（近看時
+--     2000 筆全部選中、每個都要登記佔位格），每秒做一次會變成固定的卡頓。距離閘開著時
+--     一律重挑：判距讀的 distRects／其他 rects 不在快照裡，而這時 pool 本來就小；
+--   · 佔位係數另用 ZN_BASE 格的長基線求：deriveAffine 的 1 格基線吃 float32 取樣誤差（拉遠時
+--     約 0.2%），錨點一換，相距不到 1 px 的兩個名稱會互換；
+--   · 128×32 px 的格是空間索引（每格一條鏈，重建不配置小表）：挑的時候格內逐一比實際矩形
+--     （原型直接以格判重疊，同格但不相交的短名稱會被誤擋），畫的時候只查視窗蓋到的格。
+--     取格號前加 ZN_OFF 讓座標恆為正：Kahlua 的 % 對負數向零取整。
+-- 各 provider 各自挑，不跨 provider 比。
+local ZN_CELL_W, ZN_CELL_H, ZN_OFF, ZN_BASE = 128, 32, 16777216, 4096
+local function zoneNameWinners(inner, ce, zones, disCats, gd2, tz, th, tm, fr)
+    local nm = ce.nm
+    local now = getTimestampMs()
+    local scale, ppx, ppy = fr.scale, fr.ppx, fr.ppy
+    local poolOk = nm ~= nil and rawequal(nm.zones, zones) and nm.disCats == disCats and nm.gd2 == gd2
+        and now >= nm.builtMs and now - nm.builtMs < ZC_TTL_MS
+    if poolOk and gd2 then
+        local dx, dy = ppx - nm.ax, ppy - nm.ay
+        poolOk = dx * dx + dy * dy <= ZC_MOVE2
+    end
+    -- 距離閘參數也是名單的鍵（要在下面改寫 nm.gd2 之前比）：關掉距離閘時 pool 快照可能不變，
+    -- 但名單原本只收精確距離內的
+    local pickOk = nm ~= nil and nm.gd2 == gd2 and nm.scale == scale and nm.tz == tz
+        and (not gd2 or (nm.ppx == ppx and nm.ppy == ppy))
+    if pickOk then
+        local tol = scale * 0.05
+        local a, b, c, d = nm.fsxx - fr.sxx, nm.fsxy - fr.sxy, nm.fsyx - fr.syx, nm.fsyy - fr.syy
+        pickOk = a < tol and -a < tol and b < tol and -b < tol and c < tol and -c < tol and d < tol and -d < tol
+    end
+    if poolOk and pickOk then return nm end
+    if not nm then
+        nm = { pool = {}, pname = {}, pwx = {}, pwy = {}, pn = 0,
+            name = {}, wx = {}, wy = {}, tw = {}, x1 = {}, y1 = {}, x2 = {}, y2 = {},
+            entK = {}, entNext = {}, seen = {}, gen = 0 }
+        ce.nm = nm
+    end
+    local pool, pname, pwx, pwy = nm.pool, nm.pname, nm.pwx, nm.pwy
+    if not poolOk then
+        nm.zones, nm.disCats, nm.gd2, nm.builtMs, nm.ax, nm.ay = zones, disCats, gd2, now, ppx, ppy
+        local loose2
+        if gd2 then
+            local r = math.sqrt(gd2) + 16
+            loose2 = r * r
+        end
+        local m, same = 0, true
+        for zi = 1, #zones do
+            local z = zones[zi]
+            local name = z and z.name
+            local rects = name and z.rects
+            local rc = rects and rects[1]
+            if rc and not (disCats and z.category and disCats[z.category])
+                and (not loose2 or zoneWithinDist(z, ppx, ppy, loose2, false)) then
+                m = m + 1
+                local cxw, cyw = (rc.x1 + rc.x2) / 2, (rc.y1 + rc.y2) / 2
+                if pool[m] ~= zi or pname[m] ~= name or pwx[m] ~= cxw or pwy[m] ~= cyw then
+                    same = false
+                    pool[m], pname[m], pwx[m], pwy[m] = zi, name, cxw, cyw
+                end
+            end
+        end
+        if nm.pn ~= m then
+            same = false
+            nm.pn = m
+        end
+        if same and pickOk and not gd2 then return nm end
+    end
+    nm.scale, nm.tz, nm.ppx, nm.ppy = scale, tz, ppx, ppy
+    nm.fsxx, nm.fsxy, nm.fsyx, nm.fsyy = fr.sxx, fr.sxy, fr.syx, fr.syy
+    local mapAPI, acx, acy = inner.mapAPI, fr.acx, fr.acy
+    local sxx = (mapAPI:worldToUIX(acx + ZN_BASE, acy) - fr.p0x) / ZN_BASE
+    local sxy = (mapAPI:worldToUIY(acx + ZN_BASE, acy) - fr.p0y) / ZN_BASE
+    local syx = (mapAPI:worldToUIX(acx, acy + ZN_BASE) - fr.p0x) / ZN_BASE
+    local syy = (mapAPI:worldToUIY(acx, acy + ZN_BASE) - fr.p0y) / ZN_BASE
+    nm.sxx, nm.sxy, nm.syx, nm.syy = sxx, sxy, syx, syy
+    local names, wxs, wys, tws = nm.name, nm.wx, nm.wy, nm.tw
+    local x1s, y1s, x2s, y2s = nm.x1, nm.y1, nm.x2, nm.y2
+    local entK, entNext = nm.entK, nm.entNext
+    local occ = {}
+    nm.occ = occ
+    local n, ne = 0, 0
+    for i = 1, nm.pn do
+        local name = pname[i]
+        -- 距離閘：rawget 讀當下的 zone（TTL 內被原地移走的格不得觸發第三方 __index）
+        local z = gd2 and rawget(zones, pool[i])
+        if not gd2 or (z and zoneWithinDist(z, ppx, ppy, gd2, false)) then
+            local tw = zoneNameWidth[name]
+            if not tw then
+                tw = tm:MeasureStringX(UIFont.Small, name)
+                zoneNameWidth[name] = tw
+            end
+            tw = tw * tz
+            local cxw, cyw = pwx[i], pwy[i]
+            -- 底墊範圍同 drawZoneName（左右各外擴 3、上下各 1）
+            local lx = cxw * sxx + cyw * syx - tw / 2 - 3
+            local ly = cxw * sxy + cyw * syy - th / 2 - 1
+            local rx, ry = lx + tw + 6, ly + th + 2
+            local v = lx + ZN_OFF
+            local gx1 = (v - v % ZN_CELL_W) / ZN_CELL_W
+            v = rx + ZN_OFF
+            local gx2 = (v - v % ZN_CELL_W) / ZN_CELL_W
+            v = ly + ZN_OFF
+            local gy1 = (v - v % ZN_CELL_H) / ZN_CELL_H
+            v = ry + ZN_OFF
+            local gy2 = (v - v % ZN_CELL_H) / ZN_CELL_H
+            local free = true
+            for gy = gy1, gy2 do
+                for gx = gx1, gx2 do
+                    local e = occ[gy * 1048576 + gx]
+                    while e do
+                        local k = entK[e]
+                        if lx < x2s[k] and rx > x1s[k] and ly < y2s[k] and ry > y1s[k] then
+                            free = false
+                            break
+                        end
+                        e = entNext[e]
+                    end
+                    if not free then break end
+                end
+                if not free then break end
+            end
+            if free then
+                n = n + 1
+                names[n], wxs[n], wys[n], tws[n] = name, cxw, cyw, tw
+                x1s[n], y1s[n], x2s[n], y2s[n] = lx, ly, rx, ry
+                for gy = gy1, gy2 do
+                    for gx = gx1, gx2 do
+                        local key = gy * 1048576 + gx
+                        ne = ne + 1
+                        entK[ne], entNext[ne] = n, occ[key] or false
+                        occ[key] = ne
+                    end
+                end
+            end
+        end
+    end
+    nm.n = n
+    return nm
+end
+
+-- 畫選中的名稱：查視窗蓋到的格（多看 2 px），位置用和其他 pass 相同、以視野中心為錨的公式。
+-- 標籤和地圖框有交集就畫；第一個超出框的標籤才開 stencil（旗標同 fill pass，記在 inner 上，
+-- 由呼叫端無條件清除）。名稱與位置是挑的時候記下的，外部 addon 原地改表最多晚 1 秒（TTL）
+local function drawZoneNameWinners(inner, nm, fr, th, tz)
+    local w, h = inner.width, inner.height
+    local acx, acy = fr.acx, fr.acy
+    local p0x, p0y, sxx, sxy, syx, syy = fr.p0x, fr.p0y, fr.sxx, fr.sxy, fr.syx, fr.syy
+    -- 視窗左上角在佔位座標系的位置（已加 ZN_OFF）
+    local ox = acx * nm.sxx + acy * nm.syx - p0x + ZN_OFF
+    local oy = acx * nm.sxy + acy * nm.syy - p0y + ZN_OFF
+    local v = ox - 2
+    local gx1 = (v - v % ZN_CELL_W) / ZN_CELL_W
+    v = ox + w + 2
+    local gx2 = (v - v % ZN_CELL_W) / ZN_CELL_W
+    v = oy - 2
+    local gy1 = (v - v % ZN_CELL_H) / ZN_CELL_H
+    v = oy + h + 2
+    local gy2 = (v - v % ZN_CELL_H) / ZN_CELL_H
+    -- 一個名稱跨好幾格：用幀號標記，每幀只畫一次
+    local gen = nm.gen + 1
+    nm.gen = gen
+    local occ, entK, entNext, seen = nm.occ, nm.entK, nm.entNext, nm.seen
+    local names, wxs, wys, tws = nm.name, nm.wx, nm.wy, nm.tw
+    for gy = gy1, gy2 do
+        local row = gy * 1048576
+        for gx = gx1, gx2 do
+            local e = occ[row + gx]
+            while e do
+                local k = entK[e]
+                if seen[k] ~= gen then
+                    seen[k] = gen
+                    local tw = tws[k]
+                    local dx, dy = wxs[k] - acx, wys[k] - acy
+                    local cx = p0x + dx * sxx + dy * syx - tw / 2
+                    local cy = p0y + dx * sxy + dy * syy - th / 2
+                    if cx + tw + 3 > 0 and cx - 3 < w and cy + th + 1 > 0 and cy - 1 < h then
+                        if not inner._minidoracatZoneStencilOn
+                            and (cx - 3 < 0 or cy - 1 < 0 or cx + tw + 3 > w or cy + th + 1 > h) then
+                            inner:setStencilRect(0, 0, w, h)
+                            inner._minidoracatZoneStencilOn = true
+                        end
+                        drawZoneName(inner, names[k], cx, cy, tw, th, tz)
+                    end
+                end
+                e = entNext[e]
+            end
+        end
+    end
+end
+
 -- 框線＋名稱：複用 drawClippedEdge（Liang-Barsky Lua 裁切）畫每 rect 四邊；
 -- 名稱畫在第一個 rect 中心（底墊同 drawMapBounds；⚠ drawRect 參數序 a,r,g,b）
 local function drawZoneLines(inner)
@@ -685,13 +887,15 @@ local function drawZoneLines(inner)
             local disCats = not provider.internal and zoneDisabledCats() or nil
             -- 外部自訂區域名稱總開關；internal POI 名稱不受影響。
             local namesOn = provider.internal or getBoolOption("ZoneNames", true)
-            -- 名稱遠距顯示（ZoneNamesFar，預設開；僅外部 zone）：總開關關閉時
-            -- 不再量測／繪製任何外部名稱，框線與圖標維持原狀。
+            -- 名稱遠距顯示（ZoneNamesFar，預設開；僅外部 zone）：開著時外部名稱任何縮放都畫、
+            -- 改走迴圈後的不重疊名單（zoneNameWinners），迴圈只畫框線；關掉時沿用逐 zone 的舊規則
+            -- （帶 lodRect 的小區域只在細節檔畫名稱、標籤要完整落在視窗內）。總開關關閉時兩者都不畫
             local nameFar = namesOn and not provider.internal
                 and getBoolOption("ZoneNamesFar", true)
+            local loopNames = namesOn and not nameFar
             local cand, ce = zcCandidates(inner, provider, zones, disCats, scale,
                 vMinX, vMaxX, vMinY, vMaxY, ppx, ppy, gd2)
-            -- 中／遠距 lodRect zone 不畫框線、內部又無 nameFar（下方 midFar 條件恆擋），只掃地標
+            -- 中／遠距 lodRect zone 不畫框線、迴圈也不畫它的名稱（下方 midFar 條件恆擋），只掃地標
             if provider.internal and scale < ZONE_LOD_DETAIL then cand = ce.noLod end
             for ci = 1, #cand do
                 local z = rawget(zones, cand[ci]) or ZC_EMPTY -- rawget: stale slot 不得觸發第三方 __index（codex review）
@@ -703,15 +907,13 @@ local function drawZoneLines(inner)
                 --   框線 → drawEdges（有 border 且 alpha 非 0）
                 --   名稱 → z.name（下方另有細節檔與螢幕裁切判定）
                 -- 兩者皆無則整段跳過。LOD zone 的框線僅細節檔畫（中距的聯集框
-                -- 純填色——該縮放下框線是雜訊）；名稱對內部（POI）僅細節檔防洗版，
-                -- 外部 zone 依 nameFar（見上）可於任何縮放顯示；zone 另過該
-                -- provider 的顯示距離閘（not gd2 先行短路，閘未啟用不付逐 zone 呼叫）
-                -- 中/遠距檔（lodRect zone）：框線恆不畫；名稱僅 nameFar 時放行
+                -- 純填色——該縮放下框線是雜訊）；迴圈裡的名稱（內部 POI、ZoneNamesFar
+                -- 關的外部 zone）同樣僅細節檔畫，防洗版；zone 另過該 provider 的
+                -- 顯示距離閘（not gd2 先行短路，閘未啟用不付逐 zone 呼叫）
                 local midFar = lod ~= nil and scale < ZONE_LOD_DETAIL
                 local drawEdges = border and z.borderAlpha ~= 0 and not midFar
-                if rects and (drawEdges or (namesOn and z.name))
+                if rects and not midFar and (drawEdges or (loopNames and z.name))
                     and not (disCats and z.category and disCats[z.category])
-                    and (not midFar or (nameFar and z.name ~= nil))
                     and (not gd2 or zoneWithinDist(z, ppx, ppy, gd2, provider.internal)) then
                     local r, g, b, a
                     if drawEdges then r, g, b, a = border.r, border.g, border.b, z.borderAlpha end
@@ -764,12 +966,9 @@ local function drawZoneLines(inner)
                     -- 名稱畫在第一個 rect 的中心，僅中心落在視窗內才畫；
                     -- 整區離屏（無 rect 在窗內）連名稱測量都省——名稱中心落在窗內必然使該
                     -- rect AABB 與視窗相交，故 zoneVisible 為真，不影響應畫的名稱
-                    local name = namesOn and z.name or nil
+                    local name = loopNames and z.name or nil
                     local rc = rects[1]
-                    -- 名稱檔位閘：內部（POI）僅細節檔（20 類全開時中/遠距洗版即此治）；
-                    -- 外部 zone 由 nameFar 放行任何縮放（找區域的主要手段）
-                    if name and rc and zoneVisible
-                        and (not lod or scale >= ZONE_LOD_DETAIL or nameFar) then
+                    if name and rc and zoneVisible then
                         -- 量測惰性快取（ZR-4）：renderer 自有、以名稱字串為 key——
                         -- 不得寫回 provider 的 zone 表（API 明定對回傳只讀不改；寫入
                         -- 會與 addon 同名欄位碰撞、對 __newindex 保護表拋錯，codex
@@ -789,6 +988,21 @@ local function drawZoneLines(inner)
                             drawZoneName(inner, name, cx, cy, tw, th, tz)
                         end
                     end
+                end
+            end
+            -- ZoneNamesFar 開：外部名稱畫在這個 provider 的框線之上。stencil 開了就一定清
+            -- （同 drawZoneFill 的 A1：繪製出錯也不得漏 clear），錯誤再交回 safeDrawZone。
+            -- 地圖 API 未就緒（投影全回 0，見 zoneFrame）時不畫：名單不看視窗，全部名稱會疊在同一點
+            if nameFar and (fr.sxx ~= 0 or fr.sxy ~= 0) then
+                local nm = zoneNameWinners(inner, ce, zones, disCats, gd2, tz, th, tm, fr)
+                if nm.n > 0 then
+                    inner._minidoracatZoneStencilOn = false
+                    local ok, err = pcall(drawZoneNameWinners, inner, nm, fr, th, tz)
+                    if inner._minidoracatZoneStencilOn then
+                        inner._minidoracatZoneStencilOn = false
+                        inner:clearStencilRect()
+                    end
+                    if not ok then error(err, 0) end
                 end
             end
         end

@@ -402,7 +402,7 @@
     "UI_MinidoracatMiniMap_ZoneNames": "Mostrar nomes das zonas personalizadas",
     "UI_MinidoracatMiniMap_ZoneNames_tooltip": "Desligue para ocultar os rótulos de texto das zonas personalizadas. Preenchimentos, bordas e ícones continuam visíveis. Não afeta os pontos de recurso.",
     "UI_MinidoracatMiniMap_ZoneNamesFar": "Nomes de zonas em qualquer zoom",
-    "UI_MinidoracatMiniMap_ZoneNamesFar_tooltip": "Marcado (padrão): os nomes das zonas personalizadas aparecem em qualquer nível de zoom, facilitando localizar as zonas de longe. Desmarcado: zonas pequenas só mostram o nome quando aproximadas (como os POI). Afeta só as zonas personalizadas, não os pontos de recurso.",
+    "UI_MinidoracatMiniMap_ZoneNamesFar_tooltip": "Marcado (padrão): os nomes das zonas personalizadas aparecem em qualquer nível de zoom. Onde os nomes ficariam sobrepostos, só um é mostrado; os outros aparecem ao aproximar. Desmarcado: zonas pequenas só mostram o nome quando aproximadas, e os nomes podem ficar sobrepostos. Afeta só as zonas personalizadas, não os pontos de recurso.",
     "UI_MinidoracatMiniMap_ZoneCategoryFilter": "Filtro de categorias de zonas (lista desativada)",
     "UI_MinidoracatMiniMap_ZoneCategoryFilter_tooltip": "Categorias de zonas a ocultar, separadas por vírgula (as caixas de categorias na janela de configurações unificada preenchem isto automaticamente; vazio = mostrar todas). As categorias vêm do campo \"category\" do zones.json do servidor.",
     "UI_MinidoracatMiniMap_ZoneNoCats": "Nenhuma zona com categoria ainda (os servidores podem adicionar um campo \"category\" às zonas no zones.json)",

@@ -402,7 +402,7 @@
     "UI_MinidoracatMiniMap_ZoneNames": "Show custom-zone names",
     "UI_MinidoracatMiniMap_ZoneNames_tooltip": "Turn off to hide custom-zone text labels. Fills, borders, and icons remain visible. Does not affect resource points.",
     "UI_MinidoracatMiniMap_ZoneNamesFar": "Zone names at any zoom",
-    "UI_MinidoracatMiniMap_ZoneNamesFar_tooltip": "Checked (default): custom zone names show at any zoom level, so zones are easy to locate from afar. Unchecked: small zones show their names only when zoomed in (matching POI behavior). Affects custom zones only, not resource points.",
+    "UI_MinidoracatMiniMap_ZoneNamesFar_tooltip": "Checked (default): custom zone names show at any zoom level. Where names would overlap, only one is shown; the others appear as you zoom in. Unchecked: small zones show their names only when zoomed in, and names are allowed to overlap. Affects custom zones only, not resource points.",
     "UI_MinidoracatMiniMap_ZoneCategoryFilter": "Zone category filter (disabled list)",
     "UI_MinidoracatMiniMap_ZoneCategoryFilter_tooltip": "Comma-separated zone categories to hide (the category checkboxes in the unified settings window write this automatically; empty = show all). Categories come from the \"category\" field in the server's zones.json.",
     "UI_MinidoracatMiniMap_ZoneNoCats": "No categorized zones yet (servers can add a \"category\" field to zones in zones.json)",

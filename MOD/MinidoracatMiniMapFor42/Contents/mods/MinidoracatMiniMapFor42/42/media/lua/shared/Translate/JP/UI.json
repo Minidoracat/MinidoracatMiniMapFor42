@@ -402,7 +402,7 @@
     "UI_MinidoracatMiniMap_ZoneNames": "カスタムゾーン名を表示",
     "UI_MinidoracatMiniMap_ZoneNames_tooltip": "オフにするとカスタムゾーンの文字名だけを非表示にします。色、枠線、アイコンは表示されたままです。資源ポイントには影響しません。",
     "UI_MinidoracatMiniMap_ZoneNamesFar": "ゾーン名をズームに関係なく表示",
-    "UI_MinidoracatMiniMap_ZoneNamesFar_tooltip": "オン（既定）：カスタムゾーンの名称をどのズームでも表示し、遠くからでも位置を見つけやすくします。オフ：小型ゾーンの名称はズームイン時のみ表示（資源ポイントと同じ挙動）。カスタムゾーンのみに影響し、資源ポイントには影響しません。",
+    "UI_MinidoracatMiniMap_ZoneNamesFar_tooltip": "オン（既定）：カスタムゾーンの名称をどのズームでも表示します。名称が重なる場所では 1 つだけ表示し、ズームインすると残りも表示されます。オフ：小型ゾーンの名称はズームイン時のみ表示し、名称の重なりは避けません。カスタムゾーンのみに影響し、資源ポイントには影響しません。",
     "UI_MinidoracatMiniMap_ZoneCategoryFilter": "ゾーンカテゴリーフィルター（無効リスト）",
     "UI_MinidoracatMiniMap_ZoneCategoryFilter_tooltip": "非表示にするゾーンカテゴリー（カンマ区切り。統合設定ウィンドウのカテゴリーチェックが自動で書き込みます。空＝すべて表示）。カテゴリーはサーバーの zones.json の category 欄で定義されます。",
     "UI_MinidoracatMiniMap_ZoneNoCats": "カテゴリー付きゾーンはまだありません（サーバーは zones.json の各ゾーンに \"category\" 欄を追加できます）",
