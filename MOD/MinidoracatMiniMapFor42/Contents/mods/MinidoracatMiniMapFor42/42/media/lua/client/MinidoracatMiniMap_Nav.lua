@@ -469,6 +469,7 @@ end
 -- 琥珀「已複製」回饋——回饋獨立於 ShowPlayerCoords 開關（關列後 XY 鈕/右鍵複製
 -- 仍看得到成功提示，否則像按鈕壞掉）；freelook 膠囊佔底行時上移一行避讓。
 -- 呼叫點在 drawNavTargets 之前＝導航距離標籤畫在其上（正南目標讀數不被膠囊吃掉）
+-- test:player-coords:start（scripts/test_player_coords.lua）
 local function drawPlayerCoords(inner)
     local copied = inner._minidoracatCopiedUntil
         and getTimestampMs() < inner._minidoracatCopiedUntil
@@ -515,6 +516,10 @@ local function drawPlayerCoords(inner)
     cx = cx - cx % 1 -- 純 Lua floor（原 math.max+math.floor 兩次跨界）
     if cx < 0 then cx = 0 end
     local cy = inner.height - ch - 10
+    -- 世界地圖：按鈕列靠右、每加一顆就往左長，視窗窄或字級大時會蓋住置中的膠囊（prerender 畫在子元件之下）：
+    -- 碰到就改畫在按鈕列上方。小地圖的 inner 沒有 buttonPanel
+    local row = inner.buttonPanel
+    if row and cx + cw + 8 > row.x - 10 then cy = row.y - ch - 10 end
     if inner._minidoracatFreelook and getBoolOption("FreeLook", true) then
         cy = cy - ch - 10
     end
@@ -526,6 +531,7 @@ local function drawPlayerCoords(inner)
         drawMapText(inner, txt, cx, cy, 1, 1, 1, 0.95, UIFont.Small, tz)
     end
 end
+-- test:player-coords:end
 
 -- 朝向箭頭與視野扇形（設計稿 minimap-facing-1018、minimap-team-facing-1019）：自己與附近其他玩家的
 -- 箭頭蓋在引擎的 6×6 紅點上、畫在本 MOD 全部地圖圖層之上（呼叫端排在 drawNavTargets 之後）。引擎紅點

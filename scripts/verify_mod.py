@@ -545,6 +545,7 @@ _lua_tests = [
     ("test_player_export.lua", "玩家匯出 Policy 權威", False),
     ("test_server_nav_share.lua", "伺服器導航分享 never-bypass", False),
     ("test_admin_view_marker.lua", "ADMIN VIEW 標記與 fallback", False),
+    ("test_player_coords.lua", "座標列避開世界地圖按鈕列", False),
     ("test_player_facing.lua", "自己的朝向箭頭：投影方向、坐車、閘門、靠邊", False),
     ("test_street_backfill.lua", "街道資料補載 gate", False),
     ("test_street_names.lua", "純名稱翻譯與原始道路不變", False),
