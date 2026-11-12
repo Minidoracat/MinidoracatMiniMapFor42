@@ -772,5 +772,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "The server couldn't save; it will be sent again next time you log in.",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "The server's sketch file can't be read; sharing is paused.",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "Split-screen players 2-4 can't be verified, so they can't share sketches.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Minimap now reopens on load, even if the sandbox turns it off. Fixed navigation stuck on \"no road\"."
+    "UI_MinidoracatMiniMap_WhatsNew": "Zone names no longer pile up when zoomed out. World map coordinates no longer hide behind the buttons."
 }

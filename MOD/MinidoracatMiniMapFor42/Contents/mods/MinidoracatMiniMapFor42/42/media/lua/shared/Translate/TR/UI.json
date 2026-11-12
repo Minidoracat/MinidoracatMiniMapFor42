@@ -772,5 +772,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "Sunucu kaydedemedi; bir sonraki girişinizde yeniden gönderilecek.",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "Sunucunun çizim dosyası okunamıyor; paylaşım duraklatıldı.",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "Bölünmüş ekrandaki 2-4. oyuncuların kimliği doğrulanamaz, bu yüzden paylaşamazlar.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Mini Harita, sandbox kapatsa da bıraktığınız gibi açılır. Rota bulamayan navigasyon düzeltildi."
+    "UI_MinidoracatMiniMap_WhatsNew": "Uzaklaşınca bölge adları üst üste binmiyor. Koordinatlar artık düğmelerin arkasında kalmıyor."
 }

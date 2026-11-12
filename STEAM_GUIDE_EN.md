@@ -55,7 +55,7 @@ Both go by the room names inside buildings, which are also what decides the loot
 [list]
 [*] [b]Legend[/b]: a POI legend sits under the vanilla legend in the top left of the world map (M), listing what each POI icon means for the categories you have on (S hides both).
 [*] [b]Hover names[/b]: hover a POI icon on the mini-map or world map to see the facility name above it; basement facilities add "(basement)".
-[*] [b]Custom zones[/b]: server custom zones show the zone name.
+[*] [b]Custom zones[/b]: server custom zones show the zone name. With many zones, names that would overlap when zoomed out show only one; the others appear as you zoom in.
 [*] [b]Gamepad[/b]: on the world map, aim with the crosshair in the middle of the screen.
 [*] [b]Ghost mode[/b]: no hover names on the mini-map in ghost mode.
 [/list]

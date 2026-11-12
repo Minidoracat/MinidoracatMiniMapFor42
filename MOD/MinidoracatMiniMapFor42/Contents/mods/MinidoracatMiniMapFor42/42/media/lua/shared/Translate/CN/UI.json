@@ -772,5 +772,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "服务器保存失败，下次登录会再发送一次。",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "服务器的手绘文件无法读取，暂时不能分享。",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "分屏的第 2～4 位玩家无法确认身份，不能分享手绘。",
-    "UI_MinidoracatMiniMap_WhatsNew": "沙盒没开小地图时，进游戏也会照上次离开的状态自动显示；导航偶发错误后，不再整局都找不到道路。"
+    "UI_MinidoracatMiniMap_WhatsNew": "区域很多时，地图拉远后区域名称不再叠成一片。窗口较窄或字体较大时，世界地图的坐标不再被按钮盖住。"
 }

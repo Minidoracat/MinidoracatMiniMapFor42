@@ -772,5 +772,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "서버 저장에 실패했습니다. 다음 접속 때 다시 보냅니다.",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "서버의 손그림 파일을 읽을 수 없어 공유를 멈췄습니다.",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "화면 분할 2~4번째 플레이어는 신원을 확인할 수 없어 손그림을 공유할 수 없습니다.",
-    "UI_MinidoracatMiniMap_WhatsNew": "샌드박스에서 미니맵이 꺼져 있어도 마지막 상태대로 자동 표시됩니다. 드문 길찾기 오류 뒤 계속 길을 못 찾던 문제를 고쳤습니다."
+    "UI_MinidoracatMiniMap_WhatsNew": "구역이 많을 때 축소해도 구역 이름이 겹치지 않습니다. 창이 좁거나 글자가 커도 월드맵 좌표가 버튼에 가려지지 않습니다."
 }
