@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "targetSrc": "Muldraugh, KY",
   "mapId": "Muldraugh, KY",
-  "sourceBuild": "42.20.4",
-  "auditSha256": "e4b15b3521299e506fa6e7dc2627b9b01a7ef08c66556397e8d18c03d40466e6",
+  "sourceBuild": "42.22.2",
+  "auditSha256": "3af06d1390409ee92a9709f2ae2121876ebefda7aaad83b600863c847f0f3b23",
   "auditXmlSha256": "af02b646f166cdbd3e47d37589701d845463b777668ac1088cb40f87e2140310",
-  "auditSurfaceFingerprint": "9b3b740f73f47ea82924148ca0f346fbbdbaa4b57d2f9e7f0cf9cfc15c0d1a38",
+  "auditSurfaceFingerprint": "9c3994e7062d152ffdc69ea66859226ceb0155c576eb005179a16e790e00f655",
   "legacyAudits": [
     {
       "sourceBuild": "42.20.4",
@@ -15,8 +15,8 @@
   ],
   "approvedCandidates": [
     {
-      "id": "c:ae7e88cce2453de5f6d63e5da08fc3cb83b798c3b4ccab1fc4e0b6d537343068",
-      "evidenceHash": "ae7e88cce2453de5f6d63e5da08fc3cb83b798c3b4ccab1fc4e0b6d537343068",
+      "id": "c:accbd65ab9061f6fb19e616ef48000aac4b0cdb2ac1da471770c9eafc8a5779b",
+      "evidenceHash": "accbd65ab9061f6fb19e616ef48000aac4b0cdb2ac1da471770c9eafc8a5779b",
       "operation": "bridge",
       "surface": "dirt",
       "width": 7.0,
@@ -24,8 +24,8 @@
       "reason": "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「停車區橫向表面帶，不是公共道路。」維持事實描述，僅撤銷排除。"
     },
     {
-      "id": "c:7ba5266978b462ddc10dc901e287c3418f56a60993bea96225c68cadb81978c8",
-      "evidenceHash": "7ba5266978b462ddc10dc901e287c3418f56a60993bea96225c68cadb81978c8",
+      "id": "c:8272a219408b4c39e96db05096dd88c071565abd1f39ec12416656cf32d9ebb3",
+      "evidenceHash": "8272a219408b4c39e96db05096dd88c071565abd1f39ec12416656cf32d9ebb3",
       "operation": "bridge",
       "surface": "dirt",
       "width": 3.227,
@@ -33,8 +33,8 @@
       "reason": "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「住宅／建物間私人土徑，不是公共道路。」維持事實描述，僅撤銷排除。"
     },
     {
-      "id": "c:f967eeb60231af982b8ce0f7b4f3ac0ef043616fadfb9884bbc6f8a536543ed6",
-      "evidenceHash": "f967eeb60231af982b8ce0f7b4f3ac0ef043616fadfb9884bbc6f8a536543ed6",
+      "id": "c:20fe875298001f76644d9fe1201efdce64d5ffd8aaa66af46a560df9af454637",
+      "evidenceHash": "20fe875298001f76644d9fe1201efdce64d5ffd8aaa66af46a560df9af454637",
       "operation": "bridge",
       "surface": "paved",
       "width": 7.0,
@@ -42,8 +42,8 @@
       "reason": "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「停車區縱向表面帶，不是公共道路。」維持事實描述，僅撤銷排除。"
     },
     {
-      "id": "c:6af41322c61def180d0ae4776c8eba50b3c06d57750e9bec2870ac8bf1ab7da2",
-      "evidenceHash": "6af41322c61def180d0ae4776c8eba50b3c06d57750e9bec2870ac8bf1ab7da2",
+      "id": "c:41c40150d17eb99bf6bfcabd0b677c693207cac017073c11b1565c74eea6bee2",
+      "evidenceHash": "41c40150d17eb99bf6bfcabd0b677c693207cac017073c11b1565c74eea6bee2",
       "operation": "bridge",
       "surface": "dirt",
       "width": 5.0,
@@ -51,8 +51,8 @@
       "reason": "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「停車區橫向表面帶，不是公共道路。」維持事實描述，僅撤銷排除。"
     },
     {
-      "id": "c:8a9b2d2e5a4e8e56d71c526903ef18698bd14549165554e59672759285457d3e",
-      "evidenceHash": "8a9b2d2e5a4e8e56d71c526903ef18698bd14549165554e59672759285457d3e",
+      "id": "c:5911c263770dfdf9e5978a99587b3fc32338aec9cb76fd3dfcc31f10c8fbf529",
+      "evidenceHash": "5911c263770dfdf9e5978a99587b3fc32338aec9cb76fd3dfcc31f10c8fbf529",
       "operation": "bridge",
       "surface": "paved",
       "width": 7.0,
@@ -60,8 +60,8 @@
       "reason": "使用者裁決翻案（2026-09-01）：遊戲內導航需涵蓋此可通行鋪面帶；原判定「停車區／服務巷表面帶，無可證實公共道路。」維持事實描述，僅撤銷排除。"
     },
     {
-      "id": "c:97bea5dfee573061e9db2491c8c8989674b8b4b6f372a151c8a90189e8e70f14",
-      "evidenceHash": "97bea5dfee573061e9db2491c8c8989674b8b4b6f372a151c8a90189e8e70f14",
+      "id": "c:fbfc8d0026960936936e8c8706f0e6010c06de9017daa1ddd781f2152b514c9f",
+      "evidenceHash": "fbfc8d0026960936936e8c8706f0e6010c06de9017daa1ddd781f2152b514c9f",
       "operation": "bridge",
       "surface": "paved",
       "width": 4.0,
@@ -71,48 +71,48 @@
   ],
   "rejectedCandidates": [
     {
-      "id": "c:16818e419375677ac69ac9a0e66f7601cef573654155d8dfffd45a2bdeeeb2d8",
-      "evidenceHash": "16818e419375677ac69ac9a0e66f7601cef573654155d8dfffd45a2bdeeeb2d8",
+      "id": "c:aae6e3bb7cf886d9dca08f23bfc4099a8077641c23e285e84c310e97fafffa93",
+      "evidenceHash": "aae6e3bb7cf886d9dca08f23bfc4099a8077641c23e285e84c310e97fafffa93",
       "reason": "Old Muldraugh Station Branch Line 的鐵軌道床（dirt-edge＝軌道兩側碎石），不是道路：42.21 起 Branch Line 歸鐵路後才浮現為候選；2026-09-29 E2E branchline-sp 沿線五處 125/125 取樣皆為 industry_railroad 鐵軌 tile。"
     },
     {
-      "id": "c:6a9390aaf0f8484fcbbed5ea626d5d286e8e7aeb083c9ba912b078fdc789323b",
-      "evidenceHash": "6a9390aaf0f8484fcbbed5ea626d5d286e8e7aeb083c9ba912b078fdc789323b",
+      "id": "c:49e0da0a535cea9363efa29784013cacabed197544a1861301900ee035693534",
+      "evidenceHash": "49e0da0a535cea9363efa29784013cacabed197544a1861301900ee035693534",
       "reason": "使用者裁決取消（2026-09-01）：dirt-edge 候選經鐵路誤判事件後一併撤回，保守維持路網純度；日後如有實際需求走 manualRoads 人工描線。"
     },
     {
-      "id": "c:bdf5f82d46213b266e01a1d0196831e2483db7af387db1b8127028eb79a1ccdc",
-      "evidenceHash": "bdf5f82d46213b266e01a1d0196831e2483db7af387db1b8127028eb79a1ccdc",
+      "id": "c:266d75382c4a0fe910f3f2232c4f7b829c18b1f765a8e874e074f19b9616f35a",
+      "evidenceHash": "266d75382c4a0fe910f3f2232c4f7b829c18b1f765a8e874e074f19b9616f35a",
       "reason": "人工視覺稽核：農田南緣 edge 帶（耕地與草地交界），非通行道路。"
     },
     {
-      "id": "c:2cd37b2586cd09f4e131a1ae5df49a6c2705aa159314eb3eaac9b5b519d16c1e",
-      "evidenceHash": "2cd37b2586cd09f4e131a1ae5df49a6c2705aa159314eb3eaac9b5b519d16c1e",
+      "id": "c:5a099de399b335f9032f340226c2b88dd9e5de6a86d029f59280e7d1d7325e83",
+      "evidenceHash": "5a099de399b335f9032f340226c2b88dd9e5de6a86d029f59280e7d1d7325e83",
       "reason": "人工視覺稽核：公路南側路肩帶，非獨立道路。"
     },
     {
-      "id": "c:a80201dfa971a35937e934b5d1089377c64c14ff83b4544b310d9e5eaf6d1ef1",
-      "evidenceHash": "a80201dfa971a35937e934b5d1089377c64c14ff83b4544b310d9e5eaf6d1ef1",
+      "id": "c:8fd01795f036945a2a8576456b3b1bd95e46e27cc2f1046f796e901fb7df5f7e",
+      "evidenceHash": "8fd01795f036945a2a8576456b3b1bd95e46e27cc2f1046f796e901fb7df5f7e",
       "reason": "人工視覺稽核：公路南側路肩帶，非獨立道路。"
     },
     {
-      "id": "c:50fbdca6995b7ff744ab5bcec40b3140acd974f2fcf164ee38e8aefd766676d1",
-      "evidenceHash": "50fbdca6995b7ff744ab5bcec40b3140acd974f2fcf164ee38e8aefd766676d1",
+      "id": "c:3ff7ffab154c23bfad1c9bedc0f98d835b2db5a5cbe77ac9188736abc31d6372",
+      "evidenceHash": "3ff7ffab154c23bfad1c9bedc0f98d835b2db5a5cbe77ac9188736abc31d6372",
       "reason": "人工視覺稽核：公路北側路肩／溝緣帶，與既有道路平行貼靠，非獨立道路。"
     },
     {
-      "id": "c:b54440f971f16d199e62e228bb7608ab44c0c95a0f820078afefdf62ef556d81",
-      "evidenceHash": "b54440f971f16d199e62e228bb7608ab44c0c95a0f820078afefdf62ef556d81",
+      "id": "c:3ba53a0f4ae03099677a0deaa0a335cdedb5c43172dccee624588cd95927c82d",
+      "evidenceHash": "3ba53a0f4ae03099677a0deaa0a335cdedb5c43172dccee624588cd95927c82d",
       "reason": "人工視覺稽核：社區西緣與公路間邊界帶，非獨立道路。"
     },
     {
-      "id": "c:112832f0602ee7c53dfa9a95c7d2e4d0c1b424d98c1f57f12906a789fc36cacc",
-      "evidenceHash": "112832f0602ee7c53dfa9a95c7d2e4d0c1b424d98c1f57f12906a789fc36cacc",
+      "id": "c:764e9bd54ff7b3abb811a439b698b507e628899da6267560993d9d3e9f27c591",
+      "evidenceHash": "764e9bd54ff7b3abb811a439b698b507e628899da6267560993d9d3e9f27c591",
       "reason": "人工視覺稽核：鋸齒狀侵蝕溝／水道形態，非通行路徑。"
     },
     {
-      "id": "c:22acdddeef01e60bfc1608201d638543bc4448b89c36cc3a8eadc68eee357f9d",
-      "evidenceHash": "22acdddeef01e60bfc1608201d638543bc4448b89c36cc3a8eadc68eee357f9d",
+      "id": "c:ecc1959b202ffd3c4d852622476a2e9d7936825ed37846fc0570876e086c2b53",
+      "evidenceHash": "ecc1959b202ffd3c4d852622476a2e9d7936825ed37846fc0570876e086c2b53",
       "reason": "使用者遊戲內實測否決（2026-09-01）：此帶為西北鐵路（馬爾德勞-勃蘭登堡）路基，非可行車土路——dirt-edge 訊號已知盲點：鐵路路基同為 dirt/gravel 邊帶，裁決時未與官方鐵路街道幾何對照。"
     }
   ],
@@ -169,6 +169,12 @@
     "f958acf306935e957a5921f9e7d1216460c26768254063f1146bc97a59cf5a4c:20",
     "f958acf306935e957a5921f9e7d1216460c26768254063f1146bc97a59cf5a4c:21",
     "f958acf306935e957a5921f9e7d1216460c26768254063f1146bc97a59cf5a4c:22",
+    "f958acf306935e957a5921f9e7d1216460c26768254063f1146bc97a59cf5a4c:14",
+    "f958acf306935e957a5921f9e7d1216460c26768254063f1146bc97a59cf5a4c:15",
+    "f958acf306935e957a5921f9e7d1216460c26768254063f1146bc97a59cf5a4c:16",
+    "f958acf306935e957a5921f9e7d1216460c26768254063f1146bc97a59cf5a4c:17",
+    "f958acf306935e957a5921f9e7d1216460c26768254063f1146bc97a59cf5a4c:31",
+    "f958acf306935e957a5921f9e7d1216460c26768254063f1146bc97a59cf5a4c:32",
     "e7cf287a21f4cb4e92a4415d303f105c6e968274cfadbecc00844b704516ab73:0",
     "73e87c1c042b8744b98e3f6c57e4e16bdebe8e90611f156da123da90f9b5ea90:0"
   ],
@@ -719,6 +725,34 @@
       "surface": "gravel",
       "searchable": false,
       "reason": "Long Branch Road (4755.5,5753)→(4733,5753)→(4712,5774) 一段直角加 45° 斜切跑到碎石路外（2026-10-17，AutoDrive 正式服復盤 R2：4 名玩家 3 趟，拖車在 (4735,5754) 判堵命中路旁樹、StopStuck）：pinned raster 碎石帶在 y5747 以北沿官方 45° 段，之後轉成 2:1 斜帶（逐列中點 y5750 x4756、y5760 x4736、y5770 x4716），官方線在 y5753 橫走 22.5 格再 45° 斜下，離碎石帶 4–6 格、落在 dirt-candidate 與樹叢上（段21、22 以 0.5 格取樣 50 個 dirt-candidate）。worldmap tertiary 多邊形跟著官方線畫（同源，不能互證）。移除段20–22，以 (4794.5,5714)→(4761,5747.5)→(4712,5774) 取代：轉折點是官方 45° 線與 2:1 帶中線的交點，兩端與段19 尾點、段23 起點共用頂點，其餘段保留供搜尋。207 個取樣全 gravel、到路帶邊 ≥1.5 格。"
+    },
+    {
+      "id": "m:muldraugh-long-branch-road-5660-slant",
+      "operation": "add",
+      "points": [
+        4942, 5643,
+        4938, 5646,
+        4870, 5680,
+        4842.5, 5680
+      ],
+      "width": 5,
+      "surface": "gravel",
+      "searchable": false,
+      "reason": "Long Branch Road (4942,5643)→(4923,5662)→(4902,5662)→(4884,5680)→(4842.5,5680) 階梯形離碎石帶（2026-11-14，正式服玩家回報 (4890,5667) 導航線畫出道路；使用者同日在審核頁 lbr-1114 選四點居中線）：42.22.2 raster 的碎石帶是一條 2:1 直斜帶，y5645–5677 共 33 列每列寬 12 格、中點 x＝4939−2×(y−5645)，交東側水平帶中線 y5643 於 (4944,5643)、西側水平帶中線 y5680 於 (4870,5680)。官方線三個 45° 折角，角點 (4923,5662) 離斜帶中線 7.6 格、(4884,5680) 離 6.3 格，232 個 0.5 格取樣有 99 個不在碎石上（42.20.4 audit 的逐段中線取樣同樣判離路）。移除段14–17，以 (4942,5643)→(4938,5646)→(4870,5680)→(4842.5,5680) 取代：兩端與段13 尾點、段18 起點共用頂點，主斜段壓在逐列中點上，其餘段保留供搜尋。220 個取樣全 gravel、到路帶邊 ≥1.5 格，轉向角 10.3°、26.6°。"
+    },
+    {
+      "id": "m:muldraugh-long-branch-road-4385-corner",
+      "operation": "add",
+      "points": [
+        4429, 5838,
+        4390, 5838,
+        4381.5, 5834.5,
+        4346, 5799
+      ],
+      "width": 5,
+      "surface": "gravel",
+      "searchable": false,
+      "reason": "Long Branch Road 轉角頂點 (4385.5,5838) 落在碎石帶外緣外 0.5 格（2026-11-14 全線量測發現，使用者同日在審核頁 lbr-1114 選一起修）：水平帶 y5836–5839（中線 5838）與 45° 斜帶（逐列寬 5 格，中線 x−y＝−1453）交於 (4385,5838)，但轉角外側尖端沒有鋪面（y5838 這列碎石從 x4386 起），官方頂點就在尖端上，段31、32 各有 1 個取樣不在碎石上、頂點兩側約 2.5 格邊距不到 1.5 格。移除段31、32，以 (4429,5838)→(4390,5838)→(4381.5,5834.5)→(4346,5799) 取代：轉角改成兩個 22.5° 的折點走內側鋪面，折點分別在兩條帶的中線上，兩端與段30 尾點、段33 起點共用頂點，其餘段保留供搜尋。199 個取樣全 gravel，離兩端 3 格以外到路帶邊 ≥1 格（45° 帶垂直半寬 1.77 格）。"
     },
     {
       "id": "m:muldraugh-mayo-st",

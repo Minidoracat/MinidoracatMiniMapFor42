@@ -1550,8 +1550,8 @@ do
     dofile(patchPath)
     local patch = MinidoracatMiniMapRoadPatches
     assert(patch and patch.auditSha256
-        == "e4b15b3521299e506fa6e7dc2627b9b01a7ef08c66556397e8d18c03d40466e6",
-        "正式 RoadPatch：綁定 42.21 streets.xml、Branch Line 歸鐵路後的 dirt-edge v2 audit")
+        == "3af06d1390409ee92a9709f2ae2121876ebefda7aaad83b600863c847f0f3b23",
+        "正式 RoadPatch：綁定 42.21 streets.xml（42.22.2 未改）、42.22.2 surfaces 的 dirt-edge v2 audit")
     -- 42.21 官方只改 Oak St 東端與 Flaherty Road 中段；任一條仍是 42.20 幾何，
     -- 遊戲內 fingerprint 就不符、整包 fail closed 退回 raw 路網（0928 E2E 實測）。
     local oakSt = "11:21922:13270:21922:13468:21928:13482:21938:13494:21954:13502:23219:13502:23238:13510:23262:13535:23285:13546:24220:13546:24220:13792|w:16"
@@ -2159,7 +2159,7 @@ do
             end
             assert(not hasPoint(r, 4171, 5833), "Long Branch Road：路線不再經過舊角點 (4171,5833)")
         end)
-        kept("Long Branch Road", findStreet(60, 5711, 5400), { 21, 22, 23, 37, 38 }, 59)
+        kept("Long Branch Road", findStreet(60, 5711, 5400), { 15, 16, 17, 18, 21, 22, 23, 32, 33, 37, 38 }, 59)
         -- ④ Fiddler's Trail：官方唯一段 (8343,12323.5)→(10585,12324.5) 寫 width=15、中線偏北 0.5–1.5 格；
         -- 實際鋪面 y12320–12329 全程 10 格、中線 12325。整條換成人工線並以原名接手搜尋（見下方「帶名接手」）。
         local fiddlerOld = findStreet(2, 8343, 12323.5)
@@ -2312,6 +2312,37 @@ do
             assert(not hasPoint(r, 4755.5, 5753) and not hasPoint(r, 4733, 5753),
                 "Long Branch Road 5750 彎：路線不再經過舊角點")
         end)
+        -- 1114 Long Branch Road (4942,5643)→(4923,5662)→(4902,5662)→(4884,5680) 階梯形離碎石帶最多 7.6 格；
+        -- 碎石帶是 2:1 直斜帶（逐列寬 12、中點 x＝4939−2×(y−5645)），西接水平帶 y5678–5681。
+        both("Long Branch Road 5660 斜帶", 5000, 5643, 4809, 5714, function(r)
+            for _, band in ipairs({ { "y", 5655.5, 4913, 4925 }, { "y", 5665.5, 4893, 4905 },
+                { "y", 5672.5, 4879, 4891 }, { "x", 4860.5, 5678, 5682 } }) do
+                local v, n = crossAt(r, band[1], band[2])
+                assert(n == 1 and v >= band[3] and v < band[4],
+                    "Long Branch Road 5660 斜帶：" .. band[1] .. "=" .. band[2] .. " 交點需在碎石帶，實得 " .. tostring(v))
+            end
+            assert(not hasPoint(r, 4923, 5662) and not hasPoint(r, 4902, 5662) and not hasPoint(r, 4884, 5680),
+                "Long Branch Road 5660 斜帶：路線不再經過舊角點")
+        end)
+        -- 1114 Long Branch Road 轉角頂點 (4385.5,5838) 在碎石帶外側尖端外 0.5 格；改成兩個 22.5° 折點走內側。
+        both("Long Branch Road 4385 轉角", 4444, 5823, 4298.5, 5799, function(r)
+            -- y=5836.5 會同時切到東側段30 的斜線，不能用；改看折點之間的 x 截面與斜帶
+            for _, band in ipairs({ { "x", 4387.5, 5835, 5839 }, { "y", 5820.5, 4365, 4370 } }) do
+                local v, n = crossAt(r, band[1], band[2])
+                assert(n == 1 and v >= band[3] and v < band[4],
+                    "Long Branch Road 4385 轉角：" .. band[1] .. "=" .. band[2] .. " 交點需在碎石帶，實得 " .. tostring(v))
+            end
+            assert(not hasPoint(r, 4385.5, 5838), "Long Branch Road 4385 轉角：路線不再經過舊角點 (4385.5,5838)")
+            assert(hasPoint(r, 4390, 5838) and hasPoint(r, 4381.5, 5834.5), "Long Branch Road 4385 轉角：走兩個內側折點")
+        end)
+        for node = 1, g.nodeCount do
+            local x, y = g.nx[node], g.ny[node]
+            if (x > 4845 and x < 4940 and y > 5644 and y < 5682) or (x > 4350 and x < 4425 and y > 5802 and y < 5842) then
+                local deg, e = 0, g.adjHead[node]
+                while e ~= 0 do deg, e = deg + 1, g.adjNext[e] end
+                assert(deg ~= 1, ("Long Branch Road 1114：修補框內不得有懸空節點 (%.1f,%.1f)"):format(x, y))
+            end
+        end
         -- R3 Mayo St／Leitrim St 西端是死巷：x12308 有整排籬笆，舊版西端 T 吸附到 3rd St、接線穿籬笆。
         -- 籬笆帶 x12305–12309、y1815–1868 不得有任何圖邊橫越；3rd St 與兩街之間只能繞東端。
         for node = 1, g.nodeCount do
