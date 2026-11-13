@@ -2343,6 +2343,51 @@ do
                 assert(deg ~= 1, ("Long Branch Road 1114：修補框內不得有懸空節點 (%.1f,%.1f)"):format(x, y))
             end
         end
+        -- 1114b 全圖離路掃描（中線連續 ≥4 格不在鋪面／碎石上、12 格內有路帶）找到的四處，使用者在審核頁 minimap-roadscan-1114 同意修。
+        local function onBand(label, r, list, old)
+            for _, band in ipairs(list) do
+                local v, n = crossAt(r, band[1], band[2])
+                assert(n == 1 and v >= band[3] and v < band[4],
+                    label .. "：" .. band[1] .. "=" .. band[2] .. " 交點需在路帶，實得 " .. tostring(v) .. " n=" .. tostring(n))
+            end
+            for _, o in ipairs(old) do
+                assert(not hasPoint(r, o[1], o[2]), label .. "：路線不再經過舊角點 " .. o[1] .. "," .. o[2])
+            end
+        end
+        -- Stepdown Road：官方平走 19.5 格再 45°，碎石帶是 2:1 直斜帶（逐列寬 14、中點 x＝4085＋2×(y−5764)）。
+        both("Stepdown Road", 3984.5, 5728, 4233.5, 5829, function(r)
+            onBand("Stepdown Road", r, { { "y", 5770.5, 4090, 4104 }, { "y", 5778.5, 4106, 4120 }, { "x", 4160.5, 5784, 5790 } },
+                { { 4081, 5764 }, { 4100.5, 5764 }, { 4125, 5787 } })
+        end)
+        kept("Stepdown Road", findStreet(10, 3806, 5715), { 5, 6, 7, 8 }, 9)
+        -- Nailcut Road：官方直–45°–直，碎石帶中段是 1:2 斜帶（x＝8522−(y−9830.5)/2、逐列寬 8）。
+        both("Nailcut Road", 8525.5, 9793, 8480, 10018, function(r)
+            onBand("Nailcut Road", r, { { "y", 9830.5, 8518, 8526 }, { "y", 9860.5, 8503, 8511 }, { "y", 9884.5, 8491, 8499 } },
+                { { 8525.5, 9839.5 }, { 8492, 9873.5 } })
+        end)
+        kept("Nailcut Road", findStreet(7, 8525.5, 9793), { 1, 2, 3 }, 6)
+        -- Locust Road：官方直角 (10557,7221.5)→(10556.5,7190) 穿泥地，實際是斜彎；新線東端 T 接在保留的段 0 中間。
+        both("Locust Road", 10650, 7221.5, 10510, 7190.5, function(r)
+            onBand("Locust Road", r, { { "y", 7204.5, 10559, 10566 }, { "y", 7210.5, 10564, 10571 }, { "x", 10540.5, 7188, 7193 } },
+                { { 10557, 7221.5 }, { 10556.5, 7190 } })
+        end)
+        kept("Locust Road", findStreet(4, 10698, 7221.5), { 2, 3 }, 3)
+        -- Carlow Road：官方 45° 斜線 x−y＝3671 在鋪面帶（中線 x−y＝3666.5、逐列寬 6）東北緣外，連續 30 格。
+        both("Carlow Road", 10720, 7097, 10850, 7127, function(r)
+            onBand("Carlow Road", r, { { "y", 7110.5, 10774, 10780 }, { "y", 7116.5, 10780, 10786 }, { "x", 10740.5, 7095, 7099 } },
+                { { 10768, 7097 } })
+        end)
+        kept("Carlow Road", findStreet(4, 10708, 7097), { 1, 2 }, 3)
+        -- 四處修補框內不得留懸空節點；Locust 段 0 西端 (10557,7221.5) 的 12.5 格短岔是真路面，框的下緣 y7218 排除它。
+        for node = 1, g.nodeCount do
+            local x, y = g.nx[node], g.ny[node]
+            if (x > 4060 and x < 4185 and y > 5745 and y < 5790) or (x > 8488 and x < 8530 and y > 9826 and y < 9888)
+                or (x > 10505 and x < 10568 and y > 7186 and y < 7218) or (x > 10712 and x < 10795 and y > 7090 and y < 7124) then
+                local deg, e = 0, g.adjHead[node]
+                while e ~= 0 do deg, e = deg + 1, g.adjNext[e] end
+                assert(deg ~= 1, ("離路掃描 1114b：修補框內不得有懸空節點 (%.1f,%.1f)"):format(x, y))
+            end
+        end
         -- R3 Mayo St／Leitrim St 西端是死巷：x12308 有整排籬笆，舊版西端 T 吸附到 3rd St、接線穿籬笆。
         -- 籬笆帶 x12305–12309、y1815–1868 不得有任何圖邊橫越；3rd St 與兩街之間只能繞東端。
         for node = 1, g.nodeCount do
