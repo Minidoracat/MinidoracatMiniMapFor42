@@ -2378,6 +2378,12 @@ do
                 { { 10768, 7097 } })
         end)
         kept("Carlow Road", findStreet(4, 10708, 7097), { 1, 2 }, 3)
+        -- Flower Road 東西段：官方線 y5694.5 在碎石帶（x14105–14158 是 y5687–5693）南緣外，x14160–14190 帶往南偏到 y5694–5697。
+        both("Flower Road", 14104, 5600, 14300, 5697, function(r)
+            onBand("Flower Road", r, { { "x", 14130.5, 5687, 5694 }, { "x", 14170.5, 5691, 5695 }, { "x", 14250.5, 5694, 5699 } },
+                { { 14104, 5694.5 } })
+        end)
+        kept("Flower Road", findStreet(3, 14104, 5422), { 2 }, 2)
         -- 四處修補框內不得留懸空節點；Locust 段 0 西端 (10557,7221.5) 的 12.5 格短岔是真路面，框的下緣 y7218 排除它。
         for node = 1, g.nodeCount do
             local x, y = g.nx[node], g.ny[node]
