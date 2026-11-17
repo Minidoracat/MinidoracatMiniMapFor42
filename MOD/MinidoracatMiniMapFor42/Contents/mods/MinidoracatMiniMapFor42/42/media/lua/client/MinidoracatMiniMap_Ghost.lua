@@ -18,7 +18,7 @@ local getSliderValue = Core.getSliderValue
 
 local function isGhost() return getBoolOption("GhostMode", false) end
 
--- 事件穿透 gate（本 MOD 最外層 wrap）：明確 return false＝不消費，UIManager 繼續
+-- 事件穿透 gate（包住主檔的 wrap）：明確 return false＝不消費，UIManager 繼續
 -- 往下層元件/世界層送（滾輪落到引擎 getCore():doZoomScroll＝世界縮放照常）。
 -- 右鍵系「必須」明確回 false——UIElement.java 右鍵收尾在 Lua handler 回 nil 時
 -- 直接消費、不看 consumeMouseEvents（ISUIElement:onRightMouseDown 是空函式回 nil
