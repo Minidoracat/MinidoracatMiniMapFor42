@@ -1036,8 +1036,9 @@ if ISMiniMapInner and ISMiniMapInner.onRightMouseUp then
     local originalInnerRightMouseUp = ISMiniMapInner.onRightMouseUp
     function ISMiniMapInner:onRightMouseUp(x, y)
         local wasDown = self.rightMouseDown -- 原版會消耗此旗標，先快照
-        originalInnerRightMouseUp(self, x, y)
-        if not wasDown then return end
+        local r = originalInnerRightMouseUp(self, x, y)
+        -- 穿透 gate 回的 false 要原樣傳出去：回 nil 引擎一律當已消費，世界右鍵選單開不出來（UIElement.java:1583-1585）
+        if not wasDown then return r end
         local pn = self.playerNum or 0
         local playerObj = getSpecificPlayer(pn)
         if not playerObj then return end

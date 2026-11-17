@@ -462,4 +462,16 @@ lone16.parent = { inner = lone16 }
 applyChunk.ghostFrameTick(lone16)
 assert(pyr16.fills[0].a == 128 and lone16._minidoracatGhostSnap ~= nil, "A16: 自己的小地圖照常壓暗")
 
-print("test_ghost_gate: OK（gate G1-G7＋清理 A1-A3＋壓暗分層 A4-A8＋收斂自癒 A9-A15＋獨立 inner A16）")
+-- R1: 穿透中邊緣熱區不開始縮放（_Resize.lua 的滑鼠 hook 包在 gate 外層，得自己放行）；關掉穿透照常回邊
+local resizePath = ghostPath:gsub("_Ghost%.lua$", "_Resize.lua")
+local edgeBody = assert(readSource(resizePath):match(
+    "%-%- test:resize%-edge:start\n(.-)\n%-%- test:resize%-edge:end"), "找不到 resize-edge 測試區段")
+local edgeOpts = {}
+local hitEdge = assert(compile("local RESIZE_EDGE, getBoolOption = ...\n" .. edgeBody .. "\nreturn hitResizeEdge",
+    "resize-edge"))(8, function(id) return edgeOpts[id] == true end)
+local outerR = { width = 200, height = 200 }
+assert(hitEdge(outerR, 2, 100).l == true, "R1: 平常左邊緣要回邊")
+edgeOpts.GhostMode = true
+assert(hitEdge(outerR, 2, 100) == nil, "R1: 穿透中邊緣不得開始縮放")
+
+print("test_ghost_gate: OK（gate G1-G7＋清理 A1-A3＋壓暗分層 A4-A8＋收斂自癒 A9-A15＋獨立 inner A16＋邊緣放行 R1）")

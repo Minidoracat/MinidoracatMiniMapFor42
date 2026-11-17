@@ -4,9 +4,10 @@
 -- 而不擋操作、不擋視線（玩家回報需求）。
 -- 機制依據 .omc/autoresearch/minimap-clickthrough-alpha/ 對抗式查證（confirmed）：
 -- 穿透＝UIElement.consumeMouseEvents（vanilla 先例 ISWorldMap AnnotatedMapOverlay）
--- ＋Lua 端事件 gate。載入序：同目錄字母序，本檔在主檔之後——在本 MOD 內此處的
--- 事件 wrap 是最外層、ghost gate 先於既有 wrap（含 LockPosition 的 return true）
--- 執行；後載的第三方 MOD 仍可再包，「最外層」非全域保證。
+-- ＋Lua 端事件 gate。載入序：同目錄字母序，本檔在主檔之後、_Nav.lua／_Resize.lua
+-- 之前——gate 先於主檔的 wrap（含 LockPosition 的 return true）執行，後載的那兩檔
+-- 會再包一層：它們在穿透時要把 gate 的 false 原樣回傳、不得自己消費（_Nav.lua
+-- onRightMouseUp、_Resize.lua hitResizeEdge）。後載的第三方 MOD 也可能再包。
 -- 拆檔緣由：主檔 Kahlua locvar 上限 200 已貼頂（同 _FloatIcon）。
 local Core = MinidoracatMiniMapCore
 if not (Core and Core.ready) then return end

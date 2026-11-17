@@ -67,9 +67,11 @@ chromeTintBorder = function(outer)
     end
 end
 
+-- test:resize-edge:start
 -- 以 outer 區域座標判定邊緣熱區；回傳 {l,r,t,b} 布林表（角落＝兩者皆真），不在熱區回 nil
 local function hitResizeEdge(outer, ox, oy)
-    if getBoolOption("LockPosition", false) then return nil end -- 鎖定＝停用邊緣縮放
+    -- 鎖定＝停用邊緣縮放；穿透中邊緣也要讓點擊穿過去（本檔的滑鼠 hook 包在 _Ghost.lua 的 gate 外層）
+    if getBoolOption("LockPosition", false) or getBoolOption("GhostMode", false) then return nil end
     if ox < 0 or oy < 0 or ox > outer.width or oy > outer.height then return nil end
     local e = {
         l = ox <= RESIZE_EDGE,
@@ -80,6 +82,7 @@ local function hitResizeEdge(outer, ox, oy)
     if e.l or e.r or e.t or e.b then return e end
     return nil
 end
+-- test:resize-edge:end
 
 local function startResize(outer, edges, el)
     -- 幾何全用拖曳起點快照＋全域滑鼠座標（getMouseX/getMouseY 全域，
