@@ -61,7 +61,7 @@ do
         and ui.CAPABILITIES and ui.CAPABILITIES.whatsNew and ui.WhatsNew then
         ui.WhatsNew.register({
             modId = "MinidoracatMiniMapFor42",
-            since = "0.58.0",
+            since = "0.59.0",
             name = "UI_MinidoracatMiniMap_DockLabel",
             text = "UI_MinidoracatMiniMap_WhatsNew",
         })

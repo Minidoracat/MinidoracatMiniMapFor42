@@ -774,5 +774,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "Serwer nie zdołał zapisać; dane zostaną wysłane ponownie przy następnym logowaniu.",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "Nie można odczytać pliku szkiców na serwerze; udostępnianie wstrzymane.",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "Graczy 2–4 na podzielonym ekranie nie da się zweryfikować, więc nie mogą udostępniać.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Nazwy stref nie nakładają się już po oddaleniu. Współrzędne na mapie świata nie chowają się już za przyciskami."
+    "UI_MinidoracatMiniMap_WhatsNew": "Prawy przycisk: ulubione i punkty zasobów są teraz pod „Minimapa”. Wyłączysz to w ustawieniach wyświetlania mapy."
 }
