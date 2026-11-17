@@ -581,6 +581,7 @@ _lua_tests = [
     ("test_mapdir_gate.lua", "地圖影像掛載：基底只在載入原版時掛、mapDir 逐圖閘門、疊層跟隨地圖優先序", False),
     ("test_key_migration.lua", "一次性選項遷移：滑條、圖片化、整棟、圖層分地圖、框線分兩張地圖", False),
     ("test_ghost_gate.lua", "穿透模式 gate 契約與 applyGhost 清理", False),
+    ("test_conflict_notice.lua", "換掉原版小地圖的 MOD 開著時進遊戲通知一次", False),
     ("test_layer_tail.lua", "圖層尾端守恆與掛載自癒", False),
     ("test_minimap_size.lua", "小地圖首建尺寸：自訂＞倍率＞原版、夾下限", False),
     ("test_poi_export.lua", "資源點區塊 poi_blocks.json 匯出格式", False),

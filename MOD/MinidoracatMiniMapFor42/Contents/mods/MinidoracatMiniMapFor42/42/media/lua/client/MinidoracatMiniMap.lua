@@ -3366,4 +3366,30 @@ do
 end
 -- test:map-known:end
 
+-- 換掉原版小地圖的 MOD 開著時，本 MOD 的小地圖建不出來：TwisTonFire - Minimap 把 ISMiniMap.InitPlayer／
+-- ToggleMiniMap／FocusMiniMap／Recreate 換成自己的（它的 MiniMapV10.1.lua:133-147、:476-485）。
+-- 進遊戲通知一次，玩家才知道要二選一（使用者 2026-11-18 裁定）。寫成匿名函式，不佔主 chunk 的 local。
+-- test:conflict-notice:start
+Events.OnGameStart.Add(function()
+    local ok, mods = pcall(getActivatedMods)
+    if not ok or not mods then return end
+    local name
+    for i = 0, mods:size() - 1 do
+        -- MP 的模組清單可能帶「\」前綴，只比最後一段
+        if tostring(mods:get(i)):match("[^\\]+$") == "twistminimap" then name = "TwisTonFire - Minimap" end
+    end
+    if not name then return end
+    log("mini-map replaced by " .. name .. "; MiniMap's own mini-map cannot open while it is enabled")
+    local text = getText("UI_MinidoracatMiniMap_ConflictMiniMap", name)
+    local UI = MinidoracatUI and MinidoracatUI.v1
+    if UI and UI.CAPABILITIES and UI.CAPABILITIES.toast and UI.Toast
+            and pcall(UI.Toast.show, { title = getText("UI_MinidoracatMiniMap_DockLabel"), message = text,
+                maxLines = 4, holdMs = 12000 }) then
+        return
+    end
+    local player = getSpecificPlayer(0)
+    if player and HaloTextHelper then HaloTextHelper.addBadText(player, text) end
+end)
+-- test:conflict-notice:end
+
 log("loaded (hooks: ISWorldMap:initDataAndStyle + ISMiniMap.InitPlayer + button bar + gear panel + hotkey + mod options + zombie dots + edge zoom)")
