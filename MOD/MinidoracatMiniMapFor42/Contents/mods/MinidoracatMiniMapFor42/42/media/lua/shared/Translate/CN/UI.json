@@ -774,6 +774,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "服务器保存失败，下次登录会再发送一次。",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "服务器的手绘文件无法读取，暂时不能分享。",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "分屏的第 2～4 位玩家无法确认身份，不能分享手绘。",
-    "UI_MinidoracatMiniMap_ConflictMiniMap": "已启用 %1：它会替换游戏的小地图，本 MOD 的小地图因此打不开。要用本 MOD 的小地图，请停用它。",
     "UI_MinidoracatMiniMap_WhatsNew": "游戏右键的地图收藏与资源点收进「小地图」一项。不想看到可到地图显示设置关闭。"
 }

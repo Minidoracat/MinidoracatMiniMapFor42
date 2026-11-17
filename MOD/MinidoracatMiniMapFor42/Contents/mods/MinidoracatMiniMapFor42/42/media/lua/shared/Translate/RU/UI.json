@@ -774,6 +774,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "Сервер не смог сохранить; при следующем входе данные будут отправлены снова.",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "Файл рисунков на сервере не читается; обмен приостановлен.",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "Игроков 2–4 на разделённом экране нельзя проверить, поэтому они не могут делиться.",
-    "UI_MinidoracatMiniMap_ConflictMiniMap": "%1 заменяет мини-карту игры, поэтому мини-карта этого мода не откроется. Отключите его, чтобы пользоваться ею.",
     "UI_MinidoracatMiniMap_WhatsNew": "ПКМ: избранное и ресурсные точки теперь в пункте «Мини-карта». Отключается в настройках отображения карты."
 }

@@ -774,6 +774,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "サーバーで保存に失敗しました。次にログインしたときにもう一度送ります。",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "サーバーの手描きファイルを読めないため、共有を止めています。",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "画面分割の 2～4 人目は本人確認ができないため、手描きを共有できません。",
-    "UI_MinidoracatMiniMap_ConflictMiniMap": "%1 がゲームのミニマップを置き換えるため、このMODのミニマップは開けません。こちらを使うには、そのMODを無効にしてください。",
     "UI_MinidoracatMiniMap_WhatsNew": "ゲームの右クリックのお気に入りと資源ポイントを「ミニマップ」にまとめました。不要ならマップ表示設定でオフにできます。"
 }

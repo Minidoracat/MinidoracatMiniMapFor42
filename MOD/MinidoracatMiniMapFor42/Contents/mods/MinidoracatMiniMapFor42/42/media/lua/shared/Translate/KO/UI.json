@@ -774,6 +774,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "서버 저장에 실패했습니다. 다음 접속 때 다시 보냅니다.",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "서버의 손그림 파일을 읽을 수 없어 공유를 멈췄습니다.",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "화면 분할 2~4번째 플레이어는 신원을 확인할 수 없어 손그림을 공유할 수 없습니다.",
-    "UI_MinidoracatMiniMap_ConflictMiniMap": "%1 이(가) 게임 미니맵을 대체해서 이 모드의 미니맵이 열리지 않습니다. 이 미니맵을 쓰려면 그 모드를 꺼 주세요.",
     "UI_MinidoracatMiniMap_WhatsNew": "게임 우클릭의 지도 즐겨찾기와 자원 위치를 \"미니맵\" 항목으로 모았습니다. 지도 표시 설정에서 끌 수 있습니다."
 }
