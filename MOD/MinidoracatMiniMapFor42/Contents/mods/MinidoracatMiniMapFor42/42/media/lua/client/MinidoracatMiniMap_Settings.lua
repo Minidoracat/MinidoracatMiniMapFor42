@@ -109,6 +109,7 @@ local SEC_PLACES = { id = "places", label = "UI_MinidoracatMiniMap_SecPlaces", i
             offMode = "remoteFacingLevel" },
         { id = "FloorMarks", label = "UI_MinidoracatMiniMap_FloorMarks", default = true, offMode = "floorMarksMode" },
         { id = "KeepFinishedTrip", label = "UI_MinidoracatMiniMap_KeepFinishedTrip", default = false },
+        { id = "GameContextMenu", label = "UI_MinidoracatMiniMap_GameContextMenu", default = true },
     },
     combos = {
         { id = "FloorMarkStyle", label = "UI_MinidoracatMiniMap_FloorMarkStyle", default = 1, mpOnly = true,

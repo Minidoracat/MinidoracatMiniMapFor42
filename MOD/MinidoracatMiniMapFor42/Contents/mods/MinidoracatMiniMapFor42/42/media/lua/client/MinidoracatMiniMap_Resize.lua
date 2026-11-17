@@ -262,9 +262,13 @@ end
 -- （ISMiniMap.lua:239-245）。選項 ClickOpenWorldMap 開啟時走原版。
 -- 必須放在 installResizeHooks 之前 wrap：縮放 hook 要包在最外層（先吃縮放收尾，
 -- 非縮放路徑才會落到這裡）。onMouseUpOutside 原版轉呼叫 onMouseUp（:247-249），同受控。
+-- test:inner-freelook:start
 if ISMiniMapInner and ISMiniMapInner.onMouseUp then
     local originalInnerMouseUp = ISMiniMapInner.onMouseUp
     function ISMiniMapInner:onMouseUp(x, y)
+        -- 不在 outer 裡的 inner 是別的 MOD 自己 new 的地圖（例：Navigator 導航螢幕）：走原版，不設自由查看
+        local p = self.parent
+        if not (p and p.inner == self) then return originalInnerMouseUp(self, x, y) end
         -- 拖曳自由查看：拖過＝停留在拖到的位置（下方 prerenderHack wrap 據
         -- 此旗標暫停回中）；點擊（無拖曳）＝回到玩家。選項關閉＝原版放開即回中
         if self.dragging and getBoolOption("FreeLook", true) then
@@ -286,6 +290,7 @@ if ISMiniMapInner and ISMiniMapInner.prerenderHack then
         originalPrerenderHack(self)
     end
 end
+-- test:inner-freelook:end
 
 -- test:layout-memory:start
 -- 位置記憶（layout.ini，原版 ISLayoutManager）：原版只在沙盒開小地圖時登記版面（ISPlayerDataObject.lua:139-156）、

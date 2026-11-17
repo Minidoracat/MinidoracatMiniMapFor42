@@ -1247,6 +1247,9 @@ if PZAPI and PZAPI.ModOptions then
     -- 消失（_Nav.lua drawTripTargets）；行程頁仍列出結果，下一次加點或設目標就開新行程
     modOptions:addTickBox("KeepFinishedTrip", "UI_MinidoracatMiniMap_KeepFinishedTrip", false,
         "UI_MinidoracatMiniMap_KeepFinishedTrip_tooltip")
+    -- 遊戲世界與物品欄右鍵的「小地圖 ▸」（_Places.lua onFillWorld／onFillInventory）：關＝兩個選單都不加
+    modOptions:addTickBox("GameContextMenu", "UI_MinidoracatMiniMap_GameContextMenu", true,
+        "UI_MinidoracatMiniMap_GameContextMenu_tooltip")
     -- 標記大小（px）：家／收藏、導航旗與行程站、搜尋落點、未分層的 addon marker（Core.markerIconSize）
     modOptions:addSlider("MarkerIconSize", "UI_MinidoracatMiniMap_MarkerIconSize", 8, 48, 1, 16)
 

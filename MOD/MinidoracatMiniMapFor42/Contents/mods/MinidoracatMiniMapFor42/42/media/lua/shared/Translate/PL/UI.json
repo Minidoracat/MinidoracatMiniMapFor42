@@ -74,6 +74,8 @@
     "UI_MinidoracatMiniMap_NavRoute": "Pokaż trasę nawigacji na minimapie",
     "UI_MinidoracatMiniMap_NavRoute_tooltip": "Po ustawieniu celu nawigacji (prawy przycisk) wyznaczana jest trasa po drogach i rysowana na minimapie pod flagą celu; mapa świata ma własny przełącznik. Korzysta z oficjalnych danych ulic wczytanych map; tam, gdzie brak danych dróg, wraca do wskaźnika w linii prostej. Gdy obie mapy są wyłączone, trasa nie jest wyznaczana.",
     "UI_MinidoracatMiniMap_WMNavRoute": "Pokaż trasę nawigacji na mapie świata",
+    "UI_MinidoracatMiniMap_GameContextMenu": "Pokaż Minimapę w menu prawego przycisku w grze",
+    "UI_MinidoracatMiniMap_GameContextMenu_tooltip": "Domyślnie włączone. Kliknięcie prawym przyciskiem w świecie gry lub na przedmiocie, którego nie masz przy sobie, dodaje pozycję „Minimapa”: dodanie miejsca do ulubionych na mapie, zmiana nazwy lub usunięcie pobliskiego ulubionego oraz oznaczenie klikniętego punktu zasobów. Gdy wyłączone, pozycja się nie pojawia. Menu prawego przycisku na mapach i karta „Ulubione” nadal działają.",
     "UI_MinidoracatMiniMap_KeepFinishedTrip": "Zachowaj ukończoną podróż na mapie",
     "UI_MinidoracatMiniMap_KeepFinishedTrip_tooltip": "Domyślnie wyłączone. Gdy wyłączone, ponumerowane znaczniki przystanków znikają z minimapy i mapy świata po dotarciu do ostatniego przystanku podróży; okno planu podróży nadal pokazuje ukończoną podróż. Włącz, aby zachować znaczniki (zielone z ptaszkiem = osiągnięty, szare z ukośnikiem = pominięty) do rozpoczęcia nowej podróży. W obu przypadkach dodanie przystanku lub ustawienie nowego celu nawigacji po zakończeniu podróży rozpoczyna nową podróż numerowaną od 1.",
     "UI_MinidoracatMiniMap_ChunkGrid": "Pokaż siatkę fragmentów (8x8 pól)",

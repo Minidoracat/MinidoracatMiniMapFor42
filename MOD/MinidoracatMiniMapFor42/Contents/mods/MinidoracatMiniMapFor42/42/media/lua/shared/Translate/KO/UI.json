@@ -74,6 +74,8 @@
     "UI_MinidoracatMiniMap_NavRoute": "미니맵에 내비게이션 경로 표시",
     "UI_MinidoracatMiniMap_NavRoute_tooltip": "내비게이션 목적지를 설정하면(우클릭) 도로를 따라가는 경로를 계산해 미니맵의 목적지 깃발 아래에 그립니다. 세계 지도에는 별도 스위치가 있습니다. 불러온 맵의 공식 도로 데이터를 사용하며, 도로 데이터가 없는 곳에서는 직선 표시로 대신합니다. 두 지도 모두 끄면 경로를 계산하지 않습니다.",
     "UI_MinidoracatMiniMap_WMNavRoute": "세계 지도에 내비게이션 경로 표시",
+    "UI_MinidoracatMiniMap_GameContextMenu": "게임 우클릭 메뉴에 미니맵 항목 표시",
+    "UI_MinidoracatMiniMap_GameContextMenu_tooltip": "기본적으로 켜져 있습니다. 게임 화면이나 몸에 지니지 않은 아이템을 우클릭하면 메뉴에 \"미니맵\" 항목이 추가됩니다. 그 위치를 지도 즐겨찾기에 추가하고, 근처 즐겨찾기의 이름을 바꾸거나 삭제하고, 클릭한 자원 위치를 표시할 수 있습니다. 끄면 이 항목이 나타나지 않습니다. 지도의 우클릭 메뉴와 즐겨찾기 탭은 계속 작동합니다.",
     "UI_MinidoracatMiniMap_KeepFinishedTrip": "완료된 여정을 지도에 유지",
     "UI_MinidoracatMiniMap_KeepFinishedTrip_tooltip": "기본적으로 꺼져 있습니다. 끄면 여정의 마지막 지점에 도착하는 순간 번호가 붙은 지점 표시가 미니맵과 세계 지도에서 사라지며, 여정 창에는 완료된 여정이 계속 표시됩니다. 켜면 새 여정을 시작할 때까지 표시가 남습니다(체크 표시가 있는 녹색 = 도착, 사선이 있는 회색 = 건너뜀). 어느 쪽이든 여정이 끝난 뒤 지점을 추가하거나 새 내비게이션 목적지를 설정하면 1번부터 시작하는 새 여정이 됩니다.",
     "UI_MinidoracatMiniMap_ChunkGrid": "청크 격자 표시(8x8 타일)",

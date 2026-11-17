@@ -28,9 +28,10 @@ local gateBody = assert(source:match(
 local gateChunk = assert(compile([=[
 local ghostOn = false
 local function isGhost() return ghostOn end
+-- 三個 class 都有回 true 的原版 handler：G7 靠它分辨「放行到原 handler」與「穿透回 false」
 local ISMiniMapInner = { onMouseDown = function() return true end } -- 原版主動消費代表
-local ISMiniMapOuter = {}
-local ISMiniMapTitleBar = {}
+local ISMiniMapOuter = { onMouseDown = function() return true end }
+local ISMiniMapTitleBar = { onMouseDown = function() return true end }
 ]=] .. gateBody .. "\n" .. [=[
 return {
     classes = { inner = ISMiniMapInner, outer = ISMiniMapOuter, titleBar = ISMiniMapTitleBar },
@@ -76,17 +77,32 @@ r = class.onMouseUpNilOrig({})
 assert(r == nil, "G5: orig 回 nil 須原樣轉發（不得變 false）")
 
 -- G6: 佈線覆蓋面——三 class × 五事件共 15 個 slot 全部被 gate 換上、ghost 時回 false；
---     inner 的原版 onMouseDown（回 true）在非 ghost 時仍原樣轉發
+--     inner 的原版 onMouseDown（回 true）在非 ghost 時仍原樣轉發。own＝本 MOD 自己的小地圖
+--     （原版 outer 的 inner：parent.inner 是自己）
+local own = {}
+own.parent = { inner = own }
 assert(#gateChunk.GATED == 5, "G6: GATED 清單須為五事件")
 for cname, cls in pairs(gateChunk.classes) do
     for _, ev in ipairs(gateChunk.GATED) do
         assert(type(cls[ev]) == "function", "G6: " .. cname .. "." .. ev .. " 未被 gate 佈線")
         gateChunk.setGhost(true)
-        assert(cls[ev]({}) == false, "G6: ghost 時 " .. cname .. "." .. ev .. " 須回 false")
+        assert(cls[ev](own) == false, "G6: ghost 時 " .. cname .. "." .. ev .. " 須回 false")
     end
 end
 gateChunk.setGhost(false)
-assert(gateChunk.classes.inner.onMouseDown({}) == true, "G6: 非 ghost 時 inner 原版 handler 須生效")
+assert(gateChunk.classes.inner.onMouseDown(own) == true, "G6: 非 ghost 時 inner 原版 handler 須生效")
+
+-- G7: 別的 MOD 自己 new 的獨立 inner（沒有 parent，或 parent.inner 不是自己；例：Navigator 導航螢幕）
+--     穿透開著也交給原 handler——不放行的話那張地圖拖不動、右鍵選單出不來；outer／titleBar 沒有這條
+--     放行（守衛誤接到它們就會回 true）
+local lone, adopted = {}, { parent = { inner = {} } }
+gateChunk.setGhost(true)
+assert(gateChunk.classes.inner.onMouseDown(lone) == true, "G7: 沒有 parent 的 inner 須走原 handler")
+assert(gateChunk.classes.inner.onMouseDown(adopted) == true, "G7: parent.inner 不是自己的 inner 須走原 handler")
+assert(gateChunk.classes.inner.onMouseUp(lone) == false, "G7: 獨立 inner 原 handler 缺失仍回 false（不是 nil）")
+assert(gateChunk.classes.outer.onMouseDown(lone) == false and gateChunk.classes.titleBar.onMouseDown(lone) == false,
+    "G7: outer／titleBar 穿透時一律回 false")
+gateChunk.setGhost(false)
 
 --------------------------------------------------------------------------------
 -- applyGhost 清理面：want 旗標只動 inner；進穿透清 inner/titleBar 拖曳、
@@ -112,6 +128,7 @@ end
 local function mkMM(rec)
     local mm = mkPart("outer", rec, true)
     mm.inner = mkPart("inner", rec, true)
+    mm.inner.parent = mm -- 原版 outer:createChildren 的 addChild（ISMiniMap.lua:406-409）
     mm.titleBar = mkPart("titleBar", rec, true)
     mm.bottomPanel = mkPart("bottomPanel", rec, false)
     return mm
@@ -433,4 +450,16 @@ applyChunk.ghostFrameTick(mmE.inner)
 assert(pyr15.fills[0].a == 128 and mmE.inner._minidoracatGhostSnap ~= nil, "A15: 修復後自癒補壓")
 assert(mmE.inner._minidoracatGhostRetryAt == nil, "A15: 建到快照須清 inner 節流欄位")
 
-print("test_ghost_gate: OK（gate G1-G6＋清理 A1-A3＋壓暗分層 A4-A8＋收斂自癒 A9-A15）")
+-- A16: 別的 MOD 的獨立 inner（沒有 parent；例：Navigator 導航螢幕）穿透開著 tick 也不壓暗、不建快照、
+--      不碰底紙與未探索遮罩；同一個 inner 成為某個 outer 的 inner 後照常壓暗
+local pyr16 = mkLayer(1, 255, "Pyramid", "p16")
+local lone16 = mkPart("lone", {}, true)
+lone16.mapAPI = mkMapAPI(mkStyle({ [0] = pyr16 }))
+applyChunk.ghostFrameTick(lone16)
+assert(pyr16.fills[0].a == 255 and lone16._minidoracatGhostSnap == nil, "A16: 獨立 inner 不得被壓暗或建快照")
+assert(next(lone16.mapAPI.calls) == nil, "A16: 獨立 inner 的底紙與未探索遮罩不得被改")
+lone16.parent = { inner = lone16 }
+applyChunk.ghostFrameTick(lone16)
+assert(pyr16.fills[0].a == 128 and lone16._minidoracatGhostSnap ~= nil, "A16: 自己的小地圖照常壓暗")
+
+print("test_ghost_gate: OK（gate G1-G7＋清理 A1-A3＋壓暗分層 A4-A8＋收斂自癒 A9-A15＋獨立 inner A16）")

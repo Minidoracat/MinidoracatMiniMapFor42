@@ -265,7 +265,7 @@ do
     local expect = {
         base = { "MapImagery", "PlaceNames", "StreetNames", "TextAnnotations", "ChunkGrid", "ChunkGridLabels",
             "Isometric", "Symbols", "MapTextScale" },
-        places = { "Players", "Places", "NavRoute", "KeepFinishedTrip", "MarkerIconSize" },
+        places = { "Players", "Places", "NavRoute", "KeepFinishedTrip", "GameContextMenu", "MarkerIconSize" },
         poicat = { "PoiBlocks", "PoiWholeBuilding", "PoiColorIcons", "Cat:military", "PoiIconSize", "PoiIconAlpha",
             "ClientPoiDisplayDistance" },
         zombie = { "ZombieDots", "WMZombieDots", "ZombieIntensity", "NpcDotTint", "ZombieDotColor", "ZombieDotMax",

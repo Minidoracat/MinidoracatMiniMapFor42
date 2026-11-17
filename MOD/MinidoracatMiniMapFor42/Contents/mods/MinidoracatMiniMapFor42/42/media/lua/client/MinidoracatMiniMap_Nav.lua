@@ -196,11 +196,19 @@ Core.navMenuLock = function(option, text)
     option.toolTip = tip
 end
 -- 子選單：父項＋原版 getNew／addSubMenu（ISContextMenu.lua:1199／1075；getNew 走 player 單例的
--- subMenuPool，前手一定先呼叫過 ISContextMenu.get 才有那張池子）。第三方選單缺方法或不是 player
--- 單例時回 nil，呼叫端改平鋪，不讓別人的選單連坐壞掉。title＝已翻好的父項文字（省略＝getText(key)）
+-- subMenuPool，前手一定先呼叫過 ISContextMenu.get 才有那張池子）。context＝單例本身，或它用 getNew
+-- 開出來的子選單（再往下一層，例：遊戲右鍵「小地圖 ▸ 資源點：名稱 ▸」；子選單自己沒有池子，登記在
+-- 單例的 instanceMap）。第三方選單缺方法或兩者都不是時回 nil，呼叫端改平鋪，不讓別人的選單連坐壞掉。
+-- title＝已翻好的父項文字（省略＝getText(key)）
 Core.mapSubMenu = function(context, key, title)
-    if type(context.addSubMenu) ~= "function" or type(context.player) ~= "number"
-        or type(context.subMenuPool) ~= "table" or not (ISContextMenu and ISContextMenu.getNew) then
+    local ok = type(context.subMenuPool) == "table"
+    if not ok and type(context.player) == "number" and type(context.subOptionNums) == "number" then
+        local root = getPlayerContextMenu(context.player)
+        ok = root and type(root.subMenuPool) == "table" and type(root.instanceMap) == "table"
+            and root.instanceMap[context.subOptionNums] == context
+    end
+    if not ok or type(context.addSubMenu) ~= "function" or type(context.player) ~= "number"
+        or not (ISContextMenu and ISContextMenu.getNew) then
         return nil
     end
     local sub = ISContextMenu:getNew(context)

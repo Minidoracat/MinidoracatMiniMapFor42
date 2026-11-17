@@ -65,7 +65,7 @@ Both go by the room names inside buildings, which are also what decides the loot
 [*] [b]Visited[/b]: walk into a resource point building and its icon gets a small white dot at the top left; the hover text says "visited · <days ago>".
 [*] [b]Searched[/b]: a container counts as searched once it shows up in your loot window; the hover text shows "searched N/total".
 [*] [b]Cleared automatically[/b]: once you have searched enough of a building's containers (90% by default), it is marked as cleared: the icon fades and gets a white check. Big malls that aren't fully loaded can't be counted, so they only show how many you searched and are never marked automatically.
-[*] [b]By hand[/b]: right-click the resource point icon on the map, right-click inside the building, or press "Actions..." on a search result, then under "Resource point: <name>" choose "Mark as cleared", "Unmark cleared" or "Forget this place".
+[*] [b]By hand[/b]: right-click the resource point icon on the map, right-click inside the building and open "Minimap", or press "Actions..." on a search result, then under "Resource point: <name>" choose "Mark as cleared", "Unmark cleared" or "Forget this place".
 [*] [b]Restocked[/b]: when a cleared place is restocked or reset, it turns into a green triangle, "Restocked", until you next walk in. Three cases are detected: you walk back in and find fewer looted containers or more items; the server regenerates that part of the map; or the server's reset tool leaves a list after a reset (marked as soon as the server starts).
 [*] [b]Search[/b]: cleared places are hidden by default, with "N cleared places hidden" at the end of the list; "Actions..." can show them again or show only places you haven't visited.
 [*] [b]Only show visited resource points[/b] (off by default): both maps draw only the resource points you have walked into; useful on servers where the map is not fully known.
@@ -148,8 +148,8 @@ Both go by the room names inside buildings, which are also what decides the loot
 === 🧰 Home & favorites
 [list]
 [*] [b]Set[/b]: right-click the map → "Favorites": "Set as home" or "Add to favorites…".
-[*] [b]From the game world[/b]: right-click in the game world, or right-click an item somewhere else in the loot window, → "Add to map favorites…". The name is filled in for you (vehicle name, item on the ground, container or furniture; upstairs or in a basement the floor is added, such as "(2F)") and can be edited; items you carry are not listed.
-[*] [b]Remove or rename[/b]: right-click a favorite's icon (or name) on the map → "Favorite: <name>": "Remove from favorites", "Rename…" or "Set as home"; removing asks first. When you right-click in the game world, favorites within 2 tiles show up as "Map favorite: <name>" for renaming or removing.
+[*] [b]From the game world[/b]: right-click in the game world, or right-click an item somewhere else in the loot window, → "Minimap" → "Add to map favorites…". The name is filled in for you (vehicle name, item on the ground, container or furniture; upstairs or in a basement the floor is added, such as "(2F)") and can be edited; items you carry are not listed. To hide "Minimap" from the game's right-click menus, turn off "Show Minimap in game right-click menus" in the "Players & navigation" category of Map Display Settings.
+[*] [b]Remove or rename[/b]: right-click a favorite's icon (or name) on the map → "Favorite: <name>": "Remove from favorites", "Rename…" or "Set as home"; removing asks first. When you right-click in the game world, favorites within 2 tiles show up under "Minimap" as "Map favorite: <name>" for renaming or removing.
 [*] [b]Favorites[/b]: named, unlimited.
 [*] [b]New home[/b]: setting a new home keeps the old one as a favorite.
 [*] [b]Go home[/b]: replaces the trip with a single stop home and starts navigating (the mini-map's house button, right-click → "Favorites", or the trip page).

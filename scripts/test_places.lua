@@ -178,7 +178,27 @@ local function menu()
         return o
     end
     function m:find(name) for _, o in ipairs(self.options) do if o.name == name then return o end end end
+    function m:addSubMenu(option, sub) option.subOption = sub.subOptionNums end -- ISContextMenu.lua:1075
     return m
+end
+-- 原版選單（ISContextMenu.lua）：player 單例才有 subMenuPool／instanceMap（get :1166-1197）；getNew 開的子選單
+-- 登記在單例的 instanceMap、自己記編號（:1199-1224）；父項只記編號。vanillaMenu＝這次右鍵的單例；
+-- subOf＝某一項底下的子選單（原版 getSubMenu 也是回單例查）。menu() 沒有這些＝別的 MOD 自己做的選單
+local rootMenu
+local function vanillaMenu()
+    rootMenu = menu()
+    rootMenu.player, rootMenu.subMenuPool, rootMenu.instanceMap, rootMenu.subOptionNums = 0, {}, {}, 0
+    return rootMenu
+end
+local function subOf(option) return rootMenu.instanceMap[option.subOption] end
+function getPlayerContextMenu() return rootMenu end
+ISContextMenu = {}
+function ISContextMenu:getNew(parent)
+    local root, sub = getPlayerContextMenu(parent.player), menu()
+    root.subOptionNums = root.subOptionNums + 1
+    sub.player, sub.subOptionNums = parent.player, root.subOptionNums
+    root.instanceMap[sub.subOptionNums] = sub
+    return sub
 end
 
 -- 未設家：API 回 nohome；UI 入口顯示設定方法（不是灰掉不說話）；右鍵「回家」不可用並附說明。
@@ -762,21 +782,28 @@ local function car(name, x, y, z)
         getZ = function() return z end }
 end
 -- 世界右鍵一次：fetchVars 換成這次的內容（同一張表，原版每次 clearFetch 後由 Java 重填），回第一層選單
-local function rightClick(t, worldobjects, fetch, test)
+-- （into 省略＝原版的 player 單例）
+local function rightClick(t, worldobjects, fetch, test, into)
     for k in pairs(t.wm.fetch) do t.wm.fetch[k] = nil end
     for k, v in pairs(fetch) do t.wm.fetch[k] = v end
-    local m = menu()
+    local m = into or vanillaMenu()
     t.fire("OnFillWorldObjectContextMenu", 0, m, worldobjects, test)
     return m
 end
 local ADD_HERE = "UI_MinidoracatMiniMap_PlaceAddHere"
+-- 「小地圖 ▸」底下那張：本 MOD 在遊戲右鍵的項目都收在這一項裡（2026-11-17 使用者指示），第一層只多這一項
+local function mini(m)
+    eq(#m.options, 1, "第一層只多一項")
+    eq(m.options[1].name, "UI_MinidoracatMiniMap_DockLabel", "第一層那一項是「小地圖」")
+    return assert(subOf(m.options[1]), "「小地圖」底下是子選單")
+end
 
 -- 世界右鍵「加入地圖收藏...」（2026-11-02 設計稿 minimap-world-fav-1102 作答：先跳命名框、名稱預填）：
 -- 預填名稱依序取車＞地上物品＞容器（玩家改的名字＞搜刮視窗標題＞家具名）＞家具；格子取中心點、車取車的
 -- 中心；不在地面層的把樓層寫進名稱。沒有格子不列；手把試探只回答有沒有選項。
 do
     local t = fixture(); t.player(0)
-    local function add(m) return assert(m:find(ADD_HERE), "有加入地圖收藏") end
+    local function add(m) return assert(mini(m):find(ADD_HERE), "有加入地圖收藏") end
     local floorSq = square(7, 8, 0)
     local floor = object(floorSq)
     t.wm.car = car("Pickup", 100.25, 200.75, 0.4) -- 斜坡上的車 z 有小數，仍算這一層
@@ -846,58 +873,78 @@ do
     eq(t.wm.tests, before + 1, "沒有格子時手把試探不回報")
 end
 
--- 旁邊 2 格內有收藏：另列「地圖收藏：名稱」子選單（最近的那一筆）＝改名／從收藏移除；超過 2 格不列
+-- 旁邊 2 格內有收藏：「小地圖 ▸」裡另列「地圖收藏：名稱 ▸」（最近的那一筆）＝改名／從收藏移除；超過 2 格不列
 do
     local t = fixture(); t.player(0)
-    t.core.mapSubMenu = function(context, _, title)
-        local sub = menu()
-        context:addOption(title).sub = sub
-        return sub
-    end
     local removed = {}
     t.core.navPromptPlaceRemove = function(pn, id) removed[#removed + 1] = pn .. ":" .. id end
     assert(t.core.placesAdd(0, 13.5, 10.5, "Far"))
     local base = assert(t.core.placesAdd(0, 10.5, 10.5, "Base"))
     local sq = square(11, 11, 0) -- 中心 11.5,11.5：離 Base 約 1.4 格、離 Far 約 2.2 格
-    local m = rightClick(t, { object(sq) }, { clickedSquare = sq })
+    local m = mini(rightClick(t, { object(sq) }, { clickedSquare = sq }))
     eq(#m.options, 2, "加入地圖收藏＋旁邊那一筆")
     local parent = m.options[2]
     eq(parent.name, "UI_MinidoracatMiniMap_PlaceMenuOfHere|Base", "父項寫「地圖收藏」與最近那一筆的名稱")
-    local rename = assert(parent.sub:find("UI_MinidoracatMiniMap_PlaceRename"), "子選單有改名")
+    local sub = assert(subOf(parent), "旁邊那一筆是「小地圖」底下的第二層子選單")
+    local rename = assert(sub:find("UI_MinidoracatMiniMap_PlaceRename"), "子選單有改名")
     rename.fn(rename.target, rename.a)
     local box = t.log.dialogs[#t.log.dialogs]
     eq(box.default, "Base", "改名預填這一筆的名稱")
     box:press("OK", "Home base")
     eq(t.core.placeLabel(0, t.core.placesState(0).places[2]), "Home base", "改名寫進這一筆")
-    local remove = assert(parent.sub:find("UI_MinidoracatMiniMap_PlaceRemove"), "子選單有移除")
+    local remove = assert(sub:find("UI_MinidoracatMiniMap_PlaceRemove"), "子選單有移除")
     remove.fn(remove.target, remove.a)
     eq(removed[1], "0:" .. base, "移除交給共用確認框（帶 pn 與這一筆的 id）")
     sq = square(12, 10, 0) -- 中心 12.5,10.5：離 Base 2 格、離 Far 1 格
-    eq(rightClick(t, { object(sq) }, { clickedSquare = sq }).options[2].name,
+    eq(mini(rightClick(t, { object(sq) }, { clickedSquare = sq })).options[2].name,
         "UI_MinidoracatMiniMap_PlaceMenuOfHere|Far", "取最近的那一筆")
     sq = square(8, 10, 0) -- 中心 8.5,10.5：離 Base 正好 2 格
-    eq(#rightClick(t, { object(sq) }, { clickedSquare = sq }).options, 2, "正好 2 格還算旁邊")
+    eq(#mini(rightClick(t, { object(sq) }, { clickedSquare = sq })).options, 2, "正好 2 格還算旁邊")
     sq = square(16, 10, 0) -- 中心 16.5,10.5：離 Far 3 格
-    eq(#rightClick(t, { object(sq) }, { clickedSquare = sq }).options, 1, "超過 2 格不列")
+    eq(#mini(rightClick(t, { object(sq) }, { clickedSquare = sq })).options, 1, "超過 2 格不列")
     -- 資源點建築裡（_ClearedUI.lua clearedWorldMenu 決定列不列）：「資源點：名稱」排在加入地圖收藏之後、旁邊收藏之前
+    local asked = 0
     t.core.clearedWorldMenu = function(pn, context, x, y, z)
+        asked = asked + 1
         context:addOption("Cleared|" .. pn .. "|" .. x .. "," .. y .. "," .. z)
     end
     sq = square(11, 11, 0)
-    local mm = rightClick(t, { object(sq) }, { clickedSquare = sq })
+    local mm = mini(rightClick(t, { object(sq) }, { clickedSquare = sq }))
     eq(#mm.options, 3, "加入地圖收藏＋資源點＋旁邊那一筆")
     eq(mm.options[2].name, "Cleared|0|11.5,11.5,0", "資源點選單收到這位玩家與點到的格子")
     assert(mm.options[3].name:find("PlaceMenuOfHere", 1, true), "旁邊收藏排在資源點之後")
+    -- 掛不了子選單的選單（別的 MOD 自己做的選單，不是 player 單例）：項目平鋪在原選單，一項都不少
+    local flat = rightClick(t, { object(sq) }, { clickedSquare = sq }, false, menu())
+    eq(#flat.options, 4, "平鋪：加入地圖收藏、資源點、改名、移除")
+    assert(flat:find(ADD_HERE) and flat:find("UI_MinidoracatMiniMap_PlaceRename")
+        and flat:find("UI_MinidoracatMiniMap_PlaceRemove"), "平鋪時項目都在第一層")
+    -- 巢狀只認「登記在單例 instanceMap 的那一個實例」：編號相同但不是那個實例（池子重用前的舊子選單）、
+    -- 別的 MOD 自己 new 的選單（subOptionNums＝0，ISContextMenu.lua:1156-1157）都照平鋪
+    local stale = menu(); stale.player, stale.subOptionNums = 0, 1
+    assert(rootMenu.instanceMap[1] and rootMenu.instanceMap[1] ~= stale, "單例的 1 號子選單是別的實例")
+    eq(#rightClick(t, { object(sq) }, { clickedSquare = sq }, false, stale).options, 4, "不是登記的那個子選單：平鋪")
+    local own = menu(); own.player, own.subOptionNums = 0, 0
+    eq(#rightClick(t, { object(sq) }, { clickedSquare = sq }, false, own).options, 4, "別的 MOD 自己 new 的選單：平鋪")
+    -- 選項 GameContextMenu 關：不加任何項目、不問資源點；帶 test 觸發時也不經 setTest 回報有項目
+    placeOpts.GameContextMenu = false
+    asked = 0
+    eq(#rightClick(t, { object(sq) }, { clickedSquare = sq }).options, 0, "選項關：世界右鍵不加項目")
+    eq(asked, 0, "選項關：不問資源點")
+    local before = t.wm.tests
+    rightClick(t, { object(sq) }, { clickedSquare = sq }, true)
+    eq(t.wm.tests, before, "選項關：手把試探不回報有選項")
+    placeOpts.GameContextMenu = nil
     t.core.clearedWorldMenu = nil
 end
 
--- 物品欄右鍵：只列不在自己身上的物品；地上的取物品那一格、容器裡的交給引擎 ItemContainer.getSquare
+-- 物品欄右鍵：只列不在自己身上的物品（收在「小地圖 ▸」裡）；地上的取物品那一格、容器裡的交給引擎
+-- ItemContainer.getSquare；選項 GameContextMenu 關＝不列
 do
     local t = fixture(); t.player(0)
     local function inv(it)
-        local m = menu()
+        local m = vanillaMenu()
         t.fire("OnFillInventoryObjectContextMenu", 0, m, { it })
-        return m:find(ADD_HERE)
+        return #m.options > 0 and mini(m):find(ADD_HERE) or nil
     end
     eq(inv(item("Hammer", { onPlayer = true, container = itemContainer("bag", square(1, 1, 0)) })), nil,
         "自己身上（含背包裡）的物品不列")
@@ -907,6 +954,9 @@ do
     eq(o.a, 40.5, "容器那格中心"); eq(o.c, "UI_MinidoracatMiniMap_PlaceFloor|Saw|2F", "物品名稱＋樓層")
     eq(inv(item("Saw", { container = itemContainer("crate", nil) })), nil, "找不到格子不列")
     eq(inv(item("Saw")), nil, "不在任何容器也不在地上不列")
+    placeOpts.GameContextMenu = false
+    eq(inv(item("Hammer", { world = worldItem(square(20, 30, 0), "Hammer") })), nil, "選項關：物品欄右鍵不加項目")
+    placeOpts.GameContextMenu = nil
 end
 
 print("test_places: ok")

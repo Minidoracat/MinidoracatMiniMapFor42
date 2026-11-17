@@ -74,6 +74,8 @@
     "UI_MinidoracatMiniMap_NavRoute": "Show the navigation route on the mini-map",
     "UI_MinidoracatMiniMap_NavRoute_tooltip": "After you set a navigation target (right-click), a road-following route is computed and drawn on the mini-map beneath the target flag; the world map has its own switch. Uses the official street data of loaded maps; falls back to the straight-line indicator where no road data exists. With both maps off, no route is computed.",
     "UI_MinidoracatMiniMap_WMNavRoute": "Show the navigation route on the world map",
+    "UI_MinidoracatMiniMap_GameContextMenu": "Show Minimap in game right-click menus",
+    "UI_MinidoracatMiniMap_GameContextMenu_tooltip": "On by default. Right-clicking in the game world, or on an item that is not on you, adds a \"Minimap\" entry: add the spot to map favorites, rename or remove a favorite next to it, and mark the resource point you clicked. Turn off to hide the entry. Right-click menus on the maps and the Favorites tab still work.",
     "UI_MinidoracatMiniMap_KeepFinishedTrip": "Keep finished trip on map",
     "UI_MinidoracatMiniMap_KeepFinishedTrip_tooltip": "Off by default. When off, the numbered stop markers disappear from the mini-map and the world map once you reach the last stop of a trip; the Itinerary window still shows the finished trip. Turn on to keep the markers (green with a check mark = arrived, grey with a slash = skipped) until you start a new trip. Either way, adding a stop or setting a new navigation target after a trip has finished starts a new trip numbered from 1.",
     "UI_MinidoracatMiniMap_ChunkGrid": "Show chunk grid (8x8 tiles)",

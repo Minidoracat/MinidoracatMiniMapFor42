@@ -32,11 +32,18 @@ local function isGhost() return getBoolOption("GhostMode", false) end
 -- 已知引擎級殘留（不修）：右鍵「按住」期間 UIManager 只憑 bounds 消費
 -- consumedRClick——可見 UI 本就如此，穿透模式無退化亦無法改善（點擊穿透不受影響）。
 -- test:ghost-gate:start
-local function gate(class, name)
+-- 穿透只管本 MOD 自己的小地圖：不在 outer 裡的 inner 是別的 MOD 自己 new 的地圖（例：Navigator 導航
+-- 螢幕，沒有 parent），事件照常交給它的 handler。原版 outer 一定 self.inner＝inner 再 addChild
+-- （ISMiniMap.lua:406-409），收起視窗不清 parent
+local function standalone(inner)
+    local p = inner.parent
+    return not (p and p.inner == inner)
+end
+local function gate(class, name, pass)
     if not class then return end
     local orig = class[name]
     class[name] = function(self, ...)
-        if isGhost() then return false end
+        if isGhost() and not (pass and pass(self)) then return false end
         if orig then return orig(self, ...) end
         return false
     end
@@ -45,7 +52,7 @@ end
 local GATED = { "onMouseDown", "onMouseUp", "onMouseWheel",
     "onRightMouseDown", "onRightMouseUp" }
 for i = 1, #GATED do
-    gate(ISMiniMapInner, GATED[i])
+    gate(ISMiniMapInner, GATED[i], standalone)
     gate(ISMiniMapOuter, GATED[i])
     gate(ISMiniMapTitleBar, GATED[i])
 end
@@ -351,6 +358,9 @@ end
 local function ghostFrameTick(inner)
     if not (inner and inner.mapAPI) then return end
     if isGhost() then
+        -- 別的 MOD 的獨立地圖不壓暗（判斷同上面 gate 的 standalone；兩個測試區段分開編譯，這裡內聯）
+        local p = inner.parent
+        if not (p and p.inner == inner) then return end
         if not inner._minidoracatGhostSnap then
             -- 自癒補壓（失敗由 dimSafely log-once）；無快照的拋錯節流走 inner 欄位
             local ra = inner._minidoracatGhostRetryAt

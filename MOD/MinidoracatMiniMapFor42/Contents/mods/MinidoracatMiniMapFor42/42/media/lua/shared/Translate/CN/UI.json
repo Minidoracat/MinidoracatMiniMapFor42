@@ -74,6 +74,8 @@
     "UI_MinidoracatMiniMap_NavRoute": "在小地图显示导航路线",
     "UI_MinidoracatMiniMap_NavRoute_tooltip": "右键设置导航目标后，自动沿道路计算路线并绘制在小地图上（目标旗标之下）；世界地图另有一个开关。数据来源为各地图的官方街道数据；附近无道路数据时退回直线指示。两张地图都关时不计算路线。",
     "UI_MinidoracatMiniMap_WMNavRoute": "在世界地图显示导航路线",
+    "UI_MinidoracatMiniMap_GameContextMenu": "游戏右键菜单显示小地图",
+    "UI_MinidoracatMiniMap_GameContextMenu_tooltip": "默认开启。在游戏画面按右键，或对不在自己身上的物品按右键时，菜单多一项「小地图」：把那个位置加入地图收藏、改名或移除旁边的收藏、标记点到的资源点。关闭后不再列出这一项。地图上的右键菜单与「收藏」标签页照常可用。",
     "UI_MinidoracatMiniMap_KeepFinishedTrip": "行程结束后保留站点标记",
     "UI_MinidoracatMiniMap_KeepFinishedTrip_tooltip": "默认关闭。关闭时，抵达行程的最后一站后，小地图与世界地图上的站号标记会消失；行程规划窗口仍会列出这趟已结束的行程。开启则保留标记到你开始新行程为止（绿框打勾为已抵达、灰框斜线为已略过）。不论开关，行程结束后再加站点或设置新的导航目标，都会开始新行程，站号从 1 起算。",
     "UI_MinidoracatMiniMap_ChunkGrid": "显示 chunk 网格线（8x8 格）",

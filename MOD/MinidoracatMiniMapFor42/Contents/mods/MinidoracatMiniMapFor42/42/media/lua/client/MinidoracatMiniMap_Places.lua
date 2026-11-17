@@ -697,18 +697,24 @@ local function nearestPlace(pn, x, y)
     end
     return best
 end
+-- 世界與物品欄右鍵的項目都收在「小地圖 ▸」一項底下（2026-11-17 使用者指示；父項文字同家族工具列的
+-- DockLabel）。選項 GameContextMenu 關＝兩個選單都不加，也不經 setTest 回報有項目（42.22.2 原版的手把
+-- 試探由 Java 先回 true、不發這個事件，ISWorldObjectContextMenuLogic.java:850-853；別的 MOD 自己帶 test
+-- 觸發事件時才有差）。掛不了子選單（Core.mapSubMenu 回 nil）時平鋪在原選單
 local function onFillWorld(pn, context, worldobjects, test)
+    if not Core.getBoolOption("GameContextMenu", true) then return end
     local x, y, z, name = worldSpot(pn, worldobjects)
     if not x then return end
     if test then return ISWorldObjectContextMenu.setTest() end -- 手把只問有沒有選項（原版規則 :122-128）
-    context:addOption(getText("UI_MinidoracatMiniMap_PlaceAddHere"), pn, Core.placesPromptAdd,
+    local menu = Core.mapSubMenu(context, "UI_MinidoracatMiniMap_DockLabel") or context
+    menu:addOption(getText("UI_MinidoracatMiniMap_PlaceAddHere"), pn, Core.placesPromptAdd,
         x, y, withFloor(name, z, x, y))
     -- 點到的那格在資源點建築裡：「資源點：名稱」（標為已清空／取消、忘記這裡；_ClearedUI.lua）
-    if Core.clearedWorldMenu then Core.clearedWorldMenu(pn, context, x, y, z) end
+    if Core.clearedWorldMenu then Core.clearedWorldMenu(pn, menu, x, y, z) end
     local place = nearestPlace(pn, x, y)
     if not place then return end
-    local sub = Core.mapSubMenu(context, nil, Core.placeMenuTitle(pn, place, "UI_MinidoracatMiniMap_PlaceMenuOfHere"))
-        or context
+    local sub = Core.mapSubMenu(menu, nil, Core.placeMenuTitle(pn, place, "UI_MinidoracatMiniMap_PlaceMenuOfHere"))
+        or menu
     sub:addOption(getText("UI_MinidoracatMiniMap_PlaceRename"), pn, Core.placesPromptRename, place.id)
     if Core.navPromptPlaceRemove then -- 確認框在 _Search.lua（同搜尋視窗）
         sub:addOption(getText("UI_MinidoracatMiniMap_PlaceRemove"), pn, Core.navPromptPlaceRemove, place.id)
@@ -717,13 +723,15 @@ end
 -- 物品欄右鍵：只列不在自己身上的物品（地上、容器、車裡、屍體）；位置交給引擎 ItemContainer.getSquare
 -- （背包裡的背包往外找到最外層，再看車、地面、所屬物件；ItemContainer.java:3563-3595）
 local function onFillInventory(pn, context, items)
+    if not Core.getBoolOption("GameContextMenu", true) then return end
     local player = getSpecificPlayer(pn)
     local item = player and ISInventoryPane.getActualItems(items)[1]
     if not item or player:getInventory():containsRecursive(item) then return end
     local w, c = item:getWorldItem(), item:getContainer()
     local sq = w and w:getSquare() or c and c:getSquare()
     if not sq then return end
-    context:addOption(getText("UI_MinidoracatMiniMap_PlaceAddHere"), pn, Core.placesPromptAdd,
+    local menu = Core.mapSubMenu(context, "UI_MinidoracatMiniMap_DockLabel") or context
+    menu:addOption(getText("UI_MinidoracatMiniMap_PlaceAddHere"), pn, Core.placesPromptAdd,
         sq:getX() + 0.5, sq:getY() + 0.5, withFloor(item:getDisplayName(), sq:getZ()))
 end
 Events.OnFillWorldObjectContextMenu.Add(onFillWorld)

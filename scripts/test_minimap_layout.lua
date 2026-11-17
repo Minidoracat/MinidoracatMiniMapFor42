@@ -400,9 +400,59 @@ local again = getPlayerMiniMap(0)
 check(again and again ~= first and datas[0].miniMap == again and ISLayoutManager.windows.miniMap0.target == again
     and again.x == 300, "L13 再跑一次 createPlayerData（拆掉重建）照樣補建、登記換新視窗、位置讀回")
 
+--------------------------------------------------------------------------------
+-- F 自由查看只管自己的小地圖（_Resize.lua test:inner-freelook 區段）：別的 MOD 自己 new 的 ISMiniMapInner
+-- （沒有 parent；例：Navigator 導航螢幕）放開滑鼠走原版、不留停留旗標——留了它每幀回中就停掉，畫面卡在拖到的位置
+--------------------------------------------------------------------------------
+do
+    local freelook = assert(readAll(sourcePath):match(
+        "\n%-%- test:inner%-freelook:start\n(.-)\n%-%- test:inner%-freelook:end"),
+        "找不到 test:inner-freelook 區段")
+    local F = compile([=[
+local opts = {}
+local function getBoolOption(id, default)
+    if opts[id] == nil then return default end
+    return opts[id]
+end
+local vanilla = { up = 0, hack = 0 }
+local ISMiniMapInner = {}
+function ISMiniMapInner:onMouseUp() vanilla.up = vanilla.up + 1; self.dragging = false end
+function ISMiniMapInner:prerenderHack() vanilla.hack = vanilla.hack + 1 end
+]=] .. freelook .. "\n" .. [=[
+return { class = ISMiniMapInner, opts = opts, vanilla = vanilla }
+]=], "=inner-freelook")()
+    local function dragged(parent)
+        local inner = { dragging = true, dragMoved = true, parent = parent }
+        if parent == true then inner.parent = { inner = inner } end -- 原版 outer 的 inner
+        return inner
+    end
+    local mine = dragged(true)
+    F.class.onMouseUp(mine, 0, 0)
+    F.class.prerenderHack(mine)
+    check(mine._minidoracatFreelook == true and mine.dragging == false and F.vanilla.up == 0 and F.vanilla.hack == 0,
+        "F1 自己的小地圖拖過＝停在拖到的位置（不走原版放開、不回中）")
+    mine.dragging, mine.dragMoved = true, false
+    F.class.onMouseUp(mine, 0, 0)
+    F.class.prerenderHack(mine)
+    check(mine._minidoracatFreelook == nil and F.vanilla.up == 0 and F.vanilla.hack == 1,
+        "F2 自己的小地圖點一下＝回中，不開世界地圖")
+    F.opts.ClickOpenWorldMap = true
+    mine.dragging = true
+    F.class.onMouseUp(mine, 0, 0)
+    check(F.vanilla.up == 1, "F3 ClickOpenWorldMap 開＝走原版放開")
+    F.opts.ClickOpenWorldMap = nil
+    for name, lone in pairs({ ["沒有 parent"] = dragged(nil), ["parent.inner 不是自己"] = dragged({ inner = mine }) }) do
+        local up, hack = F.vanilla.up, F.vanilla.hack
+        F.class.onMouseUp(lone, 0, 0)
+        F.class.prerenderHack(lone)
+        check(lone._minidoracatFreelook == nil and F.vanilla.up == up + 1 and F.vanilla.hack == hack + 1,
+            "F4 別的 MOD 的地圖（" .. name .. "）走原版放開、不留停留旗標、照常回中")
+    end
+end
+
 if failures > 0 then
     print(("minimap layout memory: %d check(s) failed"):format(failures))
     os.exit(1)
 end
 print("minimap layout memory: register/restore, base y, legacy file, recreate carry, save-on-release, joypad hidden x,"
-    .. " auto-create on enter cases passed")
+    .. " auto-create on enter, free look only on own mini-map cases passed")

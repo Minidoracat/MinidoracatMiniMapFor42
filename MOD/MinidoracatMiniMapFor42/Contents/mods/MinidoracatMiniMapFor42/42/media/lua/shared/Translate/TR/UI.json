@@ -74,6 +74,8 @@
     "UI_MinidoracatMiniMap_NavRoute": "Navigasyon rotasını mini haritada göster",
     "UI_MinidoracatMiniMap_NavRoute_tooltip": "Bir navigasyon hedefi belirledikten sonra (sağ tık) yolları izleyen bir rota hesaplanır ve mini haritada hedef bayrağının altına çizilir; dünya haritasının kendi anahtarı vardır. Yüklü haritaların resmi sokak verilerini kullanır; yol verisi olmayan yerlerde düz çizgi göstergesine geri döner. İki harita da kapalıyken rota hesaplanmaz.",
     "UI_MinidoracatMiniMap_WMNavRoute": "Navigasyon rotasını dünya haritasında göster",
+    "UI_MinidoracatMiniMap_GameContextMenu": "Oyunun sağ tık menülerinde Mini Harita'yı göster",
+    "UI_MinidoracatMiniMap_GameContextMenu_tooltip": "Varsayılan olarak açık. Oyun dünyasında veya üzerinizde olmayan bir eşyaya sağ tıklamak menüye \"Mini Harita\" girişini ekler: yeri harita favorilerine ekleme, yakındaki bir favoriyi yeniden adlandırma veya kaldırma ve tıkladığınız kaynak noktasını işaretleme. Kapalıyken giriş görünmez. Haritalardaki sağ tık menüleri ve Favoriler sekmesi yine çalışır.",
     "UI_MinidoracatMiniMap_KeepFinishedTrip": "Biten yolculuğu haritada tut",
     "UI_MinidoracatMiniMap_KeepFinishedTrip_tooltip": "Varsayılan olarak kapalı. Kapalıyken bir yolculuğun son durağına vardığınızda numaralı durak işaretçileri mini haritadan ve dünya haritasından kaybolur; Yolculuk Planı penceresi biten yolculuğu yine gösterir. İşaretçileri yeni bir yolculuk başlatana kadar tutmak için açın (onay işaretli yeşil = varıldı, eğik çizgili gri = atlandı). Her iki durumda da yolculuk bittikten sonra durak eklemek veya yeni bir navigasyon hedefi belirlemek, 1'den numaralanan yeni bir yolculuk başlatır.",
     "UI_MinidoracatMiniMap_ChunkGrid": "Parça ızgarasını göster (8x8 kare)",
