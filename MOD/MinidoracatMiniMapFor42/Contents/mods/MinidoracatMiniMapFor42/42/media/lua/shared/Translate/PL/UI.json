@@ -779,5 +779,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "Serwer nie zdołał zapisać; dane zostaną wysłane ponownie przy następnym logowaniu.",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "Nie można odczytać pliku szkiców na serwerze; udostępnianie wstrzymane.",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "Graczy 2–4 na podzielonym ekranie nie da się zweryfikować, więc nie mogą udostępniać.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Prawy przycisk: ulubione i punkty zasobów są teraz pod „Minimapa”. Wyłączysz to w ustawieniach wyświetlania mapy."
+    "UI_MinidoracatMiniMap_WhatsNew": "Nowy rozmiar minimapy „Mini”; przeciągnij krawędź, by zmniejszyć ją jeszcze bardziej. Przyciski bez miejsca są w menu „Więcej”."
 }

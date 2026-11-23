@@ -8,6 +8,11 @@
 [*] Fixed with the "Navigator" mod (Workshop 3708816224): after you dragged its navigation screen, it stopped following the car and showed "Click map to recenter" (player report). "Drag to look around" now applies only to this mod's own minimap.
 [*] Fixed Ghost mode making other mods' minimap screens (such as Navigator's) semi-transparent, too dark to read, and unresponsive to dragging and right-click.
 [*] Fixed Ghost mode on this mod's own minimap: right-clicking over the minimap now opens the game's right-click menu, and the minimap edge no longer resizes it while Ghost mode is on. Turn Ghost mode off to resize.
+[*] New mini-map size "Mini" (player request), the last entry of the "Mini-map size" dropdown: less than half the side of "Small". Small, Medium, Large and Extra Large keep their sizes.
+[*] You can drag the mini-map smaller than before: the minimum width is now four buttons instead of the whole button row.
+[*] When the mini-map is too narrow for the whole button row, the buttons that don't fit move into a "More" menu (three dots). The row keeps World Map, Settings, More and Close. The menu stays open after zoom in and zoom out.
+[*] On a very narrow mini-map, the "Click map to recenter" text becomes a small icon in the top-left corner, and the coordinates line is hidden when it doesn't fit (More → Copy coordinates still works).
+[*] Fixed the navigation flag's two lines (progress and distance) overlapping near the top edge of the mini-map.
 [/list]
 
 [h3]✨ 新增[/h3]

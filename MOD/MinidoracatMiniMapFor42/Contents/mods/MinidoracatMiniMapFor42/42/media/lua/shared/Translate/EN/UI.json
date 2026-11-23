@@ -779,5 +779,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "The server couldn't save; it will be sent again next time you log in.",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "The server's sketch file can't be read; sharing is paused.",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "Split-screen players 2-4 can't be verified, so they can't share sketches.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Right-click: favorites and resource points are now under \"Minimap\". Hide it in Map Display Settings."
+    "UI_MinidoracatMiniMap_WhatsNew": "New \"Mini\" minimap size; drag an edge to go even smaller. Buttons that don't fit go into a \"More\" menu."
 }

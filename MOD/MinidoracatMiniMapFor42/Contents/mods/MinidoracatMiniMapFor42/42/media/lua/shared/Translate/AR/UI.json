@@ -779,5 +779,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "El servidor no pudo guardar; se enviará de nuevo la próxima vez que entres.",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "No se puede leer el archivo de dibujos del servidor; compartir está en pausa.",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "Los jugadores 2-4 de pantalla dividida no se pueden verificar, así que no pueden compartir.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Clic derecho: favoritos y puntos de recursos ahora bajo \"Minimapa\". Se oculta en Visualización del mapa."
+    "UI_MinidoracatMiniMap_WhatsNew": "Nuevo tamaño \"Mini\"; arrastra un borde para reducir aún más. Los botones que no caben van en \"Más\"."
 }

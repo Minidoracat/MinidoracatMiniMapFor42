@@ -779,5 +779,5 @@
     "UI_MinidoracatMiniMap_SketchShareWhy_savefailed": "Le serveur n'a pas pu enregistrer ; l'envoi sera refait à votre prochaine connexion.",
     "UI_MinidoracatMiniMap_SketchShareWhy_readonly": "Le fichier de croquis du serveur est illisible ; le partage est suspendu.",
     "UI_MinidoracatMiniMap_SketchShareWhy_identity": "Les joueurs 2 à 4 en écran partagé ne peuvent pas être vérifiés, ils ne peuvent donc pas partager.",
-    "UI_MinidoracatMiniMap_WhatsNew": "Clic droit : favoris et points de ressources sous « Mini-carte ». Désactivable dans les réglages."
+    "UI_MinidoracatMiniMap_WhatsNew": "Nouvelle taille « Mini » ; tirez un bord pour réduire encore. Les boutons en trop vont sous « Plus »."
 }

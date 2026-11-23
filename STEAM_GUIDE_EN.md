@@ -231,7 +231,8 @@ Draw freehand lines, straight lines and notes on the world map with a pen; the m
 [*] Hide the button with "Show mini-map toggle button".
 [*] With an older Minidoracat UI Library it stays a draggable floating icon.
 [/list]
-[*] [b]Size[/b]: four presets (Small, Medium, Large, Extra Large), or drag an edge/corner to resize freely; it's remembered automatically.
+[*] [b]Size[/b]: five presets (Mini, Small, Medium, Large, Extra Large), or drag an edge/corner to resize freely; it's remembered automatically. It can shrink until the button row holds just four buttons.
+[*] [b]"More" menu[/b]: when the mini-map is too narrow for the whole button row, the row keeps World Map, Settings, More (three dots) and Close. Click More to get the buttons that were folded away: zoom in, zoom out, center on player, search, go home, copy coordinates, toggle view. The menu stays open after zoom in and zoom out, so you can keep clicking.
 [*] [b]Ghost mode[/b] (hotkey [b]'[/b]): clicks and wheel pass through to the game; the map turns semi-transparent with an amber border, so you can make it big and keep it on screen without it getting in the way.
 [*] [b]Free look[/b]: drag the map and it stays there; click once to snap back to the player.
 [*] [b]Coordinates[/b]:
