@@ -583,6 +583,7 @@ _lua_tests = [
     ("test_ghost_gate.lua", "穿透模式 gate 契約與 applyGhost 清理", False),
     ("test_layer_tail.lua", "圖層尾端守恆與掛載自癒", False),
     ("test_minimap_size.lua", "小地圖首建尺寸：自訂＞倍率＞原版、夾下限", False),
+    ("test_toolbar_plan.lua", "小地圖按鈕列收納：放不下的收進「更多」、不溢出、不重複不遺漏", False),
     ("test_poi_export.lua", "資源點區塊 poi_blocks.json 匯出格式", False),
     ("test_steamid_report.lua", "Steam64 回報：暫時未就緒不放棄", False),
     ("test_room_resources.lua", "資源點兩種版本、房間資料分批掃描與公開查詢 API", False),

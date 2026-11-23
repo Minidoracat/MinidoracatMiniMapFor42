@@ -766,8 +766,10 @@ end
 -- （MainOptions.lua:2823 load、3793 save，皆引擎自動，本 MOD 不碰檔案）。
 --------------------------------------------------------------------------------
 
--- 尺寸倍率表：索引對應下拉選單項目順序（小=原版、中 1.5x、大 2x、特大 2.5x）
-local SIZE_SCALES = { 1.0, 1.5, 2.0, 2.5 }
+-- 尺寸倍率表：索引對應下拉選單項目順序（小=原版、中 1.5x、大 2x、特大 2.5x、迷你）。
+-- 迷你的倍率 0＝縮放後為 0，由 Core.minimapSizeFor 夾到下限（按鈕列 4 格的寬度），得到正方形；
+-- 排最後：MapSize 存的是索引，插在前面會讓舊設定跑掉
+local SIZE_SCALES = { 1.0, 1.5, 2.0, 2.5, 0 }
 local DEFAULT_SIZE_INDEX = 2 -- 預設「中」
 
 local modOptions -- PZAPI Options 實例；PZAPI 不存在（版本過舊）時為 nil，一切走原版行為
@@ -1089,7 +1091,7 @@ end
 -- 這裡先定義是因為 modOptions:apply() 與 InitPlayer hook 都要用）
 --------------------------------------------------------------------------------
 
-Core.RESIZE_MIN = 180        -- 基準尺寸下限（px）；可變（下方兩處依字級抬高），_Resize.lua 每次讀 Core 欄位取即時值
+Core.RESIZE_MIN = 180        -- 基準尺寸下限（px）；InitPlayer 每次依字級重設成按鈕列 4 格的寬度（Core.toolbarMinWidth），_Resize.lua 每次讀 Core 欄位取即時值
 local RESIZE_MAX_RATIO = 0.85 -- 尺寸上限 = 玩家螢幕短邊 85%（實測 70% 太緊）
 
 -- 縮放 hook／外框調色／取消縮放本體在 MinidoracatMiniMap_Resize.lua（載入序在本檔之後），
@@ -1101,16 +1103,6 @@ local installMinidoracatButtons
 -- 尺寸上限（getPlayerScreenWidth/Height 用例 ISMiniMap.lua:701-702）
 local function resizeMax(playerNum)
     return math.floor(math.min(getPlayerScreenWidth(playerNum), getPlayerScreenHeight(playerNum)) * RESIZE_MAX_RATIO)
-end
-
--- 10 顆按鈕（M - + ◇視角 C XY 搜尋 家 ⚙ X）的最小可容寬度抬高 Core.RESIZE_MIN：必須在 InitPlayer 讀
--- CustomSize 夾限「之前」呼叫——installMinidoracatButtons 的同款回寫發生在視窗建立
--- 之後，救不到舊存小尺寸（如 180x180）的本 session 首次建立（X 鈕會溢出右緣）。
--- 字級在 InitPlayer 時已就緒：鈕寬同原版 BUTTON_HGT 公式 getFontHeight(Small)+6
-local function raiseResizeMinForButtons()
-    local bw = getTextManager():getFontHeight(UIFont.Small) + 6
-    local minW = 10 * bw + 9 * 2 + CHROME_BORDER * 2 + 4 -- 10 鈕＋9×2px 間距＋卡片外框 ×2＋4
-    if minW > Core.RESIZE_MIN then Core.RESIZE_MIN = minW end
 end
 
 -- 讀自訂尺寸欄位原始字串（apply()/InitPlayer 判斷欄位是否變動用）
@@ -1467,6 +1459,7 @@ if PZAPI and PZAPI.ModOptions then
     combo:addItem("UI_MinidoracatMiniMap_Size_Medium", true) -- 預設「中」
     combo:addItem("UI_MinidoracatMiniMap_Size_Large", false)
     combo:addItem("UI_MinidoracatMiniMap_Size_Huge", false)
+    combo:addItem("UI_MinidoracatMiniMap_Size_Mini", false) -- 排最後（見 SIZE_SCALES）
     -- 按鈕列顯示模式（問題 A）：原版 hover 展開/收合會改變外框高度、把地圖核心
     -- 往上推（詳見下方 setAdornmentsVisible wrap 一節）。不做「永遠隱藏」——
     -- 齒輪與縮放按鈕會不可達。
@@ -1811,6 +1804,16 @@ Core.minimapSizeFor = function(width, height, customW, customH, scale, minWH)
     if h < minWH then h = minWH end
     return w, h
 end
+-- n 顆按鈕排成一列的最小外框寬：n 鈕＋(n-1)×2px 間距＋卡片外框 ×2＋4。
+-- 4＝拖曳與迷你的下限（世界地圖、設定、更多、關閉）；10＝四個倍率檔的下限（全部按鈕都顯示）
+Core.toolbarMinWidth = function(n, bw)
+    return n * bw + (n - 1) * 2 + CHROME_BORDER * 2 + 4
+end
+-- 首建尺寸的下限：四個倍率檔維持「全部按鈕都顯示」（高字級的「小（原版）」照舊被抬寬）；
+-- 自訂尺寸與迷你（倍率 0）用 4 格
+Core.minimapMinFor = function(customW, scale, bw)
+    return Core.toolbarMinWidth((customW or scale == 0) and 4 or 10, bw)
+end
 -- test:minimap-size:end
 
 -- 角落小地圖：ISMiniMap.InitPlayer 於玩家生成時建立（initDefaultStyleV1 後預設
@@ -1825,18 +1828,22 @@ if ISMiniMap and ISMiniMap.InitPlayer then
         -- 子元件版面，還得手動同步 javaObject，故採「呼叫期間暫時覆寫
         -- ISMiniMapOuter.new 改寫寬高」——原版自己用新尺寸排版，零版面補丁。
         -- 一律走覆寫（不再對 scale=1 無自訂尺寸開原版直通道）：原版寬足夠時
-        -- w==width、位移 0＝逐位同原版；不足（8 鈕高字級「小」檔）才抬到
-        -- Core.RESIZE_MIN，見 Core.minimapSizeFor 註解
+        -- w==width、位移 0＝逐位同原版；不足（高字級「小」檔放不下全部按鈕）才抬到
+        -- 全部按鈕都顯示的寬度，見 Core.minimapSizeFor 註解
         local sizeIndex = getSizeIndex()
         local scale = SIZE_SCALES[sizeIndex]
-        raiseResizeMinForButtons() -- 先抬下限再夾 CustomSize（見該函式註解）
+        -- 下限每次依字級重設（鈕寬同原版 BUTTON_HGT 公式 getFontHeight(Small)+6；字級在 InitPlayer 時
+        -- 已就緒），必須在 getCustomSize 夾限之前：按鈕列最少留 4 格，放不下的按鈕收進「更多」選單
+        local bw = getTextManager():getFontHeight(UIFont.Small) + 6
+        Core.RESIZE_MIN = Core.toolbarMinWidth(4, bw)
         -- 自訂尺寸（邊緣拖曳縮放寫入）存在時優先於下拉倍率
         local customW, customH = getCustomSize(playerNum)
+        local minWH = Core.minimapMinFor(customW, scale, bw)
         local minimap
         if ISMiniMapOuter then
             local originalNew = ISMiniMapOuter.new
             ISMiniMapOuter.new = function(self, x, y, width, height, pn)
-                local w, h = Core.minimapSizeFor(width, height, customW, customH, scale, Core.RESIZE_MIN)
+                local w, h = Core.minimapSizeFor(width, height, customW, customH, scale, minWH)
                 -- InitPlayer 以螢幕右下角定位（x = 右緣 - 10 - width），改尺寸後
                 -- 平移 x/y 保持右下角錨點不變（prerender 的 setPosition 也會再校正）
                 local o = originalNew(self, x + width - w, y + height - h, w, h, pn)
@@ -2180,6 +2187,16 @@ local function toolbarIconButtonRender(self)
     local size = math.max(8, math.min(16, self.width - 6, self.height - 6))
     local x, y = math.floor((self.width - size) / 2), math.floor((self.height - size) / 2)
     if Skin and Skin.icon and Skin.icon(self, key, x, y, size, color) then return end
+    if key == "more" then -- 框架沒有「更多」圖示：畫三個方點（框架日後加了這個 key，由上一行接手）
+        local d = math.max(2, math.floor(size / 5))
+        local dx = math.floor((self.width - d * 5) / 2)
+        local dy = math.floor((self.height - d) / 2)
+        for i = 0, 2 do
+            self:drawRect(dx + i * d * 2, dy, d, d, 1, color and color.r or 0.8,
+                color and color.g or 0.8, color and color.b or 0.8)
+        end
+        return
+    end
     local fontH = getTextManager():getFontHeight(UIFont.Small)
     self:drawTextCentre(self._minidoracatFallback, self.width / 2,
         math.floor((self.height - fontH) / 2),
@@ -2197,29 +2214,144 @@ local function installToolbarIcon(button, owner, key, fallback)
 end
 -- test:minimap-toolbar-icons:end
 
--- 按鈕列重排：10 顆（M - + ◇視角 定位 複製 尋 家 ⚙ X）以動態間距塞進 inner 寬度
--- （原版置中排版只按 5 顆算，ISMiniMap.lua:417）
-local function relayoutBottomButtons(mm)
-    -- 逐鈕 append＋顯式計數：候選含可缺席鈕（perspBtn 材質降級＝nil），
-    -- 表構造子中間 nil 會讓 # 截斷（Kahlua len 二分探邊界，KahluaUtil.java:436-452
-    -- ——先前僅因 nil 落點錯開探點而僥倖正確；家規「# 不可信」count/rn 慣例）
-    local btns, bn = {}, 0
-    local function addBtn(b)
-        if b then bn = bn + 1; btns[bn] = b end
+-- 按鈕列收納（純函式，離線測試 scripts/test_toolbar_plan.lua）：小地圖窄到放不下全部按鈕時，
+-- 照 TOOLBAR_KEEP 的順序留下放得下的，其餘隱藏、改由「更多」選單執行。關閉鈕永遠在最右，
+-- 「更多」在它左邊；畫面上的左右順序（TOOLBAR_ORDER）不變
+-- test:toolbar-plan:start
+Core.TOOLBAR_KEEP = { "button1", "button4", "_minidoracatSearchBtn", "_minidoracatCenterBtn",
+    "_minidoracatHomeBtn", "button3", "button2", "_minidoracatCopyBtn", "_minidoracatPerspBtn" }
+Core.TOOLBAR_ORDER = { "button1", "button2", "button3", "_minidoracatPerspBtn", "_minidoracatCenterBtn",
+    "_minidoracatCopyBtn", "_minidoracatSearchBtn", "_minidoracatHomeBtn", "button4",
+    "_minidoracatMoreBtn", "button6" }
+Core.TOOLBAR_MENU = { -- { 按鈕欄位, 選單項的翻譯鍵, 選後重開選單（連按用） }
+    { "button3", "UI_MinidoracatMiniMap_BtnZoomIn", true },
+    { "button2", "UI_MinidoracatMiniMap_BtnZoomOut", true },
+    { "_minidoracatCenterBtn", "UI_MinidoracatMiniMap_BtnCenter" },
+    { "_minidoracatSearchBtn", "UI_MinidoracatMiniMap_MoreSearch" },
+    { "_minidoracatHomeBtn", "UI_MinidoracatMiniMap_GoHome" },
+    { "_minidoracatCopyBtn", "UI_MinidoracatMiniMap_MoreCopyCoords" },
+    { "_minidoracatPerspBtn", "UI_MinidoracatMiniMap_MorePerspective" },
+}
+-- has[name] 為真＝那顆鈕存在（直接傳小地圖外框；視角鈕缺材質時不存在）。
+-- 回傳 shown（鈕名→true，不含關閉與「更多」）、more（要不要顯示「更多」）
+Core.toolbarPlan = function(innerW, bw, has)
+    local keep, n = {}, 0
+    for i = 1, #Core.TOOLBAR_KEEP do
+        local name = Core.TOOLBAR_KEEP[i]
+        if has[name] then n = n + 1; keep[n] = name end
     end
-    addBtn(mm.button1)
-    addBtn(mm.button2)
-    addBtn(mm.button3)
-    addBtn(mm._minidoracatPerspBtn)
-    addBtn(mm._minidoracatCenterBtn)
-    addBtn(mm._minidoracatCopyBtn)
-    addBtn(mm._minidoracatSearchBtn)
-    addBtn(mm._minidoracatHomeBtn)
-    addBtn(mm.button4)
-    addBtn(mm.button6)
+    local slots = math.floor((innerW + 2) / (bw + 2)) -- 間距最少 2px 時放得下幾顆
+    local more = slots < n + 1 -- n 顆＋關閉鈕
+    local show = more and slots - 2 or n -- 關閉與「更多」各佔一格
+    local shown = {}
+    for i = 1, show do shown[keep[i]] = true end
+    -- 放大、縮小成對：只放得下「+」時兩顆都收，那一格空著（單一顆「+」放大後沒有對應的鈕縮回來；
+    -- 使用者 2026-11-23 裁定）
+    if shown.button3 and has.button2 and not shown.button2 then shown.button3 = nil end
+    return shown, more
+end
+-- 「更多」選單要列的項目：存在、而且沒顯示在按鈕列上的
+Core.toolbarMenuItems = function(has, shown)
+    local out, n = {}, 0
+    for i = 1, #Core.TOOLBAR_MENU do
+        local def = Core.TOOLBAR_MENU[i]
+        if has[def[1]] and not shown[def[1]] then n = n + 1; out[n] = def end
+    end
+    return out, n
+end
+-- 選單項＝執行被收起那顆鈕自己的動作（動作只有一份）。不用 forceClick：看不見的鈕會直接 return。
+-- 放大／縮小的動作掛在 repeatWhilePressedFunc（ISMiniMap.lua:429、434），其餘在 onclick
+Core.toolbarMenuRun = function(mm, b, again)
+    local f = b.repeatWhilePressedFunc or b.onclick
+    f(b.target, b)
+    if again then Core.toolbarOpenMore(mm, again) end
+end
+-- 「更多」選單的位置（純算術）。ax, ay, ah＝「更多」鈕的絕對位置與高；mw, mh＝選單寬高；
+-- mx, mmw＝小地圖外框的絕對 x 與寬；left..bottom＝玩家 viewport。
+-- shortcut: 只把選單夾進玩家 viewport、放不下改往上開；選單比 viewport 高時不捲動（最多 7 項，
+-- 4x 字級加 720p 分割畫面才可能），遇到再照 _Search.lua openNativeMenu 改成可捲
+Core.toolbarMenuPos = function(ax, ay, ah, mw, mh, mx, mmw, left, top, right, bottom)
+    local x = math.max(left, math.min(ax, right - mw))
+    local y = ay + ah
+    if y + mh > bottom then
+        -- 往下放不下（小地圖預設在右下角）：放到小地圖旁邊、底邊對齊按鈕列，不蓋住地圖
+        -- （連按放大縮小要看得到地圖）；兩邊都放不下才往上開、蓋在地圖上
+        y = math.max(top, y - mh)
+        if mx - mw >= left then
+            x = mx - mw
+        elseif mx + mmw + mw <= right then
+            x = mx + mmw
+        else
+            y = math.max(top, ay - mh)
+        end
+    end
+    return x, y
+end
+-- test:toolbar-plan:end
+
+-- 開「更多」選單（原生選單：手把、關閉行為沿用原版）。at＝開啟後停在第幾項：放大／縮小選完
+-- 原版一律關選單（先 closeAll 再 onSelect，ISContextMenu.lua:66-70、256-259），重開並停在同一項才能連按。
+-- 選單是每位玩家共用的單例（ISContextMenu.get 會 clear）、origin 會殘留，所以 mm.prerender 判斷
+-- 「開著的是不是本選單」看第一項的 onSelect
+Core.toolbarOpenMore = function(mm, at)
+    local anchor = mm._minidoracatMoreBtn
+    if not (anchor and ISContextMenu and ISContextMenu.get) then return end
+    local pn = mm.playerNum or 0
+    local ax, ay = anchor:getAbsoluteX(), anchor:getAbsoluteY()
+    local menu = ISContextMenu.get(pn, ax, ay + anchor.height)
+    menu.origin = mm
+    local items, n = Core.toolbarMenuItems(mm, mm._minidoracatShown or {})
+    for i = 1, n do
+        local def = items[i]
+        local b = mm[def[1]]
+        local name = getText(def[2])
+        -- numOptions 在 addOption 之前讀＝這一項的索引（ISContextMenu.lua:873-883）
+        local option = menu:addOption(name, mm, Core.toolbarMenuRun, b, def[3] and menu.numOptions or nil)
+        if b.tooltip and b.tooltip ~= name and ISToolTip then -- 按鈕的長說明搬到選項上（同 _Search.lua optionTip）
+            local tip = ISToolTip:new()
+            tip:initialise()
+            tip:setVisible(false)
+            tip.description = b.tooltip
+            option.toolTip = tip
+        end
+    end
+    local left, top = getPlayerScreenLeft(pn), getPlayerScreenTop(pn)
+    local x, y = Core.toolbarMenuPos(ax, ay, anchor.height, menu.width, menu.height, mm:getAbsoluteX(), mm.width,
+        left, top, left + getPlayerScreenWidth(pn), top + getPlayerScreenHeight(pn))
+    menu.requestX, menu.requestY = x, y
+    menu:setSlideGoalX(x, x)
+    menu:setSlideGoalY(y, y)
+    if at then menu.mouseOver = at end
+    if JoypadState and JoypadState.players and JoypadState.players[pn + 1] then
+        menu.mouseOver = at or 1
+        setJoypadFocus(pn, menu)
+    end
+    mm._minidoracatMoreMenu = menu
+end
+
+-- 按鈕列重排：Core.toolbarPlan 決定顯示哪幾顆，顯示的以動態間距塞進 inner 寬度
+-- （原版置中排版只按 5 顆算，ISMiniMap.lua:417）。寬度只在重建時變，建立時排一次就夠
+local function relayoutBottomButtons(mm)
+    local bw = mm.button4.width
+    local shown, more = Core.toolbarPlan(mm.inner.width, bw, mm)
+    mm._minidoracatShown = shown
+    -- 自由查看的琥珀邊框：定位鈕被收起時改亮「更多」（inner prerender 讀這一欄）
+    mm._minidoracatFreelookBtn = shown._minidoracatCenterBtn and mm._minidoracatCenterBtn
+        or mm._minidoracatMoreBtn
+    -- 逐鈕 append＋顯式計數：候選含可缺席鈕（perspBtn 材質降級＝nil），家規「# 不可信」count 慣例
+    local btns, bn = {}, 0
+    for i = 1, #Core.TOOLBAR_ORDER do
+        local name = Core.TOOLBAR_ORDER[i]
+        local b = mm[name]
+        if b then
+            local on = shown[name] == true or name == "button6"
+                or (more and name == "_minidoracatMoreBtn")
+            b:setVisible(on) -- 一定要是布林
+            if on then bn = bn + 1; btns[bn] = b end
+        end
+    end
     local n = bn
     if n < 2 then return end
-    local bw = btns[1].width
     local spacing = math.floor((mm.inner.width - n * bw) / (n - 1))
     if spacing > 10 then spacing = 10 end -- 上限＝UI_BORDER_SPACING（ISMiniMap.lua:8）
     if spacing < 2 then spacing = 2 end
@@ -2229,7 +2361,6 @@ local function relayoutBottomButtons(mm)
         btns[i]:setX(x)
         x = x + bw + spacing
     end
-    return n
 end
 
 -- 寫入系統剪貼簿＋座標列 1.5 秒琥珀「已複製」回饋（回饋獨立於 ShowPlayerCoords
@@ -2273,6 +2404,8 @@ installMinidoracatButtons = function(mm)
             math.floor(playerObj:getX()), math.floor(playerObj:getY()),
             math.floor(playerObj:getZ())))
     end)
+    -- ISButton:new 把寬度撐到「標題字寬＋10」（ISButton.lua:493-495）：小字級時 XY 比一格寬、壓到右邊那顆
+    copyBtn.width = ref.width
     copyBtn:initialise()
     copyBtn.tooltip = getText("UI_MinidoracatMiniMap_BtnCopyCoords")
     installToolbarIcon(copyBtn, mm, "copy", "XY")
@@ -2352,6 +2485,21 @@ installMinidoracatButtons = function(mm)
     end
     mm.bottomPanel:addChild(homeBtn)
     mm._minidoracatHomeBtn = homeBtn
+    -- 「更多」：按鈕列放不下時才顯示（relayoutBottomButtons），按下開選單列出被收起的按鈕。
+    -- 選單開著時再按一次＝收起：選單在按下那一刻已經自己收了（ISContextMenu.lua:283-292 onMouseDownOutside），
+    -- 所以按下時記住它剛才開著，放開時就不再開。手把 forceClick 不經 onmousedown，照常開
+    local moreBtn = ISButton:new(0, ref.y, ref.width, ref.height, "", mm, function(target)
+        local skip = target._minidoracatMoreSkip
+        target._minidoracatMoreSkip = nil
+        if not skip then Core.toolbarOpenMore(target) end
+    end, function(target)
+        target._minidoracatMoreSkip = target._minidoracatMoreOpen
+    end)
+    moreBtn:initialise()
+    moreBtn.tooltip = getText("UI_MinidoracatMiniMap_BtnMore")
+    installToolbarIcon(moreBtn, mm, "more", "")
+    mm.bottomPanel:addChild(moreBtn)
+    mm._minidoracatMoreBtn = moreBtn
     -- 「=」圖層面板鈕已退役：引擎原生三項移入設定視窗「底圖與文字」分類。
     -- 原版面板機制（getVisibleOptions/onTickBox wrap 等）保留不拆——
     -- 面板已無入口，但第三方 MOD 若開啟它，注入與回寫仍正確
@@ -2361,7 +2509,7 @@ installMinidoracatButtons = function(mm)
     if mm.button2 then mm.button2.tooltip = getText("UI_MinidoracatMiniMap_BtnZoomOut") end
     if mm.button3 then mm.button3.tooltip = getText("UI_MinidoracatMiniMap_BtnZoomIn") end
     if mm.button6 then mm.button6.tooltip = getText("UI_MinidoracatMiniMap_BtnClose") end
-    -- 按鈕列皮膚化：10 顆（原版 5＋本 MOD 5）統一淡框淡底＋hover 亮階（fade 混色
+    -- 按鈕列皮膚化：11 顆（原版 5＋本 MOD 6）統一淡框淡底＋hover 亮階（fade 混色
     -- ISButton:prerender :117-133、守衛 shouldDrawBackground/shouldDrawBorder :91-100）。
     -- 鈕底半透明化後露出 outer 黑 0.8 底（ISMiniMap.lua:675）。
     -- 逐鈕呼叫、不經中間表：perspBtn 材質缺失時為 nil，表構造子中間 nil
@@ -2382,13 +2530,22 @@ installMinidoracatButtons = function(mm)
     skinBtn(mm._minidoracatPerspBtn)
     skinBtn(searchBtn)
     skinBtn(homeBtn)
-    local n = relayoutBottomButtons(mm) or 10
-    -- n 顆按鈕的最小可容寬度回寫尺寸下限（n＝order 表實際數量，單一來源）：UI 字型
-    -- 放大時 BUTTON_HGT 跟著變大，動態墊高避免縮到溢出。InitPlayer 另以
-    -- raiseResizeMinForButtons 在 CustomSize 夾限前先抬——本回寫發生在視窗建立後，
-    -- 只服務「本 session 後續拖曳」的下限
-    local minW = n * ref.width + (n - 1) * 2 + (mm.borderSize or 2) * 2 + 4
-    if minW > Core.RESIZE_MIN then Core.RESIZE_MIN = minW end
+    skinBtn(moreBtn)
+    -- 手把：「更多」登記進原版按鈕列（ISMiniMap.lua:447 insertNewLineOfButtons；左右移看
+    -- joypadButtonsY[1]、方向鍵找鄰居看 allJoypadButtons，兩者都跳過看不見的鈕，ISPanelJoypad.lua:371-381、
+    -- 613）。窄寬度時放大／縮小被收起，不登記的話手把就沒有縮放入口。插在關閉鈕前＝和畫面順序一致
+    local row = mm.joypadButtonsY and mm.joypadButtonsY[1]
+    if row then
+        for i = 1, #row do
+            if row[i] == mm.button6 then
+                table.insert(row, i, moreBtn)
+                break
+            end
+        end
+        if mm.allJoypadButtons then mm.allJoypadButtons[#mm.allJoypadButtons + 1] = moreBtn end
+    end
+    relayoutBottomButtons(mm)
+    -- 被收進「更多」的按鈕，手把可從選單執行；下面說的是全部按鈕都顯示時的現況
     -- ponytail: C/XY/視角/搜尋/家 五顆新鈕都未登記手把導航列（原版 insertNewLineOfButtons 於
     -- createChildren 一次性登記，事後補列會亂序）——手把用戶：顯示開關走 ESC 選項頁、
     -- 視角另有兩條可達路徑（原版小地圖選項面板 Isometric 勾選 ISMiniMap.lua:104、
@@ -2407,8 +2564,12 @@ installMinidoracatButtons = function(mm)
     -- Skin 缺席退回原版直角同款繪製
     mm.prerender = function(self)
         self:setPosition()
+        -- 「更多」選單開著時滑鼠移到選單上不算離開：選單是頂層元件，蓋住的點 isMouseOver 為假
+        local menu = self._minidoracatMoreMenu
+        self._minidoracatMoreOpen = menu ~= nil and menu:isVisible() and menu.options[1] ~= nil
+            and menu.options[1].onSelect == Core.toolbarMenuRun
         if self.joyfocus or (not (self.inner.dragging and self.inner.dragMoved) and self:isMouseOver())
-            or self.titleBar:isMouseOver() or self.titleBar.dragging then
+            or self.titleBar:isMouseOver() or self.titleBar.dragging or self._minidoracatMoreOpen then
             self:setAdornmentsVisible(true)
         else
             self:setAdornmentsVisible(false)
@@ -3132,13 +3293,27 @@ if ISMiniMapInner and ISMiniMapInner.prerender then
             local tz = Core.mapTextZoom()
             local hw = tm:MeasureStringX(UIFont.Small, hint) * tz
             local fh = tm:getFontHeight(UIFont.Small) * tz
-            local hx = math.floor((self.width - hw) / 2)
-            local hy = self.height - fh - 10
+            -- 迷你尺寸放不下整句（會畫出小地圖外）：膠囊縮成一顆定位圖示、放左上角，缺框架退回「C」；
+            -- 座標列留在底線不上移（_Nav.lua drawPlayerCoords 讀這一欄），不然兩個膠囊佔掉半張地圖
+            local icon = hw + 16 > self.width
+            self._minidoracatFreelookIcon = icon
+            if icon then
+                hint = nil
+                hw = math.floor(fh)
+            end
+            local hx = icon and 12 or math.floor((self.width - hw) / 2)
+            local hy = icon and 7 or self.height - fh - 10
             hy = hy - hy % 1 -- 純 Lua floor（值恆正）：縮放後字高可為小數，點陣字落在整數列才不糊
             self:drawRect(hx - 8, hy - 3, hw + 16, fh + 6, 0.72, 0, 0, 0)
-            Core.drawMapText(self, hint, hx, hy, 1, 0.85, 0.4, 1, UIFont.Small, tz)
+            if hint then
+                Core.drawMapText(self, hint, hx, hy, 1, 0.85, 0.4, 1, UIFont.Small, tz)
+            elseif not (Core.Skin and Core.Skin.icon
+                    and Core.Skin.icon(self, "locate", hx, hy, hw, Core.Skin.COLORS.ACCENT_AMBER)) then
+                Core.drawMapText(self, "C", hx, hy, 1, 0.85, 0.4, 1, UIFont.Small, tz)
+            end
         end
-        local cBtn = self.parent and self.parent._minidoracatCenterBtn
+        -- 定位鈕被收進「更多」時，琥珀邊框改亮「更多」（relayoutBottomButtons 決定）
+        local cBtn = self.parent and self.parent._minidoracatFreelookBtn
         if cBtn then -- 定位 icon 琥珀高亮＝次要提示；還原值同皮膚化基準（skinBtn
             -- 0.55 a0.35，見 installMinidoracatButtons）；琥珀時 a 拉滿保持醒目
             cBtn.borderColor.r = flOn and 1 or 0.55
@@ -3177,7 +3352,7 @@ end
 --------------------------------------------------------------------------------
 -- 邊緣拖曳縮放、HUD 視覺微調（外框調色／括號／把手／outer prerender+render wrap）
 -- 與自訂鍵位已拆至 MinidoracatMiniMap_Resize.lua（Kahlua 主 chunk locvar 上限對策，
--- 2026-09-03）。RESIZE_MIN 改為 Core.RESIZE_MIN（可變，兩處依字級抬高）；debugWarn
+-- 2026-09-03）。RESIZE_MIN 改為 Core.RESIZE_MIN（可變，InitPlayer 每次依字級重設為按鈕列 4 格寬）；debugWarn
 -- 留本檔（_FloatIcon 載入期取別名）；本檔對縮放的三個入口皆呼叫時查 Core.*。
 --------------------------------------------------------------------------------
 -- ─── -debug 渲染管線狀態（正常遊玩零成本：非 debug 首行即返回） ───

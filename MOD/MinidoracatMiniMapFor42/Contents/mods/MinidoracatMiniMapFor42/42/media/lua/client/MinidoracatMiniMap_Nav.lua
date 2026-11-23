@@ -287,11 +287,14 @@ local function drawNavFlag(inner, ux, uy, r, g, b, label, dist, k, tz)
     if dist then lines[#lines + 1] = { t = tostring(dist) .. "m", cr = 1, cg = 1, cb = 1 } end
     local lineH = navLineH(tz)
     local ly = uy - 14 * k - 8 - #lines * lineH -- 多行往上長，最下行維持離旗頂 8px
+    if ly < 2 then ly = 2 end -- 整塊一起夾：逐行夾會讓兩行疊在頂端（迷你尺寸的旗標幾乎都貼近上緣）
     for i = 1, #lines do
         local ln = lines[i]
         local tw = getTextManager():MeasureStringX(UIFont.Medium, ln.t) * tz
         local lx = ux + 10 * k
-        if lx < 2 then lx = 2 elseif lx > w - tw - 2 then lx = w - tw - 2 end
+        -- 先夾右再夾左：標籤比小地圖寬（迷你尺寸）時左緣留在框內、字從頭可讀
+        if lx > w - tw - 2 then lx = w - tw - 2 end
+        if lx < 2 then lx = 2 end
         local cy2 = ly + (i - 1) * lineH
         if cy2 < 2 then cy2 = 2 elseif cy2 > h - lineH then cy2 = h - lineH end
         inner:drawRect(lx - 4, cy2 - 1, tw + 8, lineH, 0.6, 0, 0, 0)
@@ -332,7 +335,8 @@ local function drawNavIndicator(inner, tx, ty, r, g, b, label, dist, k, tz, arro
         local lineH = navLineH(tz)
         local px = tipx - uxn * 28 * k - tw / 2
         local py = tipy - uyn * 28 * k - (lineH / 2 - 1)
-        if px < 2 then px = 2 elseif px > w - tw - 2 then px = w - tw - 2 end
+        if px > w - tw - 2 then px = w - tw - 2 end
+        if px < 2 then px = 2 end
         if py < 2 then py = 2 elseif py > h - lineH then py = h - lineH end
         -- 深色底墊字（同原版玩家名牌做法 UIWorldMap.java:509），淺色地圖上才清晰
         inner:drawRect(px - 4, py - 1, tw + 8, lineH, 0.6, 0, 0, 0)
@@ -519,6 +523,8 @@ local function drawPlayerCoords(inner)
     end
     local tz = mapTextZoom()
     cw = cw * tz
+    -- 迷你尺寸的小地圖放不下時不畫（膠囊會畫出小地圖外）；「已複製」是按了複製才有的回饋，照畫
+    if not copied and cw + 16 > inner.width then return end
     local ch = tm:getFontHeight(UIFont.Small) * tz
     local cx = (inner.width - cw) / 2
     cx = cx - cx % 1 -- 純 Lua floor（原 math.max+math.floor 兩次跨界）
@@ -528,7 +534,8 @@ local function drawPlayerCoords(inner)
     -- 碰到就改畫在按鈕列上方。小地圖的 inner 沒有 buttonPanel
     local row = inner.buttonPanel
     if row and cx + cw + 8 > row.x - 10 then cy = row.y - ch - 10 end
-    if inner._minidoracatFreelook and getBoolOption("FreeLook", true) then
+    -- 自由查看的提示在底線：座標列讓到它上面。提示縮成左上角圖示時（迷你尺寸，主檔 inner prerender）不讓
+    if inner._minidoracatFreelook and getBoolOption("FreeLook", true) and not inner._minidoracatFreelookIcon then
         cy = cy - ch - 10
     end
     cy = cy - cy % 1 -- 縮放後字高可為小數；點陣字落在整數列才不糊

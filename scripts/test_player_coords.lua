@@ -31,8 +31,9 @@ local function check(value, label)
     if not value then failures = failures + 1; print("FAIL " .. label) end
 end
 -- 回膠囊底框 {x, y, w, h}
-local function pill(w, hgt, row)
-    local inner = { width = w, height = hgt, buttonPanel = row,
+local function pill(w, hgt, row, copiedUntil, freelook, icon)
+    local inner = { width = w, height = hgt, buttonPanel = row, _minidoracatCopiedUntil = copiedUntil,
+        _minidoracatFreelook = freelook, _minidoracatFreelookIcon = icon,
         drawRect = function(self, x, y, rw, rh) self.rect = { x, y, rw, rh } end }
     h.draw(inner)
     return inner.rect
@@ -62,6 +63,14 @@ h.setZoom(1)
 -- C4: 小地圖（沒有 buttonPanel）照舊在底線
 r = pill(323, 323, nil)
 check(r[2] == 323 - 16 - 10 - 3, "C4 minimap pill stays on the bottom line")
+-- C5: 迷你尺寸的小地圖放不下（文字 86＋左右各 8 > 100）：不畫，免得膠囊畫出小地圖外
+check(pill(100, 100, nil) == nil, "C5 pill is skipped when wider than a mini-sized minimap")
+check(pill(102, 102, nil) ~= nil, "C5 pill is drawn when it just fits")
+-- C6: 「已複製」是按了複製才有的回饋，放不下也照畫
+check(pill(60, 60, nil, 1) ~= nil, "C6 copied feedback is always drawn")
+-- C7: 自由查看的提示在底線時座標列讓到上面；提示縮成左上角圖示（迷你尺寸）時留在底線
+check(pill(323, 323, nil, nil, true)[2] == 323 - 16 - 10 - 3 - 26, "C7 pill moves above the free-look hint")
+check(pill(114, 114, nil, nil, true, true)[2] == 114 - 16 - 10 - 3, "C7 pill stays on the bottom line with the icon hint")
 
 print(string.format("player coords: %d assertions, %d failures", assertions, failures))
 os.exit(failures == 0 and 0 or 1)

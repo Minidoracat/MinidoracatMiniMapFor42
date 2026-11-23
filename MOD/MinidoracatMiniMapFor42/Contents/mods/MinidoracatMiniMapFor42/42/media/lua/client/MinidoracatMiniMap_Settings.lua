@@ -354,7 +354,8 @@ local SEC_WINDOW = { id = "window", label = "UI_MinidoracatMiniMap_SecWindow", i
     combos = {
         { id = "MapSize", label = "UI_MinidoracatMiniMap_Size", default = 2,
             items = { "UI_MinidoracatMiniMap_Size_Small", "UI_MinidoracatMiniMap_Size_Medium",
-                "UI_MinidoracatMiniMap_Size_Large", "UI_MinidoracatMiniMap_Size_Huge" } },
+                "UI_MinidoracatMiniMap_Size_Large", "UI_MinidoracatMiniMap_Size_Huge",
+                "UI_MinidoracatMiniMap_Size_Mini" } },
         { id = "AdornMode", label = "UI_MinidoracatMiniMap_AdornMode", default = 2,
             items = { "UI_MinidoracatMiniMap_AdornMode_Hover", "UI_MinidoracatMiniMap_AdornMode_Always" } },
         { id = "Opacity", label = "UI_MinidoracatMiniMap_Opacity", default = 1,

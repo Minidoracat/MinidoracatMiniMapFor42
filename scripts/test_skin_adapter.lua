@@ -953,6 +953,7 @@ return toolbarIconButtonRender, installToolbarIcon,
             setTitle = function(self, value) self.title = value end,
             setImage = function(self, value) self.image = value end,
             drawTextCentre = function(self, text) self.fallback = text end,
+            drawRect = function(self, x, y, w, h) self.dots = (self.dots or 0) + 1; self.dotW = w end,
         }
     end
     local locate = button()
@@ -979,11 +980,24 @@ return toolbarIconButtonRender, installToolbarIcon,
     check(copy.iconKey == "copy" and copy.iconColor == primary
         and copy._minidoracatFallback == "XY",
         "態E 複製鈕使用 copy icon 並保留 XY 退回")
+    -- 「更多」：框架有這個圖示就用；沒有時畫三個方點、不畫文字
+    local more = button()
+    installIcon(more, owner, "more", "")
+    renderIcon(more)
+    check(more.iconKey == "more" and more.dots == nil and more.fallback == nil,
+        "態E 更多鈕先問框架圖示")
+    setIconAvailable(false)
+    local moreDots = button()
+    installIcon(moreDots, owner, "more", "")
+    renderIcon(moreDots)
+    check(moreDots.dots == 3 and moreDots.fallback == nil,
+        "態E 框架沒有更多圖示時畫三個方點、不畫文字")
+    setIconAvailable(true)
 end
 print()
 -- 條數守門（家族慣例）：整段被註解掉時數字變小但不會紅，靠這裡擋
--- 預設 80；--family-floats 另驗三包共用版面、重生與原生視窗層級。
-local EXPECTED_ASSERTIONS = familyFloats and 93 or 80
+-- 預設 82；--family-floats 另驗三包共用版面、重生與原生視窗層級。
+local EXPECTED_ASSERTIONS = familyFloats and 95 or 82
 if assertionCount ~= EXPECTED_ASSERTIONS then
     print("斷言條數不符：預期 " .. EXPECTED_ASSERTIONS .. "、實際 " .. assertionCount
         .. "（有測試被刪掉或跳過？）")

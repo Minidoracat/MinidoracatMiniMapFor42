@@ -1,9 +1,8 @@
 -- 小地圖首建尺寸決策（Core.minimapSizeFor）離線回歸測試。
 -- 仿 test_ghost_gate.lua：抽主檔標記區段→離線跑（純函式，只用 math.floor）。
 -- 核心不變量：自訂尺寸 > 倍率縮放 > 原版尺寸；一律夾 minWH 下限——高字級「小
--- （原版）」檔的按鈕列溢出防護（0.17.0 起 9 鈕：raiseResizeMinForButtons 公式
--- 9*bw+8*2+2*2+4；本測試的 minWH 為外部參數，不變量與鈕數解耦，案例數字沿用
--- 8 鈕時代亦有效；codex review 以算術抓出的回歸）。
+-- （原版）」檔的按鈕列溢出防護。S1–S7 的 minWH 是外部參數（夾限本身，與鈕數解耦）；
+-- S9–S11 的下限由主檔 Core.minimapMinFor 決定（倍率檔 10 格、自訂與迷你 4 格）。
 -- 用法：lua scripts/test_minimap_size.lua
 local mainPath = arg[1]
     or "MOD/MinidoracatMiniMapFor42/Contents/mods/MinidoracatMiniMapFor42/42/media/lua/client/MinidoracatMiniMap.lua"
@@ -17,9 +16,9 @@ local body = assert(source:match(
     "找不到 minimap-size 測試區段")
 
 local compile = loadstring or load
-local chunk = assert(compile("local Core = {}\n" .. body .. "\nreturn Core.minimapSizeFor",
-    "minimap-size"))
-local sizeFor = chunk()
+local chunk = assert(compile("local Core = {}\nlocal CHROME_BORDER = 8\n" .. body
+    .. "\nreturn Core.minimapSizeFor, Core.toolbarMinWidth, Core.minimapMinFor", "minimap-size"))
+local sizeFor, minWidth, minFor = chunk()
 
 -- S1: 原版寬足夠（1x 字級 bw≈20：6*20+72=192 ≥ min 190）→ 不動＝逐位同原版
 local w, h = sizeFor(192, 192, nil, nil, 1.0, 190)
@@ -49,4 +48,27 @@ assert(w == 300 and h == 240, "S6: 自訂尺寸須優先於倍率（w=" .. w .. 
 w, h = sizeFor(264, 264, 160, 500, 1.0, 190)
 assert(w == 190 and h == 500, "S7: 自訂寬低於下限須夾、高足夠不動（w=" .. w .. ",h=" .. h .. "）")
 
-print("test_minimap_size: OK（S1-S7：直通/2x/4x 補足/四捨五入/縮放夾限/自訂優先/自訂夾限）")
+-- S8: 按鈕列寬度公式——4 格（拖曳與迷你的下限）與 10 格（倍率檔的下限）在五個字級的值
+local bws = { 22, 25, 32, 39, 44 }
+local want4, want10 = { 114, 126, 154, 182, 202 }, { 258, 288, 358, 428, 478 }
+for i = 1, #bws do
+    assert(minWidth(4, bws[i]) == want4[i] and minWidth(10, bws[i]) == want10[i],
+        "S8: bw=" .. bws[i] .. " 的 4 格／10 格寬不符")
+end
+
+-- S9: 迷你（倍率 0）＝縮放後為 0，夾到 4 格下限，得到正方形
+w, h = sizeFor(226, 226, nil, nil, 0, minFor(nil, 0, 25))
+assert(w == 126 and h == 126, "S9: 迷你須為 4 格下限的正方形（w=" .. w .. ",h=" .. h .. "）")
+
+-- S10: 「小（原版）」不因下限降低而變窄——倍率檔照舊夾 10 格下限（原版寬 6*25+76=226）
+for _, scale in ipairs({ 1.0, 1.5, 2.0, 2.5 }) do
+    assert(minFor(nil, scale, 25) == 288, "S10: 倍率 " .. scale .. " 的下限須為 10 格")
+end
+w, h = sizeFor(226, 226, nil, nil, 1.0, minFor(nil, 1.0, 25))
+assert(w == 288 and h == 288, "S10: 「小」須維持 10 格寬（w=" .. w .. "）")
+
+-- S11: 自訂尺寸可以小到 4 格下限，再小就夾（下拉選哪一檔都一樣）
+w, h = sizeFor(226, 226, 100, 300, 1.0, minFor(100, 1.0, 25))
+assert(w == 126 and h == 300, "S11: 自訂寬低於 4 格下限須夾（w=" .. w .. ",h=" .. h .. "）")
+
+print("test_minimap_size: OK（S1-S11：直通/2x/4x 補足/四捨五入/縮放夾限/自訂優先/自訂夾限/按鈕列寬/迷你/小不變/自訂下限）")

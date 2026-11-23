@@ -6,8 +6,8 @@
 -- 自訂鍵位（OnGameBoot 註冊、開關小地圖與穿透熱鍵）。
 -- 載入順序假設：PZ 依字母序載入同目錄 lua，'.'(0x2E) < '_'(0x5F) → 主檔必先載入並
 -- 建好 MinidoracatMiniMapCore；本檔載入期只讀取其「一次性賦值」的穩定引用。
--- 例外：RESIZE_MIN 是**可變**值（主檔 raiseResizeMinForButtons／installMinidoracatButtons
--- 依字級抬高），故不取別名、每次讀 Core.RESIZE_MIN 取即時值。debugWarn 留在主檔
+-- 例外：RESIZE_MIN 是**可變**值（主檔 InitPlayer 每次依字級重設成按鈕列 4 格的寬度，
+-- 可升可降），故不取別名、每次讀 Core.RESIZE_MIN 取即時值。debugWarn 留在主檔
 -- （_FloatIcon.lua 載入期取 Core.debugWarn 別名，而 _FloatIcon 先於本檔載入；本檔不用）。
 -- 主檔用本檔的三個入口（InitPlayer 對 bottomPanel 實例補掛 installResizeHooks、
 -- installMinidoracatButtons 實例 prerender 的 chromeTintBorder、_Ghost 的 cancelResize）
