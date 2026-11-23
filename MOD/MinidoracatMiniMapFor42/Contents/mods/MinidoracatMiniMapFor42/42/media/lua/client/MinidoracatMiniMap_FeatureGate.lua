@@ -19,6 +19,9 @@ local API = MinidoracatMiniMapAPI
 local Policy = Core.policy -- nil＝舊版共用檔缺席：沒有戰術檢視可旁路
 
 local TTL_MS = 250
+-- hide 輪詢提前重算：快取不會在輪詢與同一次繪製的 inner prerender 之間過期（否則收起前偶發一幀無訊號）
+local POLL_LEAD_MS = 50
+local ttl = TTL_MS
 local NO_SURFACE = "-" -- surface=nil（非繪製呼叫）的快取鍵
 local GENERIC_REASON = "UI_MinidoracatMiniMap_FeatureUnavailable"
 local function log(msg) print("[MinidoracatMiniMap] " .. tostring(msg)) end
@@ -88,7 +91,7 @@ Core.featureAllowed = function(pn, feature, surface)
     if not bySurface then bySurface = {}; byFeature[sk] = bySurface end
     local e = bySurface[pn]
     local now = getTimestampMs()
-    if e and now >= e.at and now - e.at < TTL_MS then return e.ok, e.reason, e.dist, e.hide end
+    if e and now >= e.at and now - e.at < ttl then return e.ok, e.reason, e.dist, e.hide end
     if not e then e = {}; bySurface[pn] = e end
     local ok, reason, dist, hide = true, nil, nil, false
     for i = 1, n do
@@ -134,7 +137,8 @@ end
 -- 原版從不對小地圖 outer setVisible（ISMiniMap.lua 的 setVisible 都是選項面板與標題列），旗標不會被原版清掉。
 -- 收著時 isReallyVisible 為 false：開圖入口照舊走 minimapOpenBlocked（不開＋halo）、Dock 顯示未開、通知不避讓。
 -- 輪詢掛 OnPreUIDraw（UIManager.render 內、逐元件 render 之前，UIManager.java:293、:310-327）：暫停時照跑；
--- 與 inner prerender 同一個快取鍵 ("minimap", "mini")，每幀都先在這裡問、快取過期後的重算落在 render 之前，不會先畫一幀無訊號；
+-- 與 inner prerender 同一個快取鍵 ("minimap", "mini")，每幀都先在這裡問；輪詢的有效期少 POLL_LEAD_MS，
+-- 重算一定落在輪詢、不會在同一幀稍後的 prerender 才翻成 hide，所以不會先畫一幀無訊號；
 -- 建立視窗當下 addon 多半還沒註冊（OnCreatePlayer 早於 OnGameStart，GameLoadingState.exit），
 -- 新視窗進 UI 清單後的第一次繪製前就在這裡被收，不必在建立點另判。
 -- 狀態 per pn：hid＝閘門要求收起中（值＝收起時視窗本來開著沒）；shown＝閘門解除時顯示的視窗，
@@ -155,6 +159,9 @@ local function hideWindow(pn, mm)
         inner.rightMouseDown = false
         if inner.setCapture then pcall(inner.setCapture, inner, false) end
     end
+    -- 縮放鈕按住時被收：不可見元件收不到 mouse up 但 update 照跑（ISButton.lua:300），會一路縮到極限
+    if mm.button2 then mm.button2.pressed = false end
+    if mm.button3 then mm.button3.pressed = false end
     -- 只關本 MOD 的「更多」選單（每位玩家共用單例，辨識式同主檔實例 prerender）
     if menu and menu:isVisible() and menu.options[1] and menu.options[1].onSelect == Core.toolbarMenuRun then
         menu:closeAll()
@@ -170,14 +177,16 @@ end
 local function showWindow(pn, mm)
     -- 沒有視窗＝沙盒連世界地圖都關（autoCreateMiniMap 刻意不建）：不替伺服器主跳出地圖（2026-11-09 裁定），/ 照樣能開
     if not mm then return nil end
-    mm._minidoracatGateHidden = nil
     mm:setVisible(true)
+    mm._minidoracatGateHidden = nil -- setVisible 之後才清：拋錯時旗標還在，失敗還原認得出它
     if not mm:isReallyVisible() then mm:addToUIManager() end -- 玩家自己關掉的；不寫 StartVisible
     return mm
 end
 
 Core.minimapGateSync = function(pn)
+    ttl = TTL_MS - POLL_LEAD_MS
     local _, _, _, hide = Core.featureAllowed(pn, "minimap", "mini")
+    ttl = TTL_MS
     local mm = getPlayerMiniMap(pn)
     if hide then
         shown[pn] = nil
@@ -200,8 +209,10 @@ Core.minimapGateSync = function(pn)
         if mm ~= shown[pn] then -- Recreate／重建 UI 換了實例
             shown[pn] = mm
             if not mm:isReallyVisible() then mm:addToUIManager() end
-        elseif not mm:isReallyVisible() then
-            shown[pn] = nil -- 放行期間玩家自己關了：照他的，到下一次 hide→放行才再開
+        elseif mm:isVisible() and not mm:isReallyVisible() then
+            -- 放行期間玩家自己關了（移出 UI 清單）：照他的，到下一次 hide→放行才再開；
+            -- 全 UI 隱藏與 ESC 選單（ISUIHandler.setVisibleAllUI）是 setVisible(false)，不算
+            shown[pn] = nil
         end
     end
 end

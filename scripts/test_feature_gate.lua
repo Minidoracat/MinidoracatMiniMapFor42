@@ -75,6 +75,7 @@ local function fixture()
             titleBar = { dragging = true, setCapture = function(s, v) s.cap = v end },
             inner = { dragging = true, rightMouseDown = true, setCapture = function(s, v) s.cap = v end } }
         function mm:isReallyVisible() return self.visible and self.inUI end
+        function mm:isVisible() return self.visible end
         function mm:setVisible(v) self.visible = v; self.sets[#self.sets + 1] = v end
         function mm:addToUIManager() self.adds = self.adds + 1; self.inUI = true end
         function mm:removeFromUIManager() self.removes = self.removes + 1; self.inUI = false end
@@ -503,14 +504,15 @@ do -- H3–H5：開著→收起→放回
         and not mm.inner.dragging and not mm.inner.rightMouseDown and mm.inner.cap == false, "H3 取消縮放、清拖曳旗標與 capture")
     check(menuClosed == 1, "H3 關掉本 MOD 的「更多」選單")
     check(mm.cleared ~= nil and t.joyFocus[0] == "nil", "H3 手把焦點交還")
-    -- 別人的選單（第一項不是 toolbarMenuRun）不關
+    -- 別人的選單（第一項不是 toolbarMenuRun）不關：pn1 也被收，才真的走到辨識式
     local mm1 = t.newMM(1, true)
     mm1._minidoracatMoreMenu = { options = { { onSelect = function() end } },
         isVisible = function() return true end, closeAll = function() otherClosed = otherClosed + 1 end }
+    t.G.pns[1] = true
     t.step()
-    check(otherClosed == 0 and mm1.visible == true, "H3 只關本 MOD 的選單；pn1 沒被擋不收")
+    check(otherClosed == 0 and mm1.visible == false, "H3 pn1 收起時不關別人的選單")
     t.step(); t.step()
-    check(#mm.sets == 1 and t.cancels == 1, "H4 hide 持續時重複輪詢不再動作")
+    check(#mm.sets == 1 and #mm1.sets == 1 and t.cancels == 2, "H4 hide 持續時重複輪詢不再動作")
     check(t.gateCalls[#t.gateCalls]:find(":minimap:mini", 1, true) ~= nil, "H4 輪詢用 (minimap, mini) 快取鍵")
     t.G.minimap = true
     t.step()
@@ -610,6 +612,38 @@ do -- H15：主檔 prerender 與輪詢共用快取鍵
     fh:close()
     check(mainSource:find('fa(pn, "minimap", "mini")', 1, true) ~= nil, "H15 主檔 prerender 用 (minimap, mini)")
     check(source:find('Core.featureAllowed(pn, "minimap", "mini")', 1, true) ~= nil, "H15 輪詢用同一鍵")
+end
+do -- H16：快取在輪詢之後、同一幀 prerender 之前過期：輪詢必須先重算，不得留一幀給 prerender 畫無訊號
+    local t = hideFixture()
+    local mm = t.newMM(0, true)
+    t.frame() -- 放行，快取建立於 t.now
+    local t0 = t.now
+    t.G.minimap = false
+    t.now = t0 + 210 -- 主檔 prerender 的 250ms 窗口內、輪詢的提前窗口外
+    t.frame()
+    check(mm.visible == false, "H16 快取 210ms：輪詢就重算並收起")
+    local calls = #t.gateCalls
+    t.now = t0 + 210 + 240
+    local _, _, _, h = t.core.featureAllowed(0, "minimap", "mini")
+    check(h == true and #t.gateCalls == calls, "H16 輪詢之外的呼叫照舊 250ms 快取")
+end
+do -- H17：按住縮放鈕時被收：清掉 pressed，否則隱藏期間 update 一路縮放
+    local t = hideFixture()
+    local mm = t.newMM(0, true)
+    mm.button2, mm.button3 = { pressed = true }, { pressed = true }
+    t.G.minimap = false; t.step()
+    check(mm.button2.pressed == false and mm.button3.pressed == false, "H17 縮放鈕 pressed 清掉")
+end
+do -- H18：放行後全 UI 隱藏（setVisible(false)、還在清單）不算玩家自己關：之後 Recreate 的新視窗照樣顯示
+    local t = hideFixture()
+    local mm = t.newMM(0, true)
+    t.G.minimap = false; t.step()
+    t.G.minimap = true; t.step()
+    mm.visible = false; t.step() -- ISUIHandler.setVisibleAllUI(false)
+    mm.visible = true; t.step()
+    local mm2 = t.newMM(0, false) -- Recreate 時 StartVisible=false：不在 UI 清單
+    t.step()
+    check(mm2.adds == 1 and mm2:isReallyVisible(), "H18 全 UI 隱藏不清除「閘門顯示中」")
 end
 
 print("feature gate assertions " .. assertions .. ", failures " .. failures)
