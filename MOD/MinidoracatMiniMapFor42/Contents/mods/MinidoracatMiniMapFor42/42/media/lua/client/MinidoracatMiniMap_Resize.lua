@@ -377,6 +377,8 @@ if ISMiniMapOuter and ISMiniMapOuter.SaveLayout and ISMiniMapOuter.RestoreLayout
     function ISMiniMapOuter:SaveLayout(name, layout)
         originalSaveLayout(self, name, layout)
         if layout.x then layout.x = Core.miniMapX(self) end -- Tutorial 時原版不寫 x
+        -- 功能閘門 hide 收起的（_FeatureGate.lua，setVisible(false)）不算玩家關的；Tutorial 時原版不寫 visible
+        if self._minidoracatGateHidden and layout.visible then layout.visible = "true" end
         layout.baseY = Core.miniMapBaseY(self)
     end
     local originalRestoreLayout = ISMiniMapOuter.RestoreLayout

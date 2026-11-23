@@ -45,7 +45,7 @@ local function fixture(rightClick)
     local printed, packets, players, handlers, events = {}, {}, {}, {}, {}
     local client, shareAllowed, opts = false, true, {}
     local draws = { route = 0, ping = 0, rects = 0, lines = 0, routeFail = false, texts = {} }
-    for _, name in ipairs({ "OnCreatePlayer", "OnGameStart", "OnTick", "OnServerCommand" }) do
+    for _, name in ipairs({ "OnCreatePlayer", "OnGameStart", "OnTick", "OnServerCommand", "OnPreUIDraw" }) do
         handlers[name] = {}
         events[name] = { Add = function(fn) handlers[name][#handlers[name] + 1] = fn end }
     end

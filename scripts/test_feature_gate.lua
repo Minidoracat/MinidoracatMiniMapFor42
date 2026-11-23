@@ -25,7 +25,8 @@ end
 
 local function fixture()
     local t = { now = 1000, clockReads = 0, printed = {}, halos = {}, tactical = {}, draws = {},
-        textAt = {}, zoom = 1, opts = {}, sandbox = {}, gatePns = {} }
+        textAt = {}, zoom = 1, opts = {}, sandbox = {}, gatePns = {},
+        mms = {}, pdata = { [0] = {}, [1] = {} }, uiDraw = {}, joyFocus = {}, created = 0, cancels = 0, svWrites = 0 }
     local core = {
         ready = true,
         policy = { tacticalActive = function(pn) return t.tactical[pn] == true end },
@@ -58,12 +59,50 @@ local function fixture()
         self.mapAPI:setBoolean("RemotePlayers", show)
     end
     local api = {}
-    local players = { [0] = { name = "p0" }, [1] = { name = "p1" } }
+    local players = { [0] = { name = "p0", isDead = function(s) return s.dead == true end },
+        [1] = { name = "p1", isDead = function(s) return s.dead == true end } }
+    t.players = players
+    -- 本 MOD 自建小地圖（_Resize Core.createMiniMap）與版面登記：hide 解除時沒有視窗才用到
+    core.createMiniMap = function(pn)
+        t.created = t.created + 1
+        if t.createFails then return nil end
+        local mm = t.newMM(pn, false)
+        return mm
+    end
+    core.registerMiniMapLayout = function(mm) t.registered = mm end
+    core.cancelResize = function() t.cancels = t.cancels + 1 end
+    core.toolbarMenuRun = function() end
+    -- 假小地圖 outer：isReallyVisible＝visible 且在 UI 清單（UIElement.java:1798）；計數 setVisible／add／remove
+    function t.newMM(pn, inUI)
+        local mm = { playerNum = pn, visible = true, inUI = inUI, sets = {}, adds = 0, removes = 0,
+            titleBar = { dragging = true, setCapture = function(s, v) s.cap = v end },
+            inner = { dragging = true, rightMouseDown = true, setCapture = function(s, v) s.cap = v end } }
+        function mm:isReallyVisible() return self.visible and self.inUI end
+        function mm:setVisible(v) self.visible = v; self.sets[#self.sets + 1] = v end
+        function mm:addToUIManager() self.adds = self.adds + 1; self.inUI = true end
+        function mm:removeFromUIManager() self.removes = self.removes + 1; self.inUI = false end
+        function mm:clearJoypadFocus(jf) self.cleared = jf end
+        t.mms[pn] = mm
+        return mm
+    end
+    local uiDraw = {}
+    t.uiDraw = uiDraw
+    local events = { OnPreUIDraw = {
+        Add = function(fn) uiDraw[#uiDraw + 1] = fn end,
+        Remove = function(fn)
+            for i = #uiDraw, 1, -1 do if uiDraw[i] == fn then table.remove(uiDraw, i) end end
+            t.uiRemoved = (t.uiRemoved or 0) + 1
+        end } }
+    function t.frame() for i = 1, #uiDraw do uiDraw[i]() end end
     local env = setmetatable({
         MinidoracatMiniMapCore = core, MinidoracatMiniMapAPI = api,
         WorldMapOptions = WorldMapOptions, ISWorldMap = ISWorldMap,
         getTimestampMs = function() t.clockReads = t.clockReads + 1; return t.now end,
-        getSpecificPlayer = function(pn) return players[pn] end,
+        getSpecificPlayer = function(pn) t.playerAsks = (t.playerAsks or 0) + 1; return players[pn] end,
+        getPlayerMiniMap = function(pn) return t.mms[pn] end,
+        getPlayerData = function(pn) return t.pdata[pn] end,
+        setJoypadFocus = function(pn, el) t.joyFocus[pn] = el or "nil" end,
+        Events = events,
         getText = function(key) return "T:" .. tostring(key) end,
         getTextManager = function()
             return { MeasureStringX = function(_, _, s) return #s * 6 end,
@@ -88,14 +127,15 @@ end
 do
     local t = fixture()
     local Core, API = t.core, t.api
-    checkEq(API.featureApiVersion, 2, "Z1 featureApiVersion")
+    checkEq(API.featureApiVersion, 3, "Z1 featureApiVersion")
     local reads = t.clockReads
-    local ok, reason, dist = Core.featureAllowed(0, "minimap", "mini")
-    check(ok == true and reason == nil and dist == nil, "Z1 零註冊回 true、無原因、無距離")
+    local ok, reason, dist, hide = Core.featureAllowed(0, "minimap", "mini")
+    check(ok == true and reason == nil and dist == nil and hide == nil, "Z1 零註冊回 true、無原因、無距離、無 hide")
     for _, f in ipairs({ "arrow", "poi", "nav", "share", "scan", "zombie" }) do
         check(Core.featureAllowed(0, f, "world") == true, "Z1 零註冊放行 " .. f)
     end
     checkEq(t.clockReads, reads, "Z2 零註冊不讀時鐘（# 判斷後即返回）")
+    checkEq(#t.uiDraw, 0, "H1 零註冊不掛 OnPreUIDraw 輪詢")
     check(not Core.minimapOpenBlocked(0) and #t.halos == 0, "Z3 零註冊開小地圖不擋、不 halo")
 end
 
@@ -404,6 +444,183 @@ do
     check(allNil and API.featureServerOff("zombie") == true, "O5 不傳 pn：戰術檢視也照實回答伺服器關了")
     t.core.sandboxGate = nil
     check(API.featureServerOff("zombie") == false, "O6 主檔沒有 sandboxGate（舊共用面）回 false")
+end
+
+-- 十二、v3 hide：只在 minimap 擋下時成立；OnPreUIDraw 輪詢收起／放回視窗，不寫 StartVisible
+local function hideFixture()
+    local t = fixture()
+    local G = { minimap = true, hide = true, reason = "UI_Watch_Look", pns = { [0] = true } }
+    t.G = G
+    t.gateCalls = {}
+    t.api.registerFeatureGate("Watch", function(pn, feature, surface)
+        t.gateCalls[#t.gateCalls + 1] = pn .. ":" .. feature .. ":" .. tostring(surface)
+        if feature == "minimap" and G.minimap == false and G.pns[pn] then
+            return false, G.reason, nil, G.hide and "hide" or nil
+        end
+        return true
+    end)
+    function t.step(ms) t.now = t.now + (ms or 300); t.frame() end
+    return t
+end
+do
+    local t = fixture()
+    local Core, API = t.core, t.api
+    local pres, allowed, feature = "hide", false, "minimap"
+    API.registerFeatureGate("A", function() return allowed, "UI_R", nil, pres end)
+    checkEq(#t.uiDraw, 1, "H1 第一次註冊才掛 OnPreUIDraw 輪詢")
+    API.registerFeatureGate("B", function() return true end)
+    checkEq(#t.uiDraw, 1, "H1 再註冊不重複掛")
+    local _, _, _, h = Core.featureAllowed(0, "minimap", "mini")
+    check(h == true, "H2 minimap 擋下＋hide 為真")
+    _, _, _, h = Core.featureAllowed(0, "minimap", "mini")
+    check(h == true, "H2 快取命中也回 hide")
+    _, _, _, h = Core.featureAllowed(0, "poi", "mini")
+    check(not h, "H2 其他 feature 帶 hide 無效")
+    allowed = true
+    API.registerFeatureGate("A", function() return allowed, "UI_R", nil, pres end)
+    local ok
+    ok, _, _, h = Core.featureAllowed(0, "minimap", "mini")
+    check(ok == true and not h, "H2 放行時帶 hide 無效")
+    allowed, pres = false, "Hide"
+    API.registerFeatureGate("A", function() return allowed, "UI_R", nil, pres end)
+    _, _, _, h = Core.featureAllowed(0, "minimap", "mini")
+    check(not h, "H2 其他字串無效")
+    -- 兩個 gate：第一個擋下的決定 presentation
+    API.registerFeatureGate("A", function() return false, "UI_A" end)
+    API.registerFeatureGate("B", function() return false, "UI_B", nil, "hide" end)
+    local rk
+    ok, rk, _, h = Core.featureAllowed(0, "minimap", "mini")
+    check(ok == false and rk == "UI_A" and not h, "H2 第一個擋下的 gate 決定（沒要 hide＝畫無訊號）")
+end
+do -- H3–H5：開著→收起→放回
+    local t = hideFixture()
+    local mm = t.newMM(0, true)
+    mm.joyfocus = { player = 0 }
+    local menuClosed, otherClosed = 0, 0
+    mm._minidoracatMoreMenu = { options = { { onSelect = t.core.toolbarMenuRun } },
+        isVisible = function() return true end, closeAll = function() menuClosed = menuClosed + 1 end }
+    t.G.minimap = false
+    t.step()
+    check(mm.visible == false and mm._minidoracatGateHidden == true and #mm.sets == 1, "H3 開著的視窗 setVisible(false) 一次並設旗標")
+    check(mm.removes == 0 and mm.inUI, "H3 不 removeFromUIManager（當幀才不畫）")
+    check(t.cancels == 1 and not mm.titleBar.dragging and mm.titleBar.cap == false
+        and not mm.inner.dragging and not mm.inner.rightMouseDown and mm.inner.cap == false, "H3 取消縮放、清拖曳旗標與 capture")
+    check(menuClosed == 1, "H3 關掉本 MOD 的「更多」選單")
+    check(mm.cleared ~= nil and t.joyFocus[0] == "nil", "H3 手把焦點交還")
+    -- 別人的選單（第一項不是 toolbarMenuRun）不關
+    local mm1 = t.newMM(1, true)
+    mm1._minidoracatMoreMenu = { options = { { onSelect = function() end } },
+        isVisible = function() return true end, closeAll = function() otherClosed = otherClosed + 1 end }
+    t.step()
+    check(otherClosed == 0 and mm1.visible == true, "H3 只關本 MOD 的選單；pn1 沒被擋不收")
+    t.step(); t.step()
+    check(#mm.sets == 1 and t.cancels == 1, "H4 hide 持續時重複輪詢不再動作")
+    check(t.gateCalls[#t.gateCalls]:find(":minimap:mini", 1, true) ~= nil, "H4 輪詢用 (minimap, mini) 快取鍵")
+    t.G.minimap = true
+    t.step()
+    check(mm.visible == true and mm._minidoracatGateHidden == nil and mm.adds == 0, "H5 放行：setVisible(true)、清旗標、在清單內不重 add")
+end
+do -- H6、H7：玩家自己關的也在 hide→放行時開；放行期間自己關就照他的
+    local t = hideFixture()
+    local mm = t.newMM(0, false) -- 玩家自己關了（不在 UI 清單）
+    t.G.minimap = false
+    t.step()
+    check(#mm.sets == 0 and mm._minidoracatGateHidden == nil, "H6 關著的視窗不必收、不設旗標")
+    t.G.minimap = true
+    t.step()
+    check(mm:isReallyVisible() and mm.adds == 1, "H6 hide→放行：關著的也打開（addToUIManager 一次）")
+    mm:removeFromUIManager() -- 放行期間玩家自己關
+    t.step(); t.step()
+    check(not mm:isReallyVisible() and mm.adds == 1, "H7 放行期間自己關：不再替他開")
+    local re = t.newMM(0, false) -- 自己關之後 Recreate（StartVisible=false）
+    t.step()
+    check(not re:isReallyVisible() and re.adds == 0, "H7 自己關之後重建：新實例也不替他開")
+    t.mms[0] = mm
+    t.G.minimap = false; t.step()
+    t.G.minimap = true; t.step()
+    check(mm:isReallyVisible() and mm.adds == 2, "H7 下一次 hide→放行才再開")
+end
+do -- H8、H9：換實例
+    local t = hideFixture()
+    local old = t.newMM(0, true)
+    t.G.minimap = false; t.step()
+    local new = t.newMM(0, true) -- hide 期間 Recreate／重建 UI
+    t.step()
+    check(new.visible == false and new._minidoracatGateHidden == true, "H8 hide 期間的新實例下一幀就收")
+    t.G.minimap = true; t.step()
+    check(new:isReallyVisible(), "H8 放行時新實例回來")
+    local re = t.newMM(0, false) -- 閘門顯示後 Recreate（StartVisible=false 時 InitPlayer 不 add）
+    t.step()
+    check(re:isReallyVisible() and re.adds == 1, "H9 閘門顯示的視窗被重建：新實例照樣顯示")
+    local re2 = t.newMM(0, true)
+    t.step()
+    check(re2.adds == 0, "H9 新實例已可見就不 add")
+    check(old.visible == false, "H8 舊實例不再碰")
+end
+do -- H10：hide → 擋下但不 hide＝視窗回來畫無訊號
+    local t = hideFixture()
+    local mm = t.newMM(0, true)
+    t.G.minimap = false; t.step()
+    t.G.hide = false; t.step()
+    check(mm.visible == true and mm._minidoracatGateHidden == nil, "H10 不再要求 hide：視窗回來（prerender 畫無訊號）")
+end
+do -- H11：跳過不存在與死亡的玩家；分割畫面各自
+    local t = hideFixture()
+    local m0, m1 = t.newMM(0, true), t.newMM(1, true)
+    t.players[1].dead = true
+    t.G.minimap = false; t.step()
+    local asked1 = false
+    for _, c in ipairs(t.gateCalls) do if c:sub(1, 2) == "1:" then asked1 = true end end
+    check(not asked1 and m1.visible == true and m0.visible == false, "H11 死亡玩家不問 gate、不收；pn0 照收")
+    local asked2 = false
+    for _, c in ipairs(t.gateCalls) do if c:sub(1, 2) == "2:" then asked2 = true end end
+    check(not asked2, "H11 不存在的玩家不問 gate")
+end
+do -- H12：gate 拋錯被停用＝放行，收著的視窗回來
+    local t = hideFixture()
+    local mm = t.newMM(0, true)
+    t.G.minimap = false; t.step()
+    t.api.registerFeatureGate("Watch", function() error("boom") end)
+    t.step()
+    check(mm.visible == true and mm._minidoracatGateHidden == nil, "H12 gate 拋錯停用後視窗回來")
+end
+do -- H13：輪詢本身拋錯：Remove 一次、log 一次、收著的視窗放回
+    local t = hideFixture()
+    local mm = t.newMM(0, true)
+    t.G.minimap = false; t.step()
+    t.players[0].isDead = function() error("injected poll failure") end
+    t.step(); t.step()
+    local logs = 0
+    for _, p in ipairs(t.printed) do if p:find("minimap gate hide failed", 1, true) then logs = logs + 1 end end
+    check(t.uiRemoved == 1 and #t.uiDraw == 0 and logs == 1, "H13 輪詢出錯：移除一次、log 一次")
+    check(mm.visible == true and mm._minidoracatGateHidden == nil, "H13 收著的視窗放回（退回畫無訊號）")
+    t.api.registerFeatureGate("Other", function() return true end)
+    checkEq(#t.uiDraw, 0, "H13 停用後再註冊不重掛")
+end
+do -- H14：放行時沒有視窗
+    local t = hideFixture()
+    t.G.minimap = false; t.step()
+    t.G.minimap = true; t.step()
+    local mm = t.mms[0]
+    check(t.created == 1 and mm and mm:isReallyVisible() and t.registered == mm, "H14 沒有視窗：照快捷鍵建法建出、pn0 登記版面並顯示")
+    local t2 = hideFixture()
+    t2.createFails = true
+    t2.G.minimap = false; t2.step()
+    t2.G.minimap = true; t2.step(); t2.step()
+    checkEq(t2.created, 1, "H14 建立失敗不每幀重試")
+    local t3 = hideFixture()
+    t3.pdata[0] = nil
+    t3.G.minimap = false; t3.step()
+    t3.G.minimap = true; t3.step()
+    checkEq(t3.created, 0, "H14 沒有玩家資料不建")
+end
+do -- H15：主檔 prerender 與輪詢共用快取鍵
+    local mainPath = path:gsub("MinidoracatMiniMap_FeatureGate%.lua$", "MinidoracatMiniMap.lua")
+    local fh = assert(io.open(mainPath, "rb"))
+    local mainSource = fh:read("*a")
+    fh:close()
+    check(mainSource:find('fa(pn, "minimap", "mini")', 1, true) ~= nil, "H15 主檔 prerender 用 (minimap, mini)")
+    check(source:find('Core.featureAllowed(pn, "minimap", "mini")', 1, true) ~= nil, "H15 輪詢用同一鍵")
 end
 
 print("feature gate assertions " .. assertions .. ", failures " .. failures)

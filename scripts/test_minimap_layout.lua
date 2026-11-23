@@ -450,6 +450,26 @@ return { class = ISMiniMapInner, opts = opts, vanilla = vanilla }
     end
 end
 
+-- G1 功能閘門 hide 收起（_FeatureGate.lua setVisible(false)＋_minidoracatGateHidden）存檔時不算玩家關的
+do
+    local hidden = newMiniMap(0, false)
+    hidden.visible, hidden._minidoracatGateHidden = false, true
+    local layout = {}
+    ISMiniMapOuter.SaveLayout(hidden, "miniMap0", layout)
+    check(layout.visible == "true", "G1 閘門收起的視窗存成 visible=true")
+    local closed = newMiniMap(0, false)
+    closed.visible = false
+    layout = {}
+    ISMiniMapOuter.SaveLayout(closed, "miniMap0", layout)
+    check(layout.visible == "false", "G1 沒有旗標照原版存 visible=false")
+    local save = ISLayoutManager.DefaultSaveWindow
+    ISLayoutManager.DefaultSaveWindow = function() end -- Tutorial：原版不寫任何欄位（ISLayoutManager.lua:54）
+    layout = {}
+    ISMiniMapOuter.SaveLayout(hidden, "miniMap0", layout)
+    ISLayoutManager.DefaultSaveWindow = save
+    check(layout.visible == nil, "G1 原版沒寫 visible 時不補")
+end
+
 if failures > 0 then
     print(("minimap layout memory: %d check(s) failed"):format(failures))
     os.exit(1)
