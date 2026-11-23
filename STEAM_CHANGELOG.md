@@ -1,13 +1,8 @@
-[h1]Minidoracat MiniMap for B42 42.22.2-0.59.0[/h1]
-[i]2026-11-17[/i]
+[h1]Minidoracat MiniMap for B42 42.22.2-0.60.0[/h1]
+[i]2026-11-24[/i]
 
 [b]English summary[/b]
 [list]
-[*] New option "Show Minimap in game right-click menus" (player request, on by default) under Map Display Settings → Players & navigation. Turn it off and this mod adds nothing to the right-click menus of the game world and the inventory. The right-click menu on the map and the Favorites tab of the search window still work.
-[*] This mod's entries in the game world and inventory right-click menus now sit under a single "Minimap" entry, instead of taking up to three lines at the top level.
-[*] Fixed with the "Navigator" mod (Workshop 3708816224): after you dragged its navigation screen, it stopped following the car and showed "Click map to recenter" (player report). "Drag to look around" now applies only to this mod's own minimap.
-[*] Fixed Ghost mode making other mods' minimap screens (such as Navigator's) semi-transparent, too dark to read, and unresponsive to dragging and right-click.
-[*] Fixed Ghost mode on this mod's own minimap: right-clicking over the minimap now opens the game's right-click menu, and the minimap edge no longer resizes it while Ghost mode is on. Turn Ghost mode off to resize.
 [*] New mini-map size "Mini" (player request), the last entry of the "Mini-map size" dropdown: less than half the side of "Small". Small, Medium, Large and Extra Large keep their sizes.
 [*] You can drag the mini-map smaller than before: the minimum width is now four buttons instead of the whole button row.
 [*] When the mini-map is too narrow for the whole button row, the buttons that don't fit move into a "More" menu (three dots). The row keeps World Map, Settings, More and Close. The menu stays open after zoom in and zoom out.
@@ -17,17 +12,14 @@
 
 [h3]✨ 新增[/h3]
 [list]
-[*] [b]新選項「遊戲右鍵選單顯示小地圖」[/b]（玩家建議，預設開）：在「地圖顯示設定 → 玩家與導航」。關掉後，遊戲畫面與物品欄的右鍵選單不再出現本 MOD 的項目。地圖上的右鍵選單、搜尋視窗的「收藏」分頁照常可用，收藏與資源點標記的功能都還在。
+[*] [b]小地圖尺寸多一項「迷你」[/b]（玩家建議）：在「小地圖尺寸」下拉的最後一項。邊長不到「小」的一半，面積約五分之一，適合只想留一塊小小的地圖看方向的人。「小」「中」「大」「特大」四項的大小不變。
+[*] [b]小地圖可以拖得更小[/b]：拖小地圖的邊緣縮放時，最小寬度從「放得下整排按鈕」降到「放得下四顆按鈕」。原本拖到「小」就不能再縮。
+[*] [b]按鈕列放不下的按鈕收進「⋯」選單[/b]：小地圖變窄後，按鈕列留下世界地圖、設定、「⋯」與關閉，其餘照寬度依序收起來（放大與縮小兩顆一起收）。按「⋯」會列出被收起的功能（放大、縮小、回到玩家、搜尋、回家、複製座標、切換視角），點下去和按原本的按鈕一樣。放大與縮小選完選單不會關，可以連續按。小地圖在畫面下緣時，選單開在它旁邊，不蓋住地圖。寬度夠放整排按鈕時沒有「⋯」，和以前一樣。
 [/list]
 
 [h3]🔄 變更[/h3]
 [list]
-[*] [b]遊戲畫面與物品欄的右鍵選單裡，本 MOD 的項目收進「小地圖」一項[/b]：以前「加入地圖收藏...」「資源點：名稱」「地圖收藏：名稱」直接列在右鍵選單第一層，最多佔三行。現在都在「小地圖」底下，右鍵選單只多一行；功能不變，要多移一層才點得到。
-[/list]
-
-[h3]🔧 修正[/h3]
-[list]
-[*] [b]和「Navigator」MOD（Workshop 3708816224）一起用時，它的導航螢幕拖過之後不再跟著車，畫面還出現「點擊地圖回到玩家」[/b]（玩家回報）：本 MOD 的「拖曳自由查看」誤套到 Navigator 的螢幕地圖上，而在那個螢幕上點一下是開世界地圖，所以回不去。現在「拖曳自由查看」只作用在本 MOD 自己的小地圖，Navigator 的螢幕照它原本的方式回到跟車。
-[*] [b]開著穿透模式時，別的 MOD 自己做的小地圖畫面（例如 Navigator 的導航螢幕）也變成半透明、暗到看不清，而且拖不動、按右鍵沒反應[/b]：穿透模式的半透明與點擊穿透現在只套在本 MOD 自己的小地圖。
-[*] [b]開著穿透模式時，滑鼠停在小地圖上按右鍵沒有反應（遊戲的右鍵選單不出現）；在小地圖邊緣按左鍵會拉動小地圖的大小[/b]：穿透模式本來就該讓點擊與右鍵全部穿到遊戲。現在右鍵會穿過去；穿透中邊緣不再縮放，要改大小先關掉穿透。
+[*] [b]小地圖很窄時，「點擊地圖回到玩家」的文字提示改成一個小圖示[/b]：文字比小地圖還寬就放不下。這時改在地圖左上角顯示定位圖示，玩家座標留在原位；按鈕列的「回到玩家」鈕照舊亮起琥珀色邊框，它被收進選單時改亮「⋯」。
+[*] [b]小地圖很窄時，放不下的玩家座標整行不畫[/b]：整串座標比小地圖寬時不顯示，不會切掉一半。按「⋯ → 複製座標」照常可用。
+[*] [b]導航旗標靠近小地圖上緣時，進度與距離兩行不再疊在一起[/b]：原本兩行都被推到最上面、互相蓋住；迷你尺寸的小地圖很矮，幾乎每次都會遇到。現在兩行一起往下移。
 [/list]
