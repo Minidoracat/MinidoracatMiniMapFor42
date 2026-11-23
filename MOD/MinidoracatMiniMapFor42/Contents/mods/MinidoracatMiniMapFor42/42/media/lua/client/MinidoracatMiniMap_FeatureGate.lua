@@ -168,12 +168,8 @@ local function hideWindow(pn, mm)
 end
 
 local function showWindow(pn, mm)
-    if not mm then -- 這次進遊戲還沒建過（沙盒連世界地圖都關）：照快捷鍵的建法（_Resize togglePlayerMiniMap）
-        if not (Core.createMiniMap and getPlayerData(pn)) then return nil end
-        mm = Core.createMiniMap(pn)
-        if not mm then return nil end
-        if pn == 0 and Core.registerMiniMapLayout then Core.registerMiniMapLayout(mm) end
-    end
+    -- 沒有視窗＝沙盒連世界地圖都關（autoCreateMiniMap 刻意不建）：不替伺服器主跳出地圖（2026-11-09 裁定），/ 照樣能開
+    if not mm then return nil end
     mm._minidoracatGateHidden = nil
     mm:setVisible(true)
     if not mm:isReallyVisible() then mm:addToUIManager() end -- 玩家自己關掉的；不寫 StartVisible

@@ -26,7 +26,7 @@ end
 local function fixture()
     local t = { now = 1000, clockReads = 0, printed = {}, halos = {}, tactical = {}, draws = {},
         textAt = {}, zoom = 1, opts = {}, sandbox = {}, gatePns = {},
-        mms = {}, pdata = { [0] = {}, [1] = {} }, uiDraw = {}, joyFocus = {}, created = 0, cancels = 0, svWrites = 0 }
+        mms = {}, uiDraw = {}, joyFocus = {}, created = 0, cancels = 0, svWrites = 0 }
     local core = {
         ready = true,
         policy = { tacticalActive = function(pn) return t.tactical[pn] == true end },
@@ -62,14 +62,11 @@ local function fixture()
     local players = { [0] = { name = "p0", isDead = function(s) return s.dead == true end },
         [1] = { name = "p1", isDead = function(s) return s.dead == true end } }
     t.players = players
-    -- 本 MOD 自建小地圖（_Resize Core.createMiniMap）與版面登記：hide 解除時沒有視窗才用到
+    -- 本 MOD 自建小地圖（_Resize Core.createMiniMap）：hide 解除時不得呼叫（H14）
     core.createMiniMap = function(pn)
         t.created = t.created + 1
-        if t.createFails then return nil end
-        local mm = t.newMM(pn, false)
-        return mm
+        return t.newMM(pn, false)
     end
-    core.registerMiniMapLayout = function(mm) t.registered = mm end
     core.cancelResize = function() t.cancels = t.cancels + 1 end
     core.toolbarMenuRun = function() end
     -- 假小地圖 outer：isReallyVisible＝visible 且在 UI 清單（UIElement.java:1798）；計數 setVisible／add／remove
@@ -100,7 +97,6 @@ local function fixture()
         getTimestampMs = function() t.clockReads = t.clockReads + 1; return t.now end,
         getSpecificPlayer = function(pn) t.playerAsks = (t.playerAsks or 0) + 1; return players[pn] end,
         getPlayerMiniMap = function(pn) return t.mms[pn] end,
-        getPlayerData = function(pn) return t.pdata[pn] end,
         setJoypadFocus = function(pn, el) t.joyFocus[pn] = el or "nil" end,
         Events = events,
         getText = function(key) return "T:" .. tostring(key) end,
@@ -597,22 +593,15 @@ do -- H13：輪詢本身拋錯：Remove 一次、log 一次、收著的視窗放
     t.api.registerFeatureGate("Other", function() return true end)
     checkEq(#t.uiDraw, 0, "H13 停用後再註冊不重掛")
 end
-do -- H14：放行時沒有視窗
+do -- H14：放行時沒有視窗（沙盒連世界地圖都關）：不建，之後玩家按 / 建的也不碰
     local t = hideFixture()
     t.G.minimap = false; t.step()
     t.G.minimap = true; t.step()
-    local mm = t.mms[0]
-    check(t.created == 1 and mm and mm:isReallyVisible() and t.registered == mm, "H14 沒有視窗：照快捷鍵建法建出、pn0 登記版面並顯示")
-    local t2 = hideFixture()
-    t2.createFails = true
-    t2.G.minimap = false; t2.step()
-    t2.G.minimap = true; t2.step(); t2.step()
-    checkEq(t2.created, 1, "H14 建立失敗不每幀重試")
-    local t3 = hideFixture()
-    t3.pdata[0] = nil
-    t3.G.minimap = false; t3.step()
-    t3.G.minimap = true; t3.step()
-    checkEq(t3.created, 0, "H14 沒有玩家資料不建")
+    check(t.created == 0 and t.mms[0] == nil, "H14 沒有視窗：hide 解除不自建")
+    local mm = t.newMM(0, false)
+    mm.visible = false
+    t.step()
+    check(mm.adds == 0 and not mm.visible, "H14 之後出現的關著的視窗不被打開")
 end
 do -- H15：主檔 prerender 與輪詢共用快取鍵
     local mainPath = path:gsub("MinidoracatMiniMap_FeatureGate%.lua$", "MinidoracatMiniMap.lua")
