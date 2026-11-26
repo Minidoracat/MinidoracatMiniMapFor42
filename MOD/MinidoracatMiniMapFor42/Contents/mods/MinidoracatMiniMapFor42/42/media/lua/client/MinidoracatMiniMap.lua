@@ -1772,11 +1772,12 @@ end
 -- overlayPaper 呼叫；實測仍缺圖代表另有成因（不走 overlayPaper 的洗層路徑，
 -- 或 applyMiniMapPyramids 某次間歇失敗、如 collectPyramids 暫時回空），
 -- 尚未定位，開圖補掛把可見缺圖窗口歸零。成本＝每次開圖一次、非每幀。
--- 簽名同原版（ISWorldMap.lua:1500）
+-- 原版定義 4 參數（ISWorldMap.lua:1500），但 :1626 只傳 playerNum；Kahlua 少傳的
+-- 參數不保證是 nil，其餘用 ... 原樣轉
 if ISWorldMap and ISWorldMap.ShowWorldMap then
     local originalShowWorldMap = ISWorldMap.ShowWorldMap
-    function ISWorldMap.ShowWorldMap(playerNum, centerX, centerY, zoom)
-        originalShowWorldMap(playerNum, centerX, centerY, zoom)
+    function ISWorldMap.ShowWorldMap(playerNum, ...)
+        originalShowWorldMap(playerNum, ...)
         if ISWorldMap_instance then
             -- 街道資料保險掛這裡而非 initDataAndStyle wrap：原版在同一函式已載
             -- 一次，緊接著補＝必 no-op；真正需要救的是「單例已存在、之後再開圖」

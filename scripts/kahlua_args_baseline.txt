@@ -2,7 +2,6 @@
 # python scripts/verify_mod.py --rebase-args。不要為了讓新的呼叫通過而重跑：少的補 nil 傳齊，
 # 或把選用參數改成 ... 接。只有確定呼叫的是 Java 方法，或最後一個引數的呼叫確定每條路都回夠多個值
 # （key 裡是 ~，後面是那個呼叫的函式名）才加進來。
-1	client/MinidoracatMiniMap.lua|new|0<1
 4	client/MinidoracatMiniMap.lua|sandboxGate|2<3
 1	client/MinidoracatMiniMap.lua|toolbarOpenMore|1<2
 3	client/MinidoracatMiniMap_ClearedShare.lua|requestSync|0<1
@@ -18,7 +17,6 @@
 2	client/MinidoracatMiniMap_Itinerary.lua|publish|4<5
 1	client/MinidoracatMiniMap_Nav.lua|facingPush|10<11
 1	client/MinidoracatMiniMap_Nav.lua|mapSubMenu|2<3
-1	client/MinidoracatMiniMap_Nav.lua|new|0<1
 1	client/MinidoracatMiniMap_Nav.lua|remoteFacingLevel|0<1
 4	client/MinidoracatMiniMap_NavRoute.lua|drawApproach|6<7
 1	client/MinidoracatMiniMap_NavRoute.lua|drawOneRoute|7<9
@@ -35,7 +33,6 @@
 1	client/MinidoracatMiniMap_RoadTool.lua|openMapAt|2~5|bboxOf
 2	client/MinidoracatMiniMap_RoadTool.lua|report|3<4
 1	client/MinidoracatMiniMap_Roads.lua|add|2<3
-1	client/MinidoracatMiniMap_Search.lua|new|0<1
 1	client/MinidoracatMiniMap_Search.lua|onJoypadDown|1<2
 4	client/MinidoracatMiniMap_Search.lua|prepareRow|5<6
 2	client/MinidoracatMiniMap_Search.lua|roadEdit|4<5

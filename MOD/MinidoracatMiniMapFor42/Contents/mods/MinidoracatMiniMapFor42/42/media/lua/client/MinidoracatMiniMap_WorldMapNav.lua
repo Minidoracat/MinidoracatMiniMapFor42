@@ -126,8 +126,9 @@ if ISWorldMap and ISWorldMap.onRightMouseUp then
     installWMRightMouseUp()
     if ISWorldMap.ShowWorldMap then
         local originalNavShowWorldMap = ISWorldMap.ShowWorldMap
-        function ISWorldMap.ShowWorldMap(playerNum, centerX, centerY, zoom)
-            originalNavShowWorldMap(playerNum, centerX, centerY, zoom)
+        -- 原版 ISWorldMap.lua:1626 只傳 playerNum；Kahlua 少傳不保證 nil，其餘 ... 原樣轉
+        function ISWorldMap.ShowWorldMap(playerNum, ...)
+            originalNavShowWorldMap(playerNum, ...)
             installWMRightMouseUp()
         end
     end
